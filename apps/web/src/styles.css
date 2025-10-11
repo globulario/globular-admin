@@ -1,0 +1,11 @@
+
+:root {
+  --primary-color: #1976d2;
+  --secondary-color: #26a69a;
+  --background-color: #f5f6f8;
+  --surface-color: #ffffff;
+  --text-primary-color: #ffffff;
+  --on-surface-color: #1f2937;
+}
+html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial; }
+#app { padding: 16px; }

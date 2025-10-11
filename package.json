@@ -1,0 +1,17 @@
+{
+  "name": "globular-admin",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @globular/admin-web dev",
+    "build": "pnpm --filter @globular/admin-web build",
+    "preview": "pnpm --filter @globular/admin-web preview"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
