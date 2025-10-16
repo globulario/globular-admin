@@ -230,11 +230,13 @@ export async function createAccount(input: CreateAccountInput): Promise<AccountV
   const acc = ensureRqAccount(rq)
 
   // resource.Account fields
-  if (input.name) acc.setName?.(input.name)
+    // Clear ID to indicate "new" if reused
+
+  if (input.name){ acc.setName?.(input.name); acc.setId?.(input.name)}
   if (input.email) acc.setEmail?.(input.email)
   if (input.password) acc.setPassword?.(input.password)
-  if (input.firstName) acc.setFirstName?.(input.firstName)
-  if (input.lastName) acc.setLastName?.(input.lastName)
+  if (input.firstName) acc.setFirstname?.(input.firstName)
+  if (input.lastName) acc.setLastname?.(input.lastName)
   if (input.middle) acc.setMiddle?.(input.middle)
   if (input.domain) acc.setDomain?.(input.domain)
   if (input.profilePicture) acc.setProfilepicture?.(input.profilePicture)
@@ -249,6 +251,7 @@ export async function createAccount(input: CreateAccountInput): Promise<AccountV
 
   const method = pickMethod(clientFactory(), SERVICE_METHODS.create.method)
   await unary(clientFactory, method, rq, undefined, md)
+
 
   // Proto doesn't return the created Account; echo what we sent (mapped)
   return toAccountVM(acc)

@@ -2,6 +2,7 @@
 import { listAccounts, createAccount, updateAccount, deleteAccount } from '../backend/rbac/accounts'
 import { displayError, displayQuestion, displaySuccess } from '../backend/ui/notify' // <-- update path if needed
 import { getBase64FromImageUrl } from '../components/utility.js'
+import { setPassword, setRootPassword } from '../backend/core/auth' // <-- update path if needed
 import '@polymer/iron-icons/iron-icons.js'
 import '@polymer/paper-icon-button/paper-icon-button.js'
 import '@polymer/iron-collapse/iron-collapse.js'
@@ -57,7 +58,6 @@ window.displayAccountId = (row: TableRow) => {
 /* ============================================================
    Inline editor (no dialog)
    ============================================================ */
-
 class UsersInlineEditor extends HTMLElement {
   private shadow!: ShadowRoot
   private account: Account | null = null
@@ -71,8 +71,10 @@ class UsersInlineEditor extends HTMLElement {
   private lastNameInput?: HTMLInputElement
   private emailInput?: HTMLInputElement
   private domainInput?: HTMLInputElement
+  private currentPasswordInput?: HTMLInputElement
   private passwordInput?: HTMLInputElement
   private confirmPasswordInput?: HTMLInputElement
+  private changePwdBtn?: HTMLButtonElement
   private saveBtn?: HTMLButtonElement
   private cancelBtn?: HTMLButtonElement
   private deleteBtn?: HTMLButtonElement
@@ -91,7 +93,7 @@ class UsersInlineEditor extends HTMLElement {
           color: var(--on-surface-color);
           border-radius: .5rem;
           box-shadow: 0 0 0 1px var(--divider-color);
-          border: 0; /* optional */
+          border: 0;
           padding: 1rem 1.25rem;
           margin-top: 12px;
         }
@@ -111,6 +113,15 @@ class UsersInlineEditor extends HTMLElement {
         .hidden { display:none; }
         .inline-btn { padding: 6px 10px; border: 1px solid var(--divider-color); background: transparent; color: var(--on-surface-color); border-radius: 8px; cursor: pointer; }
         .inline-btn:hover { border-color: var(--primary-color); }
+        .link-btn {
+          border: none; background: transparent; color: var(--primary-color);
+          cursor: pointer; font: 500 13px/20px Roboto, sans-serif; padding: 0 4px;
+        }
+        .masked {
+          cursor: pointer;
+          user-select: none;
+        }
+        .row.gapped { gap: 6px; }
       </style>
 
       <div class="card">
@@ -148,19 +159,28 @@ class UsersInlineEditor extends HTMLElement {
         </div>
 
         <!-- Passwords -->
-        <div class="row" id="password-row">
-          <label>Password</label>
-          <input id="password" type="password" />
+        <div class="row hidden" id="current-password-row">
+          <label>Current password</label>
+          <input id="currentPassword" type="password" autocomplete="current-password" />
+        </div>
+
+        <div class="row gapped" id="password-row">
+          <label>New password</label>
+          <input id="password" type="password" autocomplete="new-password" />
+          <button id="changePwdBtn" class="link-btn hidden" title="Change password">Change</button>
         </div>
 
         <div class="row" id="confirm-password-row">
           <label>Confirm</label>
-          <input id="confirmPassword" type="password" />
+          <input id="confirmPassword" type="password" autocomplete="new-password" />
         </div>
 
         <div class="row">
           <label></label>
-          <div class="hint">For existing users, click the masked password to change it.</div>
+          <div class="hint">
+            For existing users, click the masked password (or “Change”) to modify it.
+            If the user forgot it, an operator signed in as <b>sa</b> can reset without the current password.
+          </div>
         </div>
 
         <!-- Actions -->
@@ -177,15 +197,18 @@ class UsersInlineEditor extends HTMLElement {
     this.avatarImg = this.shadow.getElementById('avatar') as HTMLImageElement
     this.avatarPicker = this.shadow.getElementById('avatar-changer') as HTMLElement
 
-
     this.usernameInput = this.shadow.getElementById('username') as HTMLInputElement
     this.firstNameInput = this.shadow.getElementById('firstName') as HTMLInputElement
     this.lastNameInput = this.shadow.getElementById('lastName') as HTMLInputElement
     this.emailInput = this.shadow.getElementById('email') as HTMLInputElement
     this.domainInput = this.shadow.getElementById('domain') as HTMLInputElement
+
+    this.currentPasswordInput = this.shadow.getElementById('currentPassword') as HTMLInputElement
     this.passwordInput = this.shadow.getElementById('password') as HTMLInputElement
     this.confirmPasswordInput = this.shadow.getElementById('confirmPassword') as HTMLInputElement
+    this.changePwdBtn = this.shadow.getElementById('changePwdBtn') as HTMLButtonElement
 
+    const currentPasswordRow = this.shadow.getElementById('current-password-row') as HTMLDivElement
     const passwordRow = this.shadow.getElementById('password-row') as HTMLDivElement
     const confirmPasswordRow = this.shadow.getElementById('confirm-password-row') as HTMLDivElement
 
@@ -210,7 +233,7 @@ class UsersInlineEditor extends HTMLElement {
       try {
         const imageUrl = decodeURIComponent(e.detail.src)
         const base64 = await getBase64FromImageUrl(imageUrl)
-        if (this.avatarImg) this.avatarImg.src = base64
+        if (this.avatarImg) this.avatarImg.src = base64 as string
       } catch (err: any) {
         console.error(err)
         displayError('Failed to set avatar image.')
@@ -300,16 +323,15 @@ class UsersInlineEditor extends HTMLElement {
         }
         base.password = pwd
       } else {
-        // existing user: if user cleared the mask and typed something, validate + include
-        const pwd = (this.passwordInput?.disabled ? '' : (this.passwordInput?.value || ''))
-        const cpwd = (this.passwordInput?.disabled ? '' : (this.confirmPasswordInput?.value || ''))
-        if (pwd || cpwd) {
-          if (pwd !== cpwd) {
+        const newPwd = (this.passwordInput?.readOnly ? '' : (this.passwordInput?.value || ''))
+        const newPwdConfirm = (this.passwordInput?.readOnly ? '' : (this.confirmPasswordInput?.value || ''))
+        if (newPwd || newPwdConfirm) {
+          if (newPwd !== newPwdConfirm) {
             displayError('Password and Confirm Password do not match.')
             this.confirmPasswordInput?.focus()
             return
           }
-          base.password = pwd
+          base.password = newPwd
         }
       }
 
@@ -342,12 +364,38 @@ class UsersInlineEditor extends HTMLElement {
                   profilePicture: base.profilePicture,
                   firstName: base.firstName,
                   lastName: base.lastName,
-                  password: base.password, // backend can ignore if unsupported
+                  password: base.password,
                 })
                 displaySuccess('Account created.')
                 this.dispatchEvent(new CustomEvent('account-created', { bubbles: true, detail: base }))
               } else {
+                // Update profile first
                 await updateAccount(base.id, base)
+
+                // Handle password change if requested
+                if (base.password && base.password.length > 0) {
+                  const isSaTarget = (base.name === 'sa') || (base.id === 'sa')
+                  const currentPwd = this.currentPasswordInput?.value || ""
+
+                  try {
+                    if (isSaTarget) {
+                      await setRootPassword(currentPwd, base.password) // old, new
+                    } else {
+                      await setPassword(base.id || base.name, currentPwd, base.password) // accountId, old, new
+                    }
+                    displaySuccess('Password updated.')
+                  } catch (perr: any) {
+                    console.error(perr)
+                    const msg = perr?.message || 'Failed to update password'
+                    if (!currentPwd) {
+                      displayError(`${msg}. Tip: provide the current password or perform the reset while signed in as 'sa'.`)
+                    } else {
+                      displayError(msg)
+                    }
+                    // Profile update succeeded; only the password failed.
+                  }
+                }
+
                 displaySuccess('Account updated.')
                 this.dispatchEvent(new CustomEvent('account-updated', { bubbles: true, detail: base }))
               }
@@ -361,7 +409,7 @@ class UsersInlineEditor extends HTMLElement {
     }
 
     // If existing user: mask password and allow click-to-change
-    this._setupPasswordMask(passwordRow, confirmPasswordRow)
+    this._setupPasswordMask(currentPasswordRow, passwordRow, confirmPasswordRow)
   }
 
   /** Public API */
@@ -387,40 +435,63 @@ class UsersInlineEditor extends HTMLElement {
     if (this.deleteBtn) this.deleteBtn.style.display = acc.id ? 'inline-block' : 'none'
 
     // password UI depending on new vs existing
+    const currentPasswordRow = this.shadow.getElementById('current-password-row') as HTMLDivElement
     const passwordRow = this.shadow.getElementById('password-row') as HTMLDivElement
     const confirmPasswordRow = this.shadow.getElementById('confirm-password-row') as HTMLDivElement
-    this._setupPasswordMask(passwordRow, confirmPasswordRow)
+    this._setupPasswordMask(currentPasswordRow, passwordRow, confirmPasswordRow)
   }
 
   /** Mask/enable password fields depending on whether it's a new or existing account */
-  private _setupPasswordMask(passwordRow: HTMLDivElement, confirmPasswordRow: HTMLDivElement) {
+  private _setupPasswordMask(
+    currentPasswordRow: HTMLDivElement,
+    passwordRow: HTMLDivElement,
+    confirmPasswordRow: HTMLDivElement
+  ) {
     if (!this.passwordInput || !this.confirmPasswordInput) return
 
     const isExisting = !!this.account?.id
     if (isExisting) {
-      // mask + disable until clicked
+      // Show masked, readOnly (clickable) + show "Change" link
       this.passwordInput.value = '**********'
-      this.passwordInput.disabled = true
+      this.passwordInput.readOnly = true
+      this.passwordInput.classList.add('masked')
+      this.changePwdBtn?.classList.remove('hidden')
+
+      // Hide these until change flow begins
+      this.confirmPasswordInput.value = ''
+      currentPasswordRow.classList.add('hidden')
       confirmPasswordRow.classList.add('hidden')
-      this.passwordInput.onclick = () => {
-        this.passwordInput!.disabled = false
+
+      const startChange = () => {
+        this.passwordInput!.readOnly = false
+        this.passwordInput!.classList.remove('masked')
         this.passwordInput!.value = ''
         this.confirmPasswordInput!.value = ''
+        currentPasswordRow.classList.remove('hidden')
         confirmPasswordRow.classList.remove('hidden')
+        this.changePwdBtn?.classList.add('hidden')
         this.passwordInput!.focus()
       }
+
+      // Clicking either the input (masked) or the link starts the change flow
+      this.passwordInput.onclick = () => startChange()
+      this.changePwdBtn?.addEventListener('click', startChange)
     } else {
-      // new account: both visible & enabled
-      this.passwordInput.disabled = false
+      // new account: both visible & enabled; no current-password field, no change link
+      this.passwordInput.readOnly = false
+      this.passwordInput.classList.remove('masked')
       this.passwordInput.value = ''
       this.confirmPasswordInput.value = ''
+      currentPasswordRow.classList.add('hidden')
       confirmPasswordRow.classList.remove('hidden')
+      this.changePwdBtn?.classList.add('hidden')
       this.passwordInput.onclick = null
     }
   }
 }
 
 customElements.define('users-inline-editor', UsersInlineEditor)
+
 
 /* ============================================================
    UsersManager — main widget
