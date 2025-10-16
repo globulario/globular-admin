@@ -9,7 +9,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "outDir": "./dist/types",
-    "types": [],
+    "types": ["vite/client"],
     "allowJs": true,
     "skipLibCheck": true
   },

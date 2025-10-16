@@ -21,7 +21,6 @@ class PageRbacAccounts extends HTMLElement {
       <style>
         :host { display:block; }
         .page {
-          padding: 16px;
           color: var(--on-surface-color);
           background: var(--background-color);
         }
@@ -41,9 +40,6 @@ class PageRbacAccounts extends HTMLElement {
         .card {
           background: var(--surface-color);
           color: var(--on-surface-color);
-          border-radius: 12px;
-          padding: 12px 14px;
-          box-shadow: 0 0 0 1px var(--divider-color, color-mix(in srgb, var(--on-surface-color) 12%, transparent));
         }
         .info { margin-top: 10px; margin-bottom: 10px; }
       </style>

@@ -417,7 +417,7 @@ export class Table extends HTMLElement {
           width:fit-content;
         }
 
-        #title{ flex-grow:1; text-align:center; }
+        #title{ flex-grow:1; }
 
         #filter-btn{
           color: var(--disabled-text-color, color-mix(in srgb, var(--tbl-onsurface) 40%, transparent));

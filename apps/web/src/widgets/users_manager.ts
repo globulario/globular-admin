@@ -1,12 +1,13 @@
 // src/widgets/users_manager.ts
 import { listAccounts, createAccount, updateAccount, deleteAccount } from '../backend/rbac/accounts'
 import { displayError, displayQuestion, displaySuccess } from '../backend/ui/notify' // <-- update path if needed
-import { getBase64FromImageUrl } from '../components/utility.js'   
+import { getBase64FromImageUrl } from '../components/utility.js'
 import '@polymer/iron-icons/iron-icons.js'
 import '@polymer/paper-icon-button/paper-icon-button.js'
 import '@polymer/iron-collapse/iron-collapse.js'
 import '../components/table'     // <globular-table>
 import '../components/markdown'  // <globular-markdown> (optional)
+import '../widgets/avatar_changer' // <avatar-changer>
 
 type Account = {
   id: string
@@ -88,9 +89,10 @@ class UsersInlineEditor extends HTMLElement {
         .card {
           background: var(--surface-color);
           color: var(--on-surface-color);
-          border-radius: 12px;
-          padding: 12px 14px;
-          box-shadow: 0 0 0 1px var(--divider-color, color-mix(in srgb, var(--on-surface-color) 12%, transparent));
+          border-radius: .5rem;
+          box-shadow: 0 0 0 1px var(--divider-color);
+          border: 0; /* optional */
+          padding: 1rem 1.25rem;
           margin-top: 12px;
         }
         .row { display:flex; gap:10px; align-items:center; margin: 8px 0; }
@@ -117,7 +119,6 @@ class UsersInlineEditor extends HTMLElement {
           <label>Avatar</label>
           <img id="avatar" src="https://www.w3schools.com/howto/img_avatar.png" alt="Avatar" title="Click to change"/>
           <avatar-changer id="avatar-changer" class="hidden" style="position:absolute; top:56px; left:140px; z-index:2;"></avatar-changer>
-          <button id="avatar-url-btn" class="inline-btn">Set URL…</button>
         </div>
 
         <!-- Basics -->
@@ -176,7 +177,6 @@ class UsersInlineEditor extends HTMLElement {
     this.avatarImg = this.shadow.getElementById('avatar') as HTMLImageElement
     this.avatarPicker = this.shadow.getElementById('avatar-changer') as HTMLElement
 
-    const avatarUrlBtn = this.shadow.getElementById('avatar-url-btn') as HTMLButtonElement
 
     this.usernameInput = this.shadow.getElementById('username') as HTMLInputElement
     this.firstNameInput = this.shadow.getElementById('firstName') as HTMLInputElement
@@ -204,13 +204,6 @@ class UsersInlineEditor extends HTMLElement {
       if (!this.avatarPicker) return
       this.avatarPicker.classList.toggle('hidden')
     })
-
-    // Avatar URL shortcut
-    avatarUrlBtn.onclick = () => {
-      const url = prompt('Avatar image URL', this.avatarImg?.src || '')
-      if (!url || !this.avatarImg) return
-      this.avatarImg.src = url
-    }
 
     // Listen to avatar-changer events (base64 the selected image)
     this.avatarPicker?.addEventListener('image-changed', async (e: any) => {
@@ -465,9 +458,10 @@ export class UsersManager extends HTMLElement {
         .card {
           background: var(--surface-color);
           color: var(--on-surface-color);
-          border-radius: 12px;
-          padding: 12px 14px;
-          box-shadow: 0 0 0 1px var(--divider-color, color-mix(in srgb, var(--on-surface-color) 12%, transparent));
+          padding: 1rem 1.25rem;
+          border-radius: .5rem;
+          border: 1px solid var(--divider-color, color-mix(in srgb, var(--on-surface-color) 12%, transparent));
+          
         }
         .table-wrap { margin-top: 10px; }
       </style>
