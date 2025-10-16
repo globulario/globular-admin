@@ -9,12 +9,24 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.1.0",
     "@polymer/app-layout": "^3.1.0",
     "@polymer/iron-collapse": "^3.0.1",
     "@polymer/iron-icons": "^3.0.1",
+    "@polymer/marked-element": "^3.0.1",
     "@polymer/paper-icon-button": "^3.0.2",
     "@polymer/paper-ripple": "^3.0.2",
-    "globular-web-client": "^1.2.0"
+    "@types/toastify-js": "^1.12.4",
+    "globular-web-client": "^1.2.0",
+    "highlight.js": "^11.11.1",
+    "hljs": "^6.2.3",
+    "i": "^0.3.7",
+    "jmespath": "^0.16.0",
+    "jmespath-edit": "^0.3.2",
+    "lodash": "^4.17.21",
+    "markdown-it": "14.0.0",
+    "toastify-js": "^1.12.0",
+    "uuid-by-string": "^4.0.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

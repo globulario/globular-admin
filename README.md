@@ -10,3 +10,8 @@ pnpm dev
 pnpm build
 pnpm preview
 ```
+to run the development server use command
+## Command
+```bash
+pnpm --filter @globular/admin-web dev
+```

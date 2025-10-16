@@ -1,83 +1,71 @@
-/*
-ORIGINAL FILE CONTENT FOR REFERENCE:
+// backend/rbac/organizations.ts
+// Refactor: use resource.ResourceService::GetOrganizations (server-streaming)
 
-import { GetOrganizationsRqst, Organization } from 'globular-web-client/resource/resource_pb';
-import { Globular } from "globular-web-client";
-import { Backend, generatePeerToken } from './backend';
+import { stream } from "../core/rpc"
 
-export class OrganizationController {
-    private static __organizations__: {};
+// ---- Generated stubs (pick the variant that matches your node_modules) ----
+// Variant A (common):
+import { ResourceServiceClient } from "globular-web-client/resource/resource_grpc_web_pb"
+import * as resource from "globular-web-client/resource/resource_pb"
+// Variant B (if your package exposes ./resource/*):
+// import { ResourceServiceClient } from "globular-web-client/resource/resource_grpc_web_pb"
+// import * as resource from "globular-web-client/resource/resource_pb"
+// ---------------------------------------------------------------------------
 
-    static getAllOrganizations(callback: (organizations: Organization[]) => void, errorCallback: (err: any) => void, globule: Globular = Backend.globular) {
+const SERVICE = "resource.ResourceService"
+const factory = (addr: string) =>
+  new ResourceServiceClient(addr, null, { withCredentials: true })
 
-        let rqst = new GetOrganizationsRqst
-        rqst.setQuery("{}")
-        let organizations = new Array<Organization>();
+/**
+ * Stream organizations with an optional JSON query.
+ * Example queries:
+ *  - `"{}"` (all)
+ *  - `{"id":"org-123"}`
+ *  - `{"name": {"$regex": "acme"}}`
+ */
+export async function streamOrganizations(
+  query?: string,
+  onChunk?: (msg: resource.GetOrganizationsRsp) => void,
+  opts?: { base?: string }
+): Promise<void> {
+  const rq = new resource.GetOrganizationsRqst()
+  if (query) (rq as any).setQuery?.(query)
 
-        generatePeerToken(globule, token => {
-
-            if (globule.resourceService == null) {
-                errorCallback({ message: "Resource service not found" });
-                return;
-            }
-
-            let stream = globule.resourceService.getOrganizations(rqst, { domain: globule.domain, address: globule.address, token: token });
-
-            // Get the stream and set event on it...
-            stream.on("data", (rsp) => {
-                organizations = organizations.concat(rsp.getOrganizationsList());
-            });
-
-            stream.on("status", (status) => {
-                if (status.code == 0) {
-                    callback(organizations);
-                } else {
-                    errorCallback({ message: status.details });
-                }
-            });
-        }, errorCallback)
-
-
-    }
-
-    static getOrganizationById(id: string, callback: (organization: Organization)=>void, errorCallback: (err: any) => void, globule: Globular = Backend.globular) {
-        let rqst = new GetOrganizationsRqst
-        rqst.setQuery(`{ id="${id}" }`)
-        let organizations = new Array<Organization>();
-
-        generatePeerToken(globule, token => {
-
-            if (globule.resourceService == null) {
-                errorCallback({ message: "Resource service not found" });
-                return;
-            }
-
-            let stream = globule.resourceService.getOrganizations(rqst, { domain: globule.domain, address: globule.address, token: token });
-
-            // Get the stream and set event on it...
-            stream.on("data", (rsp) => {
-                organizations = organizations.concat(rsp.getOrganizationsList());
-            });
-
-            stream.on("status", (status) => {
-                if (status.code == 0) {
-                    if (organizations.length > 0) {
-                        callback(organizations[0]);
-                    }else{
-                        errorCallback({ message: "Organization not found" });
-                    }
-                } else {
-                    errorCallback({ message: status.details });
-                }
-            });
-        }, errorCallback)
-    }
-
+  await stream<resource.GetOrganizationsRqst, resource.GetOrganizationsRsp>(
+    factory,
+    "getOrganizations",
+    rq,
+    (msg) => onChunk?.(msg),
+    SERVICE,
+    { base: opts?.base }
+  )
 }
-*/
 
-import { unary } from "../core/rpc"
-const SERVICE = "rbac.RbacService"
-const factory = (addr: string) => new (window as any).RbacServiceClient?.(addr, null, { withCredentials: true })
+/** Collect the whole stream into a flat array of Organization messages. */
+export async function getAllOrganizations(
+  query = "{}",
+  opts?: { base?: string }
+): Promise<resource.Organization[]> {
+  const out: resource.Organization[] = []
+  await streamOrganizations(query, (msg) => {
+    const list: resource.Organization[] =
+      (msg as any).getOrganizationslist?.() ||
+      (msg as any).getOrganizationsList?.() ||
+      []
+    for (const org of list) out.push(org)
+  }, opts)
+  return out
+}
 
-// export async function listOrganizations() { ... }
+/**
+ * Get a single organization by id.
+ * Returns `undefined` if not found.
+ */
+export async function getOrganizationById(
+  id: string,
+  opts?: { base?: string }
+): Promise<resource.Organization | undefined> {
+  if (!id) return undefined
+  const results = await getAllOrganizations(`{"id":"${id}"}`, opts)
+  return results[0]
+}

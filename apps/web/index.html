@@ -9,7 +9,9 @@
 
 <body>
   <globular-app-layout application-name="Globular Admin">
-    <globular-sidebar slot="app-side-menu" header-title="Globular" header-subtitle="Admin Console">
+  
+    <globular-sidebar slot="app-side-menu" header-title="Globular" header-subtitle="© 2025 Globular Project">
+    
       <globular-sidebar-menu>
         <globular-sidebar-menu-item text="Dashboard" route="#/dashboard"></globular-sidebar-menu-item>
 
@@ -40,11 +42,14 @@
     </globular-sidebar>
 
     <div slot="app-logo" style="display:flex;align-items:center;padding-left:8px;">
-      <img src="/img/logo.svg" height="32" alt="logo" />
+        
     </div>
     <div slot="app-title">
       <h3 style="margin:0;padding-left:8px;">Globular Admin</h3>
     </div>
+
+    <user-toolbar slot="contextual-action-bar"></user-toolbar>
+    <theme-toggle slot="contextual-action-bar"></theme-toggle>
 
     <div slot="app-content" id="app"></div>
   </globular-app-layout>

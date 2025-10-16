@@ -1,0 +1,21 @@
+/* src/styles/theme.css */
+:root {
+  /* light defaults */
+  --background-color: #f6f7f9;
+  --surface-color: #ffffff;
+  --on-surface-color: #1d2025;
+  --primary-color: #3b82f6;
+  --on-primary-color: #ffffff;
+  --error-color: #ef4444;
+  --success-color: #10b981;
+}
+
+:root[data-theme="dark"] {
+  --background-color: #0f1216;
+  --surface-color: #171b21;
+  --on-surface-color: #e5e7eb;
+  --primary-color: #60a5fa;
+  --on-primary-color: #0b0f14;
+  --error-color: #f87171;
+  --success-color: #34d399;
+}

@@ -9,6 +9,53 @@ import '@polymer/app-layout/app-toolbar/app-toolbar.js';
 import '@polymer/iron-collapse/iron-collapse.js';
 import '@polymer/paper-ripple/paper-ripple.js';
 
+
+class ResponsiveToolbar {
+  constructor(toolbar, overflowMenu, overflowDropdown) {
+    this.toolbarContainer = toolbar;
+    this.toolbarSlot = toolbar.querySelector('slot[name="contextual-action-bar"]');
+    this.overflowMenu = overflowMenu
+    this.overflowMenuSlot = overflowMenu.querySelector('slot[name="overflow-menu"]');
+    this.overflowDropdown = overflowDropdown;
+
+    this.checkOverflow = this.checkOverflow.bind(this);
+    window.addEventListener('resize', this.checkOverflow);
+
+    this.checkOverflow(); // Run on load
+  }
+
+  checkOverflow() {
+    let movedItems = [];
+
+    // Get all actions inside both contextual-action-bar and overflow-menu
+    const actions = [...this.toolbarSlot.assignedElements(), ...this.overflowMenuSlot.assignedElements()];
+
+    actions.forEach(action => {
+      action.slot = "contextual-action-bar"; // Try to place all actions in the main toolbar first
+    });
+
+    let toolbarWidth = this.toolbarContainer.offsetWidth;
+    let totalWidth = 0;
+
+    actions.forEach(action => {
+      totalWidth += action.offsetWidth;
+
+      if (totalWidth > toolbarWidth) {
+        action.slot = "overflow-menu"; // Move to overflow menu
+        movedItems.push(action);
+      }
+    });
+
+    // Show or hide the overflow menu based on moved items
+    if (movedItems.length === 0) {
+      this.overflowMenu.setAttribute('hidden', '');
+    } else {
+      this.overflowMenu.removeAttribute('hidden');
+    }
+  }
+
+}
+
 // Create a class for the element
 export class AppLayout extends HTMLElement {
   // attributes.
@@ -59,6 +106,26 @@ export class AppLayout extends HTMLElement {
         <style>
           @import url('./styles.css');
 
+          app-drawer-layout {
+            --app-drawer-width: 256px;
+            height: 100vh;
+            --app-drawer-content-container: {
+              background-color: var(--surface-color);
+              color: var(--on-surface-color);
+            };
+          }
+
+          ::slotted([slot="app-content"]) {
+            display: block;
+            box-sizing: border-box;
+            padding: 16px;
+            height: calc(100vh - 64px);
+            overflow-y: auto;
+            background-color: var(--background-color);
+            color: var(--on-surface-color);
+          }
+
+
           app-drawer-layout[narrow] app-header {
             width: 100%; /* Full width when in narrow mode */
             margin-left: 0; /* No offset in narrow mode */
@@ -70,10 +137,10 @@ export class AppLayout extends HTMLElement {
           }
         
           app-header {
-            width: calc(100% - var(--app-drawer-width, 256px)); /* Adjust header width */
-            margin-left: var(--app-drawer-width, 256px); /* Offset to align with drawer */
+            width: calc(100% - var(--app-drawer-width, 256px));
+            margin-left: var(--app-drawer-width, 256px);
             background-color: var(--primary-color);
-            color: var(--text-primary-color);
+            color: var(--on-primary-color);      /* ← was var(--text-primary-color) */
             display: flex;
             flex-direction: column;
             flex-wrap: nowrap;
@@ -90,7 +157,8 @@ export class AppLayout extends HTMLElement {
           }
 
           app-header-layout {
-            background-color: var(--background-color); 
+              background-color: var(--background-color);
+              color: var(--on-surface-color);
           }
 
           paper-icon-button[drawer-toggle] {
@@ -122,6 +190,9 @@ export class AppLayout extends HTMLElement {
           display: flex;
           align-items: center;
           cursor: pointer;
+          display: none;
+          background: var(--surface-color);
+          color: var(--on-surface-color);
         }
 
         #overflow-dropdown {
@@ -140,14 +211,16 @@ export class AppLayout extends HTMLElement {
           display: none;
         }
 
-          ::slotted([slot="contextual-action-bar"]) {
-            white-space: nowrap;
-            padding: 0 .5rem;
-            font-size: 1rem;
-            font-weight: 500;
-            align-self: center;
-            display: flex;
-          }
+        /* Items added into the contextual action bar */
+        ::slotted([slot="contextual-action-bar"]) {
+          white-space: nowrap;
+          padding: 0 .5rem;
+          font-size: 1rem;
+          font-weight: 500;
+          align-self: center;
+          display: flex;
+          color: var(--on-primary-color); /* sits on primary header */
+        }
 
       </style>
       
@@ -188,15 +261,16 @@ export class AppLayout extends HTMLElement {
     `
 
     // Create a new instance of the ResponsiveToolbar class
-    let toolbar = new ResponsiveToolbar(this.shadowRoot.querySelector('#contextual-action-bar'),
-      this.shadowRoot.querySelector('#overflow-menu'),
-      this.shadowRoot.querySelector('#overflow-dropdown'));
-
-    const menuButton = this.shadowRoot.querySelector('#overflow-menu');
+    const cab = this.shadowRoot.querySelector('#contextual-action-bar');
+    const overflowMenu = this.shadowRoot.querySelector('#overflow-menu');
     const dropdown = this.shadowRoot.querySelector('#overflow-dropdown');
 
+    if (cab && overflowMenu && dropdown) {
+      this._toolbar = new ResponsiveToolbar(cab, overflowMenu, dropdown);
+    }
+
     // Close the dropdown when clicking outside of it
-    menuButton.addEventListener('click', (event) => {
+    overflowMenu.addEventListener('click', (event) => {
       event.stopPropagation();
       if (dropdown.hasAttribute('hidden')) {
         dropdown.removeAttribute('hidden');
@@ -213,52 +287,6 @@ export class AppLayout extends HTMLElement {
 
 customElements.define('globular-app-layout', AppLayout);
 
-
-class ResponsiveToolbar {
-  constructor(toolbar, overflowMenu, overflowDropdown) {
-    this.toolbarContainer = toolbar;
-    this.toolbarSlot = toolbar.querySelector('slot[name="contextual-action-bar"]');
-    this.overflowMenu = overflowMenu
-    this.overflowMenuSlot = overflowMenu.querySelector('slot[name="overflow-menu"]');
-    this.overflowDropdown = overflowDropdown;
-
-    this.checkOverflow = this.checkOverflow.bind(this);
-    window.addEventListener('resize', this.checkOverflow);
-
-    this.checkOverflow(); // Run on load
-  }
-
-  checkOverflow() {
-    let movedItems = [];
-
-    // Get all actions inside both contextual-action-bar and overflow-menu
-    const actions = [...this.toolbarSlot.assignedElements(), ...this.overflowMenuSlot.assignedElements()];
-
-    actions.forEach(action => {
-      action.slot = "contextual-action-bar"; // Try to place all actions in the main toolbar first
-    });
-
-    let toolbarWidth = this.toolbarContainer.offsetWidth;
-    let totalWidth = 0;
-
-    actions.forEach(action => {
-      totalWidth += action.offsetWidth;
-
-      if (totalWidth > toolbarWidth) {
-        action.slot = "overflow-menu"; // Move to overflow menu
-        movedItems.push(action);
-      }
-    });
-
-    // Show or hide the overflow menu based on moved items
-    if (movedItems.length === 0) {
-      this.overflowMenu.setAttribute('hidden', '');
-    } else {
-      this.overflowMenu.removeAttribute('hidden');
-    }
-  }
-
-}
 
 
 /**
@@ -283,10 +311,11 @@ export class SideBar extends HTMLElement {
         @import url('./styles.css');
 
         #container{
-            background-color: var(--surface-color);
-            color: var(on-surface-color);
-            height: 100vh;
+          background-color: var(--surface-color);
+          color: var(--on-surface-color);   /* ← fixed typo */
+          height: 100vh;
         }
+
 
         #sidebar_main {
           width: 100%;
@@ -343,6 +372,11 @@ export class SideBar extends HTMLElement {
           font-size: 12px;
           font-weight: 400;
           font-family: "Segoe UI",Arial,sans-serif;
+        }
+
+
+        span#title, span#subtitle {
+          color: var(--on-surface-color);
         }
 
       </style>
@@ -471,7 +505,6 @@ export class SideBarMenuItem extends HTMLElement {
               background-color: var(--surface-color);
               color: var(on-surface-color);
               font: 500 14px/25px Roboto,sans-serif;
-              color: #212121;
               display: flex;
               flex-direction: column;
               padding-left: 8px;
@@ -486,6 +519,7 @@ export class SideBarMenuItem extends HTMLElement {
             cursor: pointer;
             -webkit-filter: invert(2%);
             filter: invert(2%);
+            background-color: color-mix(in srgb, var(--on-surface-color) 4%, transparent);
           }
 
           #icon {
@@ -493,6 +527,7 @@ export class SideBarMenuItem extends HTMLElement {
             vertical-align: top;
             margin-right: 25px;
             margin-left: 10px;
+            color: var(--on-surface-color);
           }
 
           #text {
@@ -638,7 +673,6 @@ export class SideBarMenuItem extends HTMLElement {
 
   // Call search event.
   setSubitem() {
-    console.log("setSubitem", this)
     this.shadowRoot.querySelector("#text").style.fontSize = ".9rem"
     this.shadowRoot.querySelector("#text").style.fontWeight = "400"
     this.shadowRoot.querySelector("#text").style.fontFamily = "Roboto, sans-serif"
@@ -663,7 +697,7 @@ export class SideBarMenu extends HTMLElement {
       <style>
         #container {
           background-color: var(--surface-color);
-          color: var(--primary-text-color);
+          color: var(--on-surface-color); 
           display: flex;
           flex-direction: column;
         }
