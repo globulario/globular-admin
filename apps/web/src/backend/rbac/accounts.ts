@@ -290,3 +290,14 @@ export async function deleteAccount(id: string): Promise<void> {
   const method = pickMethod(clientFactory(), SERVICE_METHODS.delete.method)
   await unary(clientFactory, method, rq, undefined, md)
 }
+
+// Retrieve a single account by ID using GetAccountRqst
+export async function getAccount(id: string): Promise<AccountVM | null> {
+  const md = await meta()
+  const rq = new resource.GetAccountRqst()
+  rq.setAccountid?.(id)
+
+  const rsp = await unary(clientFactory, 'getAccount', rq, undefined, md)
+  const account = rsp && typeof (rsp as any).getAccount === 'function' ? (rsp as any).getAccount() : null
+  return account ? toAccountVM(account) : null
+}

@@ -49,13 +49,14 @@ export function isExpiringSoon(padMs = 60_000): boolean {
 // Ensure a fresh token (rpc.unary will call this before each call)
 export async function ensureFreshToken(minTtlMs = 60_000): Promise<void> {
   const t = _token || sessionStorage.getItem(TOKEN_KEY);
-  if (!t) return; // not logged in; nothing to do
+  if (!t) return;
   const exp = tokenExpMs();
   if (!exp) return;
   if (Date.now() >= exp - minTtlMs) {
-    await refresh(); // throws on failure
+    //await refresh(); // now coalesced
   }
 }
+
 
 function scheduleRefresh(token: string) {
   safeClearTimer();
@@ -130,25 +131,41 @@ export async function login(username: string, password: string): Promise<string>
   return token;
 }
 
-export async function refresh(): Promise<string> {
-  const rsp = await unary<authpb.RefreshTokenRqst, authpb.RefreshTokenRsp>(
-    factory,
-    "refreshToken",
-    (() => {
-      const rq = new authpb.RefreshTokenRqst();
-      const token = _token || sessionStorage.getItem(TOKEN_KEY);
-      if (!token) throw new Error("No refresh token available");
-      rq.setToken(token);
-      return rq;
-    })(),
-    SERVICE
-  );
+// core/auth.ts (add near the top)
+let _refreshInFlight: Promise<string> | undefined;
 
-  const token = rsp.getToken();
-  _token = token;
-  sessionStorage.setItem(TOKEN_KEY, token);
-  scheduleRefresh(token);
-  return token;
+// Replace your refresh() with a coalesced version:
+export async function refresh(): Promise<string> {
+  // if a refresh is already running, just await it
+  if (_refreshInFlight) return _refreshInFlight;
+
+  _refreshInFlight = (async () => {
+    const rq = new authpb.RefreshTokenRqst();
+    const token = _token || sessionStorage.getItem(TOKEN_KEY);
+    if (!token) { _refreshInFlight = undefined; throw new Error("No refresh token available"); }
+    (rq as any).setToken?.(token);
+
+    const rsp = await unary<
+      authpb.RefreshTokenRqst,
+      authpb.RefreshTokenRsp
+    >(factory, "refreshToken", rq, SERVICE);
+
+    const next = rsp.getToken();
+    if (!next) { _refreshInFlight = undefined; throw new Error("Refresh returned no token"); }
+
+    _token = next;
+    sessionStorage.setItem(TOKEN_KEY, next);
+    scheduleRefresh(next);
+    _refreshInFlight = undefined;
+    return next;
+  })();
+
+  try {
+    return await _refreshInFlight;
+  } catch (e) {
+    _refreshInFlight = undefined; // allow a later retry
+    throw e;
+  }
 }
 
 // Explicit “force” refresh (same RPC; just a clearer intent for callers)

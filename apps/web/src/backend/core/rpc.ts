@@ -10,10 +10,10 @@ export interface StreamOpts { base?: string }
 function looksExpired(err: any): boolean {
   const m = (err?.message || err?.toString?.() || "").toLowerCase();
   return m.includes("token is expired")
-      || m.includes("expired token")
-      || m.includes("unauthenticated")
-      || m.includes("jwt expired")
-      || m.includes("no token found in context metadata");
+    || m.includes("expired token")
+    || m.includes("unauthenticated")
+    || m.includes("jwt expired")
+    || m.includes("no token found in context metadata");
 }
 
 /**
@@ -49,7 +49,7 @@ export async function unary<RQ, RS>(
         // Some generators: (req, md, opts, cb)
         // Others:          (req, md, cb)
         if (fn.length >= 4) {
-          fn.call(client, request, headers, { withCredentials: false }, callback);
+          fn.call(client, request, headers, undefined, callback);
         } else {
           fn.call(client, request, headers, callback);
         }
