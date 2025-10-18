@@ -16,6 +16,7 @@ export type GroupVM = {
   description?: string
   members?: string[]       // account IDs
   domain?: string
+  icon?: string
 }
 
 // Input shapes (align to proto fields you set)
@@ -25,6 +26,7 @@ export type CreateGroupInput = {
   description?: string
   members?: string[]
   domain?: string
+  icon?: string
 }
 
 export type UpdateGroupInput = Partial<CreateGroupInput> & {
@@ -45,12 +47,10 @@ const SERVICE_METHODS = {
   create: {
     method: ["createGroup"],
     rq: ["CreateGroupRqst"],
-    // CreateGroupRsp usually carries a Result/void; we’ll echo what we sent
   },
   update: {
     method: ["updateGroup"],
     rq: ["UpdateGroupRqst"],
-    // UpdateGroupRqst varies by API; see impl below
   },
   delete: {
     method: ["deleteGroup"],
@@ -63,7 +63,7 @@ const SERVICE_METHODS = {
   removeMember: {
     method: ["removeGroupMemberAccount"],
     rq: ["RemoveGroupMemberAccountRqst"],
-  },
+  }
 } as const
 
 // ---------------------------- Helpers ---------------------------
@@ -123,10 +123,12 @@ function toGroupVM(g: any): GroupVM {
     id: getStr(g, ["getId", "id"], ""),
     name: getStr(g, ["getName", "name"], ""),
     description: getStr(g, ["getDescription", "description"], "") || undefined,
-    members: getArr(g, ["getMembersList", "members", "getMembers"]) || [],
+    members: getArr(g, ["getAccountsList", "accounts", "getAccounts"]) || [],
     domain: getStr(g, ["getDomain", "domain"], "") || undefined,
+    icon: getStr(g, ["getIcon", "icon"], "") || undefined,
   }
 }
+
 
 /** Ensure request has a `Group` submessage and return it, if your proto uses one. */
 function ensureRqGroup(rq: any): any {
@@ -182,14 +184,25 @@ export async function listGroups(query: object = {}): Promise<GroupVM[]> {
   }
 
   await stream(
-    clientFactory,            // ← use zero-arg factory (same as accounts.ts)
+    clientFactory,            // ← zero-arg factory (same as accounts.ts)
     "getGroups",
     rq,
     (m: any) => takeFromMsg(m),
-    SERVICE                   // "resource.ResourceService" (ignored by factory)
+    SERVICE
   )
 
   return out
+}
+
+/** Convenience: accept a JSON string like the older wrapper */
+export async function getGroups(query: string = "{}"): Promise<GroupVM[]> {
+  try {
+    const obj = JSON.parse(query || "{}")
+    return await listGroups(obj)
+  } catch {
+    // if invalid JSON, fallback to empty filter
+    return await listGroups({})
+  }
 }
 
 /** Get a single group by id */
@@ -238,6 +251,7 @@ export async function updateGroup(id: string, patch: UpdateGroupInput): Promise<
     if (patch.name !== undefined) $set["name"] = patch.name
     if (patch.description !== undefined) $set["description"] = patch.description
     if (patch.domain !== undefined) $set["domain"] = patch.domain
+    if (patch.icon !== undefined) $set["icon"] = patch.icon
     if (patch.members !== undefined) $set["members"] = patch.members
     ;(rq as any).setValues(JSON.stringify({ $set }))
   } else {
@@ -246,6 +260,7 @@ export async function updateGroup(id: string, patch: UpdateGroupInput): Promise<
     grp.setId?.(id)
     if (patch.name !== undefined) grp.setName?.(patch.name)
     if (patch.description !== undefined) grp.setDescription?.(patch.description)
+    if (patch.icon !== undefined) grp.setIcon?.(patch.icon)
     if (patch.domain !== undefined) grp.setDomain?.(patch.domain)
     if (patch.members && typeof grp.setMembersList === "function") {
       grp.setMembersList(patch.members)
@@ -298,3 +313,4 @@ export async function removeGroupMember(groupId: string, accountId: string): Pro
   const method = pickMethod(clientFactory(), SERVICE_METHODS.removeMember.method)
   await unary(clientFactory, method, rq, undefined, md)
 }
+

@@ -131,7 +131,7 @@ const getArr = (obj: any, names: string[]): string[] => {
 }
 
 /** Map proto Account → AccountVM */
-function toAccountVM(a: any): AccountVM {
+export function toAccountVM(a: any): AccountVM {
   if (!a) {
     return {
       id: '',
