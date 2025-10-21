@@ -348,6 +348,30 @@ export class Table extends HTMLElement {
         #fake-scroll{ overflow-y:auto; flex-grow:1; height:100%; }
         #fake-scroll-div{ width:1px; padding-top:1px; }
 
+
+        /* Firefox */
+        #fake-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+        }
+
+        /* Chromium/WebKit */
+        #fake-scroll::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        #fake-scroll::-webkit-scrollbar-track {
+          background: var(--scroll-track);
+        }
+        #fake-scroll::-webkit-scrollbar-thumb {
+          background-color: var(--scroll-thumb);
+          border-radius: 6px;
+          border: 2px solid var(--scroll-track);
+        }
+        #fake-scroll::-webkit-scrollbar-thumb:hover {
+          background-color: var(--scroll-thumb-hover);
+        }
+
         table {
           width:${this.width};
           table-layout: fixed;

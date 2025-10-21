@@ -14,6 +14,7 @@ export type OrganizationVM = {
   description?: string;
   icon?: string;
   accounts: string[];
+  roles?: string[];
   groups: string[];
   domain?: string;
 };
@@ -27,6 +28,7 @@ type CreateOrgInput = {
   description?: string;
   icon?: string;
   domain?: string;
+  roles?: string[];
 };
 
 type UpdateOrgInput = Partial<CreateOrgInput>;

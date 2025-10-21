@@ -16,6 +16,7 @@ export type GroupVM = {
   description?: string
   members?: string[]       // account IDs
   domain?: string
+  roles?: string[]
   icon?: string
 }
 
@@ -27,6 +28,7 @@ export type CreateGroupInput = {
   members?: string[]
   domain?: string
   icon?: string
+  roles?: string[]
 }
 
 export type UpdateGroupInput = Partial<CreateGroupInput> & {

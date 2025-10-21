@@ -125,6 +125,28 @@ export class AppLayout extends HTMLElement {
             color: var(--on-surface-color);
           }
 
+          /* Firefox */
+          ::slotted([slot="app-content"])  {
+            scrollbar-width: thin;
+            scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+          }
+
+          /* Chromium/WebKit */
+          ::slotted([slot="app-content"])::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+          ::slotted([slot="app-content"])::-webkit-scrollbar-track {
+            background: var(--scroll-track);
+          }
+          ::slotted([slot="app-content"])::-webkit-scrollbar-thumb {
+            background-color: var(--scroll-thumb);
+            border-radius: 6px;
+            border: 2px solid var(--scroll-track);
+          }
+          ::slotted([slot="app-content"])::-webkit-scrollbar-thumb:hover {
+            background-color: var(--scroll-thumb-hover);
+          }
 
           app-drawer-layout[narrow] app-header {
             width: 100%; /* Full width when in narrow mode */
