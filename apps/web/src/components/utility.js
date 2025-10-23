@@ -15,6 +15,50 @@ export function fireResize() {
 }
 
 /**
+ * Copies text to the clipboard.
+ * @param text The text to copy.
+ */
+export function copyToClipboard(text) {
+    const dummy = document.createElement("textarea");
+    document.body.appendChild(dummy);
+    dummy.value = text;
+    dummy.select();
+    document.execCommand("copy");
+    document.body.removeChild(dummy);
+}
+
+export function mergeTypedArrays(a, b) {
+    // Checks for truthy values on both arrays
+    if (!a && !b) throw "Please specify valid arguments for parameters a and b.";
+
+    // Checks for truthy values or empty arrays on each argument
+    // to avoid the unnecessary construction of a new array and
+    // the type comparison
+    if (!b || b.length === 0) return a;
+    if (!a || a.length === 0) return b;
+
+    // Make sure that both typed arrays are of the same type
+    if (Object.prototype.toString.call(a) !== Object.prototype.toString.call(b))
+        throw "The types of the two arguments passed for parameters a and b do not match.";
+
+    var c = new a.constructor(a.length + b.length);
+    c.set(a);
+    c.set(b, a.length);
+
+    return c;
+}
+
+export function uint8arrayToStringMethod(uint8arr, callback) {
+    var bb = new Blob([uint8arr]);
+    var f = new FileReader();
+    f.onload = function (e) {
+        callback(e.target.result);
+    };
+
+    f.readAsText(bb);
+}
+
+/**
  * Format file size from bytes to Gb, Mb or Kb...
  * @param {*} f_size 
  * @returns 
