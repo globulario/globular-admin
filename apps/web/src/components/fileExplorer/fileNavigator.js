@@ -1,24 +1,31 @@
-// components/fileNavigator.js
+// components/fileNavigator.js — rebuilt using the working logic from File.js
+// and wired to your newer wrappers
 
 import getUuidByString from "uuid-by-string";
-import { Backend } from "../../backend/backend.js";
-import { displayError, displayMessage } from "../../backend/ui/notify.js";
+import { Backend } from "../../backend/backend";
+import { displayError, displayMessage } from "../../backend/ui/notify";
 
-// ✅ new wrappers (JS files)
+// FS wrappers
 import {
-  readDir,            // (path, { refresh }?) => Promise<FileInfo>
-  getFile,            // (path, thumbW?, thumbH?) => Promise<FileInfo>
-  validateDirAccess,  // (dir) => boolean
-  markAsPublic,       // (fileInfo) => void
-  markAsShare,        // (fileInfo) => void
+  readDir,            // (path, { refresh }?) => Promise<DirVM>
+  getFile,            // (path, thumbW?, thumbH?) => Promise<FileVM>
+  markAsPublic,       // (vm) => void
+  markAsShare,        // (vm) => void
   listPublicDirs,     // () => Promise<string[]>
-} from "../../backend/files.js";
+} from "../../backend/cms/files";
 
-import { getAccount, currentAccount } from "../../backend/rbac/accounts.js";
-import { getSharedResources, SubjectType } from "../../backend/rbac/permissions.js";
+// RBAC wrappers
+import { getAccount, getCurrentAccount } from "../../backend/rbac/accounts";
+import { getSharedResources, SubjectType } from "../../backend/rbac/permissions";
 
-// Protobuf type (runtime class is fine in JS)
-import { FileInfo } from "globular-web-client/file/file_pb";
+// VM helpers
+import {
+  pathOf,
+  nameOf,
+  mimeOf,
+  isDir,
+  filesOf as getFiles,
+} from "./filevm-helpers";
 
 // UI deps
 import "@polymer/paper-spinner/paper-spinner.js";
@@ -27,13 +34,42 @@ import "@polymer/paper-button/paper-button.js";
 import "@polymer/iron-icon/iron-icon.js";
 import "@polymer/paper-ripple/paper-ripple.js";
 
+/* ----------------------------- utils ----------------------------- */
+
+const ensureArray = (a) => (Array.isArray(a) ? a : []);
+const setFiles = (vm, children) => (vm.files = ensureArray(children));
+
+function subscribeOnce(map, key, topic, cb) {
+  if (map.has(key)) return;
+  Backend.eventHub.subscribe(
+    topic,
+    (uuid) => map.set(key, uuid),
+    cb,
+    false,
+    this
+  );
+}
+
+function makeRoot(name, path) {
+  return { name, path, isDir: true, mime: "inode/directory", files: [] };
+}
+
+// Synthetic 'Public' root checker
+const isSyntheticPublic = (vm) => pathOf(vm) === "/public";
+
+/* ----------------------------- component ----------------------------- */
+
 export class FileNavigator extends HTMLElement {
   _path = undefined;
   _fileExplorer = undefined;
   _listeners = new Map();
-  _dirsCache = new Map();
+  _dirsCache = new Map();            // path -> { id, level, parentId }
+  _expanded = new Set();             // expanded paths
+  _selectedPath = null;              // currently selected path
 
   _domRefs = {};
+  _shared = {}; // grouped by "/shared/<userId@domain>"
+  _sharedRootVM = null;
 
   constructor() {
     super();
@@ -41,7 +77,7 @@ export class FileNavigator extends HTMLElement {
 
     this._initializeLayout();
     this._cacheDomElements();
-    this._setupPeerSelector(); // optional; hidden if Backend.getPeers() absent/empty
+    this._setupPeerSelector(); // hidden if no peers
   }
 
   disconnectedCallback() {
@@ -51,12 +87,13 @@ export class FileNavigator extends HTMLElement {
     this._listeners.clear();
   }
 
-  // Allow explorer to wire itself in
-  set fileExplorer(explorer) {
-    this._fileExplorer = explorer;
-  }
+  set fileExplorer(explorer) { this._fileExplorer = explorer; }
+  setFileExplorer(explorer) { this._fileExplorer = explorer; }
 
-  // ---------- DOM / Layout ----------
+  hide() { this.style.display = "none"; }
+  show() { this.style.display = ""; }
+
+  /* --------------------------- DOM / Layout --------------------------- */
 
   _initializeLayout() {
     this.shadowRoot.innerHTML = `
@@ -76,9 +113,10 @@ export class FileNavigator extends HTMLElement {
           margin-top: 10px; border-top: 1px solid var(--palette-divider);
         }
         .directory-item {
-          display:flex; align-items:center; padding:5px 0; margin-left:0; position:relative; cursor:pointer;
+          display:flex; align-items:center; padding:5px 0; position:relative; cursor:pointer;
         }
         .directory-item:hover { background-color: var(--paper-grey-100, #f5f5f5); }
+        .directory-item.selected { background-color: var(--primary-selected-bg, rgba(0,0,0,.06)); }
         .directory-item iron-icon { height:24px; width:24px; --iron-icon-fill-color: var(--palette-action-disabled); flex-shrink:0; }
         .folder-name-span { margin-left:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-grow:1; }
         .expand-toggle { margin-right:5px; cursor:pointer; }
@@ -110,7 +148,6 @@ export class FileNavigator extends HTMLElement {
   }
 
   _setupPeerSelector() {
-    // optional in new stack
     const peers = (Backend.getPeers && Backend.getPeers()) || [];
 
     this._domRefs.peerSelect.innerHTML = "";
@@ -118,7 +155,6 @@ export class FileNavigator extends HTMLElement {
       this._domRefs.peerSelect.style.display = "none";
       return;
     }
-
     peers.forEach((p, index) => {
       const opt = document.createElement("option");
       opt.value = String(index);
@@ -127,15 +163,26 @@ export class FileNavigator extends HTMLElement {
       this._domRefs.peerSelect.appendChild(opt);
     });
 
-    this._domRefs.peerSelect.addEventListener("change", (e) => {
+    this._domRefs.peerSelect.addEventListener("change", async (e) => {
       const idx = parseInt(e.target.value, 10);
       const selected = peers[idx];
-      if (selected && this._fileExplorer?.setPeer) {
-        this._fileExplorer.setPeer(selected);
-      }
-      // Clear UI + caches on peer switch
-      this._domRefs.userFilesDiv.innerHTML = "";
+      if (selected && this._fileExplorer?.setPeer) this._fileExplorer.setPeer(selected);
+
+      // Clear per-peer UI + caches
       this._dirsCache.clear();
+      this._expanded.clear();
+      this._selectedPath = null;
+
+      // Reset containers
+      this._domRefs.userFilesDiv.innerHTML = "";
+      this._domRefs.userFilesDiv.__vmRoots = [];
+
+      this._domRefs.sharedFilesDiv.innerHTML = "";
+      this._domRefs.sharedFilesDiv.__initialized = false;
+      this._domRefs.sharedFilesDiv.__populated = false;
+
+      this._domRefs.publicFilesDiv.innerHTML = "";
+      this._domRefs.publicFilesDiv.__initialized = false;
     });
 
     // default to first
@@ -143,54 +190,44 @@ export class FileNavigator extends HTMLElement {
     this._domRefs.peerSelect.dispatchEvent(new Event("change"));
   }
 
-  // ---------- Visibility ----------
+  /* ------------------------ Public entrypoint ------------------------ */
 
-  hide() { this.style.display = "none"; }
-  show() { this.style.display = ""; }
+  async setDir(dirVM, callback) {
+    this._path = pathOf(dirVM);
 
-  // ---------- Public entrypoint ----------
-
-  /**
-   * Build the tree for the given directory.
-   */
-  async setDir(dir, callback) {
-    if (!validateDirAccess(dir)) {
-      console.warn(`Access denied for directory: ${dir.getPath()}`);
-      callback && callback();
-      return;
+    // Seed "My Files" root once; don't flush sections on navigation.
+    if (!this._domRefs.userFilesDiv.__vmRoots) this._domRefs.userFilesDiv.__vmRoots = [];
+    if (!this._domRefs.userFilesDiv.__vmRoots.find(v => pathOf(v) === pathOf(dirVM))) {
+      this._domRefs.userFilesDiv.__vmRoots.push(dirVM);
+      this._initTreeView(dirVM, this._domRefs.userFilesDiv, 0);
     }
 
-    this._path = dir.getPath();
+    // Public once
+    if (!this._domRefs.publicFilesDiv.__initialized) {
+      await this._initPublic();
+      this._domRefs.publicFilesDiv.__initialized = true;
+    }
 
-    // Reset sections
-    this._domRefs.userFilesDiv.innerHTML = "";
-    this._domRefs.publicFilesDiv.innerHTML = "";
-    this._domRefs.sharedFilesDiv.innerHTML = "";
-    this._dirsCache.clear();
+    // Shared once
+    if (!this._domRefs.sharedFilesDiv.__initialized) {
+      await this._initShared();
+      this._domRefs.sharedFilesDiv.__initialized = true;
+    }
 
-    // User root
-    this._initTreeView(dir, this._domRefs.userFilesDiv, 0);
-
-    // Public + Shared
-    await this._initPublic();
-    await this._initShared();
-
+    await this.expandTo(this._path);
     callback && callback();
   }
 
-  /**
-   * Reload a specific subtree.
-   */
-  async reload(dir, callback) {
-    const key = dir.getPath();
+  async reload(dirVM, callback) {
+    const key = pathOf(dirVM);
     const cached = this._dirsCache.get(key);
     if (!cached) {
-      console.warn(`Attempted to reload non-cached directory: ${dir.getPath()}`);
+      console.warn(`Attempted to reload non-cached directory: ${key}`);
       callback && callback();
       return;
     }
 
-    // Remove existing DOM nodes for that dir
+    // Remove old DOM nodes
     const parentDiv = this.shadowRoot.querySelector(`#${cached.parentId}`);
     if (parentDiv) {
       const node = parentDiv.querySelector(`#${cached.id}`);
@@ -200,32 +237,38 @@ export class FileNavigator extends HTMLElement {
     }
     this._dirsCache.delete(key);
 
-    // Re-append
-    if (dir.getPath() !== "/public") {
-      this._initTreeView(dir, this._domRefs.userFilesDiv, cached.level);
-    } else {
+    // Re-append in the same section
+    if (key !== "/public" && !key.startsWith("/shared/")) {
+      this._initTreeView(dirVM, this._domRefs.userFilesDiv, cached.level);
+    } else if (key === "/public") {
+      this._domRefs.publicFilesDiv.__initialized = false;
       await this._initPublic();
+      this._domRefs.publicFilesDiv.__initialized = true;
+    } else {
+      this._domRefs.sharedFilesDiv.__initialized = false;
+      await this._initShared();
+      this._domRefs.sharedFilesDiv.__initialized = true;
     }
     callback && callback();
   }
 
-  // ---------- Tree rendering ----------
+  /* -------------------------- Tree rendering -------------------------- */
 
-  _initTreeView(dir, parentDiv, level) {
-    // Skip hidden / HLS
-    if (dir.getName().startsWith(".") || dir.getMime() === "video/hls-stream") return;
+  _initTreeView(dirVM, parentDiv, level) {
     if (!parentDiv) return;
+    if (nameOf(dirVM).startsWith(".") || mimeOf(dirVM) === "video/hls-stream") return;
 
-    const id = `nav-dir-${getUuidByString(dir.getPath()).replace(/-/g, "_")}`;
-    if (this._dirsCache.has(dir.getPath())) return;
+    const path = pathOf(dirVM);
+    const id = `nav-dir-${getUuidByString(path).replace(/-/g, "_")}`;
+    if (this._dirsCache.has(path)) return;
 
     if (!parentDiv.id) parentDiv.id = `nav-parent-${Math.random().toString(36).slice(2)}`;
-    this._dirsCache.set(dir.getPath(), { id, level, parentId: parentDiv.id });
+    this._dirsCache.set(path, { id, level, parentId: parentDiv.id });
 
     // Friendly name for user's root
-    let displayName = dir.getName();
-    const acc = currentAccount && currentAccount();
-    if (acc && dir.getPath().startsWith(`/users/${acc.id}@`)) {
+    let displayName = nameOf(dirVM);
+    const acc = getCurrentAccount();
+    if (acc && path.startsWith(`/users/${acc.id}@`)) {
       displayName = acc.displayName || acc.name || displayName;
     }
 
@@ -252,48 +295,69 @@ export class FileNavigator extends HTMLElement {
     const dirLnk = this.shadowRoot.getElementById(`${id}_directory_lnk`);
     const dirIco = this.shadowRoot.getElementById(`${id}_directory_icon`);
     const filesDiv = this.shadowRoot.getElementById(`${id}_files_div`);
+    const rowDiv = this.shadowRoot.getElementById(id);
+
+    // mark build status on the container so we don't wipe it accidentally
+    filesDiv.__built = false;
+
+    const buildChildrenIfNeeded = async () => {
+      if (filesDiv.__built) return;
+
+      // Load children if needed
+      if (!isSyntheticPublic(dirVM) && !getFiles(dirVM).length) {
+        try {
+          this._fileExplorer?.displayWaitMessage?.(`Loading ${nameOf(dirVM)}…`);
+          const updated = await readDir(path, { refresh: true });
+          setFiles(dirVM, getFiles(updated));
+        } catch (e) {
+          console.error(`Failed to load subdirectories for ${path}:`, e);
+        } finally {
+          this._fileExplorer?.resume?.();
+        }
+      }
+
+      // Build once
+      let hasSubdir = false;
+      getFiles(dirVM).forEach((f) => {
+        if (isDir(f)) {
+          this._initTreeView(f, filesDiv, level + 1);
+          hasSubdir = true;
+        }
+      });
+
+      // show/hide expand based on actual subdirs
+      if (expandBtn) expandBtn.style.visibility = hasSubdir ? "visible" : "hidden";
+      filesDiv.__built = true;
+    };
 
     const toggleSubdirs = async (expand) => {
       if (expand) {
-        try {
-          if (!dir.getFilesList().length) {
-            this._fileExplorer?._displayWaitMessage?.(`Loading ${dir.getName()}…`);
-            const updated = await readDir(dir.getPath(), { refresh: true });
-            dir.setFilesList(updated.getFilesList());
-          }
-        } catch (e) {
-          console.error(`Failed to load subdirectories for ${dir.getPath()}:`, e);
-        } finally {
-          this._fileExplorer?._resumeUI?.();
-        }
-
-        filesDiv.innerHTML = "";
-        let hasSubdir = false;
-        dir.getFilesList().forEach((f) => {
-          if (f.getIsDir()) {
-            this._initTreeView(f, filesDiv, level + 1);
-            hasSubdir = true;
-          }
-        });
-        if (expandBtn) expandBtn.style.visibility = hasSubdir ? "visible" : "hidden";
-
+        await buildChildrenIfNeeded();          // build once, no clearing
+        filesDiv.style.display = "flex";
         if (shrinkBtn) shrinkBtn.style.display = "block";
         if (expandBtn) expandBtn.style.display = "none";
-        filesDiv.style.display = "flex";
         if (dirIco) dirIco.icon = "icons:folder-open";
+        this._expanded.add(path);
       } else {
+        // just hide; do NOT clear children or they'll be gone due to _dirsCache short-circuit
+        filesDiv.style.display = "none";
         if (shrinkBtn) shrinkBtn.style.display = "none";
         if (expandBtn) expandBtn.style.display = "block";
-        filesDiv.style.display = "none";
         if (dirIco) dirIco.icon = "icons:folder";
+        this._expanded.delete(path);
       }
     };
 
-    if (expandBtn) {
-      expandBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleSubdirs(true); });
-      const hasInitialSubdirs = dir.getFilesList().some((f) => f.getIsDir());
-      expandBtn.style.visibility = hasInitialSubdirs ? "visible" : "hidden";
+    // initial visibility for expandBtn
+    const hasInitialSubdirs = getFiles(dirVM).some((f) => isDir(f));
+    if (expandBtn) expandBtn.style.visibility = hasInitialSubdirs ? "visible" : "hidden";
+
+    // restore expanded state
+    if (this._expanded.has(path)) {
+      toggleSubdirs(true);
     }
+
+    if (expandBtn) expandBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleSubdirs(true); });
     if (shrinkBtn) shrinkBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleSubdirs(false); });
 
     // Drag & drop onto folder
@@ -305,14 +369,14 @@ export class FileNavigator extends HTMLElement {
       });
 
       dirLnk.addEventListener("dragleave", () => {
-        if (dirIco) dirIco.icon = "icons:folder";
+        if (!this._expanded.has(path) && dirIco) dirIco.icon = "icons:folder";
         dirLnk.closest(".directory-item")?.classList.remove("drag-over");
       });
 
       dirLnk.addEventListener("drop", async (evt) => {
         evt.stopPropagation();
         evt.preventDefault();
-        if (dirIco) dirIco.icon = "icons:folder";
+        if (!this._expanded.has(path) && dirIco) dirIco.icon = "icons:folder";
         dirLnk.closest(".directory-item")?.classList.remove("drag-over");
 
         const filesDataTransfer = evt.dataTransfer?.getData("files");
@@ -324,10 +388,9 @@ export class FileNavigator extends HTMLElement {
           if (urlDataTransfer && urlDataTransfer.startsWith("https://www.imdb.com/title")) {
             displayMessage("IMDb title drop not implemented here.", 2500);
           } else if (fileListTransfer.length > 0) {
-            // unified uploader route
             Backend.eventHub.publish(
               "__upload_files_event__",
-              { dir, files: Array.from(fileListTransfer), lnk: null },
+              { dir: dirVM, files: Array.from(fileListTransfer), lnk: null },
               true
             );
           } else if (filesDataTransfer && domainDataTransfer) {
@@ -337,7 +400,7 @@ export class FileNavigator extends HTMLElement {
               files.forEach((f) => {
                 Backend.eventHub.publish(
                   `drop_file_${this._fileExplorer?.id}_event`,
-                  { file: f, dir: dir.getPath(), id: sourceId, domain: domainDataTransfer },
+                  { file: f, dir: path, id: sourceId, domain: domainDataTransfer },
                   true
                 );
               });
@@ -348,133 +411,236 @@ export class FileNavigator extends HTMLElement {
           displayError("Failed to process dropped item.", 3000);
         }
       });
-    }
 
-    // Click to open folder in explorer
-    if (dirLnk) {
+      // Click to open folder in explorer
       dirLnk.addEventListener("click", (evt) => {
         evt.stopPropagation();
-        this._fileExplorer?.publishSetDirEvent?.(dir.getPath());
+
+        // Synthetic Public: toggle expand instead of navigating
+        if (isSyntheticPublic(dirVM)) {
+          const isCollapsed = expandBtn && expandBtn.style.display !== "none";
+          toggleSubdirs(isCollapsed);
+          this._selectRow(path);
+          return;
+        }
+
+        // Real directories: navigate normally
+        this._fileExplorer?.publishSetDirEvent?.(path);
+        this._selectRow(path);
         if (this._fileExplorer?._informationsManager?.parentNode) {
           this._fileExplorer._informationsManager.style.display = "none";
         }
       });
     }
+
+    // Selection restore
+    if (this._selectedPath === path && rowDiv) {
+      rowDiv.classList.add("selected");
+    }
   }
 
-  // ---------- Sections ----------
+  _selectRow(path) {
+    // clear previous
+    if (this._selectedPath && this._dirsCache.has(this._selectedPath)) {
+      const prev = this._dirsCache.get(this._selectedPath);
+      const prevRow = this.shadowRoot.getElementById(prev.id);
+      prevRow?.classList.remove("selected");
+    }
+    this._selectedPath = path;
+    const cur = this._dirsCache.get(path);
+    const curRow = cur && this.shadowRoot.getElementById(cur.id);
+    curRow?.classList.add("selected");
+  }
 
-  async _initPublic() {
-    this._domRefs.publicFilesDiv.innerHTML = "";
+  async expandTo(targetPath) {
+    if (!targetPath) return;
 
-    const publicRoot = new FileInfo();
-    publicRoot.setName("Public");
-    publicRoot.setPath("/public");
-    publicRoot.setIsDir(true);
-    publicRoot.setMime("inode/directory");
-    publicRoot.setFilesList([]);
+    // Walk each ancestor incrementally, expanding as needed
+    const parts = targetPath.split("/").filter(Boolean);
+    let curPath = targetPath.startsWith("/") ? "/" : "";
+    let parentDiv = this._domRefs.userFilesDiv;
 
-    const pubEvt = "public_change_permission_event";
-    if (!this._listeners.has(pubEvt)) {
-      const uuid = Backend.eventHub.subscribe(pubEvt, () => {}, () => this._initPublic(), false, this);
-      this._listeners.set(pubEvt, uuid);
+    for (let i = 0; i < parts.length; i++) {
+      curPath = (curPath === "/" ? "" : curPath) + "/" + parts[i];
+
+      const cached = this._dirsCache.get(curPath);
+      if (!cached) {
+        // ensure parent expanded so children render
+        const parentPath = curPath.substring(0, curPath.lastIndexOf("/")) || "/";
+        const parentCached = this._dirsCache.get(parentPath);
+        if (parentCached) {
+          const filesDiv = this.shadowRoot.getElementById(`${parentCached.id}_files_div`);
+          const parentRowExpand = this.shadowRoot.getElementById(`${parentCached.id}_expand_btn`);
+          if (filesDiv && parentRowExpand && filesDiv.style.display !== "flex") {
+            parentRowExpand.click(); // will load and render children (build once)
+          }
+        }
+        continue;
+      } else {
+        // expand this node if it’s not expanded
+        const filesDiv = this.shadowRoot.getElementById(`${cached.id}_files_div`);
+        const expandBtn = this.shadowRoot.getElementById(`${cached.id}_expand_btn`);
+        if (filesDiv && expandBtn && filesDiv.style.display !== "flex") {
+          expandBtn.click();
+        }
+        parentDiv = filesDiv || parentDiv;
+      }
     }
 
+    // Select target row
+    this._selectRow(targetPath);
+  }
+
+  /* ------------------------------ Public ------------------------------ */
+
+  async _initPublic() {
+    if (this._domRefs.publicFilesDiv.__initialized) return;
+
+    this._domRefs.publicFilesDiv.innerHTML = "";
+
+    // Subscribe to permission changes once
+    const topic = "public_change_permission_event";
+    subscribeOnce.call(this, this._listeners, topic, topic, async () => {
+      // rebuild Public only
+      this._domRefs.publicFilesDiv.__initialized = false;
+      await this._initPublic();
+    });
+
     try {
-      const paths = await listPublicDirs();
-      const dirs = await Promise.all(
+      const paths = await listPublicDirs(); // list of real backend directories
+
+      // Build a synthetic root "/public" that only exists client-side
+      const publicRoot = {
+        name: "Public",
+        path: "/public",
+        isDir: true,
+        mime: "synthetic/public-root",
+        files: [],
+      };
+      markAsPublic(publicRoot);
+
+      // Each child is a *real* backend directory (presented under /public)
+      publicRoot.files = await Promise.all(
         paths.map(async (p) => {
           try {
             const d = await readDir(p, { refresh: true });
             markAsPublic(d);
+            d.name = nameOf(d) || (p.split("/").pop() || p);
             return d;
-          } catch (e) {
-            console.warn(`Failed to read public dir ${p}:`, e);
-            return null;
+          } catch {
+            const stub = { name: p.split("/").pop() || p, path: p, isDir: true, mime: "inode/directory", files: [] };
+            markAsPublic(stub);
+            return stub;
           }
         })
       );
 
-      publicRoot.setFilesList(dirs.filter(Boolean));
       this._initTreeView(publicRoot, this._domRefs.publicFilesDiv, 0);
+      this._domRefs.publicFilesDiv.__initialized = true;
     } catch (e) {
       console.error("Failed to initialize public dirs:", e);
       displayError(`Failed to load public directories: ${e?.message || e}`, 3000);
     }
   }
 
+  /* ------------------------------ Shared ------------------------------ */
+
   async _initShared() {
+    if (this._domRefs.sharedFilesDiv.__populated) return;
     this._domRefs.sharedFilesDiv.innerHTML = "";
 
-    const sharedRoot = new FileInfo();
-    sharedRoot.setName("Shared");
-    sharedRoot.setPath("/shared");
-    sharedRoot.setIsDir(true);
-    sharedRoot.setMime("inode/directory");
-    sharedRoot.setFilesList([]);
+    // Root (rendered as a group of owners)
+    this._sharedRootVM = makeRoot("Shared", "/shared");
 
-    const acc = currentAccount && currentAccount();
+    const acc = getCurrentAccount();
     if (!acc || acc.id === "guest") {
-      this._initTreeView(sharedRoot, this._domRefs.sharedFilesDiv, 0);
+      this._initTreeView(this._sharedRootVM, this._domRefs.sharedFilesDiv, 0);
+      this._domRefs.sharedFilesDiv.__populated = true;
       return;
     }
     const subject = `${acc.id}@${acc.domain}`;
 
-    const evt = `${subject}_change_permission_event`;
-    if (!this._listeners.has(evt)) {
-      const uuid = Backend.eventHub.subscribe(evt, () => {}, () => this._initShared(), false, this);
-      this._listeners.set(evt, uuid);
-    }
+    const topic = `${subject}_change_permission_event`;
+    subscribeOnce.call(this, this._listeners, topic, topic, async () => {
+      // Refresh only Shared section
+      this._domRefs.sharedFilesDiv.__populated = false;
+      this._domRefs.sharedFilesDiv.__initialized = false;
+      await this._initShared();
+    });
 
     try {
       const rsp = await getSharedResources({ subject, type: SubjectType.ACCOUNT });
-      const items = rsp.getSharedresourceList();
+      const items =
+        typeof rsp?.getSharedresourceList === "function"
+          ? rsp.getSharedresourceList()
+          : Array.isArray(rsp?.sharedResources)
+          ? rsp.sharedResources
+          : [];
 
-      const perUser = {};
+      const perUser = {}; // ownerKey => VM
 
-      await Promise.all(
-        items.map(async (sr) => {
-          try {
-            // Group by resource owner
-            const segs = (sr.getPath() || "").split("/");
-            const ownerId = segs[2]; // /users/<id>@<domain>/...
-            if (!ownerId || ownerId === acc.id || ownerId === subject) return;
+      const enqueue = async (sr) => {
+        const srPath = sr?.path || (typeof sr?.getPath === "function" ? sr.getPath() : "") || "";
+        if (!srPath) return;
 
-            const ownerAcc = await getAccount(ownerId);
-            const ownerKey = `/shared/${ownerAcc.getId()}@${ownerAcc.getDomain()}`;
-            if (!perUser[ownerKey]) {
-              const userDir = new FileInfo();
-              userDir.setName(ownerAcc.getDisplayName() || ownerAcc.getName());
-              userDir.setPath(ownerKey);
-              userDir.setIsDir(true);
-              userDir.setFilesList([]);
-              perUser[ownerKey] = userDir;
-            }
+        // owner id like "<id>@<domain>" from /users/<id>@<domain>/...
+        const segs = srPath.split("/");
+        const ownerId = segs[2];
 
-            // Try as directory; else as single file
-            let node = null;
+        if (!ownerId || ownerId === acc.id || ownerId === subject) return;
+
+        let ownerAcc = null;
+        try { ownerAcc = await getAccount(ownerId); } catch (_) {}
+        const ownerAccId =
+          ownerAcc?.id || (typeof ownerAcc?.getId === "function" ? ownerAcc.getId() : ownerId);
+        const ownerAccDomain =
+          ownerAcc?.domain || (typeof ownerAcc?.getDomain === "function" ? ownerAcc.getDomain() : (ownerId.split("@")[1] || ""));
+        const ownerAccName =
+          ownerAcc?.displayName ||
+          (typeof ownerAcc?.getDisplayName === "function" ? ownerAcc.getDisplayName() : "") ||
+          ownerAcc?.name ||
+          (typeof ownerAcc?.getName === "function" ? ownerAcc.getName() : "") ||
+          ownerId;
+
+        const ownerKey = `/shared/${ownerAccId}@${ownerAccDomain}`;
+        if (!perUser[ownerKey]) {
+          perUser[ownerKey] = { name: ownerAccName, path: ownerKey, isDir: true, files: [] };
+        }
+
+        try {
+          const d = await readDir(srPath, { refresh: true });
+          markAsShare(d);
+          if (!perUser[ownerKey].files.find((f) => f.path === d.path)) perUser[ownerKey].files.push(d);
+        } catch (e) {
+          const msg = String(e?.message || e);
+          if (msg.includes("is not a directory")) {
             try {
-              node = await readDir(sr.getPath(), { refresh: true });
-            } catch (e) {
-              if (String(e?.message || e).includes("is not a directory")) {
-                node = await getFile(sr.getPath(), 100, 64);
+              const f = await getFile(srPath, 100, 64);
+              if (f.path.includes("/.hidden/")) {
+                let hiddenDir = perUser[ownerKey].files.find((x) => x.name === ".hidden");
+                if (!hiddenDir) {
+                  hiddenDir = { name: ".hidden", path: `${ownerKey}/.hidden`, isDir: true, mime: "", files: [] };
+                  perUser[ownerKey].files.push(hiddenDir);
+                }
+                if (!hiddenDir.files.find((x) => x.path === f.path)) hiddenDir.files.push(f);
               } else {
-                throw e;
+                if (!perUser[ownerKey].files.find((x) => x.path === f.path)) perUser[ownerKey].files.push(f);
               }
+            } catch (e2) {
+              console.warn("Shared file fallback failed:", e2);
             }
-
-            if (node) {
-              markAsShare(node);
-              perUser[ownerKey].getFilesList().push(node);
-            }
-          } catch (e) {
-            console.warn("Shared resource load failed:", e);
+          } else {
+            console.warn("Shared resource read failed:", e);
           }
-        })
-      );
+        }
+      };
 
-      sharedRoot.setFilesList(Object.values(perUser));
-      this._initTreeView(sharedRoot, this._domRefs.sharedFilesDiv, 0);
+      for (const sr of items) await enqueue(sr);
+
+      this._sharedRootVM.files = Object.values(perUser);
+      markAsShare(this._sharedRootVM);
+      this._initTreeView(this._sharedRootVM, this._domRefs.sharedFilesDiv, 0);
+      this._domRefs.sharedFilesDiv.__populated = true;
     } catch (e) {
       console.error("Failed to initialize shared resources:", e);
       displayError(`Failed to load shared resources: ${e?.message || e}`, 3000);

@@ -1,4 +1,4 @@
-//import "../components/fileExplorer/fileExplorer.js"
+import "../components/fileExplorer/fileExplorer.js"
 
 class PageCmsBrowser extends HTMLElement {
   connectedCallback() {

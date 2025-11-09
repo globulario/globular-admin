@@ -1,99 +1,210 @@
 // src/components/fileIconView.js
 import { Backend } from "../../backend/backend";
-import { getBaseUrl } from "../../core/endpoints";
-import { getCoords } from "../utility";
+import { getCoords } from "../utility.js";
 import { displayError, displayMessage } from "../../backend/ui/notify";
 
-// Polymer deps
+// Proper backend wrappers
+import { getFile, readText } from "../../backend/cms/files";
+import { getTitleInfo } from "../../backend/media/title";
+
+// FileVM helpers (DRY)
+import {
+  pathOf,
+  nameOf,
+  mimeRootOf,
+  isDir as isDirVM,
+  thumbOf,
+} from "./filevm-helpers";
+
+// UI deps
 import "@polymer/paper-checkbox/paper-checkbox.js";
 import "@polymer/paper-ripple/paper-ripple.js";
 import "@polymer/iron-icon/iron-icon.js";
+import "@polymer/paper-icon-button/paper-icon-button.js";
 
-// Optional: if your preview takes only (file, size) now
-import { VideoPreview } from "./videoPreview";
+// Optional preview
+import { VideoPreview } from "../fileExplorer/videoPreview";
 
-// Icons / layout
 const ICON_SIZE_DEFAULT = "48px";
 const FOLDER_ICON = "icons:folder";
 const FOLDER_OPEN_ICON = "icons:folder-open";
-const REMOVE_ICON_TOP_OFFSET = "8px";
-const REMOVE_ICON_LEFT_OFFSET = "8px";
 
-// Small helper to build gateway URL to a file path
-function buildFileHttpUrl(path) {
-  const base = (getBaseUrl() || "").replace(/\/$/, "");
-  const parts = path
-    .split("/")
-    .map((s) => encodeURIComponent(s))
-    .filter(Boolean)
-    .join("/");
-  return `${base}/${parts}`;
+const ICON_FOR_KIND = {
+  video: "av:movie",
+  audio: "av:music-note",
+  text: "editor:insert-drive-file",
+  default: "icons:insert-drive-file",
+};
+
+// Back-compat helper
+function getTitleInfoFlex(arg) {
+  return new Promise((resolve, reject) => {
+    try {
+      getTitleInfo(arg, resolve, reject);
+    } catch {
+      try {
+        getTitleInfo(arg, (titles) => resolve(titles), (e) => reject(e));
+      } catch (e) {
+        reject(e);
+      }
+    }
+  });
 }
 
 export class FileIconView extends HTMLElement {
   _file = null;
   _preview = null;
-  _viewContext = null;     // FilesIconView or FilesListView
-  _fileExplorer = null;    // main FileExplorer
-  _domRefs = {};
+  _viewContext = null;
+  _fileExplorer = null;
+  _dom = {};
 
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this.shadowRoot.innerHTML = `
+    this.shadowRoot.innerHTML = this._template();
+  }
+
+  /* ---------- Public API ---------- */
+  setFile(fileVM, viewContext) {
+    this._file = fileVM;
+    this._viewContext = viewContext;
+    this._fileExplorer = viewContext._fileExplorer;
+
+    // sizing via attributes (80px default)
+    const h = parseInt(this.getAttribute("height") || "80", 10);
+    const w = parseInt(this.getAttribute("width") || "80", 10);
+    this.style.setProperty("--file-icon-height", `${h}px`);
+    this.style.setProperty("--file-icon-width", `${w}px`);
+
+    this._cacheDom();
+    this._wireEvents();
+    this._render();
+    this._hideThumbtack();
+  }
+
+  setActive() { this.classList.add("active"); }
+  resetActive() { this.classList.remove("active"); }
+  select() { this._dom.checkbox.checked = true; this._applySelection(true); }
+  unselect() { this._dom.checkbox.checked = false; this._applySelection(false); }
+  stopPreview() { this._preview?.stopPreview?.(); }
+
+  /* ---------- Private: Structure / DOM ---------- */
+  _template() {
+    // NOTE: CSS mirrors the legacy .file-icon-div look & behavior
+    return `
       <style>
-        :host {
-          display:flex; position:relative; flex-direction:column;
-          margin:5px; padding:5px; padding-top:25px;
-          border-radius:2.5px; border:1px solid var(--surface-color);
-          transition: background .2s ease, padding .8s linear;
-          background-color: var(--surface-color);
-          height: var(--file-icon-height, 80px);
-          min-width: var(--file-icon-width, 80px);
-          justify-content:center; align-items:center;
-          user-select:none; cursor:pointer;
-        }
-        :host(:hover) { filter: brightness(1.05); }
+      :host {
+        display: inline-flex;
+      }
 
-        .file-icon-content{ display:flex; flex-direction:column; align-items:center;
-          position:relative; height:100%; width:100%; }
+      iron-icon {
+        fill: var(--on-surface-color, black);
+      }
 
-        .icon-display{ display:flex; height:100%; width:100%;
-          justify-content:center; align-items:center; }
-        .icon-display iron-icon { height:${ICON_SIZE_DEFAULT}; width:${ICON_SIZE_DEFAULT};
-          fill: var(--palette-action-disabled); }
-        .icon-display img { max-width:100%; max-height:100%; object-fit:contain; }
 
-        .file-name-span{
-          word-wrap:break-word; text-align:center; max-height:200px; overflow-y:hidden;
-          word-break:break-all; font-size:.85rem; padding:5px; user-select:none; width:100%;
-        }
+       paper-checkbox {
+          --paper-checkbox-unchecked-color: #999; /* Border color */
+          --paper-checkbox-checked-color: #4dabf7; /* Fill when checked */
+          --paper-checkbox-checkmark-color: white; /* ✓ color */
+       }
 
-        .shortcut-icon{ position:absolute; bottom:-5px; left:0; }
-        .shortcut-icon iron-icon{
-          background:white; fill:black; height:16px; width:16px; border-radius:50%;
-          box-shadow:0 1px 3px rgba(0,0,0,.2);
-        }
+      /* Main card container (auto-height so name can grow) */
+      .file-icon-content{
+        display:flex; position:relative; flex-direction:column;
+        margin:5px; padding:5px; padding-top:25px;
+        border-radius:2.5px;
+        border:1px solid var(--palette-background-paper);
+        transition: background .2s ease, padding .8s linear;
+        background-color: var(--palette-background-default);
+        
 
-        .control-element{
-          position:absolute; z-index:10; display:none; visibility:hidden;
-        }
-        .control-element iron-icon, .control-element svg{
-          height:24px; width:24px; fill: var(--palette-action-disabled); cursor:pointer;
-        }
-        #thumbtack-icon{ top:${REMOVE_ICON_TOP_OFFSET}; left:${REMOVE_ICON_LEFT_OFFSET}; }
-        #checkbox{ top:5px; left:5px; }
-        #menu-btn{ top:1px; right:1px; height:32px; width:32px; }
+        /* width is fixed; height adapts to icon + name */
+        width: var(--file-icon-width, 110px);
+        min-width: var(--file-icon-width, 110px);
+        height: auto;
 
-        :host(.active){ filter: invert(10%); border:1px solid var(--primary-color, blue); }
-        :host(.selected){
-          border:1px solid var(--secondary-color, green);
-          box-shadow:0 0 5px var(--secondary-color-light, lightgreen);
-        }
-        :host(:hover) .control-element, :host(.active) .control-element{ display:block; visibility:visible; }
-        :host(.selected) .control-element{ display:block; visibility:visible; }
+        justify-content:flex-start; align-items:center;
+        user-select:none;
+      }
 
-        :host(.drag-over){ box-shadow:0 0 10px 3px var(--primary-color); }
+      /* Hover cursor & active filter from legacy */
+      .file-icon-content:hover { cursor: pointer; }
+      :host(.active) .file-icon-content { filter: invert(10%); }
+
+      /* Icon / image area — fixed thumb height so name has its space */
+      .icon-display{
+        display:flex;
+        width: 100%;
+        height: var(--file-icon-thumb-size, 64px); /* <= control thumbnail height */
+        justify-content:center; align-items:center;
+      }
+      .icon-display iron-icon {
+        height: var(--file-icon-thumb-size, 64px);
+        width: var(--file-icon-thumb-size, 64px);
+      }
+      .icon-display img {
+        display:block;
+        max-height: var(--file-icon-thumb-size, 64px);
+        max-width: 100%;
+        object-fit: contain; /* fully visible inside the box */
+      }
+
+      /* Name text — allow full wrap without clipping */
+      .file-name-span {
+        display: block;
+        max-width: 100%;
+        margin: 6px auto 0 auto;
+        text-align: center;
+        font-size: .85rem;
+        line-height: 1.1em;
+
+        /* wrapping rules to handle hashes/long tokens */
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+
+        /* no clipping: let container grow */
+        overflow: visible;
+
+        color: var(--on-surface-color, black);
+      }
+
+      /* Shortcut badge (reply icon) */
+      .shortcut-icon{ position:absolute; bottom:-5px; left:0; }
+      .shortcut-icon iron-icon{
+        background:white; fill:black; height:16px; width:16px;
+      }
+
+      /* Controls default hidden like legacy */
+      .control-element{ position:absolute; z-index:10; display:none; visibility:hidden; }
+      #checkbox{ 
+        top:5px; 
+        left:5px; 
+        border-color: var(--on-surface-color, black);
+      }
+
+      /* thumbtack */
+      #thumbtack-icon{
+        top:8px; left:32px; height:12px; fill:var(--palette-action-disabled);
+      }
+
+      /* menu button area top-right */
+      #menu-btn{ top:-6px; right:-6px; }
+
+      /* Show controls on hover/active/selected */
+      :host(:hover) .control-element,
+      :host(.active) .control-element,
+      :host(.selected) .control-element { display:block; visibility:visible; }
+
+      /* Selected state hints */
+      :host(.selected){
+        border:1px solid var(--secondary-color, green);
+        box-shadow:0 0 5px var(--secondary-color-light, lightgreen);
+      }
+
+      /* Slight hover lift */
+      .file-icon-content:hover { filter: brightness(1.03); }
+
       </style>
 
       <div class="file-icon-content">
@@ -115,226 +226,220 @@ export class FileIconView extends HTMLElement {
     `;
   }
 
-  /** Set the file + view context, then render */
-  setFile(file, viewContext) {
-    this._file = file;
-    this._viewContext = viewContext;
-    this._fileExplorer = viewContext._file_explorer_;
-
-    // sizing via CSS vars
-    const h = this.getAttribute("height") || "80";
-    const w = this.getAttribute("width") || "80";
-    this.style.setProperty("--file-icon-height", `${h}px`);
-    this.style.setProperty("--file-icon-width", `${w}px`);
-
-    this._cacheDomElements();
-    this._setupEventListeners();
-    this._renderFileContent();
-    this._updateSelectionState?.(this._domRefs.checkbox.checked);
-    this._updateThumbtackState(false); // hidden by default (no local API yet)
-    this._updateEditableState?.();
+  _cacheDom() {
+    const $ = (sel) => this.shadowRoot.querySelector(sel);
+    this._dom.content = $(".file-icon-content");
+    this._dom.iconDisplay = $(".icon-display");
+    this._dom.fileName = $(".file-name-span");
+    this._dom.checkbox = $("#checkbox");
+    this._dom.thumbtack = $("#thumbtack-icon");
+    this._dom.menuBtn = $("#menu-btn");
+    this._dom.shortcut = $(".shortcut-icon");
   }
 
-  _cacheDomElements() {
-    this._domRefs.fileIconContent = this.shadowRoot.querySelector(".file-icon-content");
-    this._domRefs.iconDisplay = this.shadowRoot.querySelector(".icon-display");
-    this._domRefs.fileNameSpan = this.shadowRoot.querySelector(".file-name-span");
-    this._domRefs.checkbox = this.shadowRoot.querySelector("paper-checkbox");
-    this._domRefs.thumbtackIcon = this.shadowRoot.querySelector("#thumbtack-icon");
-    this._domRefs.menuBtn = this.shadowRoot.querySelector("#menu-btn");
-    this._domRefs.shortcutIconContainer = this.shadowRoot.querySelector(".shortcut-icon");
+  clearSelectionUI() {
+    // keep both shadow & light DOM safe
+    const root = this.shadowRoot || this;
+    // your tiles normally set a data-path or similar on the checkbox
+    root.querySelectorAll('paper-checkbox, input[type="checkbox"]').forEach(cb => {
+      this.classList.remove("selected");
+      
+      try { cb.checked = false; cb.removeAttribute('checked'); } catch { }
+    });
   }
 
-  _setupEventListeners() {
-    this.shadowRoot.host.addEventListener("click", this._handleFileClick.bind(this));
-
-    this._domRefs.checkbox.addEventListener("click", (evt) => {
-      evt.stopPropagation();
-      this._toggleSelection(this._domRefs.checkbox.checked);
+  /* ---------- Private: Event wiring ---------- */
+  _wireEvents() {
+    // open on click
+    this.shadowRoot.host.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._handleOpen();
     });
 
-    // thumbtack currently disabled
-    this._domRefs.thumbtackIcon.addEventListener("click", (evt) => {
-      evt.stopPropagation();
+    // checkbox
+    this._dom.checkbox.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._applySelection(this._dom.checkbox.checked);
+    });
+
+    // thumbtack (disabled)
+    this._dom.thumbtack.addEventListener("click", (e) => {
+      e.stopPropagation();
       displayMessage("Local-cache pin is not wired yet in the new stack.", 2500);
     });
 
-    this._domRefs.menuBtn.addEventListener("click", this._handleMenuClick.bind(this));
+    // menu
+    this._dom.menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._openMenu();
+    });
 
-    if (this._file.getIsDir()) {
-      this.addEventListener("dragover", this._handleDragOverFolder.bind(this));
-      this.addEventListener("dragleave", this._handleDragLeaveFolder.bind(this));
-      this.addEventListener("drop", this._handleDropOnFolder.bind(this));
+    // DnD only for folders
+    if (isDirVM(this._file)) {
+      this.addEventListener("dragover", (e) => this._dragOverFolder(e));
+      this.addEventListener("dragleave", () => this._dragLeaveFolder());
+      this.addEventListener("drop", (e) => this._dropOnFolder(e));
     }
 
-    this.addEventListener("mouseenter", this._handleMouseEnter.bind(this));
-    this.addEventListener("mouseleave", this._handleMouseLeave.bind(this));
+    // hover show/hide
+    this.addEventListener("mouseenter", (e) => this._mouseenter(e));
+    this.addEventListener("mouseleave", (e) => this._mouseleave(e));
 
-    // sync checkbox state via eventHub
+    // selection sync
+    const keyPath = pathOf(this._file);
     Backend.eventHub.subscribe(
-      `__file_select_unselect_${this._file.getPath()}`,
-      () => {},
+      `__file_select_unselect_${keyPath}`,
+      () => { },
       (checked) => {
-        this._domRefs.checkbox.checked = !!checked;
-        this._updateSelectionState(!!checked);
+        this._dom.checkbox.checked = !!checked;
+        this._applySelection(!!checked);
       },
       true,
       this
     );
   }
 
-  async _renderFileContent() {
+  /* ---------- Private: Rendering ---------- */
+  async _render() {
     const f = this._file;
-    this._domRefs.fileNameSpan.textContent = f.getName();
-    this._domRefs.iconDisplay.innerHTML = "";
+    this._dom.fileName.textContent = nameOf(f);
+    this._clear(this._dom.iconDisplay);
 
-    if (f.getLnk()) {
-      this._domRefs.shortcutIconContainer.innerHTML = `<iron-icon icon="icons:reply"></iron-icon>`;
-    } else {
-      this._domRefs.shortcutIconContainer.innerHTML = "";
+    this._setShortcutBadge(hasLinkFlag(f));
+
+    const kind = mimeRootOf(f);
+    if (kind === "video") {
+      await this._renderVideo(f);
+      return;
     }
 
-    const mimeRoot = (f.getMime() || "").split("/")[0];
+    if (isDirVM(f)) {
+      await this._renderFolder(f);
+      return;
+    }
 
-    if (mimeRoot === "video") {
-      // Try preview; otherwise generic icon
-      try {
-        this._preview = new VideoPreview(f, 72);
-        this._preview.name = f.getName();
-        this._domRefs.iconDisplay.appendChild(this._preview);
-      } catch {
-        const icon = document.createElement("iron-icon");
-        icon.icon = "av:movie";
-        this._domRefs.iconDisplay.appendChild(icon);
-      }
-    } else if (f.getIsDir()) {
-      // default folder
-      const folderIcon = document.createElement("iron-icon");
-      folderIcon.icon = FOLDER_ICON;
-      this._domRefs.iconDisplay.appendChild(folderIcon);
+    const t = thumbOf(f);
+    if (t) this._appendImg(t);
+    else this._appendIcon(ICON_FOR_KIND[kind] || ICON_FOR_KIND.default);
+  }
 
-      // Try infos.json poster/name via HTTP
-      try {
-        const url = buildFileHttpUrl(`${f.getPath()}/infos.json`);
-        const resp = await fetch(url, { credentials: "include" }).catch(() => null);
-        if (resp && resp.ok) {
-          const titleInfos = await resp.json();
-          // Expecting something like { ID, Poster: { contenturl }, Name }
-          const posterUrl = titleInfos?.Poster?.contenturl || titleInfos?.poster?.contenturl;
-          const titleName = titleInfos?.Name || titleInfos?.name;
-          if (posterUrl) {
-            const img = document.createElement("img");
-            img.src = posterUrl;
-            img.draggable = false;
-            this._domRefs.iconDisplay.innerHTML = "";
-            this._domRefs.iconDisplay.appendChild(img);
-          }
-          if (titleName) {
-            this._domRefs.fileNameSpan.textContent = titleName;
-          }
-        }
-      } catch (e) {
-        // keep default icon on any error
-        console.warn("infos.json not found or invalid for", f.getPath(), e);
-      }
-    } else if (f.getThumbnail()) {
-      const img = document.createElement("img");
-      img.src = f.getThumbnail();
-      img.draggable = false;
-      this._domRefs.iconDisplay.appendChild(img);
-      // (Optional) you can enrich name for audio later with your new media API
-    } else {
-      const icon = document.createElement("iron-icon");
-      if (mimeRoot === "audio") icon.icon = "av:music-note";
-      else if (mimeRoot === "text") icon.icon = "editor:insert-drive-file";
-      else icon.icon = "icons:insert-drive-file";
-      this._domRefs.iconDisplay.appendChild(icon);
+  async _renderVideo(f) {
+    try {
+      this._preview = new VideoPreview(f, 72);
+      this._preview.name = nameOf(f);
+      this._dom.iconDisplay.appendChild(this._preview);
+    } catch {
+      this._appendIcon(ICON_FOR_KIND.video);
     }
   }
 
-  _handleFileClick(evt) {
-    evt.stopPropagation();
-    if (this._file.getIsDir()) {
-      // publish through FilesView/FileExplorer flow
-      if (this._fileExplorer?.publishSetDirEvent) {
-        this._fileExplorer.publishSetDirEvent(this._file.getPath());
+  async _renderFolder(f) {
+    const folderIconEl = this._appendIcon(FOLDER_ICON);
+    try {
+      const infosFile = await getFile(`${pathOf(f)}/infos.json`);
+      const text = await readText(infosFile);
+      const titleInfos = JSON.parse(text || "{}");
+      if (titleInfos?.ID) {
+        const titles = await getTitleInfoFlex(titleInfos.ID);
+        const title = Array.isArray(titles) ? titles[0] : titles;
+        if (title) {
+          const poster = title.getPoster?.() || title.poster || null;
+          const posterUrl = poster?.getContenturl?.() || poster?.contenturl || null;
+          const titleName = title.getName?.() || title?.name || null;
+
+          if (posterUrl) {
+            this._clear(this._dom.iconDisplay);
+            this._appendImg(posterUrl);
+          } else {
+            folderIconEl?.setAttribute?.("icon", FOLDER_ICON);
+          }
+          if (titleName) this._dom.fileName.textContent = titleName;
+        }
       } else {
-        Backend.eventHub.publish("__set_dir_event__", { dir: this._file, file_explorer_id: this._fileExplorer?.id }, true);
+        const titles = await getTitleInfoFlex(f);
+        if (Array.isArray(titles) && titles.length) {
+          const t = titles[0];
+          const poster = t.getPoster?.() || t.poster || null;
+          const posterUrl = poster?.getContenturl?.() || poster?.contenturl || null;
+          if (posterUrl) {
+            this._clear(this._dom.iconDisplay);
+            this._appendImg(posterUrl);
+          }
+          const titleName = t.getName?.() || t.name || null;
+          if (titleName) this._dom.fileName.textContent = titleName;
+        }
+      }
+    } catch {
+      /* keep default folder icon */
+    }
+  }
+
+  /* ---------- Private: Actions ---------- */
+  _handleOpen() {
+    const f = this._file;
+    if (isDirVM(f)) {
+      if (this._fileExplorer?.publishSetDirEvent) {
+        this._fileExplorer.publishSetDirEvent(pathOf(f));
+      } else {
+        const feId = this._fileExplorer?._id || this._fileExplorer?.id;
+        Backend.eventHub.publish(
+          "__set_dir_event__",
+          { dir: f, file_explorer_id: feId },
+          true
+        );
       }
       return;
     }
 
-    const kind = (this._file.getMime() || "").split("/")[0];
-    if (kind === "video") {
-      this._fileExplorer?._playMedia?.(this._file, "video");
-    } else if (kind === "audio") {
-      this._fileExplorer?._playMedia?.(this._file, "audio");
-    } else if (kind === "image") {
-      this._fileExplorer?._showImage?.(this._file);
-    } else {
-      this._fileExplorer?._readFile?.(this._file);
-    }
+    const kind = mimeRootOf(f);
+    if (kind === "video") this._fileExplorer?.playVideo?.(f);
+    else if (kind === "audio") this._fileExplorer?.playAudio?.(f);
+    else if (kind === "image") this._fileExplorer?.showImage?.(f);
+    else this._fileExplorer?.readFile?.(f);
 
-    // hide menu after action
-    const menu = this._viewContext?.menu || this._viewContext?._contextMenu;
-    if (menu?.close) menu.close();
+    const menu = this._activeMenu();
+    menu?.close?.();
   }
 
-  _toggleSelection(checked) {
+  _applySelection(checked) {
     if (checked) {
       this.classList.add("selected");
-      this._domRefs.checkbox.style.display = "block";
-      if (this._viewContext?.selected) this._viewContext.selected[this._file.getPath()] = this._file;
+      this._dom.checkbox.style.display = "block";
+      this._viewContext._selected[pathOf(this._file)] = this._file;
     } else {
       this.classList.remove("selected");
-      this._domRefs.checkbox.style.display = "none";
-      if (this._viewContext?.selected) delete this._viewContext.selected[this._file.getPath()];
+      if (!this._dom.checkbox.checked) this._dom.checkbox.style.display = "none";
+      delete this._viewContext._selected[pathOf(this._file)];
     }
   }
 
-  _handleMenuClick(evt) {
-    evt.stopPropagation();
-
-    const menu = this._viewContext?.menu || this._viewContext?._contextMenu;
+  _openMenu() {
+    const menu = this._activeMenu();
     if (!menu) return;
 
-    if (menu.parentNode !== document.body) {
-      document.body.appendChild(menu);
+    const view = this._viewContext;
+    if (view?.showContextMenu) {
+      // pass the icon element as anchor + highlighter
+      view.showContextMenu(this, this._file, this);
     }
-
-    const coords = getCoords(this);
-    menu.style.position = "absolute";
-    menu.style.top = `${coords.top + 4}px`;
-    menu.style.left = `${coords.left + this.offsetWidth + 5 - 20}px`;
-
-    // FilesView._contextMenu has a setFile(file) helper in the new code
-    if (typeof menu.setFile === "function") menu.setFile(this._file);
-    // Let rename be handled by FilesView.rename(...)
-    if ("rename" in this._viewContext) {
-      menu.rename = () => this._viewContext.rename(this, this._file, this.offsetHeight + 6);
-    }
-    if (menu.showBtn) menu.showBtn();
-
-    menu.onmouseenter = () => this.classList.add("active");
-    menu.onmouseleave = () => this.classList.remove("active");
   }
 
-  _handleDragOverFolder(evt) {
+  _dragOverFolder(evt) {
     evt.preventDefault();
-    this._domRefs.iconDisplay.querySelector("iron-icon")?.setAttribute("icon", FOLDER_OPEN_ICON);
+    this._setFolderIcon(FOLDER_OPEN_ICON);
     this.classList.add("drag-over");
     this._fileExplorer?.setAtTop?.();
   }
 
-  _handleDragLeaveFolder() {
-    this._domRefs.iconDisplay.querySelector("iron-icon")?.setAttribute("icon", FOLDER_ICON);
+  _dragLeaveFolder() {
+    this._setFolderIcon(FOLDER_ICON);
     this.classList.remove("drag-over");
   }
 
-  async _handleDropOnFolder(evt) {
+  _dropOnFolder(evt) {
     evt.stopPropagation();
     evt.preventDefault();
-    this._domRefs.iconDisplay.querySelector("iron-icon")?.setAttribute("icon", FOLDER_ICON);
+    this._setFolderIcon(FOLDER_ICON);
     this.classList.remove("drag-over");
 
     const filesDataTransfer = evt.dataTransfer.getData("files");
@@ -342,13 +447,11 @@ export class FileIconView extends HTMLElement {
     const urlDataTransfer = evt.dataTransfer.getData("Url");
 
     if (urlDataTransfer && urlDataTransfer.startsWith("https://www.imdb.com/title")) {
-      // Delegate to view logic that knows how to process IMDB links
       this._viewContext?.setImdbTitleInfo?.(urlDataTransfer, this._file);
       return;
     }
 
     if (evt.dataTransfer.files?.length > 0) {
-      // Hand off to the unified uploader used by FilesView
       Backend.eventHub.publish(
         "__upload_files_event__",
         { dir: this._file, files: Array.from(evt.dataTransfer.files), lnk: null },
@@ -362,9 +465,10 @@ export class FileIconView extends HTMLElement {
       try {
         const filesToDrop = JSON.parse(filesDataTransfer);
         const sourceId = evt.dataTransfer.getData("id");
+        const feId = this._fileExplorer?._id || this._fileExplorer?.id;
         Backend.eventHub.publish(
-          `drop_file_${this._fileExplorer?.id}_event`,
-          { file: filesToDrop[0] || null, dir: this._file.getPath(), id: sourceId, domain: domainDataTransfer },
+          `drop_file_${feId}_event`,
+          { file: filesToDrop[0] || null, dir: pathOf(this._file), id: sourceId, domain: domainDataTransfer },
           true
         );
       } catch (e) {
@@ -374,35 +478,49 @@ export class FileIconView extends HTMLElement {
     }
   }
 
-  _handleMouseEnter(evt) {
+  _mouseenter(evt) {
     evt.stopPropagation();
-    this._domRefs.checkbox.style.display = "block";
-    this._domRefs.menuBtn.style.display = "block";
+    this._dom.checkbox.style.display = "block";
+    this._dom.menuBtn.style.display = "block";
+    this._dom.thumbtack.style.display = "none";
     this.classList.add("active");
-    // thumbtack remains hidden until local-cache is implemented
   }
 
-  _handleMouseLeave(evt) {
+  _mouseleave(evt) {
     evt.stopPropagation();
-    if (!this._domRefs.checkbox.checked) this._domRefs.checkbox.style.display = "none";
-    this._domRefs.menuBtn.style.display = "none";
-    this._domRefs.thumbtackIcon.style.display = "none";
+    if (!this._dom.checkbox.checked) this._dom.checkbox.style.display = "none";
+    this._dom.menuBtn.style.display = "none";
+    this._dom.thumbtack.style.display = "none";
     this.classList.remove("active");
   }
 
-  _updateThumbtackState(isLocal) {
-    // Currently disabled: keep hidden; when you add a cache API, toggle visibility/fill here
-    this._domRefs.thumbtackIcon.style.display = "none";
-    this._domRefs.thumbtackIcon.style.visibility = "hidden";
+  /* ---------- Private: Small utilities (DRY) ---------- */
+  _clear(node) { while (node?.firstChild) node.removeChild(node.firstChild); }
+  _appendIcon(iconName) {
+    const icon = document.createElement("iron-icon");
+    icon.icon = iconName || ICON_FOR_KIND.default;
+    this._dom.iconDisplay.appendChild(icon);
+    return icon;
   }
-
-  // Public helpers used elsewhere
-  setActive() { this.classList.add("active"); }
-  resetActive() { this.classList.remove("active"); }
-  select() { this._domRefs.checkbox.checked = true; this._toggleSelection(true); }
-  unselect() { this._domRefs.checkbox.checked = false; this._toggleSelection(false); }
-
-  stopPreview() { if (this._preview?.stopPreview) this._preview.stopPreview(); }
+  _appendImg(src) {
+    const img = document.createElement("img");
+    img.src = src; img.draggable = false;
+    this._dom.iconDisplay.appendChild(img);
+    return img;
+  }
+  _setShortcutBadge(show) {
+    this._dom.shortcut.innerHTML = show ? `<iron-icon icon="icons:reply"></iron-icon>` : "";
+  }
+  _setFolderIcon(icon) {
+    this._dom.iconDisplay.querySelector("iron-icon")?.setAttribute("icon", icon);
+  }
+  _hideThumbtack() {
+    this._dom.thumbtack.style.display = "none";
+    this._dom.thumbtack.style.visibility = "hidden";
+  }
+  _activeMenu() { return this._viewContext?.menu || this._viewContext?._contextMenu || null; }
 }
+
+function hasLinkFlag(v) { return !!(v?.lnk || v?.isLink || v?.link); }
 
 customElements.define("globular-file-icon-view", FileIconView);

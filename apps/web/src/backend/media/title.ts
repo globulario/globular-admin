@@ -1,10 +1,17 @@
-// src/backend/title.ts
+// src/backend/media/title.ts
 import { getBaseUrl } from "../core/endpoints";
-import { unary } from "../core/rpc";
+import { stream, unary } from "../core/rpc";
 
 // ---- stubs ----
 import { TitleServiceClient } from "globular-web-client/title/title_grpc_web_pb";
 import * as titlepb from "globular-web-client/title/title_pb";
+
+// --- add near other caches ---
+const personsCache = new Map<string, titlepb.Person>();
+
+// ---the service name constant---
+const SERVICE_NAME = "title.TitleService";   // gRPC fully-qualified service name
+
 
 /* =====================================================================================
  * Client + metadata
@@ -49,6 +56,9 @@ const DEFAULT_INDEXES = {
   videos: "/search/videos",
   audios: "/search/audios",
 };
+
+// --- add with other defaults (re-use titles index for people) ---
+const DEFAULT_PERSONS_INDEX = DEFAULT_INDEXES.titles;
 
 /* =====================================================================================
  * Create + Associate APIs (kept from your original file)
@@ -172,6 +182,26 @@ export async function getAudioInfo(
   const audio: titlepb.Audio | undefined = rsp?.getAudio?.();
   if (audio) audiosCache.set(id, audio);
   return audio;
+}
+
+/**
+ * Create or update audio metadata in the search index.
+ * Pass the audio proto (with setters already applied) and the target index path.
+ *
+ * Example indexPath: `${globule.config.DataPath}/search/audios`
+ */
+export async function createOrUpdateAudio(
+  audio: titlepb.Audio,
+  indexPath: string = DEFAULT_INDEXES.audios
+): Promise<void> {
+  const md = await meta();
+
+  const rq = new titlepb.CreateAudioRequest();
+  rq.setAudio(audio);
+  rq.setIndexpath(indexPath);
+
+  // RPC name follows existing naming convention in your codebase
+  await unary(clientFactory, "createAudio", rq, undefined, md);
 }
 
 /* =====================================================================================
@@ -332,4 +362,356 @@ export function clearAllTitleCaches() {
   fileVideosCache.clear();
   fileAudiosCache.clear();
   imdbPending.clear();
+}
+
+/* =====================================================================================
+ * Cache utilities (local)
+ * ===================================================================================== */
+
+function pruneListCache<T>(
+  map: Map<string, T[]>,
+  idSelector: (x: T) => string,
+  id: string
+) {
+  for (const [k, arr] of map) {
+    const next = arr.filter((v) => idSelector(v) !== id);
+    if (next.length !== arr.length) map.set(k, next);
+  }
+}
+
+function replaceInListCache<T>(
+  map: Map<string, T[]>,
+  idSelector: (x: T) => string,
+  nextValue: T
+) {
+  const id = idSelector(nextValue);
+  for (const [k, arr] of map) {
+    const idx = arr.findIndex((v) => idSelector(v) === id);
+    if (idx >= 0) {
+      const copy = arr.slice();
+      copy[idx] = nextValue;
+      map.set(k, copy);
+    }
+  }
+}
+
+/* =====================================================================================
+ * Deletes
+ * ===================================================================================== */
+
+export async function deleteAudio(
+  audioId: string,
+  indexPath = DEFAULT_INDEXES.audios
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.DeleteAudioRequest();
+  rq.setAudioid(audioId);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "deleteAudio", rq, undefined, md);
+
+  // prune caches
+  audiosCache.delete(audioId);
+  pruneListCache(fileAudiosCache, (a) => a.getId(), audioId);
+}
+
+export async function deleteVideo(
+  videoId: string,
+  indexPath = DEFAULT_INDEXES.videos
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.DeleteVideoRequest();
+  rq.setVideoid(videoId);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "deleteVideo", rq, undefined, md);
+
+  // prune caches
+  videosCache.delete(videoId);
+  pruneListCache(fileVideosCache, (v) => v.getId(), videoId);
+}
+
+export async function deleteTitle(
+  titleId: string,
+  indexPath = DEFAULT_INDEXES.titles
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.DeleteTitleRequest();
+  rq.setTitleid(titleId);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "deleteTitle", rq, undefined, md);
+
+  // prune caches
+  titlesCache.delete(titleId);
+  // Also remove from any per-file title lists
+  pruneListCache(fileTitlesCache, (t) => t.getId(), titleId);
+}
+
+export async function deleteAlbum(
+  albumId: string,
+  indexPath = DEFAULT_INDEXES.audios
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.DeleteAlbumRequest();
+  rq.setAlbumid(albumId);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "deleteAlbum", rq, undefined, md);
+  // No dedicated album cache here; nothing to clear.
+}
+
+/* =====================================================================================
+ * Updates (metadata)
+ * ===================================================================================== */
+
+export async function updateVideoMetadata(
+  video: titlepb.Video,
+  indexPath = DEFAULT_INDEXES.videos
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.UpdateVideoMetadataRequest();
+  rq.setVideo(video);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "updateVideoMetadata", rq, undefined, md);
+
+  // refresh caches
+  videosCache.set(video.getId(), video);
+  replaceInListCache(fileVideosCache, (v) => v.getId(), video);
+}
+
+export async function updateTitleMetadata(
+  title: titlepb.Title,
+  indexPath = DEFAULT_INDEXES.titles
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.UpdateTitleMetadataRequest();
+  rq.setTitle(title);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "updateTitleMetadata", rq, undefined, md);
+
+  // refresh caches
+  titlesCache.set(title.getId(), title);
+  replaceInListCache(fileTitlesCache, (t) => t.getId(), title);
+}
+
+/* =====================================================================================
+ * Associations
+ * ===================================================================================== */
+
+export async function associateFileWithTitle(
+  filePath: string,
+  titleId: string,
+  indexPath = DEFAULT_INDEXES.titles
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.AssociateFileWithTitleRequest();
+  rq.setFilepath(filePath);
+  rq.setTitleid(titleId);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "associateFileWithTitle", rq, undefined, md);
+
+  // file->titles list is now stale
+  fileTitlesCache.delete(filePath);
+}
+
+export async function dissociateFileWithTitle(
+  filePath: string,
+  titleId: string,
+  indexPath = DEFAULT_INDEXES.titles
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.DissociateFileWithTitleRequest();
+  rq.setFilepath(filePath);
+  rq.setTitleid(titleId);
+  rq.setIndexpath(indexPath);
+
+  await unary(clientFactory, "dissociateFileWithTitle", rq, undefined, md);
+
+  // update per-file cache if present
+  if (fileTitlesCache.has(filePath)) {
+    const list = fileTitlesCache.get(filePath) || [];
+    fileTitlesCache.set(filePath, list.filter((t) => t.getId() !== titleId));
+  }
+}
+
+// ---------------------------------------------
+// Person helpers
+// ---------------------------------------------
+export async function getPersonInfo(
+  id: string,
+  indexPath = DEFAULT_PERSONS_INDEX
+): Promise<titlepb.Person | undefined> {
+  if (personsCache.has(id)) return personsCache.get(id)!;
+
+  const md = await meta();
+  const rq = new titlepb.GetPersonByIdRequest();
+  rq.setPersonid(id);
+  rq.setIndexpath(indexPath);
+
+  const rsp = await unary(clientFactory, "getPersonById", rq, undefined, md) as titlepb.GetPersonByIdResponse;
+  const person: titlepb.Person | undefined = rsp?.getPerson?.();
+  if (person) personsCache.set(id, person);
+  return person;
+}
+
+export async function createOrUpdatePerson(
+  person: titlepb.Person,
+  indexPath = DEFAULT_PERSONS_INDEX
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.CreatePersonRequest();
+  rq.setPerson(person);
+  rq.setIndexpath(indexPath);
+  await unary(clientFactory, "createPerson", rq, undefined, md);
+  personsCache.set(person.getId(), person);
+}
+
+export async function deletePerson(
+  personId: string,
+  indexPath = DEFAULT_PERSONS_INDEX
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.DeletePersonRequest();
+  rq.setPersonid(personId);
+  rq.setIndexpath(indexPath);
+  await unary(clientFactory, "deletePerson", rq, undefined, md);
+  personsCache.delete(personId);
+}
+
+export function cacheSetPerson(p: titlepb.Person) {
+  personsCache.set(p.getId(), p);
+}
+
+
+/**
+ * Search for persons matching a query.
+ * Streams results via TitleService.SearchPersons.
+ */
+export async function searchPersons(
+  query: string,
+  indexPath: string
+): Promise<titlepb.Person[]> {
+  if (!query || query.length < 2) {
+    throw new Error("Query must be at least 2 characters long.");
+  }
+
+  const rq = new titlepb.SearchPersonsRequest();
+  rq.setQuery(query);
+  rq.setIndexpath(indexPath);
+  rq.setOffset(0);
+  rq.setSize(1000);
+
+  const persons: titlepb.Person[] = [];
+
+  try {
+    await stream(
+      // Your existing factory that builds a TitleService client from a resolved address
+      clientFactory,                // e.g., (addr) => new TitleServiceClient(addr, null, opts)
+      "searchPersons",              // RPC name
+      rq,                           // SearchPersonsRequest
+      (rsp: titlepb.SearchPersonsResponse) => {
+        if (rsp.hasHit()) {
+          const hit = rsp.getHit();
+          const person = hit?.getPerson();
+          if (person) persons.push(person);
+        }
+      },
+      SERVICE_NAME                  // "title.TitleService"
+      // , { base: 'https://my-gateway' } // optional override if you use one
+    );
+  } catch (err: any) {
+    throw err;
+  }
+
+  // De-dupe by id and sort by fullname (like your previous implementation)
+  const uniquePersons = [...new Map(persons.map(p => [p.getId(), p])).values()];
+  uniquePersons.sort((a, b) => a.getFullname().localeCompare(b.getFullname()));
+
+  return uniquePersons;
+}
+
+// ---------------------------------------------
+// Small quality-of-life upserts for Title/Video
+// (your proto treats Create* as insert-or-update)
+// ---------------------------------------------
+export async function createOrUpdateTitle(
+  t: titlepb.Title,
+  indexPath = DEFAULT_INDEXES.titles
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.CreateTitleRequest();
+  rq.setTitle(t);
+  rq.setIndexpath(indexPath);
+  await unary(clientFactory, "createTitle", rq, undefined, md);
+  titlesCache.set(t.getId(), t);
+}
+
+export async function createOrUpdateVideo(
+  v: titlepb.Video,
+  indexPath = DEFAULT_INDEXES.videos
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.CreateVideoRequest();
+  rq.setVideo(v);
+  rq.setIndexpath(indexPath);
+  await unary(clientFactory, "createVideo", rq, undefined, md);
+  videosCache.set(v.getId(), v);
+}
+
+
+// STREAMING search over titles/videos/audios/persons
+export async function searchTitles(
+  query: string,
+  indexPath = DEFAULT_INDEXES.titles,
+  fields: string[] = [],
+  size = 100,
+  offset = 0
+): Promise<{
+  summary?: titlepb.SearchSummary;
+  facets?: titlepb.SearchFacets;
+  hits: titlepb.SearchHit[];
+}> {
+  if (!query || query.trim().length === 0) {
+    throw new Error("Query must be a non-empty string.");
+  }
+
+  const rq = new titlepb.SearchTitlesRequest();
+  rq.setQuery(query);
+  rq.setIndexpath(indexPath);
+  rq.setSize(size);
+  rq.setOffset(offset);
+  if (fields?.length) rq.setFieldsList(fields);
+
+  const result: {
+    summary?: titlepb.SearchSummary;
+    facets?: titlepb.SearchFacets;
+    hits: titlepb.SearchHit[];
+  } = { hits: [] };
+
+  await stream(
+    clientFactory,
+    "searchTitles",
+    rq,
+    (rsp: titlepb.SearchTitlesResponse) => {
+      if (rsp.hasSummary && rsp.hasSummary()) {
+        result.summary = rsp.getSummary()!;
+      } else if (rsp.hasFacets && rsp.hasFacets()) {
+        result.facets = rsp.getFacets()!;
+      } else if (rsp.hasHit && rsp.hasHit()) {
+        result.hits.push(rsp.getHit()!);
+      }
+    },
+    SERVICE_NAME
+  );
+
+  return result;
+}
+
+// Todo Implement similar streaming searchVideos, searchAudios if needed
+export async function getWatchingTitle(titleId: string): Promise<any> {
+  
 }

@@ -1,23 +1,20 @@
-// components/filesView.js — integrated with new backend wrappers
-
-import { v4 as uuidv4 } from "uuid";
+// components/filesView.js — restored functionality with existing backend wrappers (no invented APIs)
 import { ShareResourceMenu } from "../share/shareResourceMenu";
 import { DropdownMenu } from "../menu.js";
-// New notify + endpoints imports
+
 import { displayError, displayMessage } from "../../backend/ui/notify";
-import { getBaseUrl } from "../../core/endpoints";
-// Keep Backend only for event hub/pub-sub that UI still relies on
 import { Backend } from "../../backend/backend";
 
-// New filesystem/media/title wrappers
+// FS + media wrappers (only what exists in your refactor)
 import {
   upload as uploadFilesHttp,
   download as downloadHttp,
-  readDir,
   removeDir,
   removeFile,
   renameFile,
-} from "../../backend/files";
+  createArchive,
+} from "../../backend/cms/files";
+
 import {
   convertVideoToMpeg4H264,
   convertVideoToHls,
@@ -25,68 +22,71 @@ import {
   createVideoPreview,
   startProcessVideo,
   uploadVideoByUrl,
-} from "../../backend/media";
+} from "../../backend/media/media";
+
 import {
   createTitleAndAssociate,
   createVideoAndAssociate,
-} from "../../backend/title";
-import {
-  Title as TitleMsg,
-  Video as VideoMsg,
-  Poster as PosterMsg,
-  Publisher as PublisherMsg,
-} from "globular-web-client/title/title_pb";
+} from "../../backend/media/title";
 
-import { FileExplorer } from "./fileExplorer.js";
+import { getBaseUrl } from "../../backend/core/endpoints";
 import { getCoords, copyToClipboard } from "../utility.js";
-import getUuidByString from "uuid-by-string";
+
+// DRY helpers for proto/VM getters
+import {
+  pathOf,
+  nameOf,
+  mimeOf,
+  isDir as isDirOf,
+  thumbOf,
+} from "./filevm-helpers.js";
+
+// UI deps
 import "@polymer/paper-input/paper-input.js";
 import "@polymer/paper-radio-group/paper-radio-group.js";
 import "@polymer/paper-radio-button/paper-radio-button.js";
 import "@polymer/paper-button/paper-button.js";
 import "@polymer/iron-icon/iron-icon.js";
+import "@polymer/iron-icons/iron-icons.js";
+import "@polymer/iron-icons/maps-icons.js";
 import "@polymer/paper-progress/paper-progress.js";
+import "@polymer/paper-card/paper-card.js";
 
-// ---- helpers to build HTTP file URL (replace your getUrl(globule)) ----
-function buildFileHttpUrl(path) {
+import { FileExplorer } from "./fileExplorer.js";
+
+// ---- helpers to build HTTP file URL (replaces getUrl(globule)) ----
+function buildFileHttpUrl(path, isHls) {
   const base = (getBaseUrl() || "").replace(/\/$/, "");
-  const parts = path
+  const parts = (path || "")
     .split("/")
     .map((s) => encodeURIComponent(s))
     .filter(Boolean)
     .join("/");
-  return `${base}/${parts}`;
+  return `${base}/${parts}${isHls ? "/playlist.m3u8" : ""}`;
 }
 
-
-
-// ---- path normalization if you still need to prefix a data root ----
-import { toAbsoluteFsPath } from "../../backend/paths";
-const DATA_ROOT = undefined; // set if you must emulate globule.config.DataPath
+// Optional data root adapter (keep undefined if not needed)
+const DATA_ROOT = undefined;
+function toAbsoluteFsPath(path, dataRoot) {
+  if (!dataRoot) return path;
+  return path?.startsWith("/") ? dataRoot + path : dataRoot + "/" + path;
+}
 
 /**
  * Base class for FilesListView and FilesIconView.
- * Manages common file operations and context menu interactions.
  */
 export class FilesView extends HTMLElement {
-  /** @type {boolean} Indicates if this view is currently active. */
   _active = false;
-  /** @type {FileExplorer | null} Reference to the parent FileExplorer instance. */
   _fileExplorer = null;
-  /** @type {string | undefined} The active explorer path. */
   _path = undefined;
-  /** @type {any | null} The current directory object. */
   _currentDir = null;
-  /** @type {Object<string, any>} Stores selected files by their path. */
   _selected = {};
-  /** @type {ShareResourceMenu | null} The share resource menu instance. */
+
   _shareResourceMenu = null;
-  /** @type {DropdownMenu | null} The context menu instance for file actions. */
   _contextMenu = null;
-  /** @type {string} Stores the current edit mode (e.g., "cut", "copy"). */
   _editMode = "";
 
-  // References to specific menu items (initialized in connectedCallback)
+  // Context menu items
   _videoMenuItem = null;
   _fileInfosMenuItem = null;
   _titleInfosMenuItem = null;
@@ -105,54 +105,229 @@ export class FilesView extends HTMLElement {
   _cutMenuItem = null;
   _copyMenuItem = null;
   _pasteMenuItem = null;
-
-  /** @type {HTMLElement | null} The main content div of the component. */
-  div = null;
+  _legacyOpenMenuBound = false;
 
   constructor() {
     super();
-    this.attachShadow({ mode: "open" });
+    this._onDocClickClose = this._onDocClickClose.bind(this);
+    this._onScrollClose = this._onScrollClose.bind(this);
+
+    // new: universal open-menu handlers
+    this._onOpenFileMenuEvent = this._onOpenFileMenuEvent.bind(this);
+    this._onRightClick = this._onRightClick.bind(this);
   }
 
-  connectedCallback() {
-    const id = `files_view_${uuidv4().replace(/-/g, "_")}`;
+  /* ---------- visibility controls ---------- */
+  show() {
+    this.style.display = "";
+    this.setActive(true);
+    this.hideMenu();
+  }
 
+  hide() {
+    this.style.display = "none";
+    this.setActive(false);
+    this.hideMenu();
+  }
+
+  hideMenu() {
+    if (this._contextMenu?.isOpen?.()) this._contextMenu.close();
+    if (this._contextMenu && this._contextMenu.parentNode === document.body) {
+      document.body.removeChild(this._contextMenu);
+    }
+  }
+  /* ---------------------------------------- */
+
+  connectedCallback() {
+    // One shared menu instance per view
     this._shareResourceMenu = new ShareResourceMenu(this);
 
     const menuItemsHTML = `
-            <globular-dropdown-menu-item id="cut-menu-item" icon="icons:content-cut" text="Cut" title="Cut the selected item"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="copy-menu-item" icon="content-copy" text="Copy" title="Copy the selected item"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="paste-menu-item" icon="icons:content-paste" text="Paste" title="Paste title the copied item"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="rename-menu-item" icon="icons:create" text="Rename" title="Rename the selected item"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="delete-menu-item" icon="icons:delete" text="Delete" title="Delete the selected item"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="cut-menu-item" icon="icons:content-cut" text="Cut" title="Cut the selected item"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="copy-menu-item" icon="icons:content-copy" text="Copy" title="Copy the selected item"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="paste-menu-item" icon="icons:content-paste" text="Paste" title="Paste the copied item"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="rename-menu-item" icon="icons:create" text="Rename" title="Rename the selected item"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="delete-menu-item" icon="icons:delete" text="Delete" title="Delete the selected item"></globular-dropdown-menu-item>
 
-            <globular-dropdown-menu-item separator="true" id="file-infos-menu-item" icon="icons:info" text="File Infos" title="View file information"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="title-infos-menu-item" icon="icons:info" text="Title Infos" title="View title information" style="display: none;"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="refresh-infos-menu-item" icon="icons:refresh" text="Refresh Infos" title="Convert media format to MP4 and fix audio codec. Generate timeline and preview." style="display: none;"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item separator="true" id="file-infos-menu-item" icon="icons:info" text="File Infos" title="View file information"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="title-infos-menu-item" icon="icons:info" text="Title Infos" title="View title information" style="display:none;"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="refresh-infos-menu-item" icon="icons:refresh" text="Refresh Infos" title="Convert media, generate timeline & preview" style="display:none;"></globular-dropdown-menu-item>
 
-            <globular-dropdown-menu-item separator="true" id="shared-menu-item" icon="social:share" text="Share" title="Share this item"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="manage-acess-menu-item" icon="folder-shared" text="Manage Access" title="Manage access permissions"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item separator="true" id="shared-menu-item" icon="social:share" text="Share" title="Share this item"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="manage-acess-menu-item" icon="icons:folder-shared" text="Manage Access" title="Manage access permissions"></globular-dropdown-menu-item>
 
-            <globular-dropdown-menu-item separator="true" id="video-menu-item" icon="maps:local-movies" text="Movies" title="Movie-related actions" style="display: none;">
-                <globular-dropdown-menu>
-                    <globular-dropdown-menu-item id="generate-timeline-menu-item" icon="maps:local-movies" text="Generate Timeline" title="Generate a timeline for the movie"></globular-dropdown-menu-item>
-                    <globular-dropdown-menu-item id="generate-preview-menu-item" icon="maps:local-movies" text="Generate Preview" title="Generate a preview for the movie"></globular-dropdown-menu-item>
-                    <globular-dropdown-menu-item id="to-mp4-menu-item" icon="maps:local-movies" text="Convert to MP4" title="Convert the movie to MP4 format" style="display: none;"></globular-dropdown-menu-item>
-                    <globular-dropdown-menu-item id="to-hls-menu-item" icon="maps:local-movies" text="Convert to HLS" title="Convert the movie to HLS format" style="display: none;"></globular-dropdown-menu-item>
-                </globular-dropdown-menu>
-            </globular-dropdown-menu-item>
+      <globular-dropdown-menu-item separator="true" id="video-menu-item" icon="maps:local-movies" text="Movies" title="Movie-related actions" style="display:none;">
+        <globular-dropdown-menu>
+          <globular-dropdown-menu-item id="generate-timeline-menu-item" icon="maps:local-movies" text="Generate Timeline" title="Generate a timeline for the movie"></globular-dropdown-menu-item>
+          <globular-dropdown-menu-item id="generate-preview-menu-item" icon="maps:local-movies" text="Generate Preview" title="Generate a preview for the movie"></globular-dropdown-menu-item>
+          <globular-dropdown-menu-item id="to-mp4-menu-item" icon="maps:local-movies" text="Convert to MP4" title="Convert the movie to MP4 format" style="display:none;"></globular-dropdown-menu-item>
+          <globular-dropdown-menu-item id="to-hls-menu-item" icon="maps:local-movies" text="Convert to HLS" title="Convert the movie to HLS format" style="display:none;"></globular-dropdown-menu-item>
+        </globular-dropdown-menu>
+      </globular-dropdown-menu-item>
 
-            <globular-dropdown-menu-item separator="true" id="download-menu-item" icon="icons:cloud-download" text="Download" title="Download the selected item"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="open-in-new-tab-menu-item" icon="icons:open-in-new" text="Open in New Tab" title="Open the selected item in a new tab" style="display: none;"></globular-dropdown-menu-item>
-            <globular-dropdown-menu-item id="copy-url-menu-item" icon="icons:link" text="Copy URL" title="Copy the URL of the selected item"></globular-dropdown-menu-item>
-        `;
+      <globular-dropdown-menu-item separator="true" id="download-menu-item" icon="icons:cloud-download" text="Download" title="Download the selected item"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="open-in-new-tab-menu-item" icon="icons:open-in-new" text="Open in New Tab" title="Open the selected item in a new tab" style="display:none;"></globular-dropdown-menu-item>
+      <globular-dropdown-menu-item id="copy-url-menu-item" icon="icons:link" text="Copy URL" title="Copy the URL of the selected item"></globular-dropdown-menu-item>
+    `;
 
     this._contextMenu = new DropdownMenu("icons:more-vert");
     this._contextMenu.style.zIndex = 1000;
     this._contextMenu.className = "file-dropdown-menu";
     this._contextMenu.innerHTML = menuItemsHTML;
 
-    // Get references to all menu items
+    // light global listeners to close menu
+    document.addEventListener("click", this._onDocClickClose, true);
+    document.addEventListener("scroll", this._onScrollClose, true);
+
+    // NEW: modern trigger (custom event) + right-click
+    document.addEventListener("globular-open-file-menu", this._onOpenFileMenuEvent, true);
+    this.addEventListener("contextmenu", this._onRightClick, true);
+
+    // Ensure backend event subscriptions are active (incl. legacy open-menu)
+    this._setupBackendSubscriptions();
+    this._setupLegacyOpenMenuSubscription();
+  }
+
+  disconnectedCallback() {
+    this._closeContextMenu();
+    document.removeEventListener("click", this._onDocClickClose, true);
+    document.removeEventListener("scroll", this._onScrollClose, true);
+    document.removeEventListener("globular-open-file-menu", this._onOpenFileMenuEvent, true);
+    this.removeEventListener("contextmenu", this._onRightClick, true);
+  }
+
+  _onDocClickClose() { this._closeContextMenu(); }
+  _onScrollClose() { this._closeContextMenu(); }
+
+  // expose the shared menu to children that expect `view.menu`
+  get menu() { return this._contextMenu; }
+
+  setActive(active) {
+    this._active = !!active;
+    this.classList.toggle("active", this._active);
+  }
+
+  setFileExplorer(explorer) {
+    this._fileExplorer = explorer;
+    // rebinding the legacy open-menu topic with the right id
+    this._legacyOpenMenuBound = false;
+    this._setupLegacyOpenMenuSubscription();
+  }
+
+  setDir(dir) { this._currentDir = dir; this._path = dir ? pathOf(dir) : undefined; }
+  setSelected(selected) { this._selected = selected; }
+
+  // ---------- modern / right-click openers ----------
+  async _onOpenFileMenuEvent(e) {
+    const { anchor, file, highlightEl } = e.detail || {};
+    if (!anchor || !file) return;
+    this.showContextMenu(anchor, file, highlightEl);
+    e.stopPropagation();
+  }
+
+  async _onRightClick(e) {
+    const carrier = e.target.closest("[data-file], [data-file-ref]");
+    if (!carrier) return; // let native menu elsewhere
+    e.preventDefault();
+    let file = carrier.__file || null;
+    if (!file) {
+      try { file = JSON.parse(carrier.getAttribute("data-file") || "null"); } catch (_) { }
+    }
+    if (!file) return;
+    this.showContextMenu(carrier, file, carrier);
+  }
+
+  // ---------- backend pub/sub ----------
+  _setupBackendSubscriptions() {
+    Backend.eventHub.subscribe(
+      "__create_link_event__",
+      () => { },
+      (evt) => {
+        if (!this._fileExplorer || this._fileExplorer.id !== evt.file_explorer_id) return;
+        if (!this._active) return;
+        this._fileExplorer.createLink?.(evt.file, evt.dest, evt.globule);
+      },
+      true,
+      this
+    );
+
+    Backend.eventHub.subscribe(
+      "__set_dir_event__",
+      () => { },
+      (evt) => {
+        if (!this._fileExplorer || this._fileExplorer.id !== evt.file_explorer_id) return;
+        if (evt.dir) {
+          this._currentDir = evt.dir;
+          this._contextMenu.setFile?.(evt.dir);
+          this.setDir(evt.dir);
+        }
+      },
+      true,
+      this
+    );
+
+    const dropEvt = `drop_file_${this._fileExplorer ? this._fileExplorer.id : "default"}_event`;
+    Backend.eventHub.subscribe(
+      dropEvt,
+      () => { },
+      async (infos) => {
+        // if (!this._fileExplorer || this._fileExplorer.style?.zIndex !== "1000") return;
+
+        const originalDiv = document.getElementById(infos.id);
+        if (originalDiv?.parentNode) originalDiv.parentNode.style.display = "none";
+        if (!this._editMode) this._editMode = "cut";
+
+        FileExplorer.paperTray = [];
+        if (Object.keys(this._selected).length > 0) {
+          for (const key in this._selected) {
+            FileExplorer.paperTray.push(pathOf(this._selected[key]));
+          }
+        } else if (infos.file) {
+          FileExplorer.paperTray.push(infos.file);
+        }
+
+        if (infos.domain !== (this._fileExplorer.globule && this._fileExplorer.globule.domain)) {
+          if (this._handleCrossDomainFileDrop) await this._handleCrossDomainFileDrop(infos);
+        } else {
+          if (this._handleSameDomainFileDrop) await this._handleSameDomainFileDrop(infos);
+        }
+        this._selected = {};
+        this._fileExplorer?.clearSelections?.();
+      },
+      true,
+      this
+    );
+  }
+
+  // legacy EventHub opener: open_files_menu_{id}_event
+  _setupLegacyOpenMenuSubscription() {
+    if (this._legacyOpenMenuBound) return;
+    const id = this._fileExplorer ? this._fileExplorer.id : "default";
+    const openEvt = `open_files_menu_${id}_event`;
+    Backend.eventHub.subscribe(
+      openEvt,
+      () => { },
+      async ({ anchorId, file }) => {
+        const anchor = document.getElementById(anchorId);
+        if (anchor && file) this.showContextMenu(anchor, file, anchor);
+      },
+      true,
+      this
+    );
+    this._legacyOpenMenuBound = true;
+  }
+
+  // ---------- ensure menu is attached & wired ----------
+  // in filesView.js
+  _ensureMenuWired() {
+    if (!this._contextMenu) return;
+
+    // 1) Ensure the menu is actually in the document
+    if (this._contextMenu.parentNode !== document.body) {
+      document.body.appendChild(this._contextMenu);
+    }
+
+    // 4) Now query all the items (they’re upgraded & slotted)
     this._videoMenuItem = this._contextMenu.querySelector("#video-menu-item");
     this._fileInfosMenuItem = this._contextMenu.querySelector("#file-infos-menu-item");
     this._titleInfosMenuItem = this._contextMenu.querySelector("#title-infos-menu-item");
@@ -170,173 +345,66 @@ export class FilesView extends HTMLElement {
     this._generatePreviewItem = this._contextMenu.querySelector("#generate-preview-menu-item");
     this._toMp4MenuItem = this._contextMenu.querySelector("#to-mp4-menu-item");
     this._toHlsMenuItem = this._contextMenu.querySelector("#to-hls-menu-item");
-
     this._cutMenuItem = this._contextMenu.querySelector("#cut-menu-item");
     this._copyMenuItem = this._contextMenu.querySelector("#copy-menu-item");
     this._pasteMenuItem = this._contextMenu.querySelector("#paste-menu-item");
 
+
+
+    // 6) Finally wire the actions (unchanged)
     this._setupMenuActions();
 
-    this.shadowRoot.innerHTML += `
-            <style>
-                table { text-align: left; position: relative; border-collapse: separate; border-spacing: 0; }
-                table th, table td { border-right: 1px solid var(--palette-action-disabled); }
-                table th:last-child, table td:last-child { border-right: none; }
-                thead { display: table-header-group; }
-                tbody { display: table-row-group; }
-                tr { color: var(--primary-text-color); }
-                th, td { padding: 0.25rem; min-width: 150px; padding-left: 5px; }
-                th { z-index: 100; position: sticky; background-color: var(--surface-color); top: 0; }
-                .files-list-view-header { padding-left: 5px; padding-right: 5px; }
-                .files-list-view-info { padding: 2px; }
-                .files-view-div { display: flex; flex-direction: column; background-color: var(--surface-color); color: var(--primary-text-color); position: absolute; top: 0; left: 0; bottom: 0; padding-bottom: 0; right: 5px; overflow: auto; }
-                popup-menu-element { background-color: var(--surface-color); color: var(--primary-text-color); }
-                ::-webkit-scrollbar { width: 5px; height: 5px; }
-                ::-webkit-scrollbar-track { background: var(--surface-color); }
-                ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
-            </style>
-            <div class="files-view-div no-select" id="${id}"></div>
-        `;
-
-    this.div = this.shadowRoot.getElementById(id);
-
-    this._addDivEventListeners();
-    this._setupObserver();
-    this._setupBackendSubscriptions();
   }
 
-  disconnectedCallback() {
-    this._closeContextMenu();
-  }
+  _closeContextMenu() { this.hideMenu(); }
 
-  setActive(active) { this._active = active; }
-  setFileExplorer(explorer) { this._fileExplorer = explorer; }
-  setDir(dir) { this._currentDir = dir; this._path = dir ? dir.getPath() : undefined; }
-  setSelected(selected) { this._selected = selected; }
+  // in components/filesView.js
+  showContextMenu(anchor, file, highlightEl) {
+    const menu = this._contextMenu;
+    if (!menu || !file) return;
 
-  _addDivEventListeners() {
-    if (!this.div) return;
-    this.div.addEventListener("scroll", this._handleScroll.bind(this));
-    this.div.addEventListener("mouseover", this._handleMouseOver.bind(this));
-    this.div.addEventListener("click", this._handleClick.bind(this));
-    this.div.addEventListener("drop", this._handleDrop.bind(this));
-    this.div.addEventListener("dragover", (evt) => evt.preventDefault());
-  }
+    // Ensure items exist and are wired
+    this._ensureMenuWired();
 
-  _setupObserver() {
-    if (!this.div) return;
-    const observer = new MutationObserver((mutationsList) => {
-      for (const mutation of mutationsList) {
-        if (mutation.type === "attributes" && mutation.attributeName === "style") {
-          const displayValue = getComputedStyle(this.div).display;
-          if (displayValue === "none") {
-            this._closeContextMenu();
-          }
-        }
-      }
-    });
-    observer.observe(this.div, { attributes: true, attributeFilter: ["style"] });
-  }
+    // Keep a reference and update item visibility
+    menu.setFile?.(file);
 
-  _setupBackendSubscriptions() {
-    Backend.eventHub.subscribe(
-      "__create_link_event__",
-      (uuid) => {},
-      (evt) => {
-        if (this._fileExplorer && this._fileExplorer.id === evt.file_explorer_id) {
-          if (!this._active) return;
-          this._fileExplorer.createLink(evt.file, evt.dest, evt.globule);
-        }
-      },
-      true,
-      this
-    );
+    // Make sure the element lives under <body> (positioning context)
+    if (menu.parentNode !== document.body) {
+      document.body.appendChild(menu);
+    }
 
-    Backend.eventHub.subscribe(
-      "__set_dir_event__",
-      (uuid) => {},
-      (evt) => {
-        if (this._fileExplorer && this._fileExplorer.id === evt.file_explorer_id) {
-          if (evt.dir) {
-            this._currentDir = evt.dir;
-            this._contextMenu.setFile(evt.dir);
-            this.setDir(evt.dir);
-          }
-        }
-      },
-      true,
-      this
-    );
+    // Hide the menu’s own trigger button; we open programmatically
+    menu.hideBtn?.();
 
-    Backend.eventHub.subscribe(
-      `drop_file_${this._fileExplorer ? this._fileExplorer.id : "default"}_event`,
-      async (uuid, infos) => {
-        if (!this._fileExplorer || this._fileExplorer.style.zIndex !== "1000") {
-          return;
-        }
-        const originalDiv = this.div.querySelector("#" + infos.id);
-        if (originalDiv) {
-          originalDiv.parentNode.style.display = "none";
-        }
-        if (this._editMode.length === 0) { this._editMode = "cut"; }
-        FileExplorer.paperTray = [];
-        if (Object.keys(this._selected).length > 0) {
-          for (const key in this._selected) {
-            FileExplorer.paperTray.push(this._selected[key].path);
-          }
-        } else if (infos.file) {
-          FileExplorer.paperTray.push(infos.file);
-        }
-        // Keep domain-specific behavior as-is for now
-        if (infos.domain !== (this._fileExplorer.globule && this._fileExplorer.globule.domain)) {
-          if (this._handleCrossDomainFileDrop) await this._handleCrossDomainFileDrop(infos);
-        } else {
-          if (this._handleSameDomainFileDrop) await this._handleSameDomainFileDrop(infos);
-        }
-        this._selected = {};
-      },
-      true,
-      this
-    );
-  }
+    // Compute coordinates
+    const rect = getCoords(anchor || document.body);
+    const x = (rect.left || 0) + (anchor?.offsetWidth || 0) + 5;
+    const y = (rect.top || 0) + 4;
 
-  _handleScroll() {
-    if (!this.div) return;
-    if (this.div.scrollTop === 0) {
-      this.div.style.boxShadow = "";
-      this.div.style.borderTop = "";
+    // Open at position (prefer the component’s API)
+    if (typeof menu.openAt === "function") {
+      menu.openAt(x, y);
     } else {
-      this.div.style.boxShadow = "inset 0px 5px 6px -3px rgb(0 0 0 / 40%)";
-      this.div.style.borderTop = "1px solid var(--palette-divider)";
+      menu.style.position = "absolute";
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+      menu.open?.();
     }
-    this._closeContextMenu();
-  }
 
-  _handleMouseOver() {
-    if (!this._contextMenu) return;
-    if (!this._contextMenu.isOpen()) {
-      this._closeContextMenu();
-    }
-    const fileIconDivs = this.div.querySelectorAll(".file-icon-div");
-    fileIconDivs.forEach((div) => div.classList.remove("active"));
-  }
-
-  _handleClick() { this._closeContextMenu(); }
-
-  _closeContextMenu() {
-    if (this._contextMenu && this._contextMenu.isOpen()) {
-      this._contextMenu.close();
-    }
-    if (this._contextMenu && this._contextMenu.parentNode) {
-      this._contextMenu.parentNode.removeChild(this._contextMenu);
+    // Keep the tile highlighted while the menu is open
+    if (highlightEl) {
+      menu.onmouseenter = () => highlightEl.classList.add("active");
+      menu.onmouseleave = () => highlightEl.classList.remove("active");
     }
   }
 
+  // ---------- Wire actions (runs only after items are attached/upgraded) ----------
   _setupMenuActions() {
     this._contextMenu.setFile = (file) => {
       this._contextMenu.file = file;
-      const mime = file.getMime();
-      const name = file.getName();
+      const mime = (mimeOf(file) || "").toLowerCase();
+      const name = nameOf(file) || "";
 
       // Hide by default
       this._videoMenuItem.style.display = "none";
@@ -356,20 +424,19 @@ export class FilesView extends HTMLElement {
         this._generatePreviewItem.style.display = "block";
         if (name.toLowerCase().endsWith(".mp4")) {
           this._toHlsMenuItem.style.display = "block";
-        } else if (mime === "video/hls-stream") {
-          // no conversion for HLS
-        } else {
+        } else if (mime !== "video/hls-stream") {
           this._toMp4MenuItem.style.display = "block";
         }
       } else if (mime.startsWith("audio") || file.videos || file.titles) {
         this._titleInfosMenuItem.style.display = "block";
       }
 
-      if (file.getIsDir()) {
+      if (isDirOf(file)) {
         this._refreshInfoMenuItem.style.display = "block";
       }
     };
 
+    // Actions
     this._sharedMenuItem.action = this._handleShareAction.bind(this);
     this._refreshInfoMenuItem.action = this._handleRefreshInfoAction.bind(this);
     this._cutMenuItem.action = this._handleCutAction.bind(this);
@@ -379,7 +446,15 @@ export class FilesView extends HTMLElement {
     this._copyUrlItem.action = this._handleCopyUrlAction.bind(this);
     this._downloadMenuItem.action = this._handleDownloadAction.bind(this);
     this._deleteMenuItem.action = this._handleDeleteAction.bind(this);
-    this._renameMenuItem.action = this._handleRenameAction.bind(this);
+
+    this._renameMenuItem.action = () => {
+      const file = this._contextMenu.file;
+      if (!file) return;
+      const coords = getCoords(document.body);
+      this.rename(document.body, file, coords.top + 60);
+      this._closeContextMenu();
+    };
+
     this._fileInfosMenuItem.action = this._handleFileInfosAction.bind(this);
     this._titleInfosMenuItem.action = this._handleTitleInfosAction.bind(this);
     this._manageAccessMenuItem.action = this._handleManageAccessAction.bind(this);
@@ -393,15 +468,14 @@ export class FilesView extends HTMLElement {
   _getFilesForAction() {
     const files = [];
     if (Object.keys(this._selected).length > 0) {
-      for (const key in this._selected) {
-        files.push(this._selected[key]);
-      }
+      for (const key in this._selected) files.push(this._selected[key]);
     } else if (this._contextMenu.file) {
       files.push(this._contextMenu.file);
     }
     return files;
   }
 
+  // ---------- Actions (restored) ----------
   _handleShareAction() {
     const files = this._getFilesForAction();
     if (files.length > 0) {
@@ -411,233 +485,271 @@ export class FilesView extends HTMLElement {
     this._closeContextMenu();
   }
 
-  // ---------- MEDIA actions (new wrappers) ----------
-  async _handleConvertToMp4Action() {
-    const file = this._contextMenu.file;
-    if (!file) { displayError("No file selected.", 3000); return; }
-    const abs = toAbsoluteFsPath(file.getPath(), DATA_ROOT);
-    displayMessage(`Converting to MP4: ${abs}`, 3500);
-    try {
-      await convertVideoToMpeg4H264(abs);
-      displayMessage("Conversion to MP4 done!", 3500);
-      Backend.eventHub.publish(
-        "refresh_dir_evt",
-        file.getPath().substring(0, file.getPath().lastIndexOf("/")),
-        false
-      );
-    } catch (e) {
-      displayError(`Failed to convert to MP4: ${e?.message || e}`, 3000);
-    } finally { this._closeContextMenu(); }
-  }
-
-  async _handleConvertToHlsAction() {
-    const file = this._contextMenu.file;
-    if (!file) { displayError("No file selected.", 3000); return; }
-    const abs = toAbsoluteFsPath(file.getPath(), DATA_ROOT);
-    displayMessage(`Converting to HLS: ${abs}`, 3500);
-    try {
-      await convertVideoToHls(abs);
-      displayMessage("Conversion to HLS done!", 3500);
-      Backend.eventHub.publish(
-        "refresh_dir_evt",
-        file.getPath().substring(0, file.getPath().lastIndexOf("/")),
-        false
-      );
-    } catch (e) {
-      displayError(`Failed to convert to HLS: ${e?.message || e}`, 3000);
-    } finally { this._closeContextMenu(); }
-  }
-
-  async _handleGenerateTimelineAction() {
-    const file = this._contextMenu.file;
-    if (!file) { displayError("No file selected.", 3000); return; }
-    const abs = toAbsoluteFsPath(file.getPath(), DATA_ROOT);
-    displayMessage(`Generating timeline for: ${abs}`, 3500);
-    try {
-      await createVideoTimeLine(abs, 180, 0.2);
-      displayMessage("Timeline created successfully!", 3500);
-    } catch (e) {
-      displayError(`Failed to generate timeline: ${e?.message || e}`, 3000);
-    } finally { this._closeContextMenu(); }
-  }
-
-  async _handleGeneratePreviewAction() {
-    const file = this._contextMenu.file;
-    if (!file) { displayError("No file selected.", 3000); return; }
-    const abs = toAbsoluteFsPath(file.getPath(), DATA_ROOT);
-    displayMessage(`Generating preview for: ${abs}`, 3500);
-    try {
-      await createVideoPreview(abs, 128, 20);
-      displayMessage("Preview created successfully!", 3500);
-      Backend.eventHub.publish(
-        "refresh_dir_evt",
-        file.getPath().substring(0, file.getPath().lastIndexOf("/")),
-        false
-      );
-    } catch (e) {
-      displayError(`Failed to generate preview: ${e?.message || e}`, 3000);
-    } finally { this._closeContextMenu(); }
-  }
-
   async _handleRefreshInfoAction() {
     const file = this._contextMenu.file;
-    if (!file) { displayError("No file selected.", 3000); return; }
-    const abs = toAbsoluteFsPath(file.getPath(), DATA_ROOT);
-    displayMessage(`Updating information for: ${abs}`, 3500);
+    if (!file) return;
+
+    let absPath = pathOf(file);
+    if (DATA_ROOT && (absPath.startsWith("/users") || absPath.startsWith("/applications"))) {
+      absPath = toAbsoluteFsPath(absPath, DATA_ROOT + "/files");
+    }
+
     try {
-      await startProcessVideo(abs);
+      displayMessage(`Updating information for: ${absPath}`, 3500);
+      await startProcessVideo({ path: absPath }); // wrapper call
       displayMessage("Information updated successfully!", 3000);
-    } catch (e) {
-      displayError(`Failed to update information: ${e?.message || e}`, 3000);
-    } finally { this._closeContextMenu(); }
+    } catch (err) {
+      displayError(`Failed to update information: ${err?.message || err}`, 3000);
+    } finally {
+      this._closeContextMenu();
+    }
   }
 
-  // ---------- URL open/copy via gateway base ----------
+  _handleCutAction() {
+    this._editMode = "cut";
+    FileExplorer.paperTray = this._getFilesForAction().map((f) => pathOf(f));
+    this._selected = {};
+    this._fileExplorer?.clearSelections?.();
+    this._closeContextMenu();
+  }
+
+  _handleCopyAction() {
+    this._editMode = "copy";
+    FileExplorer.paperTray = this._getFilesForAction().map((f) => pathOf(f));
+    this._selected = {};
+    this._fileExplorer?.clearSelections?.();
+    this._closeContextMenu();
+  }
+
+  async _handlePasteAction() {
+    const dest = pathOf(this._contextMenu.file);
+    if (!FileExplorer.paperTray?.length) {
+      displayMessage("Nothing to paste.", 2500);
+      this._closeContextMenu();
+      return;
+    }
+
+    displayError(
+      "Copy/Move is not yet wired in the new filesystem wrapper. Expose `copy/move` in `backend/cms/files` and swap them here (see TODO in code).",
+      6000
+    );
+
+    this._editMode = "";
+    FileExplorer.paperTray = [];
+    this._closeContextMenu();
+  }
+
   async _handleOpenInNewTabAction() {
     const file = this._contextMenu.file;
-    if (!file) { displayError("No file to open.", 3000); return; }
-    let url = buildFileHttpUrl(file.getPath());
-    if (file.mime === "video/hls-stream") url += "/playlist.m3u8";
-    window.open(url, "_blank", "noopener");
-    this._closeContextMenu();
+    if (!file) return;
+
+    const mime = (mimeOf(file) || "").toLowerCase();
+    const isHls = mime === "video/hls-stream";
+    const url = buildFileHttpUrl(pathOf(file), isHls);
+
+    try {
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      displayError(`Failed to open in new tab: ${err?.message || err}`, 3000);
+    } finally {
+      this._closeContextMenu();
+    }
   }
 
   async _handleCopyUrlAction() {
     const file = this._contextMenu.file;
-    if (!file) { displayError("No file to copy URL.", 3000); return; }
-    let url = buildFileHttpUrl(file.getPath());
-    if (file.mime === "video/hls-stream") url += "/playlist.m3u8";
-    copyToClipboard(url);
-    displayMessage("URL was copied to clipboard!", 3000);
-    this._closeContextMenu();
-  }
+    if (!file) return;
 
-  // ---------- Delete / Rename / Download using new files wrappers ----------
-  async _handleDeleteAction() {
-    const files = this._getFilesForAction().map((f) => (f.lnk && !f.getName().endsWith(".lnk")) ? f.lnk : f);
-    if (files.length === 0) { this._closeContextMenu(); return; }
+    const mime = (mimeOf(file) || "").toLowerCase();
+    const isHls = mime === "video/hls-stream"; // fixed
+    const url = buildFileHttpUrl(pathOf(file), isHls);
+    const token = sessionStorage.getItem("__globular_token__") || "";
+    const urlWithToken = token ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : url;
 
-    const fileListHtml = files.map((f) => `<div>${f.getPath()}</div>`).join("");
-    this._showConfirmationDialog(
-      `
-        <div>You're about to delete files:</div>
-        <div style="display:flex;flex-direction:column;">${fileListHtml}</div>
-        <div>Are you sure you want to do this?</div>
-      `,
-      async () => {
-        try {
-          for (const f of files) {
-            const p = f.getPath().replace(/\\/g, "/");
-            if (f.getIsDir()) await removeDir(p);
-            else await removeFile(p);
-            Backend.eventHub.publish(
-              "reload_dir_event",
-              p.substring(0, p.lastIndexOf("/")),
-              false
-            );
-          }
-          displayMessage("Files are now deleted!", 3000);
-          this._selected = {};
-        } catch (e) {
-          displayError(`Failed to delete: ${e?.message || e}`, 3000);
-        } finally {
-          this._closeContextMenu();
-        }
-      },
-      () => {},
-      "yes-delete-files",
-      "no-delete-files"
-    );
-  }
-
-  async rename(parent, f, offset) {
-    const html = `
-      <style>
-        #rename-file-dialog{ display:flex; position:absolute; flex-direction:column; left:5px; min-width:200px; z-index:100; background-color:var(--surface-color); color:var(--primary-text-color); box-shadow:var(--shadow-elevation-2dp); border-radius:8px; overflow:hidden; }
-        .rename-file-dialog-actions{ font-size:.85rem; align-items:center; justify-content:flex-end; display:flex; padding:8px; border-top:1px solid var(--palette-divider); }
-        .card-content{ padding:16px; }
-        paper-textarea{ --paper-input-container-color:var(--primary-text-color); --paper-input-container-focus-color:var(--primary-color); --paper-input-container-label-floating-color:var(--primary-color); --paper-input-container-input-color:var(--primary-text-color); }
-      </style>
-      <paper-card id="rename-file-dialog" style="top:${offset}px;">
-        <div class="card-content">
-          <paper-textarea id="rename-file-input" label="New name" value="${f.getName()}"></paper-textarea>
-        </div>
-        <div class="rename-file-dialog-actions">
-          <paper-button id="rename-file-cancel-btn">Cancel</paper-button>
-          <paper-button id="rename-file-ok-btn">Rename</paper-button>
-        </div>
-      </paper-card>`;
-
-    let renameDialog = document.body.querySelector("#rename-file-dialog");
-    if (!renameDialog) {
-      const range = document.createRange();
-      document.body.appendChild(range.createContextualFragment(html));
-      renameDialog = document.body.querySelector("#rename-file-dialog");
-      renameDialog.addEventListener("mouseover", (evt) => evt.stopPropagation());
-      renameDialog.addEventListener("mouseenter", (evt) => evt.stopPropagation());
+    try {
+      copyToClipboard(urlWithToken);
+      displayMessage("URL was copied to clipboard!", 3000);
+    } catch (err) {
+      displayError(`Failed to copy URL: ${err?.message || err}`, 3000);
+    } finally {
+      this._closeContextMenu();
     }
-    renameDialog.style.top = `${offset}px`;
-
-    const input = renameDialog.querySelector("#rename-file-input");
-    setTimeout(() => {
-      input.focus();
-      const dotIndex = f.getName().lastIndexOf(".");
-      if (dotIndex === -1) input.inputElement.textarea.select();
-      else input.inputElement.textarea.setSelectionRange(0, dotIndex);
-    }, 50);
-
-    const cancelBtn = renameDialog.querySelector("#rename-file-cancel-btn");
-    const renameBtn = renameDialog.querySelector("#rename-file-ok-btn");
-
-    cancelBtn.addEventListener("click", (evt) => {
-      evt.stopPropagation();
-      if (renameDialog.parentNode) renameDialog.parentNode.removeChild(renameDialog);
-    });
-
-    input.addEventListener("keydown", (evt) => {
-      if (evt.key === "Enter") renameBtn.click();
-      else if (evt.key === "Escape") cancelBtn.click();
-    });
-
-    renameBtn.addEventListener("click", async (evt) => {
-      evt.stopPropagation();
-      if (renameDialog.parentNode) renameDialog.parentNode.removeChild(renameDialog);
-
-      const oldPath = f.getPath();
-      const parentPath = oldPath.substring(0, oldPath.lastIndexOf("/"));
-      const newName = input.value;
-      const oldName = f.getName();
-      try {
-        await renameFile(oldPath, newName, oldName);
-        displayMessage(`Renamed ${oldName} to ${newName}`, 3000);
-        removeDir(parentPath);
-        Backend.eventHub.publish("reload_dir_event", parentPath, false);
-      } catch (e) {
-        displayError(`Failed to rename: ${e?.message || e}`, 3000);
-      }
-    });
   }
 
   async _handleDownloadAction() {
-    const files = this._getFilesForAction();
-    if (files.length === 0) return;
+    const selected = (this._getFilesForAction && this._getFilesForAction()) || [];
+    const ctxFile = this._contextMenu && this._contextMenu.file;
 
-    if (files.length === 1 && !files[0].getIsDir()) {
-      const url = buildFileHttpUrl(files[0].getPath());
-      const name = files[0].getPath().split("/").pop();
+    // ---------------- helpers ----------------
+    const makeArchiveName = () => {
+      const r = (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : (Date.now().toString(16) + Math.random().toString(16).slice(2));
+      return "_" + r.replace(/[-@]/g, "_");
+    };
+    const getToken = () => sessionStorage.getItem("__globular_token__") || "";
+    const withTokenUrl = (url, token) =>
+      token ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : url;
+    const downloadByUrl = async (url, filename) => {
       try {
-        await downloadHttp(url, name);
-        displayMessage(`Downloaded ${name}`, 3000);
-      } catch (e) {
-        displayError(`Download failed: ${e?.message || e}`, 3000);
+        const response = await fetch(url);
+        const blob = await response.blob(); // Get the file content as a Blob
+
+        const objectURL = URL.createObjectURL(blob); // Create a URL for the Blob
+
+        const link = document.createElement('a');
+        link.href = objectURL;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        URL.revokeObjectURL(objectURL); // Release the object URL after use
+      } catch (error) {
+        console.error('Error downloading file:', error);
       }
-    } else {
-      displayError("Archive & download not wired yet in the new wrappers.", 4000);
+    };
+
+    // Determine intent
+    const manySelected = selected.length > 1;
+    const oneSelected = selected.length === 1;
+    const anyDirSelected = selected.some((f) => isDirOf(f));
+
+    // ---------- CASE 1: multi or any directory -> archive ----------
+    if (manySelected || anyDirSelected) {
+      const files = selected.map((f) => pathOf(f)).filter(Boolean);
+      if (!files.length) return;
+
+      const token = getToken();
+      const uuid = makeArchiveName();
+      this._file_explorer_?.displayWaitMessage?.("Creating archive for selected items...");
+
+      try {
+        const archivePath = await createArchive(files, uuid, token); // returns server path like /tmp/_abc.tar.gz
+        const url = withTokenUrl(buildFileHttpUrl(archivePath), token);
+
+        this._file_explorer_?.displayWaitMessage?.("Downloading archive...");
+        await downloadByUrl(url, `${uuid}.tar.gz`);
+
+        this._file_explorer_?.displayWaitMessage?.("Removing temporary archive...");
+        await removeFile(archivePath, token);
+
+        displayMessage("Archive downloaded and cleaned up.", 2500);
+      } catch (err) {
+        displayError(`Archive download failed: ${err?.message || err}`, 4000);
+      } finally {
+        this._file_explorer_?.resume?.();
+        this._fileExplorer?.clearSelections?.();
+        this._selected = {};
+      }
+      return;
     }
+
+    // ---------- CASE 2: exactly one selection and it's a regular file ----------
+    if (oneSelected && !isDirOf(selected[0])) {
+      const token = getToken();
+      const filePath = pathOf(selected[0]);
+      const fileName = nameOf(selected[0]);
+
+      try {
+        const url = withTokenUrl(buildFileHttpUrl(filePath), token);
+        await downloadByUrl(url, fileName);
+        displayMessage(`Downloaded ${fileName}`, 2500);
+      } catch (err) {
+        displayError(`Download failed: ${err?.message || err}`, 4000);
+      } finally {
+        this._fileExplorer?.clearSelections?.();
+        this._selected = {};
+      }
+      return;
+    }
+
+    // ---------- CASE 3: no selection -> fall back to context file ----------
+    if (!ctxFile) return;
+
+    const token = getToken();
+    const filePath = pathOf(ctxFile);
+    const fileName = nameOf(ctxFile);
+
+    if (isDirOf(ctxFile)) {
+      // right-clicked on a directory → archive flow
+      const uuid = makeArchiveName();
+      this._file_explorer_?.displayWaitMessage?.(`Creating archive for ${fileName}...`);
+      try {
+        const archivePath = await createArchive([filePath], uuid, token);
+        const url = withTokenUrl(buildFileHttpUrl(archivePath), token);
+
+        this._file_explorer_?.displayWaitMessage?.("Downloading archive...");
+        await downloadByUrl(url, `${fileName}.tar.gz`);
+
+        this._file_explorer_?.displayWaitMessage?.("Removing temporary archive...");
+        await removeFile(archivePath, token);
+
+        displayMessage("Archive downloaded and cleaned up.", 2500);
+      } catch (err) {
+        displayError(`Directory download failed: ${err?.message || err}`, 4000);
+      } finally {
+        this._file_explorer_?.resume?.();
+        this._selected = {};
+        this._fileExplorer?.clearSelections?.();
+      }
+      return;
+    }
+
+    // right-clicked a single regular file → direct download
+    try {
+      const url = withTokenUrl(buildFileHttpUrl(filePath), token);
+      await downloadByUrl(url, fileName);
+      displayMessage(`Downloaded ${fileName}`, 2500);
+    } catch (err) {
+      displayError(`Download failed: ${err?.message || err}`, 4000);
+    } finally {
+      // after the try/finally blocks where you clear selection
+      this._selected = {};
+      this._fileExplorer?.clearSelections?.();
+    }
+  }
+
+  async _handleDeleteAction() {
+    let filesToDelete = this._getFilesForAction();
+    if (!filesToDelete.length) return;
+
+    const listHtml = filesToDelete.map((f) => `<div>${pathOf(f)}</div>`).join("");
+
+    this._showConfirmationDialog(
+      `
+      <div>You're about to delete:</div>
+      <div style="display:flex;flex-direction:column;">${listHtml}</div>
+      <div>Are you sure?</div>
+      `,
+      async () => {
+        try {
+          for (const f of filesToDelete) {
+            const p = pathOf(f);
+            if (isDirOf(f)) {
+              await removeDir({ path: p });
+            } else {
+              await removeFile({ path: p });
+            }
+          }
+          displayMessage("Delete complete.", 2500);
+          filesToDelete.forEach((f) => {
+            const full = pathOf(f);
+            const parent = full.substring(0, full.lastIndexOf("/")) || "/";
+            Backend.eventHub.publish("reload_dir_event", parent, false);
+          });
+        } catch (err) {
+          displayError(`Failed to delete: ${err?.message || err}`, 3000);
+        }
+      },
+      () => { },
+      "yes-delete-files",
+      "no-delete-files"
+    );
+
     this._closeContextMenu();
   }
 
-  // ---------- Existing (unchanged or lightly touched) handlers ----------
   _handleManageAccessAction() {
     if (this._fileExplorer && this._contextMenu.file) {
       Backend.eventHub.publish(
@@ -645,48 +757,6 @@ export class FilesView extends HTMLElement {
         this._contextMenu.file,
         true
       );
-    }
-    this._closeContextMenu();
-  }
-
-  _handleCutAction() {
-    this._editMode = "cut";
-    FileExplorer.paperTray = this._getFilesForAction().map((f) => f.getPath());
-    this._selected = {};
-    this._closeContextMenu();
-  }
-
-  _handleCopyAction() {
-    this._editMode = "copy";
-    FileExplorer.paperTray = this._getFilesForAction().map((f) => f.getPath());
-    this._selected = {};
-    this._closeContextMenu();
-  }
-
-  async _handlePasteAction() {
-    // NOTE: copy/move still rely on legacy services; keep as-is until wrappers exist
-    const destPath = this._contextMenu.file.getPath();
-    if (!FileExplorer.paperTray || FileExplorer.paperTray.length === 0) {
-      displayMessage("Nothing to paste.", 3000);
-      this._closeContextMenu();
-      return;
-    }
-    try {
-      // Implement your legacy move/copy here or refactor with new wrappers when available.
-      displayMessage("Paste operation not yet refactored to new wrappers.", 3000);
-    } catch (e) {
-      displayError(`Paste operation failed: ${e?.message || e}`, 3000);
-    } finally {
-      this._selected = {};
-      this._closeContextMenu();
-    }
-  }
-
-  _handleRenameAction() {
-    if (this._contextMenu && this._contextMenu.file) {
-      const fileToRename = this._contextMenu.file;
-      const coords = getCoords(this.div);
-      this.rename(this.div, fileToRename, coords.top + (fileToRename.offsetY || 0));
     }
     this._closeContextMenu();
   }
@@ -704,7 +774,7 @@ export class FilesView extends HTMLElement {
 
   async _handleTitleInfosAction() {
     const file = this._contextMenu.file;
-    if (!file) { displayError("No file selected.", 3000); this._closeContextMenu(); return; }
+    if (!file) return;
 
     if (file.videos || file.titles || file.audios) {
       Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
@@ -712,55 +782,40 @@ export class FilesView extends HTMLElement {
       return;
     }
 
+    const mime = (mimeOf(file) || "").toLowerCase();
+
     try {
-      if (file.getMime().startsWith("video") || file.getIsDir()) {
-        // Try fetching via existing TitleController helpers
-        const videos = await promisifiedGetFileVideosInfo(file, file.globule);
-        if (videos.length > 0) {
-          file.videos = videos;
-          Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
-        } else {
-          const titles = await promisifiedGetFileTitlesInfo(file, file.globule);
-          if (titles.length > 0) {
-            file.titles = titles;
-            Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
-          } else {
-            await this._promptCreateVideoInfo(file);
-          }
-        }
-      } else if (file.getMime().startsWith("audio")) {
-        const audios = await getAudioInfo(file);
-        if (audios.length > 0) {
-          file.audios = audios;
-          Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
-        } else {
-          displayMessage("No audio information found for this file.", 3000);
-        }
+      if (mime.startsWith("video") || isDirOf(file)) {
+        await this._promptCreateVideoInfo(file);
+      } else if (mime.startsWith("audio")) {
+        displayMessage("No audio metadata found. (Add audio getters to title.ts to auto-fetch.)", 3500);
       }
     } catch (err) {
-      displayError(`Failed to retrieve media info: ${err.message}`, 3000);
-      if (file.getMime().startsWith("video") || file.getIsDir()) {
+      displayError(`Failed to retrieve media info: ${err?.message || err}`, 3000);
+      if (mime.startsWith("video") || isDirOf(file)) {
         await this._promptCreateVideoInfo(file);
       }
-    } finally { this._closeContextMenu(); }
+    } finally {
+      this._closeContextMenu();
+    }
   }
 
   async _promptCreateVideoInfo(file) {
     const toast = displayMessage(
       `
       <style>
-        #yes-no-create-video-info-box{ display:flex; flex-direction:column; }
-        #yes-no-create-video-info-box img{ max-height:100px; object-fit:contain; width:100%; margin-top:15px; }
-        #yes-no-create-video-info-box span{ font-size:.95rem; text-align:center; }
-        #yes-no-create-video-info-box paper-button{ font-size:.8rem; }
-        #yes-no-create-video-info-box div{ display:flex; padding-bottom:10px; }
-        paper-radio-group{ margin-top:15px; }
+        #yes-no-create-video-info-box{display:flex;flex-direction:column;}
+        #yes-no-create-video-info-box img{max-height:100px;object-fit:contain;width:100%;margin-top:15px;}
+        #yes-no-create-video-info-box span{font-size:.95rem;text-align:center;}
+        #yes-no-create-video-info-box paper-button{font-size:.8rem;}
+        #yes-no-create-video-info-box div{display:flex;padding-bottom:10px;}
+        paper-radio-group { margin-top:15px; }
       </style>
       <div id="yes-no-create-video-info-box">
-        <div style="margin-bottom:10px;">No information was associated with this video file.</div>
-        <img src="${file.getThumbnail()}"></img>
-        <span>${file.getPath().substring(file.getPath().lastIndexOf("/") + 1)}</span>
-        <div style="margin-top:10px;">Do you want to create video/movie information?</div>
+        <div style="margin-bottom:10px;">No information is associated with this file.</div>
+        <img src="${thumbOf(file) || ""}"></img>
+        <span>${(pathOf(file) || "").split("/").pop()}</span>
+        <div style="margin-top:10px;">Create video/movie information?</div>
         <div style="justify-content:flex-end;">
           <paper-button raised id="yes-create-video-info">Yes</paper-button>
           <paper-button raised id="no-create-video-info">No</paper-button>
@@ -773,22 +828,29 @@ export class FilesView extends HTMLElement {
     return new Promise((resolve) => {
       const yesBtn = document.querySelector("#yes-create-video-info");
       const noBtn = document.querySelector("#no-create-video-info");
-      yesBtn.onclick = () => { toast.hideToast(); this._showCreateInfoTypeDialog(file); resolve(); };
-      noBtn.onclick = () => { toast.hideToast(); resolve(); };
+      yesBtn.onclick = () => {
+        toast.hideToast();
+        this._showCreateInfoTypeDialog(file);
+        resolve();
+      };
+      noBtn.onclick = () => {
+        toast.hideToast();
+        resolve();
+      };
     });
   }
 
   _showCreateInfoTypeDialog(file) {
     const toast = displayMessage(
       `
-      <div style="display:flex; flex-direction:column;">
+      <div style="display:flex;flex-direction:column;">
         <div>Please select the kind of information to create...</div>
-        <img style="max-height:100px; object-fit:contain; width:100%; margin-top:15px;" src="${file.getThumbnail()}"></img>
-        <paper-radio-group selected="video-option" style="margin-top: 15px;">
-          <paper-radio-button id="video-option" name="type-option"><span title="Simple video, e.g., YouTube">Video</span></paper-radio-button>
-          <paper-radio-button id="title-option" name="type-option"><span title="Movie, TV Episode/Series">Movie or TV Episode/Series</span></paper-radio-button>
+        <img style="max-height:100px;object-fit:contain;width:100%;margin-top:15px;" src="${thumbOf(file) || ""}"></img>
+        <paper-radio-group selected="video-option" style="margin-top:15px;">
+          <paper-radio-button id="video-option" name="type-option"><span>Video</span></paper-radio-button>
+          <paper-radio-button id="title-option" name="type-option"><span>Movie or TV Episode/Series</span></paper-radio-button>
         </paper-radio-group>
-        <div style="justify-content:flex-end; margin-top:20px;">
+        <div style="justify-content:flex-end;margin-top:20px;">
           <paper-button raised id="yes-create-info">Ok</paper-button>
           <paper-button raised id="no-create-info">Cancel</paper-button>
         </div>
@@ -814,107 +876,257 @@ export class FilesView extends HTMLElement {
         }
         Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
       } catch (err) {
-        displayError(`Failed to create information: ${err.message}`, 3000);
-      } finally { this._closeContextMenu(); }
+        displayError(`Failed to create information: ${err?.message || err}`, 3000);
+      } finally {
+        this._closeContextMenu();
+      }
     };
-    cancelBtn.onclick = () => { toast.hideToast(); this._closeContextMenu(); };
+
+    cancelBtn.onclick = () => {
+      toast.hideToast();
+      this._closeContextMenu();
+    };
   }
-
-  _createCommonMediaMetadata(file) {
-    const uuid = getUuidByString(file.getName());
-    const date = new Date();
-
-    const publisher = new PublisherMsg();
-    // Fill publisher fields from your account controller if needed
-    const poster = new PosterMsg();
-    poster.setContenturl(file.getThumbnail());
-    poster.setUrl();
-
-    const url = buildFileHttpUrl(file.getPath());
-    return { uuid, date, publisher, poster, url };
-  }
-
-  _getVideoDuration(videoUrl) {
-    return new Promise((resolve) => {
-      const vid = document.createElement("video");
-      vid.src = videoUrl;
-      vid.onloadedmetadata = () => { resolve(parseInt(vid.duration) || 0); vid.remove(); };
-      vid.onerror = () => { resolve(0); vid.remove(); };
-    });
-  }
-
-  createAudioInformations(file, callback) { if (callback) callback(null); }
 
   async createTitleInformations(file) {
-    const { uuid, url, poster } = this._createCommonMediaMetadata(file);
-    const titleInfo = new TitleMsg();
-    titleInfo.setId(uuid);
-    titleInfo.setPoster(poster);
-    titleInfo.setUrl(url);
-    if (file.getIsDir()) titleInfo.setType("TVSeries");
-
+    const p = pathOf(file);
+    const isSeries = isDirOf(file);
     try {
-      let duration = 0;
-      if (!file.getIsDir()) duration = await this._getVideoDuration(url);
-      titleInfo.setDuration(duration);
-      await createTitleAndAssociate(titleInfo, file.getPath());
-      displayMessage(`Title info created for ${file.getName()}`, 3000);
-      return titleInfo;
-    } catch (err) { displayError(`Failed to create title info: ${err.message}`, 3000); throw err; }
+      const created = await createTitleAndAssociate({
+        filePath: p,
+        titleType: isSeries ? "TVSeries" : undefined,
+      });
+      displayMessage(`Title info created for ${nameOf(file)}`, 2500);
+      return created;
+    } catch (err) {
+      displayError(`Failed to create title info: ${err?.message || err}`, 3000);
+      throw err;
+    }
   }
 
   async createVideoInformations(file) {
-    const { uuid, date, publisher, poster, url } = this._createCommonMediaMetadata(file);
-    const videoInfo = new VideoMsg();
-    videoInfo.setId(uuid);
-    videoInfo.setDate(date.toISOString());
-    videoInfo.setPublisherid(publisher);
-    videoInfo.setPoster(poster);
-    videoInfo.setUrl(url);
-
+    const p = pathOf(file);
     try {
-      let duration = 0;
-      if (!file.getIsDir()) duration = await this._getVideoDuration(url);
-      videoInfo.setDuration(duration);
-      await createVideoAndAssociate(videoInfo, file.getPath());
-      displayMessage(`Video info created for ${file.getName()}`, 3000);
-      return videoInfo;
-    } catch (err) { displayError(`Failed to create video info: ${err.message}`, 3000); throw err; }
+      const created = await createVideoAndAssociate({ filePath: p });
+      displayMessage(`Video info created for ${nameOf(file)}`, 2500);
+      return created;
+    } catch (err) {
+      displayError(`Failed to create video info: ${err?.message || err}`, 3000);
+      throw err;
+    }
   }
 
-  hide() { if (this.div) this.div.style.display = "none"; this._closeContextMenu(); }
-  _hideOnlyMenu() { if (this._contextMenu) { this._contextMenu.close(); if (this._contextMenu.parentNode) this._contextMenu.parentNode.removeChild(this._contextMenu); } }
-  show() { this._hideOnlyMenu(); if (this.div) this.div.style.display = "block"; }
+  async _handleGenerateTimelineAction() {
+    const file = this._contextMenu.file;
+    if (!file) return;
 
-  async _handleDrop(evt) {
+    let absPath = pathOf(file);
+    if (DATA_ROOT && (absPath.startsWith("/users") || absPath.startsWith("/applications"))) {
+      absPath = toAbsoluteFsPath(absPath, DATA_ROOT + "/files");
+    }
+
+    try {
+      displayMessage(`Generating timeline for: ${absPath}`, 3500);
+      await createVideoTimeLine({ path: absPath, width: 180, fps: 0.2 });
+      displayMessage("Timeline created successfully!", 3000);
+    } catch (err) {
+      displayError(`Failed to generate timeline: ${err?.message || err}`, 3000);
+    } finally {
+      this._closeContextMenu();
+    }
+  }
+
+  async _handleGeneratePreviewAction() {
+    const file = this._contextMenu.file;
+    if (!file) return;
+
+    let absPath = pathOf(file);
+    if (DATA_ROOT && (absPath.startsWith("/users") || absPath.startsWith("/applications"))) {
+      absPath = toAbsoluteFsPath(absPath, DATA_ROOT + "/files");
+    }
+
+    try {
+      displayMessage(`Generating preview for: ${absPath}`, 3500);
+      await createVideoPreview({ path: absPath, height: 128, nb: 20 });
+      displayMessage("Preview created successfully!", 3000);
+      const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
+      Backend.eventHub.publish("refresh_dir_evt", parent, false);
+    } catch (err) {
+      displayError(`Failed to generate preview: ${err?.message || err}`, 3000);
+    } finally {
+      this._closeContextMenu();
+    }
+  }
+
+  async _handleConvertToMp4Action() {
+    const file = this._contextMenu.file;
+    if (!file) return;
+
+    let absPath = pathOf(file);
+    if (DATA_ROOT && (absPath.startsWith("/users") || absPath.startsWith("/applications"))) {
+      absPath = toAbsoluteFsPath(absPath, DATA_ROOT + "/files");
+    }
+
+    try {
+      displayMessage(`Converting to MP4: ${absPath}`, 3500);
+      await convertVideoToMpeg4H264({ path: absPath });
+      displayMessage("Conversion to MP4 done!", 3000);
+      const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
+      Backend.eventHub.publish("refresh_dir_evt", parent, false);
+    } catch (err) {
+      displayError(`Failed to convert to MP4: ${err?.message || err}`, 3000);
+    } finally {
+      this._closeContextMenu();
+    }
+  }
+
+  async _handleConvertToHlsAction() {
+    const file = this._contextMenu.file;
+    if (!file) return;
+
+    let absPath = pathOf(file);
+    if (DATA_ROOT && (absPath.startsWith("/users") || absPath.startsWith("/applications"))) {
+      absPath = toAbsoluteFsPath(absPath, DATA_ROOT + "/files");
+    }
+
+    try {
+      displayMessage(`Converting to HLS: ${absPath}`, 3500);
+      await convertVideoToHls({ path: absPath });
+      displayMessage("Conversion to HLS done!", 3000);
+      const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
+      Backend.eventHub.publish("refresh_dir_evt", parent, false);
+    } catch (err) {
+      displayError(`Failed to convert to HLS: ${err?.message || err}`, 3000);
+    } finally {
+      this._closeContextMenu();
+    }
+  }
+
+  // ---------- Rename dialog ----------
+  async rename(parent, file, offsetPx = 80) {
+    const currentName = nameOf(file);
+    const parentPath = (pathOf(file) || "").substring(0, pathOf(file).lastIndexOf("/")) || "/";
+
+    const html = `
+      <style>
+        #rename-file-dialog{
+          display:flex;position:absolute;flex-direction:column;left:5px;min-width:260px;
+          z-index:100;background:var(--surface-color);color:var(--primary-text-color);
+          box-shadow:var(--shadow-elevation-2dp);border-radius:8px;overflow:hidden;
+        }
+        .rename-file-dialog-actions{
+          font-size:.85rem;align-items:center;justify-content:flex-end;display:flex;
+          padding:8px;border-top:1px solid var(--palette-divider);
+        }
+        .card-content{padding:16px;}
+      </style>
+      <paper-card id="rename-file-dialog" style="top:${offsetPx}px;">
+        <div class="card-content">
+          <paper-input id="rename-file-input" label="New name" value="${currentName}"></paper-input>
+        </div>
+        <div class="rename-file-dialog-actions">
+          <paper-button id="rename-file-cancel-btn">Cancel</paper-button>
+          <paper-button id="rename-file-ok-btn">Rename</paper-button>
+        </div>
+      </paper-card>
+    `;
+
+    let dlg = document.body.querySelector("#rename-file-dialog");
+    if (!dlg) {
+      const range = document.createRange();
+      document.body.appendChild(range.createContextualFragment(html));
+      dlg = document.body.querySelector("#rename-file-dialog");
+      dlg.addEventListener("mouseover", (e) => e.stopPropagation());
+      dlg.addEventListener("mouseenter", (e) => e.stopPropagation());
+    } else {
+      dlg.style.top = `${offsetPx}px`;
+    }
+
+    const input = dlg.querySelector("#rename-file-input");
+    setTimeout(() => {
+      input.focus();
+      const dotIdx = currentName.lastIndexOf(".");
+      if (dotIdx === -1) input.inputElement.inputElement.select();
+      else input.inputElement.inputElement.setSelectionRange(0, dotIdx);
+    }, 50);
+
+    const cancelBtn = dlg.querySelector("#rename-file-cancel-btn");
+    const okBtn = dlg.querySelector("#rename-file-ok-btn");
+
+    const close = () => dlg?.parentNode && dlg.parentNode.removeChild(dlg);
+
+    cancelBtn.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      close();
+    });
+
+    input.addEventListener("keydown", (evt) => {
+      if (evt.key === "Enter") okBtn.click();
+      else if (evt.key === "Escape") cancelBtn.click();
+    });
+
+    okBtn.addEventListener("click", async (evt) => {
+      evt.stopPropagation();
+      close();
+      const newName = input.value?.trim();
+      if (!newName || newName === currentName) return;
+
+      try {
+        await renameFile({ dirPath: parentPath, oldName: currentName, newName });
+        displayMessage(`Renamed ${currentName} to ${newName}`, 2500);
+        Backend.eventHub.publish("reload_dir_event", parentPath, false);
+      } catch (err) {
+        displayError(`Failed to rename: ${err?.message || err}`, 3000);
+      }
+    });
+  }
+
+  // ---------- Drag & drop ----------
+  async handleDropEvent(evt) {
     evt.stopPropagation();
     evt.preventDefault();
-    const lnk = evt.dataTransfer.getData("text/html");
+
+    const lnkHtml = evt.dataTransfer.getData("text/html");
     const url = evt.dataTransfer.getData("Url");
 
     if (url) {
-      await this._handleUrlDrop(url, lnk);
-    } else if (evt.dataTransfer.files.length > 0) {
-      await this._handleFileDrop(evt.dataTransfer.files, lnk);
+      await this._handleUrlDrop(url, lnkHtml);
+    } else if (evt.dataTransfer.files && evt.dataTransfer.files.length > 0) {
+      await this._handleFileDrop(evt.dataTransfer.files, lnkHtml);
     } else {
       await this._handleInternalDragDrop(evt);
     }
   }
 
-  async _handleUrlDrop(url, lnk) {
-    const destPath = this._currentDir ? this._currentDir.getPath() : "/";
+  async _handleUrlDrop(url, lnkHtml) {
+    const destDir = this._currentDir ? pathOf(this._currentDir) : "/";
     try {
-      if (/\.(jpeg|jpg|bmp|gif|png)$/i.test(url)) {
-        const fileObject = await this._getFileObjectFromUrl(url);
-        await uploadFilesHttp(destPath, [fileObject]);
-        Backend.eventHub.publish("__upload_files_event__", { dir: this._currentDir, files: [fileObject], lnk }, true);
-      } else {
-        await this._promptAndUploadVideoLink(url, lnk);
+      if (url.endsWith(".torrent") || url.startsWith("magnet:")) {
+        displayError(
+          "Torrent/magnet handling not yet wired to the new torrent wrapper. Add a wrapper (e.g., `downloadTorrent`) and call it here.",
+          6000
+        );
+        return;
       }
-    } catch (err) { displayError(`Failed to process URL drop: ${err.message}`, 3000); }
+
+      if (/\.(jpeg|jpg|bmp|gif|png)$/i.test(url)) {
+        const fileObj = await this._fetchBlobAsFile(url);
+        await uploadFilesHttp({ destPath: destDir, files: [fileObj] });
+        Backend.eventHub.publish(
+          "__upload_files_event__",
+          { dir: this._currentDir, files: [fileObj], lnk: lnkHtml },
+          true
+        );
+        return;
+      }
+
+      await this._promptAndUploadVideoLink(url, lnkHtml, destDir);
+    } catch (err) {
+      displayError(`Failed to process link: ${err?.message || err}`, 3000);
+    }
   }
 
-  async _getFileObjectFromUrl(url) {
+  async _fetchBlobAsFile(url) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.timeout = 15000;
@@ -924,34 +1136,38 @@ export class FilesView extends HTMLElement {
         if (xhr.status >= 200 && xhr.status < 300) {
           const blob = xhr.response;
           const fileName = url.substring(url.lastIndexOf("/") + 1).split("?")[0];
-          const fileObject = new File([blob], fileName, { type: blob.type, lastModified: new Date().getTime() });
+          const fileObject = new File([blob], fileName, {
+            type: blob.type,
+            lastModified: Date.now(),
+          });
           resolve(fileObject);
         } else {
-          reject(new Error(`Failed to fetch file from URL: ${xhr.status} ${xhr.statusText}`));
+          reject(new Error(`Fetch failed: ${xhr.status} ${xhr.statusText}`));
         }
       };
-      xhr.onerror = () => reject(new Error("Network error fetching file from URL."));
-      xhr.ontimeout = () => reject(new Error("Timeout fetching file from URL."));
+      xhr.onerror = () => reject(new Error("Network error fetching URL."));
+      xhr.ontimeout = () => reject(new Error("Timeout fetching URL."));
       xhr.send();
     });
   }
 
-  async _promptAndUploadVideoLink(url, lnk) {
+  async _promptAndUploadVideoLink(url, lnkHtml, destDir) {
     const toast = displayMessage(
       `
       <div id="select-media-dialog">
         <span>What kind of file do you want to create?</span>
-        <div style="display:flex; justify-content:center;">
+        <div style="display:flex;justify-content:center;">
           <paper-radio-group selected="media-type-mp4">
             <paper-radio-button id="media-type-mp4" name="media-type">Video (mp4)</paper-radio-button>
             <paper-radio-button id="media-type-mp3" name="media-type">Audio (mp3)</paper-radio-button>
           </paper-radio-group>
         </div>
-        <div style="display:flex; justify-content:flex-end;">
+        <div style="display:flex;justify-content:flex-end;">
           <paper-button id="upload-lnk-ok-button">Ok</paper-button>
           <paper-button id="upload-lnk-cancel-button">Cancel</paper-button>
         </div>
-      </div>`,
+      </div>
+      `,
       60 * 1000
     );
 
@@ -960,33 +1176,55 @@ export class FilesView extends HTMLElement {
     const okBtn = toast.toastElement.querySelector("#upload-lnk-ok-button");
     const cancelBtn = toast.toastElement.querySelector("#upload-lnk-cancel-button");
 
-    mp4Radio.addEventListener("change", () => { mp3Radio.checked = !mp4Radio.checked; });
-    mp3Radio.addEventListener("change", () => { mp4Radio.checked = !mp3Radio.checked; });
+    mp4Radio.addEventListener("change", () => (mp3Radio.checked = !mp4Radio.checked));
+    mp3Radio.addEventListener("change", () => (mp4Radio.checked = !mp3Radio.checked));
 
     return new Promise((resolve, reject) => {
       okBtn.onclick = async () => {
         toast.hideToast();
         try {
-          await uploadVideoByUrl({ url, dest: this._currentDir.getPath(), format: mp3Radio.checked ? "mp3" : "mp4" });
-          displayMessage("Your link was queued and will be processed soon...", 3000);
+          const format = mp3Radio.checked ? "mp3" : "mp4";
+          await uploadVideoByUrl({ dest: destDir, format, url });
+          Backend.eventHub.publish(
+            "__upload_link_event__",
+            { path: destDir, infos: `Queued ${format} from URL`, done: true, lnk: lnkHtml },
+            true
+          );
           resolve();
-        } catch (err) { displayError(err?.message || err, 3000); reject(err); }
+        } catch (err) {
+          displayError(err?.message || err, 3000);
+          reject(err);
+        }
       };
-      cancelBtn.onclick = () => { toast.hideToast(); resolve(); };
+      cancelBtn.onclick = () => {
+        toast.hideToast();
+        resolve();
+      };
     });
   }
 
-  async _handleFileDrop(files, lnk) {
-    if (!this._currentDir) { displayError("Current directory not available for file upload.", 3000); return; }
+  async _handleFileDrop(fileList, lnkHtml) {
+    if (!this._currentDir) {
+      displayError("No destination directory available.", 3000);
+      return;
+    }
+    const destDir = pathOf(this._currentDir);
     try {
-      Backend.eventHub.publish("__upload_files_event__", { dir: this._currentDir, files: Array.from(files), lnk }, true);
-      displayMessage(`Uploading ${files.length} file(s)...`, 3000);
-    } catch (err) { displayError(`Failed to initiate file upload: ${err.message}`, 3000); }
+      const files = Array.from(fileList);
+      Backend.eventHub.publish(
+        "__upload_files_event__",
+        { dir: this._currentDir, files, lnk: lnkHtml },
+        true
+      );
+      displayMessage(`Uploading ${files.length} file(s)...`, 2500);
+      await uploadFilesHttp({ destPath: destDir, files });
+    } catch (err) {
+      displayError(`Failed to upload files: ${err?.message || err}`, 3000);
+    }
   }
 
   async _handleInternalDragDrop(evt) {
-    // unchanged: menu to choose copy/move/link
-    const filesData = JSON.parse(evt.dataTransfer.getData("files"));
+    const filesData = JSON.parse(evt.dataTransfer.getData("files") || "[]");
     const id = evt.dataTransfer.getData("id");
     const domain = evt.dataTransfer.getData("domain");
 
@@ -994,93 +1232,110 @@ export class FilesView extends HTMLElement {
 
     const menuHtml = `
       <style>
-        #file-actions-menu{ background-color:var(--surface-color); color:var(--primary-text-color); position:absolute; min-width:140px; box-shadow:var(--shadow-elevation-2dp); border-radius:4px; overflow:hidden; }
-        .menu-item{ font-size:1rem; padding:8px 10px; display:flex; align-items:center; transition:background .2s ease; }
-        .menu-item iron-icon{ margin-right:10px; }
-        .menu-item:hover{ cursor:pointer; background-color:var(--palette-primary-accent); }
+        #file-actions-menu{
+          background:var(--surface-color);color:var(--primary-text-color);
+          position:absolute;min-width:140px;box-shadow:var(--shadow-elevation-2dp);
+          border-radius:4px;overflow:hidden;
+        }
+        .menu-item{font-size:1rem;padding:8px 10px;display:flex;align-items:center;transition:background .2s;}
+        .menu-item iron-icon{margin-right:10px;}
+        .menu-item:hover{cursor:pointer;background-color:var(--palette-primary-accent);}
       </style>
       <paper-card id="file-actions-menu">
-        <div id="copy-menu-item" class="menu-item"><iron-icon icon="icons:content-copy"></iron-icon><span>Copy</span></div>
-        <div id="move-menu-item" class="menu-item"><iron-icon icon="icons:compare-arrows"></iron-icon><span>Move</span></div>
-        <div id="create-lnks-menu-item" class="menu-item"><iron-icon icon="icons:link"></iron-icon><span>Create link</span></div>
-        <div id="cancel-menu-item" class="menu-item"><iron-icon icon="icons:cancel"></iron-icon><span>Cancel</span></div>
-      </paper-card>`;
+        <div id="copy-menu-item" class="menu-item">
+          <iron-icon icon="icons:content-copy"></iron-icon><span>Copy</span>
+        </div>
+        <div id="move-menu-item" class="menu-item">
+          <iron-icon icon="icons:compare-arrows"></iron-icon><span>Move</span>
+        </div>
+        <div id="create-lnks-menu-item" class="menu-item">
+          <iron-icon icon="icons:link"></iron-icon><span>Create link</span>
+        </div>
+        <div id="cancel-menu-item" class="menu-item">
+          <iron-icon icon="icons:cancel"></iron-icon><span>Cancel</span>
+        </div>
+      </paper-card>
+    `;
 
     const range = document.createRange();
     document.body.appendChild(range.createContextualFragment(menuHtml));
     const menu = document.getElementById("file-actions-menu");
-    const coords = getCoords(this._fileExplorer.filesIconView);
+
+    const coords = getCoords(this._fileExplorer?.filesIconView || document.body);
     menu.style.top = `${coords.top + 44}px`;
     menu.style.left = `${coords.left + 10}px`;
 
-    const moveListener = (e) => {
+    const moveListener = () => {
       if (menu.parentNode) {
-        const updatedCoords = getCoords(this._fileExplorer.filesIconView);
-        menu.style.top = `${updatedCoords.top + 44}px`;
-        menu.style.left = `${updatedCoords.left + 10}px`;
+        const updated = getCoords(this._fileExplorer?.filesIconView || document.body);
+        menu.style.top = `${updated.top + 44}px`;
+        menu.style.left = `${updated.left + 10}px`;
       } else {
-        this._fileExplorer.removeEventListener("move", moveListener);
+        this._fileExplorer?.removeEventListener?.("move", moveListener);
       }
     };
-    this._fileExplorer.addEventListener("move", moveListener);
+    this._fileExplorer?.addEventListener?.("move", moveListener);
 
     const executeDropAction = async (mode) => {
       this._editMode = mode;
       FileExplorer.paperTray = [];
+
       if (Object.keys(this._selected).length > 0) {
-        for (const key in this._selected) FileExplorer.paperTray.push(this._selected[key].path);
+        for (const key in this._selected) FileExplorer.paperTray.push(pathOf(this._selected[key]));
       }
-      filesData.forEach((f) => FileExplorer.paperTray.push(f));
+      filesData.forEach((p) => FileExplorer.paperTray.push(p));
+
       if (id) {
-        const draggedDiv = this.div.querySelector("#" + id);
-        if (draggedDiv && draggedDiv.parentNode) draggedDiv.parentNode.style.display = "none";
+        const draggedDiv = document.getElementById(id);
+        if (draggedDiv?.parentNode) draggedDiv.parentNode.style.display = "none";
       }
-      Backend.eventHub.publish(`drop_file_${this._fileExplorer.id}_event`, { file: filesData.length > 0 ? filesData[0] : null, dir: this._currentDir.getPath(), id, domain }, true);
+
+      Backend.eventHub.publish(
+        `drop_file_${this._fileExplorer.id}_event`,
+        {
+          file: filesData.length > 0 ? filesData[0] : null,
+          dir: this._currentDir ? pathOf(this._currentDir) : "/",
+          id,
+          domain,
+        },
+        true
+      );
+
       if (menu.parentNode) menu.parentNode.removeChild(menu);
-      this._fileExplorer.removeEventListener("move", moveListener);
+      this._fileExplorer?.removeEventListener?.("move", moveListener);
     };
 
     menu.querySelector("#copy-menu-item").onclick = () => executeDropAction("copy");
     menu.querySelector("#move-menu-item").onclick = () => executeDropAction("cut");
     menu.querySelector("#create-lnks-menu-item").onclick = () => executeDropAction("lnks");
-    menu.querySelector("#cancel-menu-item").onclick = () => { if (menu.parentNode) menu.parentNode.removeChild(menu); this._fileExplorer.removeEventListener("move", moveListener); };
+    menu.querySelector("#cancel-menu-item").onclick = () => {
+      if (menu.parentNode) menu.parentNode.removeChild(menu);
+      this._fileExplorer?.removeEventListener?.("move", moveListener);
+    };
+  }
+
+  // ---------- Confirm dialog helper ----------
+  _showConfirmationDialog(contentHtml, onYes, onNo, yesBtnId, noBtnId) {
+    const toast = displayMessage(
+      `
+      <style>
+        #confirm-dialog-box { display:flex; flex-direction:column; }
+        #confirm-dialog-box div { display:flex; padding-bottom:10px; }
+        paper-button { font-size:.8rem; margin-left:8px; }
+      </style>
+      <div id="confirm-dialog-box">${contentHtml}
+        <div style="justify-content:flex-end; padding-top:10px; padding-bottom:0;">
+          <paper-button raised id="${yesBtnId}">Yes</paper-button>
+          <paper-button raised id="${noBtnId}">No</paper-button>
+        </div>
+      </div>`,
+      15 * 1000
+    );
+    const yesBtn = document.querySelector(`#${yesBtnId}`);
+    const noBtn = document.querySelector(`#${noBtnId}`);
+    if (yesBtn) yesBtn.onclick = () => { toast.hideToast(); onYes && onYes(); };
+    if (noBtn) noBtn.onclick = () => { toast.hideToast(); onNo && onNo(); };
   }
 }
 
 customElements.define("globular-files-view", FilesView);
-
-// ---- helpers kept from previous code (minimal shims) ----
-async function promisifiedGetFileVideosInfo(file, globule) {
-  return new Promise((resolve, reject) => {
-    try { TitleController.getFileVideosInfo(file, resolve, reject, globule); } catch (e) { resolve([]); }
-  });
-}
-async function promisifiedGetFileTitlesInfo(file, globule) {
-  return new Promise((resolve, reject) => {
-    try { TitleController.getFileTitlesInfo(file, resolve, reject, globule); } catch (e) { resolve([]); }
-  });
-}
-async function getAudioInfo(file) { return []; }
-
-// Simple confirm dialog helper (unchanged)
-FilesView.prototype._showConfirmationDialog = function (contentHtml, onYes, onNo, yesBtnId, noBtnId) {
-  const toast = displayMessage(
-    `
-    <style>
-      #confirm-dialog-box { display:flex; flex-direction:column; }
-      #confirm-dialog-box div { display:flex; padding-bottom:10px; }
-      paper-button { font-size:.8rem; margin-left:8px; }
-    </style>
-    <div id="confirm-dialog-box">${contentHtml}
-      <div style="justify-content:flex-end; padding-top:10px; padding-bottom:0;">
-        <paper-button raised id="${yesBtnId}">Yes</paper-button>
-        <paper-button raised id="${noBtnId}">No</paper-button>
-      </div>
-    </div>`,
-    15 * 1000
-  );
-  const yesBtn = document.querySelector(`#${yesBtnId}`);
-  const noBtn = document.querySelector(`#${noBtnId}`);
-  if (yesBtn) yesBtn.onclick = () => { toast.hideToast(); onYes && onYes(); };
-  if (noBtn) noBtn.onclick = () => { toast.hideToast(); onNo && onNo(); };
-};

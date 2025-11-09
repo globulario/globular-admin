@@ -1,254 +1,318 @@
-import { randomUUID } from "../utility"; // Assuming randomUUID is available
-import { OrganizationController } from "../../backend/organization"; // Assuming promisified getAllOrganizations
-import { AccountController } from "../../backend/account"; // Assuming promisified getAccounts
-import { GroupController } from "../../backend/group.ts"; // Assuming promisified getGroups
-import { ApplicationController } from "../../backend/applications.ts"; // Assuming promisified getAllApplicationInfo
-import { PeerController } from "../../backend/peer.ts"; // Assuming promisified getPeers
+// src/widgets/permissionPanel.js — refactored to new backend (JS)
 
-import { Backend, displayError } from "../../backend/backend.ts"; // Assuming Backend.Backend.authenticatedCall if needed by getAccount, getGroups etc.
+import { randomUUID } from "../utility.js"
 
-// Polymer/Custom Element imports
-import '@polymer/iron-collapse/iron-collapse.js';
-import '@polymer/paper-icon-button/paper-icon-button.js';
-import '@polymer/iron-icon/iron-icon.js'; // For iron-icon
-import '@polymer/paper-ripple/paper-ripple.js'; // For paper-ripple
-import '@polymer/paper-card/paper-card.js'; // For paper-card in searchables
+// New backend wrappers (adjust paths if your repo differs)
+import { listAccounts } from "../../backend/rbac/accounts"
+import { listGroups } from "../../backend/rbac/groups"
+import { listOrganizations } from "../../backend/rbac/organizations"
+import { listApplications } from "../../backend/rbac/applications"; // NEW apps accessor (ApplicationVM[])
+import { listPeers } from "../../backend/rbac/peers"
 
-// Import all specific SearchableList types
-import { SearchableGroupList, SearchableAccountList, SearchableApplicationList, SearchablePeerList, SearchableOrganizationList } from "./list.js";
+import { displayError } from "../../backend/ui/notify"
 
-/**
- * Represents a panel for managing specific types of permissions (e.g., allowed, denied, owners).
- * It contains collapsible sections for different entity types (accounts, groups, etc.).
- */
-export class PermissionPanel extends HTMLElement {
-    // Private instance properties
-    _permissionManager = null; // Reference to the parent PermissionsManager
-    _permission = null; // The specific Permission object (e.g., owner, allowed, denied)
-    _hideTitle = false; // Flag to hide the panel's main title
+// UI deps
+import '@polymer/iron-collapse/iron-collapse.js'
+import '@polymer/paper-icon-button/paper-icon-button.js'
+import '@polymer/iron-icon/iron-icon.js'
+import '@polymer/paper-ripple/paper-ripple.js'
+import '@polymer/paper-card/paper-card.js'
 
-    // DOM element references
-    _panelTitleDiv = null; // Div for the main permission name (e.g., "read", "write")
-    _membersContainer = null; // Container for collapsible member lists
+// Specific SearchableList types
+import {
+  SearchableGroupList,
+  SearchableAccountList,
+  SearchableApplicationList,
+  SearchablePeerList,
+  SearchableOrganizationList
+} from "./list.js"
 
-    // Collapse section references (filled dynamically)
-    // _collapsibleSections = {}; // Could store references to allow dynamic toggling
+// ---------- tiny access helpers to work with either proto objects or VMs ----------
+const callIf = (o, m) => (o && typeof o[m] === "function") ? o[m]() : undefined
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k)
 
-
-    /**
-     * Constructor for the PermissionPanel custom element.
-     * @param {Object} permissionManager - The parent PermissionsManager instance.
-     */
-    constructor(permissionManager) {
-        super();
-        this.attachShadow({ mode: 'open' });
-        this._permissionManager = permissionManager;
-
-        // Initial rendering of the basic structure
-        this._renderInitialStructure();
-        this._getDomReferences(); // Get references after rendering
-    }
-
-    /**
-     * Called when the element is inserted into the document's DOM.
-     * This is where component-specific setup and data population should occur.
-     */
-    connectedCallback() {
-        // Data population is triggered by the setPermission setter
-    }
-
-    /**
-     * Renders the initial HTML structure of the permission panel.
-     * @private
-     */
-    _renderInitialStructure() {
-        this.shadowRoot.innerHTML = `
-            <style>
-                .title {
-                    flex-grow: 1;
-                    font-size: 1.2rem;
-                    font-weight: 500;
-                    color: var(--primary-text-color); /* Primary text color for titles */
-                    border-color: var(--palette-divider);
-                    padding-bottom: 5px; /* Space below title */
-                    margin-bottom: 5px; /* Space before members */
-                }
-
-                .members {
-                    display: flex;
-                    flex-direction: column;
-                    width: 100%; /* Ensure members take full width */
-                }
-
-                /* Styles for collapsible sections */
-                .collapsible-section {
-                    padding-left: 10px;
-                    width: 100%;
-                    box-sizing: border-box; /* Include padding in width */
-                }
-
-                .collapsible-header {
-                    display: flex;
-                    align-items: center;
-                    padding: 5px 0; /* Vertical padding */
-                    cursor: pointer;
-                }
-
-                .collapsible-header iron-icon {
-                    margin-right: 8px; /* Space between icon and text */
-                    --iron-icon-fill-color: var(--primary-text-color);
-                }
-
-                .collapsible-header span {
-                    flex-grow: 1;
-                    font-weight: 400; /* Regular weight for sub-titles */
-                    font-size: 1rem;
-                }
-
-                iron-collapse {
-                    margin: 5px; /* Margin around collapse content */
-                }
-            </style>
-            <div>
-                <div class="title"></div>
-                <div class="members"></div>
-            </div>
-        `;
-    }
-
-    /**
-     * Retrieves references to all necessary DOM elements.
-     * @private
-     */
-    _getDomReferences() {
-        this._panelTitleDiv = this.shadowRoot.querySelector(".title");
-        this._membersContainer = this.shadowRoot.querySelector(".members");
-    }
-
-    /**
-     * Sets the permission object and populates the panel with entity lists.
-     * @param {Object} permission - The specific Permission object (e.g., an owner permission, or an allowed/denied permission).
-     * @param {boolean} [hideTitle=false] - If true, the panel's main title (permission name) will be hidden.
-     */
-    setPermission(permission, hideTitle = false) {
-        this._permission = permission;
-        this._hideTitle = hideTitle;
-
-        if (this._hideTitle) {
-            this._panelTitleDiv.style.display = "none";
-        } else {
-            this._panelTitleDiv.style.display = ""; // Default display
-            this._panelTitleDiv.textContent = permission.getName();
-        }
-
-        // Clear existing members
-        this._membersContainer.innerHTML = "";
-
-        // Populate members for each entity type
-        this._setEntitiesPermissions("Accounts", this._permission.getAccountsList(), this._permission.setAccountsList, SearchableAccountList, this._permissionManager.globule, this._permission.getId);
-        this._setEntitiesPermissions("Groups", this._permission.getGroupsList(), this._permission.setGroupsList, SearchableGroupList, this._permissionManager.globule, this._permission.getId);
-        this._setEntitiesPermissions("Applications", this._permission.getApplicationsList(), this._permission.setApplicationsList, SearchableApplicationList, this._permissionManager.globule, this._permission.getId);
-        this._setEntitiesPermissions("Organizations", this._permission.getOrganizationsList(), this._permission.setOrganizationsList, SearchableOrganizationList, this._permissionManager.globule, this._permission.getId);
-        this._setEntitiesPermissions("Peers", this._permission.getPeersList(), this._permission.setPeersList, SearchablePeerList, this._permissionManager.globule, this._permission.getId);
-    }
-
-    /**
-     * Creates a collapsible section for a list of entities.
-     * @param {string} title - The title of the collapsible section (e.g., "Accounts").
-     * @returns {HTMLElement} The iron-collapse element for the section content.
-     * @private
-     */
-    _createCollapsibleSection(title) {
-        const uuid = `_collapsible_${randomUUID()}`;
-        const html = `
-            <div class="collapsible-section">
-                <div class="collapsible-header">
-                    <paper-icon-button id="${uuid}-btn" icon="unfold-less"></paper-icon-button>
-                    <span>${title}</span>
-                </div>
-                <iron-collapse id="${uuid}-collapse-panel" opened>
-                    </iron-collapse>
-            </div>
-        `;
-        this._membersContainer.appendChild(document.createRange().createContextualFragment(html));
-
-        const contentPanel = this.shadowRoot.querySelector(`#${uuid}-collapse-panel`);
-        const toggleButton = this.shadowRoot.querySelector(`#${uuid}-btn`);
-
-        if (toggleButton && contentPanel) {
-            toggleButton.addEventListener('click', () => {
-                contentPanel.toggle();
-                toggleButton.icon = contentPanel.opened ? "unfold-less" : "unfold-more";
-            });
-        }
-        return contentPanel;
-    }
-
-    /**
-     * Generic method to set permissions for a type of entity (Accounts, Groups, etc.).
-     * Fetches all available entities, filters them, and populates a SearchableList.
-     * @param {string} title - The title for the collapsible section (e.g., "Accounts").
-     * @param {Array<string>} entityIdsInPermission - List of entity IDs currently in this permission.
-     * @param {Function} permissionListSetter - Setter method on `_permission` (e.g., `_permission.setAccountsList`).
-     * @param {Class} SearchableListClass - The constructor for the specific SearchableList (e.g., `SearchableAccountList`).
-     * @param {Object} globule - The globule instance from `_permissionManager`.
-     * @param {Function} idGetterForRemove - Function to get ID from entity for remove, (e.g., `(item) => item.getId()`, or `(item) => item.getMac()` for peers).
-     * @private
-     */
-    async _setEntitiesPermissions(title, entityIdsInPermission, permissionListSetter, SearchableListClass, globule, idGetterForRemove) {
-        const contentPanel = this._createCollapsibleSection(title);
-        const listContainer = document.createElement('div'); // Create a div for the searchable list
-        contentPanel.appendChild(listContainer); // Append to the collapse panel
-
-        try {
-            // Fetch all entities based on the type
-            let allEntities;
-            if (SearchableListClass === SearchableAccountList) allEntities = await promisifiedGetAllAccounts();
-            else if (SearchableListClass === SearchableGroupList) allEntities = await promisifiedGetAllGroups(globule);
-            else if (SearchableListClass === SearchableApplicationList) allEntities = await promisifiedGetAllApplications(globule);
-            else if (SearchableListClass === SearchableOrganizationList) allEntities = await promisifiedGetAllOrganizations(globule);
-            else if (SearchableListClass === SearchablePeerList) allEntities = await promisifiedGetAllPeers(globule);
-            else throw new Error(`Unknown SearchableListClass: ${SearchableListClass.name}`);
-
-            // Filter out full entity objects for those currently in this permission
-            const currentListItems = allEntities.filter(entity =>
-                entityIdsInPermission.includes(idGetterForRemove(entity)) ||
-                entityIdsInPermission.includes(`${idGetterForRemove(entity)}@${entity.getDomain()}`) // Handle fully qualified IDs
-            );
-
-            // Initialize the specific SearchableList
-            const searchableList = new SearchableListClass(
-                title, // Title for the SearchableList
-                currentListItems, // List of items already in this permission
-                (itemToRemove) => { // ondeleteitem callback
-                    const idToRemove = idGetterForRemove(itemToRemove);
-                    // Remove from permission's internal list
-                    let updatedList = entityIdsInPermission.filter(id =>
-                        id !== idToRemove && id !== `${idToRemove}@${itemToRemove.getDomain()}`
-                    );
-                    permissionListSetter.call(this._permission, updatedList); // Use call to ensure 'this' context
-                    this._permissionManager.savePermissions(); // Save changes to backend
-                },
-                (itemToAdd) => { // onadditem callback
-                    const idToAdd = idGetterForRemove(itemToAdd);
-                    let updatedList = [...entityIdsInPermission]; // Clone current list
-                    // Add only if not already present
-                    if (!updatedList.includes(idToAdd) && !updatedList.includes(`${idToAdd}@${itemToAdd.getDomain()}`)) {
-                        updatedList.push(`${idToAdd}@${itemToAdd.getDomain()}`); // Always store fully qualified ID
-                    }
-                    permissionListSetter.call(this._permission, updatedList); // Update permission's internal list
-                    this._permissionManager.savePermissions(); // Save changes to backend
-                }
-            );
-
-            searchableList.hideTitle(); // Hide the redundant title of the inner list
-            listContainer.appendChild(searchableList); // Append the SearchableList to its container
-        } catch (err) {
-            displayError(`Failed to load ${title} permissions: ${err.message}`, 3000);
-            console.error(err);
-            listContainer.innerHTML = `<p style="color: var(--palette-error-main);">Failed to load ${title}.</p>`;
-        }
-    }
+function getId(o) {
+  // common: account/group/org/app have getId()/id; peers often don't (use mac)
+  return callIf(o, "getId") ?? o?.id ?? ""
+}
+function getDomain(o) {
+  return callIf(o, "getDomain") ?? o?.domain ?? ""
+}
+function getMac(o) {
+  return callIf(o, "getMac") ?? o?.mac ?? ""
 }
 
-customElements.define('globular-permission-panel', PermissionPanel);
+// For peers, use MAC as the "id" portion
+function getPeerKey(o) {
+  const mac = getMac(o)
+  const dom = getDomain(o)
+  return dom ? `${mac}@${dom}` : mac
+}
+
+// Compose a fully-qualified ID consistently
+function fqid(id, domain) {
+  return domain ? `${id}@${domain}` : id
+}
+
+// Safe “includes” for string arrays
+function hasId(list, id, domain) {
+  const a = fqid(id, domain)
+  return list.includes(a) || list.includes(id) // accept both raw and fq forms
+}
+
+// =====================================================================================
+
+/**
+ * Represents a panel for managing a specific Permission entry
+ * (e.g., an "allowed" or "denied" permission). It renders collapsible sections
+ * for Accounts, Groups, Applications, Organizations, and Peers.
+ */
+export class PermissionPanel extends HTMLElement {
+  constructor(permissionManager) {
+    super()
+    this.attachShadow({ mode: 'open' })
+
+    // External references
+    this._permissionManager = permissionManager
+
+    // State
+    this._permission = null
+    this._hideTitle = false
+
+    // DOM refs
+    this._panelTitleDiv = null
+    this._membersContainer = null
+
+    // Render base UI
+    this._renderInitialStructure()
+    this._getDomReferences()
+  }
+
+  connectedCallback() {
+    // population happens in setPermission()
+  }
+
+  // --------------------------------------------------------------------------- UI base
+  _renderInitialStructure() {
+    this.shadowRoot.innerHTML = `
+      <style>
+        .title {
+          flex-grow: 1;
+          font-size: 1.2rem;
+          font-weight: 500;
+          color: var(--primary-text-color);
+          border-color: var(--palette-divider);
+          padding-bottom: 5px;
+          margin-bottom: 5px;
+        }
+        .members { display: flex; flex-direction: column; width: 100%; }
+        .collapsible-section { padding-left: 10px; width: 100%; box-sizing: border-box; }
+        .collapsible-header {
+          display:flex; align-items:center; padding:5px 0; cursor:pointer;
+        }
+        .collapsible-header iron-icon {
+          margin-right: 8px; --iron-icon-fill-color: var(--primary-text-color);
+        }
+        .collapsible-header span { flex-grow: 1; font-weight: 400; font-size: 1rem; }
+        iron-collapse { margin: 5px; }
+      </style>
+      <div>
+        <div class="title"></div>
+        <div class="members"></div>
+      </div>
+    `
+  }
+
+  _getDomReferences() {
+    this._panelTitleDiv = this.shadowRoot.querySelector(".title")
+    this._membersContainer = this.shadowRoot.querySelector(".members")
+  }
+
+  // ------------------------------------------------------------------ public API
+  /**
+   * Sets the permission and (re)renders the panel.
+   * @param {any} permission proto Permission-like object
+   * @param {boolean} [hideTitle=false]
+   */
+  setPermission(permission, hideTitle = false) {
+    this._permission = permission
+    this._hideTitle = hideTitle
+
+    if (this._hideTitle) {
+      this._panelTitleDiv.style.display = "none"
+    } else {
+      this._panelTitleDiv.style.display = ""
+      this._panelTitleDiv.textContent = permission.getName?.() ?? permission.name ?? ""
+    }
+
+    // Clear existing members
+    this._membersContainer.innerHTML = ""
+
+    // Build each entity section
+    this._setEntitiesPermissions(
+      "Accounts",
+      this._permission.getAccountsList?.() ?? [],
+      this._permission.setAccountsList?.bind(this._permission),
+      SearchableAccountList,
+      // ID getter for compare/add/remove
+      (item) => getId(item),
+      (item) => getDomain(item)
+    )
+
+    this._setEntitiesPermissions(
+      "Groups",
+      this._permission.getGroupsList?.() ?? [],
+      this._permission.setGroupsList?.bind(this._permission),
+      SearchableGroupList,
+      (item) => getId(item),
+      (item) => getDomain(item)
+    )
+
+    this._setEntitiesPermissions(
+      "Applications",
+      this._permission.getApplicationsList?.() ?? [],
+      this._permission.setApplicationsList?.bind(this._permission),
+      SearchableApplicationList,
+      (item) => getId(item),
+      (item) => getDomain(item)
+    )
+
+    this._setEntitiesPermissions(
+      "Organizations",
+      this._permission.getOrganizationsList?.() ?? [],
+      this._permission.setOrganizationsList?.bind(this._permission),
+      SearchableOrganizationList,
+      (item) => getId(item),
+      (item) => getDomain(item)
+    )
+
+    this._setEntitiesPermissions(
+      "Peers",
+      this._permission.getPeersList?.() ?? [],
+      this._permission.setPeersList?.bind(this._permission),
+      SearchablePeerList,
+      // Peers: use MAC as id part
+      (item) => getMac(item),
+      (item) => getDomain(item),
+      true // peers flag
+    )
+  }
+
+  // ----------------------------------------------------------- sections & data plumbing
+  _createCollapsibleSection(title) {
+    const uuid = `_collapsible_${randomUUID()}`
+    const html = `
+      <div class="collapsible-section">
+        <div class="collapsible-header">
+          <paper-icon-button id="${uuid}-btn" icon="unfold-less"></paper-icon-button>
+          <span>${title}</span>
+        </div>
+        <iron-collapse id="${uuid}-collapse-panel" opened></iron-collapse>
+      </div>
+    `
+    this._membersContainer.appendChild(document.createRange().createContextualFragment(html))
+
+    const contentPanel = this.shadowRoot.querySelector(`#${uuid}-collapse-panel`)
+    const toggleButton = this.shadowRoot.querySelector(`#${uuid}-btn`)
+
+    if (toggleButton && contentPanel) {
+      toggleButton.addEventListener('click', () => {
+        contentPanel.toggle()
+        toggleButton.icon = contentPanel.opened ? "unfold-less" : "unfold-more"
+      })
+    }
+    return contentPanel
+  }
+
+  /**
+   * Generic section binder for an entity type.
+   * @param {string} title
+   * @param {string[]} entityIdsInPermission current IDs stored in permission (string fqids)
+   * @param {Function} permissionListSetter setter on permission (e.g., setAccountsList)
+   * @param {Class} SearchableListClass list UI class
+   * @param {(item:any)=>string} idGetter returns the "id" part
+   * @param {(item:any)=>string} domainGetter returns domain
+   * @param {boolean} isPeers whether the type is peers (uses MAC-based key)
+   */
+  async _setEntitiesPermissions(title, entityIdsInPermission, permissionListSetter, SearchableListClass, idGetter, domainGetter, isPeers = false) {
+    const panel = this._createCollapsibleSection(title)
+    const listContainer = document.createElement('div')
+    panel.appendChild(listContainer)
+
+    try {
+      // Fetch all entities (unwrap different shapes your wrappers may return)
+      let all = []
+      if (SearchableListClass === SearchableAccountList) {
+        const { items = [] } = await (listAccounts({ pageSize: 1000 }) || {})
+        all = items
+      } else if (SearchableListClass === SearchableGroupList) {
+        const { items = [] } = await (listGroups({ pageSize: 1000 }) || {})
+        all = items
+      } else if (SearchableListClass === SearchableOrganizationList) {
+        const { items = [] } = await (listOrganizations({ pageSize: 1000 }) || {})
+        all = items
+      } else if (SearchableListClass === SearchableApplicationList) {
+        const apps = await (listApplications() || [])
+        all = Array.isArray(apps) ? apps : (apps.items || [])
+      } else if (SearchableListClass === SearchablePeerList) {
+        const peers = await (listPeers() || [])
+        all = Array.isArray(peers) ? peers : (peers.items || [])
+      } else {
+        throw new Error(`Unknown SearchableListClass: ${SearchableListClass?.name || '(anonymous)'}`)
+      }
+
+      // Build the current list objects from IDs stored in permission
+      const current = all.filter(entity => {
+        const id = idGetter(entity)
+        const dom = domainGetter(entity)
+        if (isPeers) {
+          const key = getPeerKey(entity) // mac@domain
+          return entityIdsInPermission.includes(key) || hasId(entityIdsInPermission, id, dom)
+        }
+        return hasId(entityIdsInPermission, id, dom)
+      })
+
+      // Create the embedded searchable list
+      const searchableList = new SearchableListClass(
+        title,
+        current,
+        // ondelete
+        (itemToRemove) => {
+          const id = idGetter(itemToRemove)
+          const dom = domainGetter(itemToRemove)
+          const fq = isPeers ? getPeerKey(itemToRemove) : fqid(id, dom)
+
+          const next = (entityIdsInPermission || []).filter(x => x !== fq && x !== id)
+          if (typeof permissionListSetter === 'function') permissionListSetter(next)
+
+          // Save via manager (support either public or “private” save)
+          const mgr = this._permissionManager
+          ;(mgr?._savePermissions || mgr?.savePermissions)?.call(mgr)
+        },
+        // onadd
+        (itemToAdd) => {
+          const id = idGetter(itemToAdd)
+          const dom = domainGetter(itemToAdd)
+          const fq = isPeers ? getPeerKey(itemToAdd) : fqid(id, dom)
+
+          const next = Array.from(entityIdsInPermission || [])
+          if (!next.includes(fq) && !next.includes(id)) next.push(fq)
+          if (typeof permissionListSetter === 'function') permissionListSetter(next)
+
+          const mgr = this._permissionManager
+          ;(mgr?._savePermissions || mgr?.savePermissions)?.call(mgr)
+        }
+      )
+
+      // Hide inner list’s own title to avoid redundancy
+      searchableList.hideTitle?.()
+      listContainer.appendChild(searchableList)
+    } catch (err) {
+      console.error(err)
+      displayError(`Failed to load ${title}: ${err?.message || err}`, 3000)
+      listContainer.innerHTML = `<p style="color:var(--palette-error-main)">Failed to load ${title}.</p>`
+    }
+  }
+}
+
+customElements.define('globular-permission-panel', PermissionPanel)

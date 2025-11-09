@@ -1,6 +1,6 @@
 // src/widgets/peer_discovery.ts
 import { displayError, displaySuccess } from '../backend/ui/notify'
-import { scanPeers, pingPeer, registerPeer, DiscoveredHost } from '../backend/cluster/peers'
+import { scanPeers, pingPeer, registerPeer, DiscoveredHost } from '../backend/rbac/peers'
 
 function toHostSafe(h: any): DiscoveredHost {
   // allow raw objects too
@@ -82,7 +82,11 @@ class PeerCard extends HTMLElement {
         bubbles: true, composed: true, detail: { host: this.host },
       }))
       try {
-        await registerPeer(this.host.ip) // no-op placeholder for now
+        await registerPeer({
+          mac: this.host.mac,
+          hostname: this.host.name,
+          localIpAddress: this.host.ip
+        })
         displaySuccess(`Registration sent to ${this.host.ip}`)
       } catch (e: any) {
         displayError(e?.message || 'Registration failed')

@@ -1,4 +1,4 @@
-// components/filesListView.js
+// components/filesListView.js — DRY with filevm-helper and shared menu from FilesView
 
 import { FilesView } from "./filesView.js";
 import getUuidByString from "uuid-by-string";
@@ -9,19 +9,34 @@ import "@polymer/paper-ripple/paper-ripple.js";
 import { displayError } from "../../backend/ui/notify";
 import { Backend } from "../../backend/backend";
 
-// Use the new backend wrappers instead of FileController.*
-// - readText reads a whole file as UTF-8 text (streamed under the hood)
-import { readText } from "../../backend/files";
+// New backend wrappers
+import { readText } from "../../backend/cms/files";
+import { getFileAudiosInfo, getFileVideosInfo, getTitleInfo } from "../../backend/media/title";
 
-// If you still rely on TitleController helpers, call them without globule now.
-import { TitleController } from "../../backend/title";
+// DRY helpers
+import {
+  pathOf,
+  nameOf,
+  mimeOf,
+  isDir as isDirOf,
+  sizeOf,
+  filesOf,
+  thumbOf,
+  modTimeSecOf,
+} from "./filevm-helpers.js";
 
-/** Human-readable size formatter */
+/** Human-readable size formatter (no floating bugs) */
 function getFileSizeString(bytes) {
-  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-  if (!bytes || bytes === 0) return "0 Bytes";
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return Math.round(bytes / Math.pow(1024, i), 2) + " " + sizes[i];
+  if (!bytes || bytes <= 0) return "0 Bytes";
+  const units = ["Bytes", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const val = bytes / Math.pow(1024, i);
+  return `${(i === 0 ? Math.round(val) : Math.round(val * 10) / 10)} ${units[i]}`;
+}
+
+/** Get current explorer path safely */
+function getCurrentExplorerPath(explorer) {
+  return (explorer?.getCurrentPath?.() ?? explorer?._path ?? "/");
 }
 
 export class FilesListView extends FilesView {
@@ -77,29 +92,15 @@ export class FilesListView extends FilesView {
     };
 
     // Delegated table events
-    this._domRefs.tableElement.addEventListener(
-      "click",
-      this._handleTableClick.bind(this)
-    );
-    this._domRefs.tableElement.addEventListener(
-      "drop",
-      this._handleTableDrop.bind(this)
-    );
-    this._domRefs.tableElement.addEventListener(
-      "dragover",
-      this._handleTableDragOver.bind(this)
-    );
-    this._domRefs.tableElement.addEventListener(
-      "mouseover",
-      this._handleTableMouseOver.bind(this)
-    );
-    this._domRefs.tableElement.addEventListener(
-      "mouseout",
-      this._handleTableMouseOut.bind(this)
-    );
+    const t = this._domRefs.tableElement;
+    t.addEventListener("click", this._handleTableClick.bind(this));
+    t.addEventListener("drop", this._handleTableDrop.bind(this));
+    t.addEventListener("dragover", this._handleTableDragOver.bind(this));
+    t.addEventListener("mouseover", this._handleTableMouseOver.bind(this));
+    t.addEventListener("mouseout", this._handleTableMouseOut.bind(this));
   }
 
-  /** Render a directory (no more validateDirAccess/.globule) */
+  /** Render a directory */
   setDir(dir) {
     this._dir = dir;
     this._renderFiles();
@@ -108,20 +109,21 @@ export class FilesListView extends FilesView {
   _renderFiles() {
     this._domRefs.fileListViewBody.innerHTML = "";
 
-    const sorted = [...this._dir.getFilesList()].sort((a, b) => {
-      if (a.getIsDir() && !b.getIsDir()) return -1;
-      if (!a.getIsDir() && b.getIsDir()) return 1;
-      return a.getName().localeCompare(b.getName());
+    const files = filesOf(this._dir);
+    if (!Array.isArray(files)) return;
+
+    const sorted = [...files].sort((a, b) => {
+      const aDir = isDirOf(a);
+      const bDir = isDirOf(b);
+      if (aDir && !bDir) return -1;
+      if (!aDir && bDir) return 1;
+      return (nameOf(a) || "").localeCompare(nameOf(b) || "");
     });
 
     for (const file of sorted) {
+      const nm = nameOf(file) || "";
       // Skip plain dotfiles except known special cases
-      if (
-        file.getName().startsWith(".") &&
-        file.getName() !== "audio.m3u" &&
-        file.getName() !== "video.m3u" &&
-        !file.getName().startsWith(".hidden")
-      ) {
+      if (nm.startsWith(".") && nm !== "audio.m3u" && nm !== "video.m3u" && !nm.startsWith(".hidden")) {
         continue;
       }
       const row = this._createFileRow(file);
@@ -129,66 +131,87 @@ export class FilesListView extends FilesView {
     }
   }
 
+  // inside class FilesListView
+  clearSelectionUI() {
+    const root = this.shadowRoot || this;
+    root.querySelectorAll('paper-checkbox, input[type="checkbox"]').forEach(cb => {
+      try { cb.checked = false; cb.removeAttribute('checked'); } catch { }
+    });
+  }
+
   _createFileRow(file) {
-    const rowId = `row-${getUuidByString(file.getPath())}`;
+    const path = pathOf(file);
+    const name = nameOf(file);
+    const mime = mimeOf(file) || "";
+    const isDir = isDirOf(file);
+
+    const rowId = `row-${getUuidByString(path)}`;
     const row = document.createElement("tr");
     row.id = rowId;
-    row.dataset.filePath = file.getPath();
+    row.dataset.filePath = path;
     row._file = file;
 
     let sizeDisplay = "";
-    let mimeDisplay = file.getMime() || "Folder";
+    let mimeDisplay = "Folder";
     let icon = "icons:insert-drive-file";
-    let thumbnailSrc = "";
+    let thumbnailrc = "";
 
-    if (file.getIsDir()) {
-      sizeDisplay = `${file.getFilesList().length} items`;
+    if (isDir) {
+      const items = filesOf(file);
+      sizeDisplay = Array.isArray(items) ? `${items.length} items` : "";
       mimeDisplay = "Folder";
       icon = "icons:folder";
     } else {
-      sizeDisplay = getFileSizeString(file.getSize());
-      mimeDisplay = (file.getMime() || "").split(";")[0] || "";
-      if (file.getMime().startsWith("video")) icon = "av:movie";
-      else if (file.getMime().startsWith("audio")) icon = "av:music-note";
-      else if (file.getMime().startsWith("image") && file.getThumbnail()) {
-        thumbnailSrc = file.getThumbnail();
+      sizeDisplay = getFileSizeString(sizeOf(file) || 0);
+      mimeDisplay = (mime.split(";")[0] || "").toUpperCase();
+      if (mime.startsWith("video")) icon = "av:movie";
+      else if (mime.startsWith("audio")) icon = "av:music-note";
+      else if (mime.startsWith("image")) {
+        const thumb = thumbOf(file);
+        if (thumb) thumbnailrc = thumb;
       }
     }
 
-    let displayName = file.getName();
-    if (file.getLnk && file.getLnk()) {
-      displayName = `${file.getLnk().getName()} (Link)`;
+    let displayName = name;
+    if (typeof file.getLnk === "function" && file.getLnk()) {
+      const l = file.getLnk();
+      const lName = typeof l.getName === "function" ? l.getName() : (l?.name || "Link");
+      displayName = `${lName} (Link)`;
     }
 
     // async enrichment (videos/audios/titles or folder infos)
-    this._getFileDisplayInfo(row, (file.getMime() || "").split("/")[0], file)
+    this._getFileDisplayInfo(row, (mime || "").split("/")[0], file)
       .then((info) => {
-        if (info) this._updateRowDisplayInfo(row, (file.getMime() || "").split("/")[0], info);
+        if (info) this._updateRowDisplayInfo?.(row, (mime || "").split("/")[0], info);
       })
       .catch(() => { /* non-fatal */ });
 
+    // modified time (proto delivers seconds)
+    const modTimeSec = modTimeSecOf(file);
+    const modDateStr = modTimeSec ? new Date(modTimeSec * 1000).toLocaleString() : "";
+
     row.innerHTML = `
-      <td class="first-cell" data-file-path="${file.getPath()}">
+      <td class="first-cell" data-file-path="${path}">
         <paper-checkbox id="checkbox-${rowId}"></paper-checkbox>
-        <iron-icon id="icon-${rowId}" class="file-icon" icon="${icon}" style="${thumbnailSrc ? "display:none;" : ""}"></iron-icon>
-        <img id="thumbnail-${rowId}" class="file-thumbnail" src="${thumbnailSrc}" style="${thumbnailSrc ? "display:block;" : "display:none;"}"/>
-        <span title="${file.getPath()}">${displayName}</span>
+        <iron-icon id="icon-${rowId}" class="file-icon" icon="${icon}" style="${thumbnailrc ? "display:none;" : ""}"></iron-icon>
+        <img id="thumbnail-${rowId}" class="file-thumbnail" src="${thumbnailrc}" style="${thumbnailrc ? "display:block;" : "display:none;"}"/>
+        <span title="${path}">${displayName}</span>
         <paper-icon-button id="menu-btn-${rowId}" icon="icons:more-vert" class="control-button"></paper-icon-button>
         <paper-ripple recenters></paper-ripple>
       </td>
-      <td>${new Date(file.getModeTime() * 1000).toLocaleString()}</td>
+      <td>${modDateStr}</td>
       <td>${mimeDisplay}</td>
       <td>${sizeDisplay}</td>
     `;
 
     // sync checkbox with global selection pub/sub
     Backend.eventHub.subscribe(
-      `__file_select_unselect_${file.getPath()}`,
-      () => {},
+      `__file_select_unselect_${path}`,
+      () => { },
       (checked) => {
         const checkbox = row.querySelector("paper-checkbox");
-        if (checkbox) checkbox.checked = checked;
-        this._updateSelectionState(row, checked);
+        if (checkbox) checkbox.checked = !!checked;
+        this._updateSelectionState(row, !!checked);
       },
       true,
       this
@@ -200,12 +223,11 @@ export class FilesListView extends FilesView {
       this._updateSelectionState(row, e.target.checked);
     });
 
-    // context menu button
+    // context menu button (uses shared FilesView menu)
     const menuBtn = row.querySelector(`#menu-btn-${rowId}`);
     menuBtn?.addEventListener("click", (evt) => {
       evt.stopPropagation();
-      if (!this.menu) return; // FilesView sets this.menu in parent
-      this._showContextMenu(row, file, menuBtn);
+      this.showContextMenu(menuBtn, file, row);
     });
 
     // clicking on icon/name/thumbnail opens file/dir
@@ -221,50 +243,48 @@ export class FilesListView extends FilesView {
   }
 
   async _getFileDisplayInfo(row, mimeType, file) {
-    let displayTitle = file.getName();
-    let thumbnailUrl = file.getThumbnail && file.getThumbnail();
+    let displayTitle = nameOf(file);
+    let thumbnailUrl = thumbOf(file);
 
     try {
       if (mimeType === "video") {
-        const videos = await new Promise((resolve, reject) =>
-          TitleController.getFileVideosInfo(file, resolve, reject)
-        );
-        if (videos?.length > 0) {
+        const videos = await new Promise((resolve, reject) => getFileVideosInfo(file, resolve, reject));
+        if (Array.isArray(videos) && videos.length > 0) {
           file.videos = videos;
-          displayTitle = videos[0].getDescription?.() || displayTitle;
-          const poster = videos[0].getPoster?.();
+          displayTitle = videos[0]?.getDescription?.() || displayTitle;
+          const poster = videos[0]?.getPoster?.();
           if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
         }
       } else if (mimeType === "audio") {
-        const audios = await new Promise((resolve, reject) =>
-          TitleController.getFileAudiosInfo(file, resolve, reject)
-        );
-        if (audios?.length > 0) {
+        const audios = await new Promise((resolve, reject) => getFileAudiosInfo(file, resolve, reject));
+        if (Array.isArray(audios) && audios.length > 0) {
           file.audios = audios;
-          displayTitle = audios[0].getTitle?.() || displayTitle;
-          const poster = audios[0].getPoster?.();
+          displayTitle = audios[0]?.getTitle?.() || displayTitle;
+          const poster = audios[0]?.getPoster?.();
           if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
         }
-      } else if (file.getIsDir()) {
+      } else if (isDirOf(file)) {
         // Try to read infos.json directly via the new readText helper
         try {
-          const text = await readText(`${file.getPath()}/infos.json`);
-          const titleInfos = JSON.parse(text || "{}");
-          const title = await new Promise((resolve, reject) =>
-            TitleController.getTitleInfo(titleInfos.ID, resolve, reject)
-          );
-          if (title) {
-            file.titles = [title];
-            displayTitle = title.getName?.() || displayTitle;
-            const poster = title.getPoster?.();
-            if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
+          const text = await readText(`${pathOf(file)}/infos.json`);
+          if (text) {
+            const titleInfos = JSON.parse(text);
+            if (titleInfos?.ID) {
+              const title = await new Promise((resolve, reject) => getTitleInfo(titleInfos.ID, resolve, reject));
+              if (title) {
+                file.titles = [title];
+                displayTitle = title.getName?.() || displayTitle;
+                const poster = title.getPoster?.();
+                if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
+              }
+            }
           }
         } catch {
-          /* silently ignore if infos.json not present */
+          /* silently ignore if infos.json not present/invalid */
         }
       }
     } catch (err) {
-      console.warn(`Extended info failed for ${file.getName?.() || file.getName()}:`, err);
+      console.warn(`Extended info failed for ${nameOf(file)}:`, err);
     } finally {
       const nameSpan = row.querySelector(".first-cell span");
       if (nameSpan) nameSpan.textContent = displayTitle;
@@ -291,7 +311,7 @@ export class FilesListView extends FilesView {
     if (target.tagName === "PAPER-CHECKBOX") return;
 
     if (target.id && target.id.startsWith("menu-btn-")) {
-      this._showContextMenu(targetRow, targetRow._file, target);
+      this.showContextMenu(target, targetRow._file, targetRow);
       return;
     }
 
@@ -308,27 +328,23 @@ export class FilesListView extends FilesView {
     const domainDataTransfer = evt.dataTransfer.getData("domain");
     const fileListTransfer = evt.dataTransfer.files;
 
-    if (fileListTransfer.length > 0) {
-      // New upload flow is handled elsewhere in app; just broadcast
+    if (fileListTransfer && fileListTransfer.length > 0) {
       Backend.eventHub.publish(
         "__upload_files_event__",
-        { dir: this._dir, files: Array.from(fileListTransfer) },
+        { dir: getCurrentExplorerPath(this._fileExplorer || this._fileExplorer), files: Array.from(fileListTransfer), lnk: null },
         true
       );
     } else if (filesDataTransfer && domainDataTransfer) {
       try {
         const files = JSON.parse(filesDataTransfer);
         const sourceId = evt.dataTransfer.getData("id");
-        if (this._file_explorer_ && files.length > 0) {
+        const explorer = this._fileExplorer || this._fileExplorer;
+        if (explorer && Array.isArray(files) && files.length > 0) {
+          const destPath = getCurrentExplorerPath(explorer);
           files.forEach((f) => {
             Backend.eventHub.publish(
-              `drop_file_${this._file_explorer_.id}_event`,
-              {
-                file: f,
-                dir: this._file_explorer_._path,
-                id: sourceId,
-                domain: domainDataTransfer,
-              },
+              `drop_file_${(explorer.id || "explorer")}_event`,
+              { file: f, dir: destPath, id: sourceId, domain: domainDataTransfer },
               true
             );
           });
@@ -365,44 +381,38 @@ export class FilesListView extends FilesView {
   }
 
   _handleFileOpen(file) {
-    if (file.getIsDir()) {
-      this._file_explorer_.publishSetDirEvent(file.getPath());
+    const explorer = this._fileExplorer || this._fileExplorer;
+    if (!explorer) return;
+
+    const dir = isDirOf(file);
+    const kind = (mimeOf(file) || "").split("/")[0];
+
+    if (dir) {
+      explorer.publishSetDirEvent?.(pathOf(file));
     } else {
-      const kind = (file.getMime() || "").split("/")[0];
-      if (kind === "video") this._file_explorer_._playMedia(file, "video");
-      else if (kind === "audio") this._file_explorer_._playMedia(file, "audio");
-      else if (kind === "image") this._file_explorer_._showImage(file);
-      else this._file_explorer_._readFile(file);
+      if (kind === "video") {
+        (explorer.playVideo || explorer._playMedia)?.call(explorer, file, "video");
+      } else if (kind === "audio") {
+        (explorer.playAudio || explorer._playMedia)?.call(explorer, file, "audio");
+      } else if (kind === "image") {
+        (explorer.showImage || explorer._showImage)?.call(explorer, file);
+      } else {
+        (explorer.readFile || explorer._readFile)?.call(explorer, file);
+      }
     }
-    this.hideMenu?.();
-  }
-
-  _showContextMenu(row, file, menuButton) {
-    const menu = this.menu;
-    if (!menu) return;
-
-    if (menu.parentNode !== document.body) document.body.appendChild(menu);
-
-    const rect = menuButton.getBoundingClientRect();
-    menu.style.position = "absolute";
-    menu.style.top = `${rect.bottom + 5 + window.scrollY}px`;
-    menu.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
-
-    menu.setFile(file);
-    menu.rename = () => this.rename(row, file, row.offsetTop + row.offsetHeight + 6);
-    menu.showBtn();
-
-    menu.onmouseenter = () => row.classList.add("active");
-    menu.onmouseleave = () => row.classList.remove("active");
+    // close shared menu if any
+    this.menu?.close?.();
+    if (this.menu?.parentNode) this.menu.parentNode.removeChild(this.menu);
   }
 
   _updateSelectionState(row, checked) {
     if (checked) {
       row.classList.add("selected");
-      this.selected[row.dataset.filePath] = row._file;
+      this._selected = this._selected || {};
+      this._selected[row.dataset.filePath] = row._file;
     } else {
       row.classList.remove("selected");
-      delete this.selected[row.dataset.filePath];
+      if (this._selected) delete this._selected[row.dataset.filePath];
     }
   }
 }

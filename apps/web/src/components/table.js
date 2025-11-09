@@ -812,7 +812,10 @@ export class Table extends HTMLElement {
       const headers = this.tableHeader.querySelectorAll("th");
       for (let i = 0; i < headers.length; i++) {
         const property = headers[i].field;
-        if (window[property]) d[property] = window[property](d);
+       
+        if (window[property]){
+          //d[property] = window[property](d)
+        };
       }
     });
 

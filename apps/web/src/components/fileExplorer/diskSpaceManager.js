@@ -7,7 +7,7 @@ import {
   getAvailableSpace,
   setAllocatedSpace,
   SubjectType,
-} from "../../backend/diskSpace.js";
+} from "../../backend/rbac/diskSpace";
 
 // Polymer imports
 import "@polymer/paper-card/paper-card.js";

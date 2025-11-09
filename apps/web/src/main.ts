@@ -32,6 +32,24 @@ import './widgets/peer_discovery'
 
 // src/main.ts
 import { applyTheme, watchSystemTheme } from './theme/theme'
+
+// main.ts
+import { Backend } from "./backend/backend";
+import { getEventClient } from "./backend/event/event"; // your factory for EventServiceClient
+import { getBaseUrl } from "./backend/core/endpoints";
+
+// A getter that always reads the *current* token/baseUrl.
+// Works before login (no token) and after login (token set in sessionStorage).
+function currentEventClient() {
+  const base = getBaseUrl();
+  const token = sessionStorage.getItem("__globular_token__") || "";
+  return getEventClient(); // build a grpc-web client with creds if token present
+}
+
+// Initialize once at startup
+Backend.init(() => currentEventClient()); 
+
+
 applyTheme();           // set from localStorage or system
 watchSystemTheme();     // keep in sync if "system"
 

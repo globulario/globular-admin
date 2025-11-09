@@ -1,24 +1,37 @@
 // src/components/fileIconViewSection.js
 
-// Removed legacy protobuf/gRPC imports and all ".globule" usage
 import { Backend } from "../../backend/backend";
 import { displayMessage, displayError } from "../../backend/ui/notify";
-import { getBaseUrl } from "../../core/endpoints";
-import {copyToClipboard } from "../utility.js";
+import { copyToClipboard } from "../utility.js";
+
+// ✅ Use the shared FileVM helpers (DRY)
+import { pathOf, nameOf, filesOf, mimeRootOf } from "./filevm-helpers";
+
+// Proper backend wrappers (no direct HTTP fetch)
+import { getFile, readText } from "../../backend/cms/files";
+
 import "@polymer/iron-icon/iron-icon.js";
 import "@polymer/paper-checkbox/paper-checkbox.js";
 import { playVideos } from "../video";
 import { playAudios } from "../audio";
 import "./fileIconView";
 
-// Small helper: build gateway URL from a repo path
+// ---------- small shared utilities ----------
+const ICON_FOR_SECTION = {
+  audio: "av:music-note",
+  video: "av:movie",
+  image: "image:collections",
+  default: "icons:folder",
+};
+
 function buildFileHttpUrl(path) {
-  const base = (getBaseUrl() || "").replace(/\/$/, "");
-  const parts = path.split("/").map(encodeURIComponent).filter(Boolean).join("/");
-  return `${base}/${parts}`;
+  // Build a stable absolute URL to the file path served by your backend's file HTTP server.
+  // Assumes your server serves files by absolute path. Adjust here if your server expects a query style path.
+  const base = (window.location && window.location.origin) ? window.location.origin.replace(/\/$/, "") : "";
+  const normalized = (path || "").startsWith("/") ? path : `/${path || ""}`;
+  return `${base}${normalized}`;
 }
 
-// Optional seam: if you have a token getter in new backend, plug it here.
 async function tryGetAccessToken() {
   try {
     if (typeof Backend.getAccessToken === "function") {
@@ -30,26 +43,56 @@ async function tryGetAccessToken() {
 
 export class FileIconViewSection extends HTMLElement {
   _fileType = "";
-  _dir = null;
-  _fileExplorer = null;    // main FileExplorer
-  _filesListView = null;   // for selection sync if you keep it
-  _filesIconView = null;   // for selection sync if you keep it
+  _dir = null;            // DirVM-like: { path, files }
+  _fileExplorer = null;   // main FileExplorer
+  _filesListView = null;
+  _filesIconView = null;
 
-  _domRefs = {};
+  _dom = {};
 
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this._fileType = this.getAttribute("filetype") || "";
-    this._initializeLayout();
-    this._cacheDomElements();
-    this._setupEventListeners();
+    this.shadowRoot.innerHTML = this._template();
+    this._cacheDom();
+    this._wireBasics();
   }
 
-  _initializeLayout() {
-    this.shadowRoot.innerHTML = `
+  /** ---------- lifecycle / init ---------- */
+  init(dirVM, fileType, view) {
+    this._dir = dirVM;
+    this._fileType = fileType;
+    this._fileExplorer = view?._fileExplorer || view || null;
+    this._filesListView = this._fileExplorer?._filesListView || null;
+    this._filesIconView = this._fileExplorer?._filesIconView || null;
+
+    this._setSectionIcon(this._fileType);
+    this._setupPlaylistActions();
+    this.updateCount();
+  }
+
+  updateCount() {
+    const n = this.shadowRoot.querySelectorAll("globular-file-icon-view").length
+      || this.querySelectorAll("globular-file-icon-view").length;
+    this._dom.sectionCountSpan.textContent = ` (${n})`;
+  }
+
+  /** ---------- template / dom ---------- */
+  _template() {
+    return `
       <style>
         :host { display:flex; flex-direction:column; width:100%; }
+
+        #select-all-checkbox {
+          --paper-checkbox-unchecked-color: #999; /* Border color */
+          --paper-checkbox-checked-color: #4dabf7; /* Fill when checked */
+          --paper-checkbox-checkmark-color: white; /* ✓ color */
+       }
+
+        iron-icon {
+          fill: var(--on-surface-color, black);
+        } 
         .file-type-section { display:flex; flex-direction:column; padding:10px 0; }
         .file-type-section .title {
           display:flex; align-items:center; font-size:1.2rem; font-weight:400;
@@ -62,7 +105,7 @@ export class FileIconViewSection extends HTMLElement {
           --paper-checkbox-checked-color: var(--primary-color);
           --paper-checkbox-unchecked-color: var(--palette-action-disabled);
         }
-        .file-type-section .title span { font-weight:400; font-size:1rem; flex-grow:1; padding-left:5px; }
+        .file-type-section .title span { font-weight:400; font-size:1rem; flex-grow:1; padding-left:5px; color: var(--on-surface-color, black); }
         .file-type-section .content {
           display:flex; flex-wrap:wrap; margin:16px 0; justify-content:flex-start; gap:10px;
         }
@@ -86,59 +129,43 @@ export class FileIconViewSection extends HTMLElement {
     `;
   }
 
-  _cacheDomElements() {
-    this._domRefs.sectionCountSpan = this.shadowRoot.querySelector("#section_count");
-    this._domRefs.selectAllCheckbox = this.shadowRoot.querySelector("#select-all-checkbox");
-    this._domRefs.fileSectionContent = this.shadowRoot.querySelector("#file_section_content"); // fixed
-    this._domRefs.playlistActionsDiv = this.shadowRoot.querySelector("#playlist-actions");
-    this._domRefs.sectionTypeIcon = this.shadowRoot.querySelector("#section-type-icon");
+  _cacheDom() {
+    const $ = (s) => this.shadowRoot.querySelector(s);
+    this._dom.sectionCountSpan = $("#section_count");
+    this._dom.selectAllCheckbox = $("#select-all-checkbox");
+    this._dom.fileSectionContent = $("#file_section_content");
+    this._dom.playlistActionsDiv = $("#playlist-actions");
+    this._dom.sectionTypeIcon = $("#section-type-icon");
   }
 
-  _setupEventListeners() {
-    this._domRefs.selectAllCheckbox.addEventListener("change", this._handleSelectAllChange.bind(this));
-
-    // Set type icon
-    if (this._fileType === "audio") this._domRefs.sectionTypeIcon.icon = "av:music-note";
-    else if (this._fileType === "video") this._domRefs.sectionTypeIcon.icon = "av:movie";
-    else if (this._fileType === "image") this._domRefs.sectionTypeIcon.icon = "image:collections";
-    else this._domRefs.sectionTypeIcon.icon = "icons:folder";
-  }
-
-  _handleSelectAllChange() {
-    const isChecked = this._domRefs.selectAllCheckbox.checked;
-    this.querySelectorAll("globular-file-icon-view").forEach((fileIconView) => {
-      if (isChecked) fileIconView.select();
-      else fileIconView.unselect();
+  _wireBasics() {
+    this._dom.selectAllCheckbox.addEventListener("change", () => {
+      const isChecked = this._dom.selectAllCheckbox.checked;
+      // Select / unselect every file icon child in this section
+      const nodes = this.shadowRoot.querySelectorAll("globular-file-icon-view");
+      const fallbacks = this.querySelectorAll("globular-file-icon-view");
+      const list = nodes.length ? nodes : fallbacks;
+      list.forEach((v) => (isChecked ? v.select() : v.unselect()));
     });
+    this._setSectionIcon(this._fileType);
   }
 
-  /**
-   * Initialize with dir + type + parent view
-   */
-  init(dir, fileType, view) {
-    this._dir = dir;
-    this._fileType = fileType;
-    this._fileExplorer = view._file_explorer_;  // keep reference (no .globule anywhere)
-    this._filesListView = this._fileExplorer?._filesListView || null;
-    this._filesIconView = this._fileExplorer?._filesIconView || null;
-
-    this._setupPlaylistActions();
-    this.updateCount();
+  _setSectionIcon(type) {
+    this._dom.sectionTypeIcon.icon =
+      ICON_FOR_SECTION[type] || ICON_FOR_SECTION.default;
   }
 
-  /**
-   * Create the actions block per section type (audio/video)
-   */
+  /** ---------- playlist actions ---------- */
   _setupPlaylistActions() {
     const isAudio = this._fileType === "audio";
     const isVideo = this._fileType === "video";
 
     if (!isAudio && !isVideo) {
-      this._domRefs.playlistActionsDiv.innerHTML = "";
+      this._dom.playlistActionsDiv.innerHTML = "";
       return;
     }
 
-    this._domRefs.playlistActionsDiv.innerHTML = `
+    this._dom.playlistActionsDiv.innerHTML = `
       ${isAudio ? "" : '<globular-watching-menu style="padding:0;height:24px;width:24px;"></globular-watching-menu>'}
       <iron-icon id="refresh-btn" icon="icons:refresh" title="Refresh ${this._fileType} infos and playlist"></iron-icon>
       <iron-icon id="download-btn" icon="av:playlist-add-check" title="Download new ${this._fileType} from channel" style="display:none;"></iron-icon>
@@ -154,15 +181,15 @@ export class FileIconViewSection extends HTMLElement {
 
     let playlist = null;
 
-    // Load playlist.json via HTTP
-    this._loadPlaylistJson().then((loaded) => {
+    // ✅ Load .hidden/playlist.json via backend (no HTTP fetch)
+    this._loadPlaylistJsonBackend().then((loaded) => {
       playlist = loaded;
       if (playlist && downloadBtn) downloadBtn.style.display = "block";
     });
 
-    refreshBtn?.addEventListener("click", this._handleRefreshMedia.bind(this));
+    refreshBtn?.addEventListener("click", () => this._handleRefreshMedia());
     downloadBtn?.addEventListener("click", () => this._handleDownloadMedia(playlist));
-    playBtn?.addEventListener("click", this._handlePlayAllMedia.bind(this));
+    playBtn?.addEventListener("click", () => this._handlePlayAllMedia());
     copyLnkBtn?.addEventListener("click", () => this._handleCopyPlaylistLink(playlist));
 
     watchingMenu?.addEventListener("open-media-watching", (evt) => {
@@ -170,87 +197,90 @@ export class FileIconViewSection extends HTMLElement {
     });
   }
 
-  /**
-   * Fetch .hidden/playlist.json (no gRPC; simple HTTP)
-   */
-  async _loadPlaylistJson() {
-    const filePath = `${this._dir.getPath()}/.hidden/playlist.json`;
+  // DRY: one loader that uses backend wrappers
+  async _loadPlaylistJsonBackend() {
+    const filePath = `${pathOf(this._dir)}/.hidden/playlist.json`;
     try {
-      const resp = await fetch(buildFileHttpUrl(filePath), { credentials: "include" });
-      if (!resp.ok) return null; // missing file is fine
-      return await resp.json();
+      const file = await getFile(filePath);
+      const text = await readText(file);
+      if (!text) return null;
+      return JSON.parse(text);
     } catch (e) {
-      console.warn("Failed to load playlist.json:", e);
+      // missing file is fine
       return null;
     }
   }
 
-  /**
-   * Ask backend to (re)process media metadata for this dir.
-   * Wire this to your new media wrapper if available.
-   */
   async _handleRefreshMedia() {
     try {
-      // If you have a media service wrapper, call it here.
-      // Otherwise, publish an app-level event your backend listens to:
       Backend.eventHub.publish(
         "__refresh_media_request__",
-        { path: this._dir.getPath(), type: this._fileType },
+        { path: pathOf(this._dir), type: this._fileType },
         true
       );
-
       displayMessage(`${this._fileType} playlist refresh requested.`, 2500);
-      // Optionally poll/refresh UI:
-      this._fileExplorer?._refreshCurrentDirectory?.();
+
+      // Use the same mechanism your FileExplorer uses to refresh the directory
+      Backend.eventHub.publish("reload_dir_event", pathOf(this._dir), true);
     } catch (err) {
       displayError(`Failed to refresh ${this._fileType} information: ${err?.message || err}`, 3000);
       console.error(err);
     }
   }
 
-  /**
-   * Start a channel download based on playlist.json (if present).
-   * Emits progress to the same uploader events your UI already consumes.
-   */
   async _handleDownloadMedia(playlist) {
     if (!playlist) {
       displayMessage("No playlist information found to download media.", 3000);
       return;
     }
-
     try {
-      // Publish a high-level intent; your new download worker should react to it.
       Backend.eventHub.publish(
         "__download_media_from_channel__",
         {
           path: playlist.path,
           url: playlist.url,
           format: playlist.format,
-          dir: this._dir.getPath(),
+          dir: pathOf(this._dir),
           type: this._fileType,
         },
         true
       );
-
       displayMessage(`Started ${this._fileType} download from channel…`, 3000);
-      // Optionally refresh once your worker signals completion
     } catch (e) {
       displayError(`Failed to initiate download: ${e?.message || e}`, 3000);
       console.error(e);
     }
   }
 
-  /**
-   * Build a shareable playlist URL (uses base URL, optional token if available)
-   */
-  async _buildPlaylistCopyUrl(playlist) {
-    let playlistPath =
-      this._dir.__videoPlaylist__?.getPath() ||
-      this._dir.__audioPlaylist__?.getPath();
+  async _handleCopyPlaylistLink(playlist) {
+    const url = await this._buildPlaylistCopyUrl(playlist);
+    if (url) {
+      copyToClipboard(url);
+      displayMessage("URL was copied to clipboard.", 3000);
+    } else {
+      displayMessage("No valid playlist URL found to copy.", 3000);
+    }
+  }
 
+  // DRY: central place to figure out a playlist path/url
+  async _buildPlaylistCopyUrl(playlist) {
+    // Prefer explicit paths provided by dirVM (if any)
+    let playlistPath =
+      this._dir?.videoPlaylistPath ||
+      this._dir?.audioPlaylistPath ||
+      this._dir?.__videoPlaylist__?.path ||
+      this._dir?.__audioPlaylist__?.path;
+
+    // Fallback: derive from files (e.g., HLS)
     if (!playlistPath && this._fileType === "video") {
-      const hls = this._dir.getFilesList().find((f) => f.getMime() === "video/hls-stream");
-      if (hls) playlistPath = `${hls.getPath()}/playlist.m3u8`;
+      const hls = filesOf(this._dir).find(
+        (f) => (mimeRootOf(f) === "video") && f.mime === "video/hls-stream"
+      );
+      if (hls?.path) playlistPath = `${hls.path}/playlist.m3u8`;
+    }
+    if (!playlistPath && playlist?.path) {
+      // last resort: use playlist.json.path if it looks like a file path
+      playlistPath = playlist.path;
     }
     if (!playlistPath) return "";
 
@@ -268,39 +298,27 @@ export class FileIconViewSection extends HTMLElement {
     return url;
   }
 
-  async _handleCopyPlaylistLink(playlist) {
-    const url = await this._buildPlaylistCopyUrl(playlist);
-    if (url) {
-      copyToClipboard(url);
-      displayMessage("URL was copied to clipboard.", 3000);
-    } else {
-      displayMessage("No valid playlist URL found to copy.", 3000);
-    }
-  }
-
-  /**
-   * Play all media in this section (uses your existing play helpers)
-   */
   _handlePlayAllMedia() {
-    const filesToPlay = [];
-    this._dir.getFilesList().forEach((f) => {
-      if (!f.getMime().startsWith(this._fileType)) return;
-      if (this._fileType === "video" && f.videos) filesToPlay.push(...f.videos);
-      else if (this._fileType === "audio" && f.audios) filesToPlay.push(...f.audios);
-      else if (f.titles) filesToPlay.push(...f.titles);
-    });
+    const files = filesOf(this._dir) || [];
+    const wantedRoot = this._fileType; // "video" | "audio" | "image" | etc.
 
-    if (filesToPlay.length > 0) {
-      if (this._fileType === "video") playVideos(filesToPlay, this._dir.getName());
-      else if (this._fileType === "audio") playAudios(filesToPlay, this._dir.getName());
-    } else {
-      displayMessage(`No ${this._fileType} information found to generate a playlist.`, 3000);
+    // Collect media objects already attached by your backend (videos/audios/titles arrays)
+    const toPlay = [];
+    for (const f of files) {
+      if ((f?.mime || "").startsWith(wantedRoot)) {
+        if (wantedRoot === "video" && Array.isArray(f.videos)) toPlay.push(...f.videos);
+        else if (wantedRoot === "audio" && Array.isArray(f.audios)) toPlay.push(...f.audios);
+        else if (Array.isArray(f.titles)) toPlay.push(...f.titles);
+      }
     }
-  }
 
-  updateCount() {
-    const n = this.querySelectorAll("globular-file-icon-view").length;
-    this._domRefs.sectionCountSpan.textContent = ` (${n})`;
+    if (toPlay.length > 0) {
+      const listName = nameOf(this._dir) || (pathOf(this._dir)?.split("/").pop() || "Playlist");
+      if (wantedRoot === "video") playVideos(toPlay, listName);
+      else if (wantedRoot === "audio") playAudios(toPlay, listName);
+    } else {
+      displayMessage(`No ${wantedRoot} information found to generate a playlist.`, 3000);
+    }
   }
 }
 

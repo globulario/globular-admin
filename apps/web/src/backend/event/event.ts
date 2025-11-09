@@ -1,5 +1,6 @@
 // backend/event.ts
 import { EventServicePromiseClient } from "globular-web-client/event/event_grpc_web_pb";
+import { getBaseUrl } from "../core/endpoints"
 import {
   OnEventRequest,
   PublishRequest,
@@ -28,6 +29,40 @@ type Subscriber = {
   onevent: OnEvent;
   local: boolean;
 };
+
+/** Simple shape for optional config */
+type EventClientOptions = {
+  baseUrl?: string
+  token?: string | null
+}
+
+/**
+ * Returns a configured EventServicePromiseClient.
+ * - Sends cookies (withCredentials: true)
+ * - If a token is provided, adds Authorization/Token headers to every call via interceptors
+ */
+export function getEventClient(opts: EventClientOptions = {}): EventServicePromiseClient {
+  const base = opts.baseUrl ?? getBaseUrl() ?? ""
+
+  // Minimal options: send cookies for domains using cookie auth
+  const options: any = { withCredentials: true }
+
+  // If you use header-based auth for Event RPCs, inject it here.
+  // grpc-web supports unary & stream interceptors via options.*Interceptors
+  if (opts.token) {
+    const injectAuth = (method: any, request: any, metadata: any, invoker: any) => {
+      const md = { ...(metadata || {}) }
+      // Both headers are common in your codebase; keep both for compatibility.
+      md["authorization"] = "Bearer " + opts.token
+      md["token"] = opts.token
+      return invoker(method, request, md)
+    }
+    options.unaryInterceptors = [injectAuth]
+    options.streamInterceptors = [injectAuth]
+  }
+
+  return new EventServicePromiseClient(base, null, options)
+}
 
 export type GetEventClient = () => EventServicePromiseClient | undefined;
 

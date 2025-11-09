@@ -1,8 +1,44 @@
-// components/fileReader.js
+// components/fileReader.js — refactored for new backend wrappers (DRY, token-safe)
 import "@polymer/paper-icon-button/paper-icon-button.js";
 import "@polymer/iron-icons/iron-icons.js";
-import { getBaseUrl } from "../../backend/core/endpoints.js";
+import { getBaseUrl } from "../../backend/core/endpoints";
+import { Backend } from "../../backend/backend";
 
+// ✅ DRY: shared VM helpers (works with proto, VM, or plain objects)
+import { pathOf, mimeOf, nameOf as vmNameOf } from "./filevm-helpers";
+
+/* ----------------------------- constants ------------------------------ */
+const PDF_MIME = "application/pdf";
+
+/* ----------------------------- tiny helpers --------------------------- */
+async function getToken() {
+  return sessionStorage.getItem("__globular_token__") || "";
+}
+
+function buildDownloadUrl(filePath, token) {
+  let url = (getBaseUrl() || "").replace(/\/$/, "") + "/api/v1/files/download";
+  (filePath || "").split("/").forEach((seg) => {
+    if (seg && seg.trim()) url += "/" + encodeURIComponent(seg.trim());
+  });
+  url += `?token=${encodeURIComponent(token)}`;
+  return url;
+}
+
+function setVisible(el, on) {
+  if (!el) return;
+  el.style.display = on ? "flex" : "none";
+}
+
+function safeTitle(file, fallback = "File Viewer") {
+  const p = typeof file === "string" ? file : pathOf(file);
+  const n = vmNameOf(file);
+  if (n) return n;
+  if (!p) return fallback;
+  const i = p.lastIndexOf("/");
+  return i >= 0 ? p.slice(i + 1) || fallback : p;
+}
+
+/* ------------------------------ element ------------------------------- */
 /**
  * <globular-file-reader>
  * Lightweight iframe-based file viewer.
@@ -14,9 +50,14 @@ import { getBaseUrl } from "../../backend/core/endpoints.js";
  *  r.read(fileProtoOrVM, 1);  // page = 1 for PDFs
  */
 export class GlobularFileReader extends HTMLElement {
-  _file = null;              // current file (proto/VM or { path, mime }-like)
-  _onCloseCallback = null;   // optional close callback
+  /** @type {any} current file (proto/VM or { path, mime }) */
+  _file = null;
+  /** @type {(ev?: any) => void | null} */
+  _onCloseCallback = null;
+  /** @type {Record<string, HTMLElement>} */
   _domRefs = {};
+  _onKeydown = null;
+  _fileExplorer = null;
 
   constructor() {
     super();
@@ -31,8 +72,11 @@ export class GlobularFileReader extends HTMLElement {
     this.style.display = "none";
   }
 
-  // ---------- layout ----------
+  disconnectedCallback() {
+    window.removeEventListener("keydown", this._onKeydown);
+  }
 
+  /* ------------------------------ layout ------------------------------ */
   _initializeLayout() {
     this.shadowRoot.innerHTML = `
       <style>
@@ -106,12 +150,12 @@ export class GlobularFileReader extends HTMLElement {
     this._domRefs.frame.addEventListener("error", () => this._hideLoading());
   }
 
-  disconnectedCallback() {
-    window.removeEventListener("keydown", this._onKeydown);
+  /** Link the file explorer that owns this navigator */
+  setFileExplorer(fileExplorer) {
+    this._fileExplorer = fileExplorer;
   }
 
-  // ---------- public API ----------
-
+  /* ----------------------------- public API --------------------------- */
   set onclose(cb) { this._onCloseCallback = cb; }
   get onclose() { return this._onCloseCallback; }
 
@@ -123,35 +167,30 @@ export class GlobularFileReader extends HTMLElement {
   async read(file, page = 0) {
     this._file = file;
 
-    const path = this._extractPath(file);
-    const mime = this._extractMime(file);
+    const p = pathOf(file);
+    const m = (mimeOf(file) || "").toLowerCase();
 
-    if (!path) {
+    if (!p) {
       console.error("GlobularFileReader: invalid file (missing path).");
       return;
     }
 
     try {
-      const token = sessionStorage.getItem("__globular_token__");
+      const token = await getToken();
       if (!token) throw new Error("User is not authenticated.");
 
-      // Build /api/v1/files/download/<encoded path...>?token=...
-      let url = (getBaseUrl() || "").replace(/\/$/, "") + "/api/v1/files/download";
-      path.split("/").forEach(seg => {
-        if (seg && seg.trim()) url += "/" + encodeURIComponent(seg.trim());
-      });
-      url += `?token=${encodeURIComponent(token)}`;
+      let url = buildDownloadUrl(p, token);
 
       // PDF page anchor (PDF.js and most browsers understand #page=N)
-      if ((mime || "").toLowerCase() === "application/pdf" && page > 0) {
+      if (m === PDF_MIME && page > 0) {
         url += `#page=${Number(page)}`;
       }
 
       // render
       this._showLoading();
-      this._domRefs.title.textContent = this._prettyName(path);
+      this._domRefs.title.textContent = safeTitle(file);
       this._domRefs.frame.src = url;
-      this._domRefs.content.style.display = "flex";
+      setVisible(this._domRefs.content, true);
       this.style.display = "flex";
     } catch (err) {
       console.error("GlobularFileReader: Failed to read file:", err);
@@ -159,48 +198,24 @@ export class GlobularFileReader extends HTMLElement {
     }
   }
 
-  /**
-   * Hide and cleanup.
-   */
+  /** Hide and cleanup. */
   close() {
-    this._domRefs.content.style.display = "none";
+    setVisible(this._domRefs.content, false);
     this._domRefs.frame.src = "about:blank";
     this.style.display = "none";
     this._hideLoading();
     if (typeof this._onCloseCallback === "function") {
-      try { this._onCloseCallback(); } catch {}
+      try { this._onCloseCallback(); } catch { /* ignore */ }
     }
   }
 
-  // ---------- helpers ----------
-
-  _extractPath(file) {
-    if (!file) return "";
-    if (typeof file === "string") return file;
-    if (typeof file.getPath === "function") return file.getPath();
-    if (typeof file.path === "string") return file.path;
-    return "";
-    // (intentionally no .globule checks)
-  }
-
-  _extractMime(file) {
-    if (!file) return "";
-    if (typeof file.getMime === "function") return file.getMime() || "";
-    if (typeof file.mime === "string") return file.mime;
-    return "";
-  }
-
-  _prettyName(path) {
-    const i = path.lastIndexOf("/");
-    return i >= 0 ? path.slice(i + 1) || "File Viewer" : path || "File Viewer";
-  }
-
+  /* ------------------------------ helpers ---------------------------- */
   _showLoading() {
-    this._domRefs.loading.style.display = "flex";
+    setVisible(this._domRefs.loading, true);
   }
 
   _hideLoading() {
-    this._domRefs.loading.style.display = "none";
+    setVisible(this._domRefs.loading, false);
   }
 }
 

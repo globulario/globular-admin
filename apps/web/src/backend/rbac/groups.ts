@@ -1,5 +1,5 @@
 // backend/rbac/groups.ts
-// Groups backend in the same style as src/backend/accounts.ts
+// Groups backend in the same style as src/backend/rbac/accounts.ts
 
 import { unary, stream } from "../core/rpc"
 import { getBaseUrl } from "../core/endpoints"
@@ -7,6 +7,9 @@ import { getBaseUrl } from "../core/endpoints"
 // ---- Generated stubs (adjust paths if needed) ----
 import { ResourceServiceClient } from "globular-web-client/resource/resource_grpc_web_pb"
 import * as resource from "globular-web-client/resource/resource_pb"
+
+// Also use accounts API to hydrate member IDs → Account objects
+import { getAccountsByIds, type Account } from "./accounts"
 
 // ----------------------------- Types -----------------------------
 
@@ -316,3 +319,101 @@ export async function removeGroupMember(groupId: string, accountId: string): Pro
   await unary(clientFactory, method, rq, undefined, md)
 }
 
+/* -------------------- NEW: listGroupMembers -------------------- */
+
+/**
+ * Return full Account objects for all members of a group.
+ * - Prefers the `members` array from GetGroups if present.
+ * - Falls back to RPC methods commonly used for membership listing.
+ * - Hydrates IDs → Account objects via accounts backend.
+ */
+export async function listGroupMembers(
+  groupId: string,
+  opts: { batchSize?: number } = {}
+): Promise<Account[]> {
+  const batchSize = Math.max(1, opts.batchSize ?? 500)
+
+  // 1) Gather member IDs (from group doc or explicit RPC)
+  const ids = await collectMemberIds(groupId)
+
+  if (ids.length === 0) return []
+
+  // 2) Hydrate accounts in batches
+  const out: Account[] = []
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const slice = ids.slice(i, i + batchSize)
+    const chunk = await getAccountsByIdsSafe(slice)
+    out.push(...chunk)
+  }
+  return out
+}
+
+async function collectMemberIds(groupId: string): Promise<string[]> {
+  // Try to get from the group document first
+  const fromGroup = await getGroupById(groupId)
+  const groupMembers = fromGroup?.members ?? []
+  if (groupMembers.length > 0) return groupMembers
+
+  // Fallback to explicit RPC (handle multiple proto name variants)
+  const md = await meta()
+  const rq = newRq(["ListGroupMembersRqst", "GetGroupMembersRqst", "GetGroupMembersRequest"])
+
+  rq.setGroupid?.(groupId)
+  rq.setId?.(groupId)
+  rq.groupid = rq.groupid ?? groupId
+  rq.id = rq.id ?? groupId
+
+  const client = clientFactory()
+  const method = pickMethod(client, ["listGroupMembers", "getGroupMembers", "ListGroupMembers", "GetGroupMembers"])
+
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md)
+
+  // Accept several plausible response shapes:
+  // - repeated string accountIds = 1  → getAccountidsList()
+  // - repeated Member members = 1     → members[].getAccountid()
+  // - { accountIds: string[] }        → accountIds
+  // - { members: [{accountId: string}|string] }
+  const out: string[] = []
+
+  const idsFromList = (arr: any[]) => {
+    for (const m of arr || []) {
+      if (typeof m === "string") { out.push(m); continue }
+      const id =
+        (typeof m?.getAccountid === "function" && m.getAccountid()) ||
+        (typeof m?.getId === "function" && m.getId()) ||
+        m?.accountId ||
+        m?.id
+      if (id) out.push(String(id))
+    }
+  }
+
+  // getAccountidsList()
+  if (typeof rsp?.getAccountidsList === "function") {
+    idsFromList(rsp.getAccountidsList())
+  }
+  // members list in various forms
+  else if (typeof rsp?.getMembersList === "function") {
+    idsFromList(rsp.getMembersList())
+  } else if (Array.isArray(rsp?.members)) {
+    idsFromList(rsp.members)
+  } else if (Array.isArray(rsp?.accountIds)) {
+    idsFromList(rsp.accountIds)
+  }
+
+  return out
+}
+
+async function getAccountsByIdsSafe(ids: string[]): Promise<Account[]> {
+  try {
+    return await getAccountsByIds(ids)
+  } catch {
+    // Fallback to a generic RPC if your accounts wrapper is unavailable at runtime
+    const rsp = await unary<any, { accounts?: Account[] }>(
+      clientFactory,
+      "getAccountsByIds",
+      // Adjust request class name if your proto differs
+      { ids } as any
+    )
+    return rsp?.accounts ?? []
+  }
+}

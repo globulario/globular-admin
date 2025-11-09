@@ -1,692 +1,1000 @@
-// src/backend/files.ts
-// Unified, typed backend wrapper for the File service — styled like accounts.ts
-// - Provides a FileVM facade (avoid direct use of file_pb types in the app)
-// - Exposes simple helpers: readDir, getFile, readFile (stream), saveFile, createDir, addPublicDir,
-//   createLink, deleteFile, deleteDir, renameFile, uploadFiles, downloadFileHttp
-// - Internally tolerates minor grpc-web naming differences using pickMethod/newRq like accounts.ts
+// files.ts
+// Unified, typed backend wrapper for the File service.
+// Proto alignment: FileInfo { name,size,mode,mode_time,is_dir,path,mime,thumbnail,checksum,metadata,files[] }
 
-import { getBaseUrl } from "../core/endpoints"
-import { unary, stream } from "../core/rpc"
+import { getBaseUrl } from "../core/endpoints";
+import { unary, stream } from "../core/rpc";
 
 // ---- Generated stubs (adjust paths if needed) ----
-import { FileServiceClient } from "globular-web-client/file/file_grpc_web_pb"
-import * as filepb from "globular-web-client/file/file_pb"
-import { FilesCache } from "./files_cache"
+import { FileServiceClient } from "globular-web-client/file/file_grpc_web_pb";
+import * as filepb from "globular-web-client/file/file_pb";
+import { FilesCache, type ReadDirFetcher } from "./files_cache";
 
 /* ------------------------------------------------------------------
- * Constants (from the provided snippet)
+ * Constants (kept for callers)
  * ------------------------------------------------------------------ */
-export const THUMBNAIL_PREVIEW_DIR = "/__preview__"
-export const SUBTITLES_DIR = "/__subtitles__"
-export const TIMELINE_THUMBNAILS_DIR = "/__timeline__"
-export const DEFAULT_AVATAR_PATH = "https://www.w3schools.com/howto/img_avatar.png"
-export const LOCAL_MEDIA_PROTOCOL = "local-media://"
+export const THUMBNAIL_PREVIEW_DIR = "/__preview__";
+export const SUBTITLES_DIR = "/__subtitles__";
+export const TIMELINE_THUMBNAILS_DIR = "/__timeline__";
+export const DEFAULT_AVATAR_PATH = "https://www.w3schools.com/howto/img_avatar.png";
+export const LOCAL_MEDIA_PROTOCOL = "local-media://";
 
 /* ------------------------------------------------------------------
- * View-Model facade (avoid leaking proto types to the UI)
+ * FileVM mirrors proto FileInfo (recursive). Extras remain optional
+ * but we remove any legacy `thumbnails[]` to match proto strictly.
  * ------------------------------------------------------------------ */
 export class FileVM {
-  // Core
-  id?: string
-  path: string
-  name: string
-  isDir: boolean
-  size?: number
-  mime?: string
-  ext?: string
+  // Proto-aligned core
+  name: string;
+  size?: number;
+  mode?: number;
+  modeTime?: Date;       // derived from mode_time (seconds) => Date
+  isDir: boolean;
+  path: string;
+  mime?: string;
+  thumbnail?: string;    // single thumbnail (no array)
+  checksum?: string;
+  metadata?: any;        // Struct -> JS object
+  files?: FileVM[];      // recursion
 
-  // Ownership / perms
-  owner?: string | number
-  group?: string | number
-  permissions?: number // octal-like (e.g., 0o755) if provided
-  mode?: number
-  hidden?: boolean
+  // Extras kept for backward compatibility (not in proto)
+  id?: string;
+  ext?: string;
+  owner?: string | number;
+  group?: string | number;
+  permissions?: number;
+  hidden?: boolean;
 
-  // Times
-  mtime?: Date
-  ctime?: Date
-  atime?: Date
+  mtime?: Date;
+  ctime?: Date;
+  atime?: Date;
 
-  // Links / previews
-  linkTarget?: string
-  thumbnails?: string[]
+  linkTarget?: string;
 
-  // Optional rich-media infos (if your proto exposes them)
-  titles?: any[]
-  videos?: any[]
-  audios?: any[]
+  titles?: any[];
+  videos?: any[];
+  audios?: any[];
 
-  // Misc
-  hash?: string
-  width?: number
-  height?: number
-  childrenCount?: number
+  hash?: string;
+  width?: number;
+  height?: number;
+  childrenCount?: number;
 
   constructor(init: Partial<FileVM>) {
-    this.id = init.id
-    this.path = init.path ?? ""
-    this.name = init.name ?? ""
-    this.isDir = !!init.isDir
-    this.size = init.size
-    this.mime = init.mime
-    this.ext = init.ext
-    this.owner = init.owner
-    this.group = init.group
-    this.permissions = init.permissions
-    this.mode = init.mode
-    this.hidden = init.hidden
-    this.mtime = init.mtime
-    this.ctime = init.ctime
-    this.atime = init.atime
-    this.linkTarget = init.linkTarget
-    this.thumbnails = init.thumbnails
-    this.titles = init.titles
-    this.videos = init.videos
-    this.audios = init.audios
-    this.hash = init.hash
-    this.width = init.width
-    this.height = init.height
-    this.childrenCount = init.childrenCount
+    // proto core
+    this.name = init.name ?? "";
+    this.size = init.size;
+    this.mode = init.mode;
+    this.modeTime = init.modeTime;
+    this.isDir = !!init.isDir;
+    this.path = init.path ?? "";
+    this.mime = init.mime;
+    this.thumbnail = init.thumbnail;
+    this.checksum = init.checksum;
+    this.metadata = init.metadata;
+    this.files = init.files;
+
+    // extras
+    this.id = init.id;
+    this.ext = init.ext;
+    this.owner = init.owner;
+    this.group = init.group;
+    this.permissions = init.permissions;
+    this.hidden = init.hidden;
+
+    this.mtime = init.mtime;
+    this.ctime = init.ctime;
+    this.atime = init.atime;
+
+    this.linkTarget = init.linkTarget;
+
+    this.titles = init.titles;
+    this.videos = init.videos;
+    this.audios = init.audios;
+
+    this.hash = init.hash;
+    this.width = init.width;
+    this.height = init.height;
+    this.childrenCount = init.childrenCount;
   }
 
-  /** Build a FileVM from a generated proto object (or plain JS with similar getters). */
+  /** Build a FileVM from a generated proto (or duck-typed object with similar getters). */
   static fromProto(info: any): FileVM {
-    if (!info) return new FileVM({ path: "", name: "", isDir: false })
+    if (!info) return new FileVM({ path: "", name: "", isDir: false });
 
-    // --- aliases for common field names/getters across versions ---
-    const id = getStr(info, ["getId", "id"]) || undefined
-    const path = getStr(info, ["getPath", "path"], "")
-    const name = getStr(info, ["getName", "name"], path.substring(path.lastIndexOf('/') + 1))
-    const isDir = getBool(info, ["getIsDir", "getIsdir", "isDir", "isdir"], false)
-    const size = getNum(info, ["getSize", "size"]) || undefined
-    const mime = getStr(info, ["getMimeType", "getMime", "mime", "mimetype"]) || undefined
-    const ext = getStr(info, ["getExt", "ext"]) || (name.includes('.') ? name.split('.').pop()!.toLowerCase() : undefined)
+    // helpers
+    const id = getStr(info, ["getId", "id"]) || undefined;
+    const path = getStr(info, ["getPath", "path"], "");
+    const name =
+      getStr(info, ["getName", "name"], "") ||
+      (path ? path.substring(path.lastIndexOf("/") + 1) : "");
+    const isDir = getBool(info, ["getIsDir", "getIsdir", "isDir", "isdir"], false);
+    const size = numUndef(info, ["getSize", "size"]);
+    const mode = numUndef(info, ["getMode", "mode"]);
 
-    const owner = ((): any => {
-      const u = getStr(info, ["getOwner", "owner", "getUser", "user"]) || getNum(info, ["getUid", "uid"]) || undefined
-      return u === '' ? undefined : u
-    })()
-    const group = ((): any => {
-      const g = getStr(info, ["getGroup", "group"]) || getNum(info, ["getGid", "gid"]) || undefined
-      return g === '' ? undefined : g
-    })()
-    const permissions = getNum(info, ["getPermissions", "permissions"]) || undefined
-    const mode = getNum(info, ["getMode", "mode"]) || undefined
+    // proto uses mode_time seconds; some impls might emit ms — normalize.
+    const mtRaw =
+      getNum(info, ["getModetime", "getModeTime", "mode_time"]) || 0;
+    const modeTime = toDateFromMaybeSeconds(mtRaw);
 
-    const mtimeMs = getNum(info, ["getMtime", "getMTime", "getModTime", "mtime", "modTime"]) || 0
-    const ctimeMs = getNum(info, ["getCtime", "getCTime", "ctime"]) || 0
-    const atimeMs = getNum(info, ["getAtime", "getATime", "atime"]) || 0
+    const mime = strUndef(info, ["getMime", "getMimeType", "mime", "mimetype"]);
+    const thumbnail = strUndef(info, ["getThumbnail", "thumbnail"]);
+    const checksum = strUndef(info, ["getChecksum", "checksum"]);
 
-    const mtime = mtimeMs ? new Date(Number(mtimeMs)) : undefined
-    const ctime = ctimeMs ? new Date(Number(ctimeMs)) : undefined
-    const atime = atimeMs ? new Date(Number(atimeMs)) : undefined
+    // metadata (Struct → JS)
+    let metadata: any = undefined;
+    try {
+      const m = tryCall(info, "getMetadata");
+      if (m && typeof m.toJavaScript === "function") metadata = m.toJavaScript();
+      else metadata = m ?? (info.metadata ?? undefined);
+    } catch {
+      metadata = info?.metadata;
+    }
 
-    const linkTarget = getStr(info, ["getLinkTarget", "getLink", "linkTarget", "link"]) || undefined
-    const hidden = getBool(info, ["getHidden", "hidden"]) || undefined
+    // children (repeated FileInfo files = 11)
+    let files: FileVM[] | undefined = undefined;
+    try {
+      const list =
+        (typeof info.getFilesList === "function" && info.getFilesList()) ||
+        (Array.isArray(info.files) ? info.files : []);
+      if (Array.isArray(list)) files = list.map(FileVM.fromProto);
+    } catch {}
 
-    const hash = getStr(info, ["getHash", "getMd5", "hash", "md5"]) || undefined
+    // legacy extras that sometimes exist on servers
+    const mtimeMs = getNum(info, ["getMtime", "getMTime", "mtime", "modTime"]) || 0;
+    const ctimeMs = getNum(info, ["getCtime", "getCTime", "ctime"]) || 0;
+    const atimeMs = getNum(info, ["getAtime", "getATime", "atime"]) || 0;
 
-    // Optional media lists
-    const titles = callList(info, ["getTitlesList", "getTitleList", "titlesList", "titles"]) || undefined
-    const videos = callList(info, ["getVideosList", "videosList", "videos"]) || undefined
-    const audios = callList(info, ["getAudiosList", "audiosList", "audios"]) || undefined
+    const owner =
+      strOrNumUndef(info, ["getOwner", "owner", "getUser", "user", "getUid", "uid"]);
+    const group = strOrNumUndef(info, ["getGroup", "group", "getGid", "gid"]);
+    const permissions = numUndef(info, ["getPermissions", "permissions"]);
+    const hidden = boolUndef(info, ["getHidden", "hidden"]);
 
-    const width = getNum(info, ["getWidth", "width"]) || undefined
-    const height = getNum(info, ["getHeight", "height"]) || undefined
+    const linkTarget = strUndef(info, ["getLinkTarget", "getLink", "linkTarget", "link"]);
 
-    const thumbnails = callList(info, ["getThumbnailsList", "thumbnailsList", "thumbnails"]) || undefined
+    const titles = callList(info, ["getTitlesList", "getTitleList", "titlesList", "titles"]);
+    const videos = callList(info, ["getVideosList", "videosList", "videos"]);
+    const audios = callList(info, ["getAudiosList", "audiosList", "audios"]);
 
-    const childrenCount = getNum(info, ["getChildrenCount", "childrenCount"]) || undefined
+    const width = numUndef(info, ["getWidth", "width"]);
+    const height = numUndef(info, ["getHeight", "height"]);
+    const childrenCount = numUndef(info, ["getChildrenCount", "childrenCount"]);
+    const hash = strUndef(info, ["getHash", "getMd5", "hash", "md5"]);
 
-    return new FileVM({
-      id, path, name, isDir, size, mime, ext,
-      owner, group, permissions, mode, hidden,
-      mtime, ctime, atime,
-      linkTarget, thumbnails,
-      titles, videos, audios,
-      hash, width, height,
+    const vm = new FileVM({
+      id,
+      path,
+      name,
+      isDir,
+      size,
+      mode,
+      modeTime,
+      mime,
+      thumbnail,
+      checksum,
+      metadata,
+      files,
+
+      owner,
+      group,
+      permissions,
+      hidden,
+
+      mtime: mtimeMs ? new Date(Number(mtimeMs)) : undefined,
+      ctime: ctimeMs ? new Date(Number(ctimeMs)) : undefined,
+      atime: atimeMs ? new Date(Number(atimeMs)) : undefined,
+
+      linkTarget,
+
+      titles: titles || undefined,
+      videos: videos || undefined,
+      audios: audios || undefined,
+
+      hash,
+      width,
+      height,
       childrenCount,
-    })
+    });
+
+    if (!vm.name && vm.path) vm.name = basename(vm.path);
+    if (!vm.ext && vm.name.includes(".")) vm.ext = vm.name.split(".").pop()!.toLowerCase();
+
+    return vm;
+  }
+
+  getFilesList(): FileVM[] {
+    return this.files || [];
   }
 }
 
-export type DirVM = { path: string, files: FileVM[] }
+// Backward compatibility: DirVM is just a FileVM
+export type DirVM = FileVM;
 
 // ---- Cache controls -------------------------------------------------------
-let CACHE_ENABLED = true
-let _cache: FilesCache | null = new FilesCache({ max: 200, ttlMs: 15000, multiTab: true })
+let CACHE_ENABLED = true;
 
-export function useFilesCache(enable: boolean) { CACHE_ENABLED = enable }
+// Inject a fetcher that calls readDirFresh to avoid recursion
+const injectedFetcher: ReadDirFetcher = (p, includeHidden) => readDirFresh(p, !!includeHidden);
+
+let _cache: FilesCache | null = new FilesCache({
+  max: 200,
+  ttlMs: 15000,
+  multiTab: true,
+  fetcher: injectedFetcher,
+});
+
+export function useFilesCache(enable: boolean) { CACHE_ENABLED = enable; }
+
 export function setFilesCacheOptions(opts: { max?: number; ttlMs?: number; multiTab?: boolean }) {
-  _cache = new FilesCache(opts)
+  _cache = new FilesCache({
+    ...opts,
+    fetcher: injectedFetcher,
+  });
 }
-export function getFilesCache(): FilesCache | null { return _cache }
+
+export function getFilesCache(): FilesCache | null { return _cache; }
 
 /* ------------------------------ helpers ------------------------------ */
 function clientFactory(): FileServiceClient {
-  const base = getBaseUrl() ?? ''
-  return new FileServiceClient(base, null, { withCredentials: true })
+  const base = getBaseUrl() ?? '';
+  return new FileServiceClient(base, null, { withCredentials: true });
 }
 
 async function meta(): Promise<Record<string, string>> {
   try {
-    const t = sessionStorage.getItem('__globular_token__')
-    return t ? { token: t } : {}
+    const t = sessionStorage.getItem('__globular_token__');
+    return t ? { token: t } : {};
   } catch {
-    return {}
+    return {};
   }
 }
 
 /** Pick a method name from candidates that exists on the client */
 function pickMethod(client: any, candidates: ReadonlyArray<string>): string {
-  for (const m of candidates) if (typeof (client as any)[m] === 'function') return m
-  // fall back to the first; unary() will throw a helpful error if missing
-  return candidates[0]
+  for (const m of candidates) if (typeof (client as any)[m] === 'function') return m;
+  return candidates[0];
 }
 
 /** Construct a request using the first constructor name that exists */
 function newRq(names: readonly string[]): any {
   for (const n of names) {
-    const Ctor: any = (filepb as any)[n]
-    if (Ctor) return new Ctor()
+    const Ctor: any = (filepb as any)[n];
+    if (Ctor) return new Ctor();
   }
-  // Create a plain object if we truly can’t find the ctor (keeps dev moving)
-  return {}
+  return {};
 }
 
 function getStr(obj: any, getters: string[], dflt = ''): string {
   for (const g of getters) {
-    const v = tryCall(obj, g)
-    if (typeof v === 'string') return v
+    const v = tryCall(obj, g);
+    if (typeof v === 'string') return v;
   }
-  return dflt
+  return dflt;
+}
+function strUndef(obj: any, getters: string[]): string | undefined {
+  const s = getStr(obj, getters, "");
+  return s === "" ? undefined : s;
 }
 function getNum(obj: any, getters: string[], dflt = 0): number {
   for (const g of getters) {
-    const v = tryCall(obj, g)
-    if (typeof v === 'number') return v
+    const v = tryCall(obj, g);
+    if (typeof v === 'number') return v;
   }
-  return dflt
+  return dflt;
+}
+function numUndef(obj: any, getters: string[]): number | undefined {
+  const n = getNum(obj, getters, 0);
+  return n === 0 ? undefined : n;
 }
 function getBool(obj: any, getters: string[], dflt = false): boolean {
   for (const g of getters) {
-    const v = tryCall(obj, g)
-    if (typeof v === 'boolean') return v
+    const v = tryCall(obj, g);
+    if (typeof v === 'boolean') return v;
   }
-  return dflt
+  return dflt;
+}
+function boolUndef(obj: any, getters: string[]): boolean | undefined {
+  const b = getBool(obj, getters, false);
+  return b ? true : undefined;
 }
 function tryCall(obj: any, method: string): any {
   try {
-    if (obj && typeof obj[method] === 'function') return obj[method]()
+    if (obj && typeof obj[method] === 'function') return obj[method]();
   } catch {}
-  return undefined
+  return undefined;
 }
-
 function callList(obj: any, methods: string[]): any[] | undefined {
   for (const m of methods) {
     try {
-      const fn = obj && (obj as any)[m]
+      const fn = obj && (obj as any)[m];
       if (typeof fn === 'function') {
-        const v = fn.call(obj)
-        if (Array.isArray(v)) return v
+        const v = fn.call(obj);
+        if (Array.isArray(v)) return v;
       } else if (Array.isArray((obj as any)[m])) {
-        return (obj as any)[m]
+        return (obj as any)[m];
       }
     } catch {}
   }
-  return undefined
+  return undefined;
+}
+function parentOf(p: string): string {
+  if (!p || p === "/") return "/";
+  const i = p.lastIndexOf("/");
+  return i > 0 ? p.slice(0, i) || "/" : "/";
+}
+function basename(p: string): string {
+  const i = p.lastIndexOf('/');
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+function toDateFromMaybeSeconds(v: number): Date | undefined {
+  if (!v) return undefined;
+  // if value looks like seconds (<= 1e12), convert; if already ms (>=1e12), use as-is.
+  const ms = v < 1e12 ? v * 1000 : v;
+  return new Date(Number(ms));
 }
 
 /* ------------------------------ method map ------------------------------ */
 const SERVICE_METHODS = {
-  getInfo:     { method: ['getFileInfo'], rq: ['GetFileInfoRequest'] },
-  read:        { method: ['readFile', 'readfile'], rq: ['ReadFileRequest'] },
-  save:        { method: ['saveFile'], rq: ['SaveFileRequest'] },
-  createDir:   { method: ['createDir', 'createDirectory'], rq: ['CreateDirRequest'] },
-  addPublicDir:{ method: ['addPublicDir'], rq: ['AddPublicDirRequest'] },
-  createLnk:   { method: ['createLnk', 'createLink'], rq: ['CreateLnkRequest'] },
-  deleteFile:  { method: ['deleteFile'], rq: ['DeleteFileRequest'] },
-  deleteDir:   { method: ['deleteDir'], rq: ['DeleteDirRequest'] },
-  rename:      { method: ['rename'], rq: ['RenameRequest'] },
+  getInfo:       { method: ['getFileInfo'], rq: ['GetFileInfoRequest'] },
+  read:          { method: ['readFile', 'readfile'], rq: ['ReadFileRequest'] },
+  save:          { method: ['saveFile'], rq: ['SaveFileRequest'] },
+  createDir:     { method: ['createDir', 'createDirectory'], rq: ['CreateDirRequest'] },
+  addPublicDir:  { method: ['addPublicDir'], rq: ['AddPublicDirRequest'] },
+  createLnk:     { method: ['createLnk', 'createLink'], rq: ['CreateLnkRequest'] },
+  deleteFile:    { method: ['deleteFile'], rq: ['DeleteFileRequest'] },
+  deleteDir:     { method: ['deleteDir'], rq: ['DeleteDirRequest'] },
+  rename:        { method: ['rename'], rq: ['RenameRequest'] },
 
-  // ⬇️ newly added
-  getPublicDirs:{ method: ['getPublicDirs'], rq: ['GetPublicDirsRequest'] },
+  // existing extra
+  getPublicDirs: { method: ['getPublicDirs'], rq: ['GetPublicDirsRequest'] },
+
+  // extra RPCs
+  getMetadata:     { method: ['getFileMetadata', 'getMetadata'], rq: ['GetFileMetadataRequest'] },
+  getThumbnails:   { method: ['getThumbnails'],                  rq: ['GetThumbnailsRequest'] },
+  uploadFile:      { method: ['uploadFile'],                     rq: ['UploadFileRequest'] },
+  createArchive:   { method: ['createArchive'],                  rq: ['CreateArchiveRequest'] },
+  copy:            { method: ['copy'],                           rq: ['CopyRequest'] },
+  move:            { method: ['move'],                           rq: ['MoveRequest'] },
+  removePublicDir: { method: ['removePublicDir'],                rq: ['RemovePublicDirRequest'] },
+  writeExcel:      { method: ['writeExcelFile'],                 rq: ['WriteExcelFileRequest'] },
+  htmlToPdf:       { method: ['htmlToPdf'],                      rq: ['HtmlToPdfRqst'] },
+  stop:            { method: ['stop'],                           rq: ['StopRequest'] },
 } as const;
 
 /* ------------------------------ API ------------------------------ */
 
-/** List a directory using the higher-level api helper; returns FileVMs */
+/** List a directory; returns a FileVM with .files children. */
 export async function readDir(path: string, includeHidden = false): Promise<DirVM> {
   if (CACHE_ENABLED && _cache) {
-    return _cache.getDir(path, /*swr*/ true)
+    return _cache.getDir(path, /*swr*/ true, includeHidden) as unknown as DirVM;
   }
-  return readDirFresh(path, includeHidden)
+  return readDirFresh(path, includeHidden);
 }
-
 export async function readDirFresh(path: string, includeHidden = false): Promise<DirVM> {
-  // Stream ReadDir directly (mirrors api.js behavior but with our rpc helpers)
-  const md = await meta()
-  const rq: any = newRq(['ReadDirRequest'])
-  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'))
-  if (typeof rq.setRecursive === 'function') rq.setRecursive(false)
-  if (typeof rq.setThumbnailheight === 'function') rq.setThumbnailheight(80)
-  if (typeof rq.setThumbnailwidth === 'function') rq.setThumbnailwidth(80)
+  const md = await meta();
+  const rq: any = newRq(['ReadDirRequest']);
+  const requestedPath = path || '/';
+  const encodedPath = encodeURI(requestedPath);
 
-  const client = clientFactory()
-  const method = 'readDir' in (client as any) ? 'readDir' : 'readdir'
+  if (typeof rq.setPath === 'function') rq.setPath(encodedPath);
+  if (typeof rq.setRecursive === 'function') rq.setRecursive(false);
+  if (typeof rq.setThumbnailheight === 'function') rq.setThumbnailheight(80);
+  if (typeof rq.setThumbnailwidth === 'function') rq.setThumbnailwidth(80);
+  if (typeof rq.setIncludehidden === 'function') rq.setIncludehidden(!!includeHidden);
 
-  const filesProto: any[] = []
-  await stream(() => client, method, rq, (chunk: Uint8Array | any) => {
-    // our stream helper should deliver message objects; accept bytes too
-    const msg: any = (chunk && typeof (chunk as any).getInfo === 'function') ? chunk : undefined
-    if (msg) {
-      const f = msg.getInfo()
-      if (f) filesProto.push(f)
+  const client = clientFactory();
+  const method = 'readDir' in (client as any) ? 'readDir' : 'readdir';
+
+  // Build a proper tree while streaming
+  const nodes = new Map<string, FileVM>();
+  let root: FileVM | null = null;
+
+  // Helpers
+  const norm = (p: string) => (p || '/').replace(/\/+/g, '/');
+  const isUnder = (child: string, rootPath: string) => {
+    const c = norm(child);
+    const r = norm(rootPath);
+    if (c === r) return true;
+    return c.startsWith(r.endsWith('/') ? r : r + '/');
+  };
+  const getOrCreate = (p: string): FileVM => {
+    const k = norm(p);
+    let n = nodes.get(k);
+    if (!n) {
+      n = new FileVM({ path: k, name: basename(k), isDir: true, files: [] });
+      nodes.set(k, n);
     }
-  }, "file.FileService", md)
+    if (!Array.isArray(n.files)) n.files = [];
+    return n;
+  };
+  const addChild = (parent: FileVM, child: FileVM) => {
+    if (!Array.isArray(parent.files)) parent.files = [];
+    if (!parent.files.find((f) => f.path === child.path)) parent.files.push(child);
+  };
 
-  const data: DirVM = { path, files: filesProto.map(f => FileVM.fromProto(f)) }
-  if (CACHE_ENABLED && _cache) {
-    try { (_cache as any).put?.(path, data) } catch {}
+  await stream(() => client, method, rq, (chunk: any) => {
+    const info = chunk?.getInfo?.() ?? chunk?.info;
+    if (!info) return;
+
+    const vm = FileVM.fromProto(info);
+    const vmPath = norm(vm.path);
+
+    // First message is often the root directory itself
+    if (!root && (vmPath === norm(encodedPath) || vmPath === norm(requestedPath))) {
+      vm.isDir = true;
+      if (!Array.isArray(vm.files)) vm.files = [];
+      root = vm;
+      nodes.set(vmPath, vm);
+      return;
+    }
+
+    // Ignore anything not under the requested root (defensive)
+    const rootPath = root ? root.path : (requestedPath || '/');
+    if (!isUnder(vmPath, rootPath)) return;
+
+    // Ensure the node and its parent exist
+    const node = getOrCreate(vmPath);
+    // Preserve fields from the streamed vm (don’t nuke existing children)
+    Object.assign(node, { ...vm, files: node.files ?? vm.files ?? [] });
+
+    // Link into parent (but don’t link above the requested root)
+    const p = parentOf(vmPath);
+    if (isUnder(p, rootPath)) {
+      const parentNode = getOrCreate(p);
+      addChild(parentNode, node);
+    }
+  }, "file.FileService", md as any);
+
+  // If server never streamed the root, synthesize it and attach direct children
+  if (!root) {
+    root = new FileVM({
+      name: basename(requestedPath || "/"),
+      path: norm(requestedPath || "/"),
+      isDir: true,
+      files: [],
+    });
+    nodes.set(root.path, root);
   }
-  return data
+
+  // Ensure root.files is at least an array
+  if (!Array.isArray(root.files)) root.files = [];
+
+  return root as DirVM;
 }
 
 /** Fetch a single file’s info */
 export async function getFile(path: string): Promise<FileVM | null> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.getInfo.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(path)
-  else rq.path = path
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.getInfo.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path);
+  else rq.path = path;
 
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.getInfo.method)
-  const rsp: any = await unary(clientFactory, method, rq, undefined, md)
-  const info = rsp && (rsp.getInfo?.() ?? rsp.getFileinfo?.() ?? rsp.info)
-  const vm = info ? FileVM.fromProto(info) : null
-  if (vm && CACHE_ENABLED && _cache) _cache.upsertFile(vm)
-  return vm
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.getInfo.method);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
+  const info = rsp && (rsp.getInfo?.() ?? rsp.getFileinfo?.() ?? rsp.info);
+  const vm = info ? FileVM.fromProto(info) : null;
+  if (vm && CACHE_ENABLED && _cache) _cache.upsertFile(vm);
+  return vm;
 }
 
 /** Stream a file’s bytes. onChunk receives raw Uint8Array chunks */
 export async function readFile(path: string, onChunk: (b: Uint8Array) => void): Promise<void> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.read.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(path)
-  else rq.path = path
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.read.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path);
+  else rq.path = path;
 
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.read.method)
-  await stream(clientFactory, method, rq, onChunk, "file.FileService", md)
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.read.method);
+  await stream(clientFactory, method, rq, onChunk, "file.FileService", md as any);
 }
 
 /** Save a complete file (overwrite) */
 export async function saveFile(path: string, data: Uint8Array): Promise<void> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.save.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(path)
-  else rq.path = path
-  if (typeof rq.setData === 'function') rq.setData(data)
-  else rq.data = data
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.save.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path);
+  else rq.path = path;
+  if (typeof rq.setData === 'function') rq.setData(data);
+  else rq.data = data;
 
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.save.method)
-  await unary(clientFactory, method, rq, undefined, md)
-  if (CACHE_ENABLED && _cache) _cache.invalidate(parentOf(path))
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.save.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(parentOf(path));
 }
 
 /** Create a directory under `parentPath` with `name` */
 export async function createDir(parentPath: string, name: string): Promise<void> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.createDir.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(parentPath)
-  else rq.path = parentPath
-  if (typeof rq.setName === 'function') rq.setName(name)
-  else rq.name = name
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.createDir.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(parentPath);
+  else rq.path = parentPath;
+  if (typeof rq.setName === 'function') rq.setName(name);
+  else rq.name = name;
 
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.createDir.method)
-  await unary(clientFactory, method, rq, undefined, md)
-  if (CACHE_ENABLED && _cache) _cache.invalidate(parentPath)
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.createDir.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(parentPath);
 }
 
 /** Add a public directory (FileService domain-wide) */
 export async function addPublicDir(path: string): Promise<void> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.addPublicDir.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(path)
-  else rq.path = path
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.addPublicDir.method)
-  await unary(clientFactory, method, rq, undefined, md)
-  if (CACHE_ENABLED && _cache) _cache.invalidate(path)
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.addPublicDir.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path);
+  else rq.path = path;
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.addPublicDir.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(path);
 }
 
 /** Create a .lnk pointing to a serialized FileInfo */
 export async function createLink(destDir: string, linkName: string, targetInfo: any): Promise<void> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.createLnk.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(destDir)
-  else rq.path = destDir
-  if (typeof rq.setName === 'function') rq.setName(linkName)
-  else rq.name = linkName
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.createLnk.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(destDir);
+  else rq.path = destDir;
+  if (typeof rq.setName === 'function') rq.setName(linkName);
+  else rq.name = linkName;
 
-  const lnkBytes = typeof targetInfo?.serializeBinary === 'function' ? targetInfo.serializeBinary() : targetInfo
-  if (typeof rq.setLnk === 'function') rq.setLnk(lnkBytes)
-  else rq.lnk = lnkBytes
+  const lnkBytes = typeof targetInfo?.serializeBinary === 'function' ? targetInfo.serializeBinary() : targetInfo;
+  if (typeof rq.setLnk === 'function') rq.setLnk(lnkBytes);
+  else rq.lnk = lnkBytes;
 
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.createLnk.method)
-  await unary(clientFactory, method, rq, undefined, md)
-  if (CACHE_ENABLED && _cache) _cache.invalidate(destDir)
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.createLnk.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(destDir);
 }
 
 /* ------------------------------ Convenience wrappers (api.js) ------------------------------ */
 
 export async function removeFile(path: string): Promise<void> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.deleteFile.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'))
-  else rq.path = encodeURI(path || '/')
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.deleteFile.method)
-  await unary(clientFactory, method, rq, undefined, md)
-  if (CACHE_ENABLED && _cache) _cache.invalidate(parentOf(path))
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.deleteFile.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'));
+  else rq.path = encodeURI(path || '/');
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.deleteFile.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(parentOf(path));
 }
 
 export async function removeDir(path: string): Promise<void> {
-  const md = await meta()
-  const rq = newRq(SERVICE_METHODS.deleteDir.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'))
-  else rq.path = encodeURI(path || '/')
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.deleteDir.method)
-  await unary(clientFactory, method, rq, undefined, md)
-  if (CACHE_ENABLED && _cache) _cache.invalidate(parentOf(path))
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.deleteDir.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'));
+  else rq.path = encodeURI(path || '/');
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.deleteDir.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(parentOf(path));
 }
 
-// Example of a rename function (if needed)
 export async function renameFile(path: string, newName: string, oldName?: string): Promise<void> {
-  const md = await meta()
-  const parent = parentOf(path)
-  const rq = newRq(SERVICE_METHODS.rename.rq)
-  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(parent || '/'))
-  else rq.path = encodeURI(parent || '/')
-  if (typeof rq.setOldName === 'function') rq.setOldName(oldName ?? basename(path))
-  else rq.oldName = oldName ?? basename(path)
-  if (typeof rq.setNewName === 'function') rq.setNewName(newName)
-  else rq.newName = newName
-  const method = pickMethod(clientFactory(), SERVICE_METHODS.rename.method)
-  await unary(clientFactory, method, rq, undefined, md)
+  const md = await meta();
+  const parent = parentOf(path);
+  const rq = newRq(SERVICE_METHODS.rename.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(parent || '/'));
+  else rq.path = encodeURI(parent || '/');
+  if (typeof rq.setOldName === 'function') rq.setOldName(oldName ?? basename(path));
+  else rq.oldName = oldName ?? basename(path);
+  if (typeof rq.setNewName === 'function') rq.setNewName(newName);
+  else rq.newName = newName;
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.rename.method);
+  await unary(clientFactory, method, rq, undefined, md);
   if (CACHE_ENABLED && _cache) {
-    const oldParent = parent
-    const newPath = parent + '/' + newName
-    const newParent = parentOf(newPath)
-    _cache.invalidate(oldParent)
-    _cache.invalidate(newParent)
+    const oldParent = parent;
+    const newPath = parent + '/' + newName;
+    const newParent = parentOf(newPath);
+    _cache.invalidate(oldParent);
+    _cache.invalidate(newParent);
   }
 }
 
 export async function upload(path: string, files: FileList | File[]): Promise<void> {
-  const md = await meta()
-  await apiUploadFiles(path, files as any, () => {}, (e: any) => { throw e }, md.token)
+  const md = await meta();
+  await apiUploadFiles(path, files as any, () => {}, (e: any) => { throw e }, md.token);
 }
 
 export async function download(url: string, fileName: string): Promise<void> {
-  const md = await meta()
-  await apiDownloadFileHttp(url, fileName, () => {}, md.token)
+  const md = await meta();
+  await apiDownloadFileHttp(url, fileName, () => {}, md.token);
 }
 
-// If you need a direct API for uploading files (not used above)
 async function apiUploadFiles(path: string, files: FileList | File[], onComplete?: () => void, onError?: (err: any) => void, token?: string) {
   return new Promise<void>((resolve, reject) => {
-    const fd = new FormData()
-    const list: File[] = Array.isArray(files as any) ? (files as any) : Array.from(files as FileList)
+    const fd = new FormData();
+    const list: File[] = Array.isArray(files as any) ? (files as any) : Array.from(files as FileList);
     for (const f of list) {
-      fd.append('multiplefiles', f, f.name)
-      fd.append('path', path)
+      fd.append('multiplefiles', f, f.name);
+      fd.append('path', path);
     }
-    const xhr = new XMLHttpRequest()
-    xhr.onerror = () => { const err = xhr.responseText || 'upload failed'; onError?.(err); reject(err) }
+    const xhr = new XMLHttpRequest();
+    xhr.onerror = () => { const err = xhr.responseText || 'upload failed'; onError?.(err); reject(err); };
 
-    const base = getBaseUrl() || window.location.origin
-    const url = base.replace(/\/?$/, '') + '/uploads'
-    xhr.open('POST', url, true)
-    if (token) xhr.setRequestHeader('token', token)
-    xhr.onload = () => { onComplete?.(); resolve(); }
-    xhr.send(fd)
-  })
+    const base = getBaseUrl() || window.location.origin;
+    const url = base.replace(/\/?$/, '') + '/uploads';
+    xhr.open('POST', url, true);
+    if (token) xhr.setRequestHeader('token', token);
+    xhr.onload = () => { onComplete?.(); resolve(); };
+    xhr.send(fd);
+  });
 }
 
 async function apiDownloadFileHttp(url: string, fileName: string, complete: () => void, token?: string) {
   return new Promise<void>((resolve, reject) => {
-    const req = new XMLHttpRequest()
-    req.open('GET', url, true)
-    if (token) req.setRequestHeader('token', token)
-    req.responseType = 'blob'
+    const req = new XMLHttpRequest();
+    req.open('GET', url, true);
+    if (token) req.setRequestHeader('token', token);
+    req.responseType = 'blob';
     req.onload = () => {
-      const blob = req.response
-      const link = document.createElement('a')
-      link.href = window.URL.createObjectURL(blob)
-      link.download = fileName
-      link.click()
-      try { complete?.() } catch {}
-      resolve()
-    }
-    req.onerror = () => reject('download failed')
-    req.send()
-  })
+      try {
+        const blob = req.response;
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
+      } catch {}
+      try { complete?.(); } catch {}
+      resolve();
+    };
+    req.onerror = () => reject('download failed');
+    req.send();
+  });
 }
 
-/* ------------------------------ New functions ported/adapted ------------------------------ */
+/* ------------------------------ New functions kept ------------------------------ */
 
-/** Formats file size with automatic unit selection (bytes, KB, MB, GB, TB). */
 export function getFileSizeString(f_size: number | string): string {
-  if (typeof f_size === 'string') return f_size
-  const units = ['bytes', 'KB', 'MB', 'GB', 'TB']
-  let i = 0
-  let size = f_size
-  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++ }
-  return `${size.toFixed(2)} ${units[i]}`
+  if (typeof f_size === 'string') return f_size;
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let size = f_size;
+  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+  return `${size.toFixed(2)} ${units[i]}`;
 }
 
-/**
- * Ask the backend for the size of a remote URL (expects a /file_size endpoint).
- * Returns the size in bytes.
- */
 export async function getFileSize(url: string): Promise<number> {
-  const base = window.location.protocol + '//' + window.location.host
-  const requestUrl = new URL(base + '/file_size')
-  requestUrl.searchParams.set('url', url)
+  const base = window.location.protocol + '//' + window.location.host;
+  const requestUrl = new URL(base + '/file_size');
+  requestUrl.searchParams.set('url', url);
 
-  const headers: Record<string, string> = {}
-  const md = await meta()
-  if (md.token) headers['token'] = md.token
+  const headers: Record<string, string> = {};
+  const md = await meta();
+  if (md.token) headers['token'] = md.token;
 
   const res = await fetch(requestUrl.toString(), {
     method: 'GET',
     headers,
     signal: AbortSignal.timeout(10_000)
-  })
+  });
 
-  if (!res.ok) throw new Error(`Failed to get file size for ${url}: HTTP ${res.status}`)
-  const data = await res.json()
-  if (typeof data?.size !== 'number') throw new Error('Invalid file size response from server.')
-  return data.size
+  if (!res.ok) throw new Error(`Failed to get file size for ${url}: HTTP ${res.status}`);
+  const data = await res.json();
+  if (typeof data?.size !== 'number') throw new Error('Invalid file size response from server.');
+  return data.size;
 }
 
-/** Copy text to clipboard (simple textarea trick, no permission prompt). */
 export function copyToClipboard(text: string): void {
-  const dummy = document.createElement('textarea')
-  document.body.appendChild(dummy)
-  dummy.value = text
-  dummy.select()
-  document.execCommand('copy')
-  document.body.removeChild(dummy)
+  const dummy = document.createElement('textarea');
+  document.body.appendChild(dummy);
+  dummy.value = text;
+  dummy.select();
+  document.execCommand('copy');
+  document.body.removeChild(dummy);
 }
 
-/**
- * Read a whole file as TEXT (utf-8). Uses the existing streaming readFile().
- */
 export async function readText(path: string): Promise<string> {
-  const chunks: Uint8Array[] = []
-  await readFile(path, (b) => chunks.push(b))
-  // Concatenate
-  let len = 0; for (const c of chunks) len += c.byteLength
-  const buf = new Uint8Array(len)
-  let o = 0; for (const c of chunks) { buf.set(c, o); o += c.byteLength }
-  return new TextDecoder('utf-8').decode(buf)
+  const chunks: Uint8Array[] = [];
+  await readFile(path, (b) => chunks.push(b));
+  let len = 0; for (const c of chunks) len += c.byteLength;
+  const buf = new Uint8Array(len);
+  let o = 0; for (const c of chunks) { buf.set(c, o); o += c.byteLength; }
+  return new TextDecoder('utf-8').decode(buf);
 }
 
-/**
- * Read a whole file as binary (Uint8Array). Uses the existing streaming readFile().
- */
 export async function readBinary(path: string): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = []
-  await readFile(path, (b) => chunks.push(b))
-  let len = 0; for (const c of chunks) len += c.byteLength
-  const buf = new Uint8Array(len)
-  let o = 0; for (const c of chunks) { buf.set(c, o); o += c.byteLength }
-  return buf
+  const chunks: Uint8Array[] = [];
+  await readFile(path, (b) => chunks.push(b));
+  let len = 0; for (const c of chunks) len += c.byteLength;
+  const buf = new Uint8Array(len);
+  let o = 0; for (const c of chunks) { buf.set(c, o); o += c.byteLength; }
+  return buf;
 }
 
-/**
- * Get associated hidden files directory under `.hidden/<basename>/<subDirName>`.
- * Returns a DirVM or null if not found/error.
- */
 export async function getHiddenFiles(path: string, subDirName: string): Promise<DirVM | null> {
   try {
-    let basePath = path
+    let basePath = path;
     if (/\.(mp3|mp4|mkv|avi|webm|flac|mov|wav|ogg|aac|flv|wmv|3gp|m4v|mpg|mpeg)$/i.test(basePath)) {
-      basePath = basePath.substring(0, basePath.lastIndexOf("."))
+      basePath = basePath.substring(0, basePath.lastIndexOf("."));
     }
-    const dir = basePath.substring(0, basePath.lastIndexOf("/") + 1)
-    const leaf = basePath.substring(basePath.lastIndexOf("/"))
-    const hiddenDirPath = `${dir}.hidden${leaf}/${subDirName}`
-    return await readDir(hiddenDirPath).catch(() => null)
+    const dir = basePath.substring(0, basePath.lastIndexOf("/") + 1);
+    const leaf = basePath.substring(basePath.lastIndexOf("/"));
+    const hiddenDirPath = `${dir}.hidden${leaf}/${subDirName}`;
+    return await readDir(hiddenDirPath).catch(() => null);
   } catch (e) {
-    console.warn(`getHiddenFiles failed for ${path}:`, e)
-    return null
+    console.warn(`getHiddenFiles failed for ${path}:`, e);
+    return null;
   }
 }
 
-/**
- * Build a direct URL to a file path served by the backend, optionally appending token as header.
- * We keep headers for auth rather than query params to avoid leaking in URL history.
- */
-function buildFileUrl(rawPath: string): { url: string, headers: Record<string, string> } {
-  const base = (getBaseUrl() ?? '').replace(/\/$/, '')
-  const parts = rawPath.split('/').filter(Boolean).map(encodeURIComponent)
-  const url = `${base}/${parts.join('/')}`
-  const headers: Record<string, string> = {}
-  // attach token header if present
+export function buildFileUrl(rawPath: string): { url: string, headers: Record<string, string> } {
+  const base = (getBaseUrl() ?? '').replace(/\/$/, '');
+  const parts = rawPath.split('/').filter(Boolean).map(encodeURIComponent);
+  const url = `${base}/${parts.join('/')}`;
+  const headers: Record<string, string> = {};
   try {
-    const t = sessionStorage.getItem('__globular_token__')
-    if (t) headers['token'] = t
+    const t = sessionStorage.getItem('__globular_token__');
+    if (t) headers['token'] = t;
   } catch {}
-  return { url, headers }
+  return { url, headers };
 }
 
-/**
- * Load images for a list of FileVMs (assumes each FileVM.path is fetchable as binary).
- * Returns HTMLImageElement[] (data URLs), one per successfully fetched image.
- */
-export async function getImages(files: FileVM[]): Promise<HTMLImageElement[]> {
-  const imgs: HTMLImageElement[] = []
-  for (const f of files) {
-    if (!f?.path) continue
-    const { url, headers } = buildFileUrl(f.path)
-    try {
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.timeout = 10_000
-        xhr.open('GET', url, true)
-        Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
-        xhr.responseType = 'blob'
-        xhr.onload = () => (xhr.status === 200 ? resolve(xhr.response as Blob) : reject(new Error(`HTTP ${xhr.status}`)))
-        xhr.onerror = () => reject(new Error('Network error'))
-        xhr.ontimeout = () => reject(new Error('Timeout'))
-        xhr.send()
-      })
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(String(reader.result))
-        reader.onerror = () => reject(reader.error || new Error('FileReader error'))
-        reader.readAsDataURL(blob)
-      })
-      const img = document.createElement('img')
-      img.src = base64
-      imgs.push(img)
-    } catch (e) {
-      console.warn(`Failed to load image for ${f.path}:`, e)
-    }
-  }
-  return imgs
-}
-
-// ⬇️ add these helpers somewhere below your existing exports
-
-/** Returns true if the given node is a directory (works with FileVM or proto). */
-export function validateDirAccess(dir: any): boolean {
-  if (!dir) return false;
-
-  // FileVM
-  if (typeof dir.isDir === "boolean") return dir.isDir;
-
-  // Proto / plain object with getters
-  try {
-    const fns = ["getIsDir", "getIsdir", "isDir", "isdir"];
-    for (const fn of fns) {
-      if (typeof dir[fn] === "function") {
-        const v = dir[fn]();
-        if (typeof v === "boolean") return v;
-      }
-    }
-  } catch {}
-  return false;
-}
-
-/** Soft-flag a node as public (non-destructive; works on FileVM or proto). */
 export function markAsPublic(node: any): void {
   try { (node as any).__isPublic = true; } catch {}
 }
 
-/** Soft-flag a node as shared (non-destructive; works on FileVM or proto). */
 export function markAsShare(node: any): void {
   try { (node as any).__isShared = true; } catch {}
 }
 
-/**
- * List public directory paths from the File service.
- * Uses GetPublicDirsRequest and returns string[] of absolute paths.
- */
 export async function listPublicDirs(): Promise<string[]> {
   const md = await meta();
-
-  // Build request (supports multiple generated names)
   const rq = newRq(SERVICE_METHODS.getPublicDirs.rq);
-  // no params on rq
-
   const method = pickMethod(clientFactory(), SERVICE_METHODS.getPublicDirs.method);
   const rsp: any = await unary(clientFactory, method, rq, undefined, md);
-
-  // Accept several shape variants from grpc-web
   const list =
     (rsp?.getDirsList && rsp.getDirsList()) ??
     rsp?.dirsList ??
     rsp?.dirs ??
     [];
-
   return Array.isArray(list) ? list : [];
+}
+
+/* ------------------------------ NEW RPCs (per proto/Service) ------------------------------ */
+
+export async function getFileMetadata(path: string): Promise<any> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.getMetadata.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path); else rq.path = path;
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.getMetadata.method);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
+  return (rsp?.getResult?.() ?? rsp?.result ?? {}) || {};
+}
+
+export async function copyFiles(destPath: string, files: string[]): Promise<void> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.copy.rq);
+  rq.setPath?.(destPath); rq.path ??= destPath;
+  rq.setFilesList?.(files ?? []); if (!rq.setFilesList) rq.files = files ?? [];
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.copy.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(destPath);
+}
+
+export async function moveFiles(destPath: string, files: string[]): Promise<void> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.move.rq);
+  rq.setPath?.(destPath); rq.path ??= destPath;
+  rq.setFilesList?.(files ?? []); if (!rq.setFilesList) rq.files = files ?? [];
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.move.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(destPath);
+}
+
+/** RPC: create the archive on the server and return its server path (e.g., "/tmp/_uuid.tar.gz"). */
+export async function createArchive(paths: string[], name: string): Promise<string> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.createArchive.rq);
+  rq.setPathsList?.(paths ?? []); if (!rq.setPathsList) rq.paths = paths ?? [];
+  if (typeof rq.setName === 'function') rq.setName(name); else rq.name = name;
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.createArchive.method);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
+  return String(rsp?.getResult?.() ?? rsp?.result ?? "");
+}
+
+/**
+ * Helper: end-to-end archive download without `globule`.
+ * - Creates an archive from `paths`
+ * - Downloads it as `${downloadName||uuid}.tar.gz` via XHR (token in header)
+ * - Removes the temporary archive on the server
+ */
+export async function downloadAsArchive(paths: string[], downloadName?: string): Promise<void> {
+  if (!paths || paths.length === 0) return;
+
+  const safeName = (downloadName || "").trim();
+  const uuid = "_" + (
+    (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+      ? crypto.randomUUID()
+      : (Date.now().toString(16) + Math.random().toString(16).slice(2))
+  ).replace(/[-@]/g, "_");
+
+  const archiveName = safeName || uuid;
+  const md = await meta();
+
+  // 1) Create archive on server
+  const archivePath = await createArchive(paths, archiveName);
+
+  // 2) Build an HTTP URL to that path (token in header; avoids leaking it in query string)
+  const { url } = buildFileUrl(archivePath);
+
+  // 3) Download blob via XHR with token header (so browsers treat it as a download)
+  await apiDownloadFileHttp(url, `${archiveName}.tar.gz`, () => {}, md.token);
+
+  // 4) Cleanup the temporary archive
+  try { await removeFile(archivePath); } catch { /* ignore cleanup failure */ }
+}
+
+/**
+ * This RPC can still stream binary thumbnail data when requested, but our VM stays proto-faithful
+ * by only exposing the single `thumbnail` string on FileVM. Callers that need timeline sprites
+ * or preview sheets should consume this stream directly.
+ */
+export async function getThumbnails(
+  path: string,
+  opts: { recursive?: boolean; thumbnailWidth?: number; thumbnailHeight?: number } = {},
+  onChunk?: (c: { data: Uint8Array; text?: string }) => void
+): Promise<void> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.getThumbnails.rq);
+  rq.setPath?.(path); rq.path ??= path;
+  rq.setRecursive?.(!!opts.recursive);
+  ;(rq.setThumbnailwidth?.(opts.thumbnailWidth ?? 0) ?? (rq.thumbnailWidth = opts.thumbnailWidth ?? 0));
+  ;(rq.setThumbnailheight?.(opts.thumbnailHeight ?? 0) ?? (rq.thumbnailHeight = opts.thumbnailHeight ?? 0));
+
+  const client = clientFactory();
+  const method = pickMethod(client, SERVICE_METHODS.getThumbnails.method);
+  await stream(() => client, method, rq, (msg: any) => {
+    const raw = msg?.getData?.() ?? msg?.data;
+    const data = raw instanceof Uint8Array ? raw : new Uint8Array(raw ?? []);
+    let text: string | undefined;
+    try { text = new TextDecoder().decode(data); } catch {}
+    onChunk?.({ data, text });
+  }, "file.FileService", md as any);
+}
+
+export async function uploadFileFromUrl(
+  params: { url: string; dest: string; name: string; domain?: string; isDir?: boolean },
+  onProgress?: (p: { uploaded: number; total: number; info?: string }) => void
+): Promise<void> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.uploadFile.rq);
+  rq.setUrl?.(params.url);   rq.url ??= params.url;
+  rq.setDest?.(params.dest); rq.dest ??= params.dest;
+  rq.setName?.(params.name); rq.name ??= params.name;
+  if (params.domain) rq.setDomain?.(params.domain);
+  if (typeof rq.setIsdir === 'function') rq.setIsdir(!!params.isDir)
+  else if (typeof rq.setIsDir === 'function') rq.setIsDir(!!params.isDir)
+  else rq.isDir = !!params.isDir;
+
+  const client = clientFactory();
+  const method = pickMethod(client, SERVICE_METHODS.uploadFile.method);
+  await stream(() => client, method, rq, (msg: any) => {
+    const uploaded = Number(msg?.getUploaded?.() ?? msg?.uploaded ?? 0);
+    const total    = Number(msg?.getTotal?.()    ?? msg?.total ?? 0);
+    const info     = String(msg?.getInfo?.()     ?? msg?.info ?? "");
+    onProgress?.({ uploaded, total, info });
+  }, "file.FileService", md as any);
+}
+
+export async function removePublicDir(path: string): Promise<void> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.removePublicDir.rq);
+  rq.setPath?.(path); rq.path ??= path;
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.removePublicDir.method);
+  await unary(clientFactory, method, rq, undefined, md);
+  if (CACHE_ENABLED && _cache) _cache.invalidate(path);
+}
+
+export async function writeExcelFile(path: string, dataJson: string): Promise<boolean> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.writeExcel.rq);
+  rq.setPath?.(path); rq.path ??= path;
+  rq.setData?.(dataJson); rq.data ??= dataJson;
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.writeExcel.method);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
+  return Boolean(rsp?.getResult?.() ?? rsp?.result ?? false);
+}
+
+export async function htmlToPdf(html: string): Promise<Uint8Array> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.htmlToPdf.rq);
+  rq.setHtml?.(html); rq.html ??= html;
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.htmlToPdf.method);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
+  const bytes = rsp?.getPdf?.() ?? rsp?.pdf;
+  return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes ?? []);
+}
+
+export async function stopFileService(): Promise<void> {
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.stop.rq);
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.stop.method);
+  await unary(clientFactory, method, rq, undefined, md);
 }
 
 /* ------------------------------ Utilities ------------------------------ */
 
 export function formatSize(bytes?: number): string {
-  if (bytes == null) return ""
-  const KB = 1024, MB = KB * 1024, GB = MB * 1024
-  if (bytes >= GB) return (bytes / GB).toFixed(2) + ' GB'
-  if (bytes >= MB) return (bytes / MB).toFixed(2) + ' MB'
-  if (bytes >= KB) return (bytes / KB).toFixed(2) + ' KB'
-  return String(bytes) + ' bytes'
+  if (bytes == null) return "";
+  const KB = 1024, MB = KB * 1024, GB = MB * 1024;
+  if (bytes >= GB) return (bytes / GB).toFixed(2) + ' GB';
+  if (bytes >= MB) return (bytes / MB).toFixed(2) + ' MB';
+  if (bytes >= KB) return (bytes / KB).toFixed(2) + ' KB';
+  return String(bytes) + ' bytes';
 }
 
-function parentOf(p: string): string {
-  if (!p || p === "/") return "/"
-  const i = p.lastIndexOf("/")
-  return i > 0 ? p.slice(0, i) || "/" : "/"
+function strOrNumUndef(
+  obj: any,
+  getters: string[]
+): string | number | undefined {
+  for (const g of getters) {
+    const v = tryCall(obj, g);
+    if (typeof v === "string") return v === "" ? undefined : v;
+    if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  }
+  return undefined;
 }
 
-function basename(p: string): string { const i = p.lastIndexOf('/'); return i >= 0 ? p.slice(i+1) : p }
+/**
+ * FIXED: getImages now relies on the URL API and does not double-encode '@' etc.
+ * It attaches the token as a query param only if present.
+ */
+export async function getImages(
+  files: Array<{ path?: string; getPath?: () => string }>
+): Promise<HTMLImageElement[]> {
+  const md = await meta(); // gives us token & domain
+  const base = getBaseUrl() ?? '';
+  const baseURL = new URL(base, typeof window !== 'undefined' ? window.location.href : 'http://localhost/');
+
+  const imgs: HTMLImageElement[] = [];
+
+  for (const f of files || []) {
+    const p = typeof f?.getPath === 'function' ? f.getPath() : f?.path;
+    if (!p) continue;
+
+    // Build a fresh URL per image to avoid mutation bleed
+    const u = new URL(baseURL.toString());
+
+    // If p might contain a query, preserve it
+    const [rawPath, rawQs] = p.split('?', 2);
+
+    // Let the URL API handle encoding of the path. Do NOT call encodeURI here.
+    // rawPath should be the *unencoded* path like "/users/sa@globular.io/file.jpg"
+    u.pathname = rawPath;
+
+    // Preserve any existing query from p
+    if (rawQs) {
+      const qs = new URLSearchParams(rawQs);
+      qs.forEach((v, k) => u.searchParams.append(k, v));
+    }
+
+    // Append token if present
+    if (md?.token) {
+      u.searchParams.set('token', md.token);
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.referrerPolicy = 'no-referrer';
+    img.name = p;
+    img.src = u.toString(); // <- no encodeURI()
+
+    await new Promise<void>((resolve) => {
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+    });
+
+    imgs.push(img);
+  }
+
+  return imgs;
+}

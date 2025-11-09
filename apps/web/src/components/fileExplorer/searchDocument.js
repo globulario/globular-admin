@@ -1,8 +1,8 @@
 // src/components/search/searchDocumentBar.js
 
 import { displayMessage, displayError } from "../../backend/ui/notify";
-import * as files from "../../backend/files"; // readDir, getFile, ...
-import { searchDocuments } from "../../backend/search_document"; // facade wrapper
+import * as files from "../../backend/cms/files"; // readDir, getFile, ...
+import { searchDocuments } from "../../backend/search/search_document"; // facade wrapper
 
 import '@polymer/iron-icon/iron-icon.js';
 import '@polymer/paper-icon-button/paper-icon-button.js';
@@ -212,7 +212,7 @@ function toFileLike(vm) {
   return {
     getPath: () => vm.path,
     getMime: () => vm.mime || "",
-    getThumbnail: () => (Array.isArray(vm.thumbnails) ? vm.thumbnails[0] : undefined),
+    getThumbnail: () => (Array.isArray(vm.thumbnail) ? vm.thumbnail[0] : undefined),
   };
 }
 
@@ -362,7 +362,7 @@ class DocumentSearchResults extends HTMLElement {
           if (path) {
             const vm = await files.getFile(path);
             if (vm) {
-              const thumb = Array.isArray(vm.thumbnails) ? vm.thumbnails[0] : undefined;
+              const thumb = Array.isArray(vm.thumbnail) ? vm.thumbnail[0] : undefined;
               if (thumb) {
                 const img = document.createElement("img");
                 img.src = thumb;

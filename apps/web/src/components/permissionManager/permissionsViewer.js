@@ -1,531 +1,480 @@
-import { Permission, Permissions } from "globular-web-client/rbac/rbac_pb"; // Assuming Permissions and Permission protos are here
-import { AccountController } from "../../backend/account"; // Assuming getAccount is promisified
-import { ApplicationController } from "../../backend/applications"; // Assuming getApplicationInfo is promisified
-import { GroupController } from "../../backend/group"; // Assuming getGroup is promisified
-import { OrganizationController } from "../../backend/organization"; // Assuming getOrganizationById is promisified
-import { PeerController } from "../../backend/peer"; // Assuming getPeerById is promisified
+// src/widgets/permissionsViewer.js — VM-based + direct backend save (JS)
 
-// Polymer/Custom Element imports
-import '@polymer/iron-icon/iron-icon.js'; // For iron-icon
-import '@polymer/iron-icons/social-icons.js'; // For social:people, social:domain
-import '@polymer/iron-icons/hardware-icons.js'; // For hardware:computer
-import '@polymer/iron-icons/iron-icons.js'; // For generic icons like close, add, delete, archive
+// New backend list wrappers (adjust paths if your repo differs)
+import { listAccounts } from "../../backend/rbac/accounts"
+import { listGroups } from "../../backend/rbac/groups"
+import { listOrganizations } from "../../backend/rbac/organizations"
+import { listApplications } from "../../backend/rbac/applications"; // NEW apps accessor (ApplicationVM[])
+import { listPeers } from "../../backend/rbac/peers"
 
-/**
- * Displays a tabular view of resource permissions (read, write, delete, owner) for various subjects.
- * Allows interactive toggling of permissions for each subject.
- */
-export class PermissionsViewer extends HTMLElement {
-    // Private instance properties
-    _permissionsNames = []; // The list of permission names to display (e.g., ["read", "write", "delete", "owner"])
-    _permissions = null; // The Permissions object received from PermissionsManager
-    _subjects = {}; // Internal map of subjects (account, group, etc.) with their resolved details and permissions state
-    _permissionManager = null; // Reference to the parent PermissionsManager for saving changes
+// VM persistence (no protos here)
+import { setResourcePermissions } from "../../backend/rbac/permissions"
 
-    // DOM element references
-    _subjectsDiv = null;
-    _permissionsDiv = null;
-    _permissionsHeader = null;
+// Optional UI feedback (adjust if your notify helpers live elsewhere)
+import { displayError, displayMessage } from "../../backend/ui/notify"
 
-    /**
-     * Constructor for the PermissionsViewer custom element.
-     * @param {Array<string>} permissionsNames - An array of permission names (e.g., ["read", "write", "delete", "owner"]).
-     */
-    constructor(permissionsNames) {
-        super();
-        this.attachShadow({ mode: 'open' });
-        this._permissionsNames = permissionsNames;
-        // DOM setup and population in connectedCallback or setter
-    }
+// UI deps
+import '@polymer/iron-icon/iron-icon.js'
+import '@polymer/iron-icons/social-icons.js'
+import '@polymer/iron-icons/hardware-icons.js'
+import '@polymer/iron-icons/iron-icons.js'
 
-    /**
-     * Called when the element is inserted into the document's DOM.
-     * Performs initial rendering and gets DOM references.
-     */
-    connectedCallback() {
-        this._renderInitialStructure();
-        this._getDomReferences();
-        // Initial permission display will be triggered by setPermissions setter.
-    }
+// -------------------- tiny access helpers / id parsing --------------------
+const callIf = (o, m) => (o && typeof o[m] === "function") ? o[m]() : undefined
 
-    /**
-     * Sets the main Permissions object to be viewed and managed.
-     * This method triggers the rendering of the entire permissions table.
-     * @param {Object} permissions - The Permissions object (from rbac_pb.js).
-     */
-    setPermissions(permissions) {
-        if (this._permissions !== permissions) {
-            this._permissions = permissions;
-            this._processPermissionsData();
-            this._renderPermissionsTable();
-        }
-    }
+const getStr = (o, getter, field) =>
+  callIf(o, getter) ?? (o ? o[field] : "" ) ?? ""
 
-    /**
-     * Sets the reference to the parent PermissionsManager.
-     * This is needed for calling savePermissions on the manager.
-     * @param {HTMLElement} manager - The PermissionsManager instance.
-     */
-    set permissionManager(manager) {
-        this._permissionManager = manager;
-    }
+const getId = (o) => getStr(o, "getId", "id")
+const getName = (o) => getStr(o, "getName", "name")
+const getDomain = (o) => getStr(o, "getDomain", "domain")
+const getEmail = (o) => getStr(o, "getEmail", "email")
+const getFirstName = (o) => getStr(o, "getFirstname", "firstName")
+const getLastName  = (o) => getStr(o, "getLastname", "lastName")
+const getProfilePicture = (o) => getStr(o, "getProfilepicture", "profilePicture")
+const getAlias = (o) => getStr(o, "getAlias", "alias")
+const getVersion = (o) => getStr(o, "getVersion", "version")
+const getIcon = (o) => getStr(o, "getIcon", "icon")
+const getHostname = (o) => getStr(o, "getHostname", "hostname")
+const getMac = (o) => getStr(o, "getMac", "mac")
 
-    /**
-     * Renders the initial HTML structure, including the table headers.
-     * @private
-     */
-    _renderInitialStructure() {
-        // Headers are dynamically generated in _renderPermissionsTable
-        this.shadowRoot.innerHTML = `
-            <style>
-                #subjects-div {
-                    vertical-align: middle;
-                    text-align: center; /* This div appears unused in the updated structure */
-                }
+/** Parse "id" or "id@domain" → { id, domain } */
+function parseFQID(thing) {
+  const s = String(thing || "")
+  const at = s.lastIndexOf("@")
+  if (at > 0) return { id: s.slice(0, at), domain: s.slice(at + 1) }
+  return { id: s, domain: "" }
+}
+function parsePeerKey(thing) { return parseFQID(thing) }
 
-                #permissions-div {
-                    display: table;
-                    width: 100%;
-                    border-collapse: collapse; /* Collapse borders for cleaner look */
-                    font-size: 0.95rem; /* Slightly smaller font for table content */
-                }
+// -------------------- light data caches to avoid repeated list calls ------
+const caches = {
+  accounts: new Map(), groups: new Map(), orgs: new Map(), apps: new Map(), peers: new Map(),
+}
+let _accountsLoaded = false, _groupsLoaded = false, _orgsLoaded = false, _appsLoaded = false, _peersLoaded = false
+const keyId  = (id, domain) => domain ? `${id}@${domain}` : String(id || "")
+const keyMac = (mac, domain) => domain ? `${mac}@${domain}` : String(mac || "")
 
-                #permissions-header {
-                    display: table-row;
-                    font-size: 1.0rem;
-                    font-weight: 500; /* Bolder header */
-                    color: var(--primary-text-color); /* Primary text color */
-                    border-bottom: 2px solid var(--palette-divider);
-                    background-color: var(--palette-background-dark); /* Subtle background for header */
-                }
-
-                #permissions-header div {
-                    display: table-cell;
-                    padding: 8px 5px; /* Padding for header cells */
-                    text-align: center;
-                    vertical-align: middle;
-                }
-
-                .subject-cell {
-                    display: table-cell;
-                    padding: 5px;
-                    text-align: left; /* Align subject text left */
-                    vertical-align: middle;
-                    max-width: 250px; /* Constrain width for subject display */
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-
-                .permission-cell {
-                    text-align: center;
-                    vertical-align: middle;
-                    padding: 5px;
-                    display: table-cell;
-                }
-
-                .permission-cell iron-icon {
-                    width: 24px; /* Larger icons */
-                    height: 24px;
-                    color: var(--secondary-text-color); /* Default icon color */
-                }
-
-                .permission-cell iron-icon:hover {
-                    cursor: pointer;
-                    color: var(--primary-color); /* Highlight on hover */
-                }
-
-                /* Specific icon colors for clarity */
-                .permission-cell iron-icon[icon="icons:check"] { color: var(--palette-success-main); }
-                .permission-cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main); }
-                .permission-cell iron-icon[icon="icons:remove"] { color: var(--secondary-text-color); }
-
-                .permission-row {
-                    display: table-row;
-                    border-bottom: 1px solid var(--palette-divider-light); /* Lighter row separator */
-                }
-                .permission-row:last-child {
-                    border-bottom: none;
-                }
-            </style>
-
-            <div>
-                <div id="subjects-div"></div>
-
-                <div id="permissions-div">
-                    <div id="permissions-header">
-                        <div class="subject-cell">Subject</div>
-                        ${this._permissionsNames.map(name => `<div class="permission-cell">${name}</div>`).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Retrieves references to all necessary DOM elements.
-     * @private
-     */
-    _getDomReferences() {
-        this._subjectsDiv = this.shadowRoot.querySelector("#subjects-div");
-        this._permissionsDiv = this.shadowRoot.querySelector("#permissions-div");
-        this._permissionsHeader = this.shadowRoot.querySelector("#permissions-header");
-    }
-
-    /**
-     * Processes the raw Permissions object into a flattened, display-ready `_subjects` map.
-     * This map will contain all unique subjects and their permission states.
-     * @private
-     */
-    _processPermissionsData() {
-        this._subjects = {}; // Reset subjects map
-
-        // Helper to add/update a subject in the _subjects map
-        const addSubject = (id, type, permissionName, permissionStatus) => {
-            const subjectKey = `${id}_${type}`; // Unique key for subject
-            if (!this._subjects[subjectKey]) {
-                this._subjects[subjectKey] = {
-                    id: id,
-                    type: type,
-                    permissions: {} // Store status for each permission name
-                };
-            }
-            this._subjects[subjectKey].permissions[permissionName] = permissionStatus;
-        };
-
-        // Process Owners
-        const ownerPerm = this._permissions.getOwners();
-        if (ownerPerm) {
-            ownerPerm.getAccountsList().forEach(id => addSubject(id, "account", "owner", "allowed"));
-            ownerPerm.getGroupsList().forEach(id => addSubject(id, "group", "owner", "allowed"));
-            ownerPerm.getApplicationsList().forEach(id => addSubject(id, "application", "owner", "allowed"));
-            ownerPerm.getOrganizationsList().forEach(id => addSubject(id, "organization", "owner", "allowed"));
-            ownerPerm.getPeersList().forEach(id => addSubject(id, "peer", "owner", "allowed"));
-        }
-
-        // Process Allowed permissions
-        this._permissions.getAllowedList().forEach(perm => {
-            const permName = perm.getName();
-            perm.getAccountsList().forEach(id => addSubject(id, "account", permName, "allowed"));
-            perm.getGroupsList().forEach(id => addSubject(id, "group", permName, "allowed"));
-            perm.getApplicationsList().forEach(id => addSubject(id, "application", permName, "allowed"));
-            perm.getOrganizationsList().forEach(id => addSubject(id, "organization", permName, "allowed"));
-            perm.getPeersList().forEach(id => addSubject(id, "peer", permName, "allowed"));
-        });
-
-        // Process Denied permissions
-        this._permissions.getDeniedList().forEach(perm => {
-            const permName = perm.getName();
-            perm.getAccountsList().forEach(id => addSubject(id, "account", permName, "denied"));
-            perm.getGroupsList().forEach(id => addSubject(id, "group", permName, "denied"));
-            perm.getApplicationsList().forEach(id => addSubject(id, "application", permName, "denied"));
-            perm.getOrganizationsList().forEach(id => addSubject(id, "organization", permName, "denied"));
-            perm.getPeersList().forEach(id => addSubject(id, "peer", permName, "denied"));
-        });
-    }
-
-    /**
-     * Renders the permissions table based on the processed `_subjects` data.
-     * @private
-     */
-    async _renderPermissionsTable() {
-        // Clear previous rows, but keep the header
-        this.shadowRoot.querySelectorAll('.permission-row').forEach(row => row.remove());
-
-        const subjectPromises = Object.values(this._subjects).map(async (subject) => {
-            let resolvedSubjectDiv = null;
-            // Resolve subject details (e.g., get full account/group object for display)
-            try {
-                if (subject.type === "account") {
-                    const account = await new Promise((resolve, reject) => { // Promisify getAccount
-                        AccountController.getAccount(subject.id, resolve, reject, this._permissionManager.globule);
-                    });
-                    resolvedSubjectDiv = this._createAccountDiv(account);
-                } else if (subject.type === "application") {
-                    const application = await new Promise((resolve, reject) => { // Promisify getApplicationInfo
-                        ApplicationController.getApplicationInfo(subject.id, resolve, reject, this._permissionManager.globule);
-                    });
-                    resolvedSubjectDiv = this._createApplicationDiv(application);
-                } else if (subject.type === "group") {
-                    const group = await new Promise((resolve, reject) => { // Promisify getGroup
-                        GroupController.getGroup(subject.id, resolve, reject, this._permissionManager.globule);
-                    });
-                    resolvedSubjectDiv = this._createGroupDiv(group);
-                } else if (subject.type === "organization") {
-                    const organization = await new Promise((resolve, reject) => { // Promisify getOrganizationById
-                        OrganizationController.getOrganizationById(subject.id, resolve, reject, this._permissionManager.globule);
-                    });
-                    resolvedSubjectDiv = this._createOrganizationDiv(organization);
-                } else if (subject.type === "peer") {
-                    const peer = await new Promise((resolve, reject) => { // Promisify getPeerById
-                        PeerController.getPeerById(subject.id, resolve, reject, this._permissionManager.globule);
-                    });
-                    resolvedSubjectDiv = this._createPeerDiv(peer);
-                } else {
-                    // Fallback for unknown type
-                    resolvedSubjectDiv = this._createGenericSubjectDiv(`Unknown: ${subject.id}`, `Type: ${subject.type}`, "icons:help");
-                }
-            } catch (e) {
-                console.error(`Failed to load details for ${subject.type} ${subject.id}:`, e);
-                resolvedSubjectDiv = this._createGenericSubjectDiv(`Error: ${subject.id}`, `Type: ${subject.type}`, "icons:error");
-            }
-            return { element: resolvedSubjectDiv, subject: subject };
-        });
-
-        // Wait for all subjects to be resolved
-        const resolvedSubjects = await Promise.all(subjectPromises);
-
-        // Append rows to the table
-        resolvedSubjects.forEach(({ element: subjectDivElement, subject }) => {
-            const row = document.createElement("div");
-            row.className = "permission-row";
-
-            const subjectCell = document.createElement("div");
-            subjectCell.className = "subject-cell";
-            subjectCell.appendChild(subjectDivElement); // Append the resolved subject's div
-            row.appendChild(subjectCell);
-
-            // Add permission cells for each permission name
-            this._permissionsNames.forEach(permName => {
-                const status = subject.permissions[permName]; // 'allowed', 'denied', or undefined
-                const cell = this._createPermissionCell(status, permName, subject);
-                row.appendChild(cell);
-            });
-            this._permissionsDiv.appendChild(row);
-        });
-    }
-
-    /**
-     * Creates a generic display div for a subject in the table.
-     * @param {string} uuid - Unique ID for the div.
-     * @param {string} mainText - Primary text to display.
-     * @param {string} [subText=""] - Optional secondary text.
-     * @param {string} [iconUrl=""] - URL for an image icon.
-     * @param {string} [iconName="account-circle"] - Iron-icon name if no image URL.
-     * @returns {HTMLElement} The created div element.
-     * @private
-     */
-    _createGenericSubjectDiv(mainText, subText = "", iconUrl = "", iconName = "account-circle") {
-        const div = document.createElement('div');
-        div.className = "item-subject-display"; // Unique class for subject display
-        div.innerHTML = `
-            <style>
-                .item-subject-display {
-                    display: flex;
-                    align-items: center;
-                    padding: 2px;
-                }
-                .item-subject-icon {
-                    width: 32px; /* Smaller icons for table cells */
-                    height: 32px;
-                    border-radius: 50%;
-                    object-fit: cover;
-                    margin-right: 5px;
-                    flex-shrink: 0;
-                }
-                .item-subject-icon-placeholder {
-                    width: 32px;
-                    height: 32px;
-                    --iron-icon-fill-color: var(--palette-action-disabled);
-                    margin-right: 5px;
-                    flex-shrink: 0;
-                }
-                .item-subject-text {
-                    display: flex;
-                    flex-direction: column;
-                    font-size: 0.8em;
-                    flex-grow: 1;
-                    min-width: 0; /* Allow text to shrink */
-                }
-                .item-subject-text span:first-child {
-                    font-weight: 500;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-                .item-subject-text span:last-child {
-                    font-size: 0.7em;
-                    color: var(--secondary-text-color);
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-            </style>
-            ${iconUrl ? `<img class="item-subject-icon" src="${iconUrl}" alt="Subject Icon">` : `<iron-icon class="item-subject-icon-placeholder" icon="${iconName}"></iron-icon>`}
-            <div class="item-subject-text">
-                <span>${mainText}</span>
-                ${subText ? `<span>${subText}</span>` : ''}
-            </div>
-        `;
-        return div;
-    }
-
-    /**
-     * Specific display methods for different subject types.
-     * They use the generic _createGenericSubjectDiv.
-     * @private
-     */
-    _createAccountDiv(account) {
-        const name = (account.getFirstname() && account.getLastname()) ? `${account.getFirstname()} ${account.getLastname()}` : account.getName();
-        return this._createGenericSubjectDiv(name, account.getEmail(), account.getProfilepicture(), "account-circle");
-    }
-
-    _createApplicationDiv(application) {
-        return this._createGenericSubjectDiv(application.getAlias(), application.getVersion(), application.getIcon(), "apps");
-    }
-
-    _createOrganizationDiv(organization) {
-        return this._createGenericSubjectDiv(organization.getName(), `${organization.getId()}@${organization.getDomain()}`, "", "social:domain");
-    }
-
-    _createPeerDiv(peer) {
-        return this._createGenericSubjectDiv(peer.getHostname(), `(${peer.getMac()})`, "", "hardware:computer");
-    }
-
-    _createGroupDiv(group) {
-        return this._createGenericSubjectDiv(group.getName(), `${group.getId()}@${group.getDomain()}`, "", "social:people");
-    }
-
-    /**
-     * Creates a single permission status cell for the table.
-     * @param {string} status - The permission status ('allowed', 'denied', or undefined/no status).
-     * @param {string} permissionName - The name of the permission (e.g., 'read', 'owner').
-     * @param {Object} subject - The subject object ({id, type, permissions}).
-     * @returns {HTMLElement} The created table cell element.
-     * @private
-     */
-    _createPermissionCell(status, permissionName, subject) {
-        const cell = document.createElement("div");
-        cell.className = "permission-cell";
-
-        let iconElement;
-        if (status === "allowed") {
-            iconElement = document.createElement("iron-icon");
-            iconElement.icon = "icons:check";
-        } else if (status === "denied") {
-            iconElement = document.createElement("iron-icon");
-            iconElement.icon = "av:not-interested";
-        } else { // No explicit status, or "none"
-            iconElement = document.createElement("iron-icon");
-            iconElement.icon = "icons:remove";
-        }
-        cell.appendChild(iconElement);
-
-        // Attach click listener to toggle permission
-        iconElement.addEventListener('click', () => {
-            this._togglePermissionStatus(subject, permissionName, status);
-        });
-
-        return cell;
-    }
-
-    /**
-     * Toggles the permission status for a subject and permission name.
-     * Updates the underlying Permissions object and triggers a save.
-     * The order of toggling is: allowed -> denied -> none -> allowed (for read/write/delete)
-     * For owner: allowed -> none -> allowed
-     * @param {Object} subject - The subject object ({id, type, permissions}).
-     * @param {string} permissionName - The name of the permission (e.g., 'read', 'owner').
-     * @param {string | undefined} currentStatus - The current status ('allowed', 'denied', or undefined).
-     * @private
-     */
-    _togglePermissionStatus(subject, permissionName, currentStatus) {
-        // Find or create the relevant permission objects within `_permissions`
-        const getOrCreatePermission = (listGetter, listSetter) => {
-            let perm = this._permissions[listGetter]().find(p => p.getName() === permissionName);
-            if (!perm) {
-                perm = new Permission();
-                perm.setName(permissionName);
-                perm.setAccountsList([]);
-                perm.setApplicationsList([]);
-                perm.setOrganizationsList([]);
-                perm.setGroupsList([]);
-                perm.setPeersList([]);
-                this._permissions[listGetter]().push(perm); // Add new permission object to the list
-            }
-            return perm;
-        };
-
-        const getSubjectList = (permissionObj) => {
-            if (subject.type === "account") return permissionObj.getAccountsList();
-            if (subject.type === "group") return permissionObj.getGroupsList();
-            if (subject.type === "application") return permissionObj.getApplicationsList();
-            if (subject.type === "organization") return permissionObj.getOrganizationsList();
-            if (subject.type === "peer") return permissionObj.getPeersList();
-            return [];
-        };
-
-        const setSubjectList = (permissionObj, newList) => {
-            if (subject.type === "account") permissionObj.setAccountsList(newList);
-            else if (subject.type === "group") permissionObj.setGroupsList(newList);
-            else if (subject.type === "application") permissionObj.setApplicationsList(newList);
-            else if (subject.type === "organization") permissionObj.setOrganizationsList(newList);
-            else if (subject.type === "peer") permissionObj.setPeersList(newList);
-        };
-
-        const removeSubjectFromList = (permissionObj) => {
-            const currentList = getSubjectList(permissionObj);
-            const updatedList = currentList.filter(id => id !== subject.id && id !== `${subject.id}@${subject.domain}`); // Account for FQDN
-            setSubjectList(permissionObj, updatedList);
-        };
-
-        const addSubjectToList = (permissionObj) => {
-            const currentList = getSubjectList(permissionObj);
-            const subjectIdToAdd = subject.getDomain ? `${subject.id}@${subject.getDomain()}` : subject.id; // Assume getDomain for entities
-            if (!currentList.includes(subjectIdToAdd)) {
-                const updatedList = [...currentList, subjectIdToAdd];
-                setSubjectList(permissionObj, updatedList);
-            }
-        };
-
-
-        let nextStatus;
-        if (permissionName === "owner") {
-            // Owner permission: allowed -> none -> allowed
-            if (currentStatus === "allowed") {
-                nextStatus = undefined; // Remove owner permission
-            } else {
-                nextStatus = "allowed"; // Make owner
-            }
-        } else {
-            // Read/Write/Delete permission: allowed -> denied -> none -> allowed
-            if (currentStatus === "allowed") {
-                nextStatus = "denied";
-            } else if (currentStatus === "denied") {
-                nextStatus = undefined; // Remove permission (neither allowed nor denied)
-            } else {
-                nextStatus = "allowed"; // Make allowed
-            }
-        }
-
-        // Apply changes to the underlying _permissions object
-        const allowedPerm = getOrCreatePermission('getAllowedList', 'setAllowedList');
-        const deniedPerm = getOrCreatePermission('getDeniedList', 'setDeniedList');
-        const ownerPerm = this._permissions.getOwners(); // Owner is special, already in permissions
-
-        // Reset subject from all lists first for this permission name
-        removeSubjectFromList(allowedPerm);
-        removeSubjectFromList(deniedPerm);
-        if (ownerPerm) { // If owner permission exists, remove from its list too
-            removeSubjectFromList(ownerPerm);
-        }
-
-        // Add subject to the correct list based on nextStatus
-        if (nextStatus === "allowed") {
-            addSubjectToList(allowedPerm);
-            if (permissionName === "owner") { // If owner, add to owners list
-                addSubjectToList(ownerPerm);
-            }
-        } else if (nextStatus === "denied") {
-            addSubjectToList(deniedPerm);
-        }
-
-        // After updating the _permissions object, re-render the table to reflect changes
-        this._renderPermissionsTable();
-
-        // Save changes to backend
-        this._permissionManager.savePermissions();
-    }
+// -------------------- resolvers (load once, then map lookup) ---------------
+async function ensureAccounts() {
+  if (_accountsLoaded) return
+  const { items = [] } = await (listAccounts({ pageSize: 2000 }) || {})
+  items.forEach(a => {
+    const id = getId(a), dom = getDomain(a)
+    caches.accounts.set(keyId(id, dom), a)
+    caches.accounts.set(keyId(id, ""), a)
+  })
+  _accountsLoaded = true
+}
+async function ensureGroups() {
+  if (_groupsLoaded) return
+  const { items = [] } = await (listGroups({ pageSize: 2000 }) || {})
+  items.forEach(g => {
+    const id = getId(g), dom = getDomain(g)
+    caches.groups.set(keyId(id, dom), g)
+    caches.groups.set(keyId(id, ""), g)
+  })
+  _groupsLoaded = true
+}
+async function ensureOrgs() {
+  if (_orgsLoaded) return
+  const { items = [] } = await (listOrganizations({ pageSize: 2000 }) || {})
+  items.forEach(o => {
+    const id = getId(o), dom = getDomain(o)
+    caches.orgs.set(keyId(id, dom), o)
+    caches.orgs.set(keyId(id, ""), o)
+  })
+  _orgsLoaded = true
+}
+async function ensureApps() {
+  if (_appsLoaded) return
+  const arr = await (listApplications() || [])
+  const items = Array.isArray(arr) ? arr : (arr.items || [])
+  items.forEach(a => {
+    const id = getId(a), dom = getDomain(a)
+    caches.apps.set(keyId(id, dom), a)
+    caches.apps.set(keyId(id, ""), a)
+  })
+  _appsLoaded = true
+}
+async function ensurePeers() {
+  if (_peersLoaded) return
+  const arr = await (listPeers() || [])
+  const items = Array.isArray(arr) ? arr : (arr.items || [])
+  items.forEach(p => {
+    const mac = getMac(p), dom = getDomain(p)
+    caches.peers.set(keyMac(mac, dom), p)
+    caches.peers.set(keyMac(mac, ""), p)
+  })
+  _peersLoaded = true
 }
 
-customElements.define('globular-permissions-viewer', PermissionsViewer);
+async function resolveAccount(idOrFqid) { await ensureAccounts(); const { id, domain } = parseFQID(idOrFqid); return caches.accounts.get(keyId(id, domain)) || caches.accounts.get(keyId(id, "")) }
+async function resolveGroup(idOrFqid)   { await ensureGroups();  const { id, domain } = parseFQID(idOrFqid); return caches.groups.get(keyId(id, domain))   || caches.groups.get(keyId(id, "")) }
+async function resolveOrg(idOrFqid)     { await ensureOrgs();    const { id, domain } = parseFQID(idOrFqid); return caches.orgs.get(keyId(id, domain))     || caches.orgs.get(keyId(id, "")) }
+async function resolveApp(idOrFqid)     { await ensureApps();    const { id, domain } = parseFQID(idOrFqid); return caches.apps.get(keyId(id, domain))     || caches.apps.get(keyId(id, "")) }
+async function resolvePeer(macOrFqid)   { await ensurePeers();   const { id: mac, domain } = parsePeerKey(macOrFqid); return caches.peers.get(keyMac(mac, domain)) || caches.peers.get(keyMac(mac, "")) }
+
+// ==========================================================================
+
+/**
+ * Tabular view of a PermissionsVM object (read, write, delete, owner).
+ * Persists with backend `setResourcePermissions(permissionsVM)`.
+ *
+ * PermissionsVM shape:
+ * {
+ *   path: string,
+ *   resourceType: string,
+ *   owners: { accounts:[], groups:[], applications:[], organizations:[], peers:[] },
+ *   allowed: [{ name, accounts:[], groups:[], applications:[], organizations:[], peers:[] }],
+ *   denied:  [{ name, ... }]
+ * }
+ */
+export class PermissionsViewer extends HTMLElement {
+  constructor(permissionsNames) {
+    super()
+    this.attachShadow({ mode: 'open' })
+
+    this._permissionsNames = Array.isArray(permissionsNames) ? permissionsNames : []
+    this._permissions = null
+    this._subjects = {}
+
+    this._subjectsDiv = null
+    this._permissionsDiv = null
+    this._permissionsHeader = null
+  }
+
+  connectedCallback() {
+    this._renderInitialStructure()
+    this._getDomReferences()
+  }
+
+  /** Attach a PermissionsVM */
+  setPermissions(permissionsVM) {
+    if (this._permissions !== permissionsVM) {
+      this._permissions = permissionsVM
+      this._processPermissionsData()
+      this._renderPermissionsTable()
+    }
+  }
+
+  // ---------------------------- render skeleton ---------------------------
+  _renderInitialStructure() {
+    this.shadowRoot.innerHTML = `
+      <style>
+        #subjects-div { vertical-align: middle; text-align: center; }
+        #permissions-div {
+          display: table; width: 100%; border-collapse: collapse; font-size: .95rem;
+        }
+        #permissions-header {
+          display: table-row; font-size: 1rem; font-weight: 500;
+          color: var(--primary-text-color);
+          border-bottom: 2px solid var(--palette-divider);
+          background-color: var(--palette-background-dark);
+        }
+        #permissions-header div {
+          display: table-cell; padding: 8px 5px; text-align: center; vertical-align: middle;
+        }
+        .subject-cell {
+          display: table-cell; padding: 5px; text-align: left; vertical-align: middle;
+          max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .permission-cell {
+          text-align: center; vertical-align: middle; padding: 5px; display: table-cell;
+        }
+        .permission-cell iron-icon { width: 24px; height: 24px; color: var(--secondary-text-color); }
+        .permission-cell iron-icon:hover { cursor: pointer; color: var(--primary-color); }
+        .permission-cell iron-icon[icon="icons:check"] { color: var(--palette-success-main); }
+        .permission-cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main); }
+        .permission-cell iron-icon[icon="icons:remove"] { color: var(--secondary-text-color); }
+
+        .permission-row { display: table-row; border-bottom: 1px solid var(--palette-divider-light); }
+        .permission-row:last-child { border-bottom: none; }
+
+        .item-subject-display { display:flex; align-items:center; padding:2px; }
+        .item-subject-icon {
+          width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+          margin-right:5px; flex-shrink:0;
+        }
+        .item-subject-icon-placeholder {
+          width: 32px; height: 32px; margin-right:5px; flex-shrink:0;
+          --iron-icon-fill-color: var(--palette-action-disabled);
+        }
+        .item-subject-text { display:flex; flex-direction:column; font-size:.8em; flex-grow:1; min-width:0; }
+        .item-subject-text span:first-child { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .item-subject-text span:last-child  { font-size:.7em; color:var(--secondary-text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      </style>
+
+      <div>
+        <div id="subjects-div"></div>
+        <div id="permissions-div">
+          <div id="permissions-header">
+            <div class="subject-cell">Subject</div>
+            ${this._permissionsNames.map(n => `<div class="permission-cell">${n}</div>`).join('')}
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  _getDomReferences() {
+    this._subjectsDiv = this.shadowRoot.querySelector("#subjects-div")
+    this._permissionsDiv = this.shadowRoot.querySelector("#permissions-div")
+    this._permissionsHeader = this.shadowRoot.querySelector("#permissions-header")
+  }
+
+  // ---------------------------- data prep --------------------------------
+  _processPermissionsData() {
+    this._subjects = {}
+
+    const addSubject = (id, type, permissionName, status) => {
+      const key = `${id}::${type}`
+      if (!this._subjects[key]) this._subjects[key] = { id, type, permissions: {} }
+      this._subjects[key].permissions[permissionName] = status
+    }
+
+    const owners = this._permissions?.owners || {
+      accounts: [], groups: [], applications: [], organizations: [], peers: []
+    }
+    owners.accounts.forEach(id => addSubject(id, "account", "owner", "allowed"))
+    owners.groups.forEach(id => addSubject(id, "group", "owner", "allowed"))
+    owners.applications.forEach(id => addSubject(id, "application", "owner", "allowed"))
+    owners.organizations.forEach(id => addSubject(id, "organization", "owner", "allowed"))
+    owners.peers.forEach(id => addSubject(id, "peer", "owner", "allowed"))
+
+    const allowed = Array.isArray(this._permissions?.allowed) ? this._permissions.allowed : []
+    const denied  = Array.isArray(this._permissions?.denied)  ? this._permissions.denied  : []
+
+    allowed.forEach(perm => {
+      const n = perm.name || ""
+      ;(perm.accounts || []).forEach(id => addSubject(id, "account", n, "allowed"))
+      ;(perm.groups || []).forEach(id => addSubject(id, "group", n, "allowed"))
+      ;(perm.applications || []).forEach(id => addSubject(id, "application", n, "allowed"))
+      ;(perm.organizations || []).forEach(id => addSubject(id, "organization", n, "allowed"))
+      ;(perm.peers || []).forEach(id => addSubject(id, "peer", n, "allowed"))
+    })
+
+    denied.forEach(perm => {
+      const n = perm.name || ""
+      ;(perm.accounts || []).forEach(id => addSubject(id, "account", n, "denied"))
+      ;(perm.groups || []).forEach(id => addSubject(id, "group", n, "denied"))
+      ;(perm.applications || []).forEach(id => addSubject(id, "application", n, "denied"))
+      ;(perm.organizations || []).forEach(id => addSubject(id, "organization", n, "denied"))
+      ;(perm.peers || []).forEach(id => addSubject(id, "peer", n, "denied"))
+    })
+  }
+
+  // ---------------------------- table render ------------------------------
+  async _renderPermissionsTable() {
+    this.shadowRoot.querySelectorAll('.permission-row').forEach(r => r.remove())
+
+    const rows = await Promise.all(
+      Object.values(this._subjects).map(async (subject) => {
+        const subjectDiv = await this._resolveSubjectDiv(subject)
+        const row = document.createElement("div")
+        row.className = "permission-row"
+
+        const subjectCell = document.createElement("div")
+        subjectCell.className = "subject-cell"
+        subjectCell.appendChild(subjectDiv)
+        row.appendChild(subjectCell)
+
+        this._permissionsNames.forEach(permName => {
+          const status = subject.permissions[permName] // allowed/denied/undefined
+          const cell = this._createPermissionCell(status, permName, subject)
+          row.appendChild(cell)
+        })
+
+        return row
+      })
+    )
+
+    rows.forEach(r => this._permissionsDiv.appendChild(r))
+  }
+
+  // Resolve one subject to a UI block
+  async _resolveSubjectDiv(subject) {
+    try {
+      if (subject.type === "account")      return this._createAccountDiv(await resolveAccount(subject.id), subject.id)
+      if (subject.type === "application")  return this._createApplicationDiv(await resolveApp(subject.id), subject.id)
+      if (subject.type === "group")        return this._createGroupDiv(await resolveGroup(subject.id), subject.id)
+      if (subject.type === "organization") return this._createOrganizationDiv(await resolveOrg(subject.id), subject.id)
+      if (subject.type === "peer")         return this._createPeerDiv(await resolvePeer(subject.id), subject.id)
+    } catch (e) {
+      console.warn(`Failed to resolve ${subject.type} ${subject.id}`, e)
+    }
+    return this._createGenericSubjectDiv(`Unknown: ${subject.id}`, `Type: ${subject.type}`, "", "icons:help")
+  }
+
+  // ---------------------------- subject tiles -----------------------------
+  _createGenericSubjectDiv(mainText, subText = "", iconUrl = "", iconName = "account-circle") {
+    const div = document.createElement('div')
+    div.className = "item-subject-display"
+    div.innerHTML = `
+      ${iconUrl
+        ? `<img class="item-subject-icon" src="${iconUrl}" alt="icon">`
+        : `<iron-icon class="item-subject-icon-placeholder" icon="${iconName}"></iron-icon>`}
+      <div class="item-subject-text">
+        <span>${mainText}</span>
+        ${subText ? `<span>${subText}</span>` : ''}
+      </div>
+    `
+    return div
+  }
+
+  _createAccountDiv(account, fallbackId) {
+    if (!account) return this._createGenericSubjectDiv(fallbackId || "(account)", "", "", "account-circle")
+    const fn = getFirstName(account), ln = getLastName(account)
+    const disp = (fn && ln) ? `${fn} ${ln}` : (getName(account) || "(account)")
+    return this._createGenericSubjectDiv(disp, getEmail(account), getProfilePicture(account), "account-circle")
+  }
+  _createApplicationDiv(app, fallbackId) {
+    if (!app) return this._createGenericSubjectDiv(fallbackId || "(app)", "", "", "apps")
+    return this._createGenericSubjectDiv(getAlias(app) || getName(app) || "(app)", getVersion(app), getIcon(app), "apps")
+  }
+  _createOrganizationDiv(org, fallbackId) {
+    if (!org) return this._createGenericSubjectDiv(fallbackId || "(org)", "", "", "social:domain")
+    return this._createGenericSubjectDiv(getName(org) || "(org)", `${getId(org)}@${getDomain(org)}`, "", "social:domain")
+  }
+  _createPeerDiv(peer, fallbackId) {
+    if (!peer) return this._createGenericSubjectDiv(fallbackId || "(peer)", "", "", "hardware:computer")
+    return this._createGenericSubjectDiv(getHostname(peer) || "(peer)", `(${getMac(peer)})`, "", "hardware:computer")
+  }
+  _createGroupDiv(group, fallbackId) {
+    if (!group) return this._createGenericSubjectDiv(fallbackId || "(group)", "", "", "social:people")
+    return this._createGenericSubjectDiv(getName(group) || "(group)", `${getId(group)}@${getDomain(group)}`, "", "social:people")
+  }
+
+  // ---------------------------- permission cells / toggling ----------------
+  _createPermissionCell(status, permissionName, subject) {
+    const cell = document.createElement("div")
+    cell.className = "permission-cell"
+
+    const icon = document.createElement("iron-icon")
+    icon.icon = (status === "allowed") ? "icons:check" : (status === "denied") ? "av:not-interested" : "icons:remove"
+
+    icon.addEventListener('click', async () => {
+      await this._togglePermissionStatus(subject, permissionName, status)
+    })
+
+    cell.appendChild(icon)
+    return cell
+  }
+
+  /**
+   * Toggle in the VM (no protos). Cycles:
+   *  - owner: allowed -> none -> allowed
+   *  - others: allowed -> denied -> none -> allowed
+   * Then persists via backend.setResourcePermissions(this._permissions)
+   */
+  async _togglePermissionStatus(subject, permissionName, currentStatus) {
+    if (!this._permissions) return
+    const subjId = subject.id
+    const type = subject.type
+
+    // Helpers for owner lists
+    const getOwnerList = () => {
+      const owners = (this._permissions.owners ||= {
+        accounts: [], groups: [], applications: [], organizations: [], peers: []
+      })
+      if (type === "account") return owners.accounts
+      if (type === "group") return owners.groups
+      if (type === "application") return owners.applications
+      if (type === "organization") return owners.organizations
+      if (type === "peer") return owners.peers
+      return []
+    }
+    const setOwnerList = (next) => {
+      const owners = (this._permissions.owners ||= {
+        accounts: [], groups: [], applications: [], organizations: [], peers: []
+      })
+      if (type === "account") owners.accounts = next
+      else if (type === "group") owners.groups = next
+      else if (type === "application") owners.applications = next
+      else if (type === "organization") owners.organizations = next
+      else if (type === "peer") owners.peers = next
+    }
+
+    // Helpers for a named permission entry in allowed/denied
+    const getOrMakeEntry = (whereArr, name) => {
+      let e = whereArr.find(x => x.name === name)
+      if (!e) {
+        e = { name, accounts: [], groups: [], applications: [], organizations: [], peers: [] }
+        whereArr.push(e)
+      }
+      return e
+    }
+    const getListFromEntry = (entry) => {
+      if (type === "account") return entry.accounts
+      if (type === "group") return entry.groups
+      if (type === "application") return entry.applications
+      if (type === "organization") return entry.organizations
+      if (type === "peer") return entry.peers
+      return []
+    }
+    const setListOnEntry = (entry, next) => {
+      if (type === "account") entry.accounts = next
+      else if (type === "group") entry.groups = next
+      else if (type === "application") entry.applications = next
+      else if (type === "organization") entry.organizations = next
+      else if (type === "peer") entry.peers = next
+    }
+
+    // Compute next status
+    let nextStatus
+    if (permissionName === "owner") {
+      nextStatus = (currentStatus === "allowed") ? undefined : "allowed"
+    } else {
+      if (currentStatus === "allowed") nextStatus = "denied"
+      else if (currentStatus === "denied") nextStatus = undefined
+      else nextStatus = "allowed"
+    }
+
+    // Mutate VM
+    if (permissionName === "owner") {
+      const cur = getOwnerList()
+      const filtered = cur.filter(x => x !== subjId)
+      if (nextStatus === "allowed") filtered.push(subjId)
+      setOwnerList(filtered)
+    } else {
+      const allowedArr = (this._permissions.allowed ||= [])
+      const deniedArr  = (this._permissions.denied  ||= [])
+
+      const aEntry = getOrMakeEntry(allowedArr, permissionName)
+      const dEntry = getOrMakeEntry(deniedArr,  permissionName)
+
+      const aList = getListFromEntry(aEntry).filter(x => x !== subjId)
+      const dList = getListFromEntry(dEntry).filter(x => x !== subjId)
+
+      if (nextStatus === "allowed")      aList.push(subjId)
+      else if (nextStatus === "denied")  dList.push(subjId)
+
+      setListOnEntry(aEntry, aList)
+      setListOnEntry(dEntry, dList)
+    }
+
+    // Rebuild table view from updated VM
+    this._processPermissionsData()
+    this._renderPermissionsTable()
+
+    // Persist with backend
+    await this._persistPermissionsVM()
+  }
+
+  async _persistPermissionsVM() {
+    try {
+      const vm = this._permissions || {}
+      if (!vm.path || !vm.resourceType) {
+        displayError?.("Missing path or resourceType on PermissionsVM.", 3000)
+        return
+      }
+      await setResourcePermissions(vm) // backend handles auth/token/domain
+      displayMessage?.("Permissions saved.", 2000)
+    } catch (err) {
+      console.error(err)
+      displayError?.(`Failed to save permissions: ${err?.message || err}`, 4000)
+    }
+  }
+}
+
+customElements.define('globular-permissions-viewer', PermissionsViewer)
