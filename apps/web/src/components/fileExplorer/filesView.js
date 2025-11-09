@@ -727,9 +727,9 @@ export class FilesView extends HTMLElement {
           for (const f of filesToDelete) {
             const p = pathOf(f);
             if (isDirOf(f)) {
-              await removeDir({ path: p });
+              await removeDir(p);
             } else {
-              await removeFile({ path: p });
+              await removeFile(p);
             }
           }
           displayMessage("Delete complete.", 2500);

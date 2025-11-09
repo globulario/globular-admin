@@ -11,6 +11,6 @@
 html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial; }
 #app { padding: 16px; }
 
-globular-image-viewer{
+globular-image-viewer, globular-file-reader{
   min-height: 640px;
 }

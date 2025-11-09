@@ -5,6 +5,12 @@ import getUuidByString from "uuid-by-string";
 import "@polymer/paper-checkbox/paper-checkbox.js";
 import "@polymer/iron-icon/iron-icon.js";
 import "@polymer/paper-ripple/paper-ripple.js";
+import "@polymer/paper-icon-button/paper-icon-button.js"; // menu button
+
+// Icon packs so iron-icon can resolve "icons:*", "av:*", "editor:*"
+import "@polymer/iron-icons/iron-icons.js";   // icons:folder, icons:insert-drive-file
+import "@polymer/iron-icons/av-icons.js";     // av:movie, av:music-note
+import "@polymer/iron-icons/editor-icons.js"; // editor:insert-drive-file
 
 import { displayError } from "../../backend/ui/notify";
 import { Backend } from "../../backend/backend";
@@ -22,7 +28,7 @@ import {
   sizeOf,
   filesOf,
   thumbOf,
-  modTimeSecOf,
+  modTimeOf,
 } from "./filevm-helpers.js";
 
 /** Human-readable size formatter (no floating bugs) */
@@ -37,6 +43,15 @@ function getFileSizeString(bytes) {
 /** Get current explorer path safely */
 function getCurrentExplorerPath(explorer) {
   return (explorer?.getCurrentPath?.() ?? explorer?._path ?? "/");
+}
+
+/** Map a (lowercased) MIME string to an iron-icon name */
+function iconForMime(m) {
+  if (!m) return "icons:insert-drive-file";
+  if (m.startsWith("video/")) return "av:movie";
+  if (m.startsWith("audio/")) return "av:music-note";
+  if (m.startsWith("text/"))  return "editor:insert-drive-file";
+  return "icons:insert-drive-file";
 }
 
 export class FilesListView extends FilesView {
@@ -139,10 +154,44 @@ export class FilesListView extends FilesView {
     });
   }
 
+  /** Show thumbnail if provided; otherwise show icon (with safe fallback if thumb fails). */
+  _applyThumbOrIcon(row, iconName, thumbUrl) {
+    const iconEl = row.querySelector(".file-icon");
+    const imgEl  = row.querySelector(".file-thumbnail");
+
+    // guard: if no elements, nothing to do
+    if (!iconEl || !imgEl) return;
+
+    // reset handlers to avoid stacking
+    imgEl.onload = null;
+    imgEl.onerror = null;
+
+    if (thumbUrl) {
+      // Try to load the thumbnail; if it fails, show icon.
+      imgEl.style.display = "none"; // hide until it loads successfully
+      imgEl.src = thumbUrl;
+
+      imgEl.onload = () => {
+        imgEl.style.display = "block";
+        iconEl.style.display = "none";
+      };
+      imgEl.onerror = () => {
+        imgEl.style.display = "none";
+        iconEl.setAttribute("icon", iconName || "icons:insert-drive-file");
+        iconEl.style.display = "inline-block";
+      };
+    } else {
+      // No thumb: show icon immediately.
+      imgEl.style.display = "none";
+      iconEl.setAttribute("icon", iconName || "icons:insert-drive-file");
+      iconEl.style.display = "inline-block";
+    }
+  }
+
   _createFileRow(file) {
     const path = pathOf(file);
     const name = nameOf(file);
-    const mime = mimeOf(file) || "";
+    const mime = (mimeOf(file) || "").toLowerCase();
     const isDir = isDirOf(file);
 
     const rowId = `row-${getUuidByString(path)}`;
@@ -154,7 +203,8 @@ export class FilesListView extends FilesView {
     let sizeDisplay = "";
     let mimeDisplay = "Folder";
     let icon = "icons:insert-drive-file";
-    let thumbnailrc = "";
+    // Prefer any provided thumbnail (for images or other files that have one)
+    let thumbnailSrc = "";
 
     if (isDir) {
       const items = filesOf(file);
@@ -164,12 +214,11 @@ export class FilesListView extends FilesView {
     } else {
       sizeDisplay = getFileSizeString(sizeOf(file) || 0);
       mimeDisplay = (mime.split(";")[0] || "").toUpperCase();
-      if (mime.startsWith("video")) icon = "av:movie";
-      else if (mime.startsWith("audio")) icon = "av:music-note";
-      else if (mime.startsWith("image")) {
-        const thumb = thumbOf(file);
-        if (thumb) thumbnailrc = thumb;
-      }
+      icon = iconForMime(mime);
+
+      // Use thumb if given, regardless of type; otherwise we'll show icon
+      const t = thumbOf(file);
+      if (t) thumbnailSrc = t;
     }
 
     let displayName = name;
@@ -179,30 +228,33 @@ export class FilesListView extends FilesView {
       displayName = `${lName} (Link)`;
     }
 
+    // modified time (proto delivers seconds)
+    const modTime = modTimeOf(file);
+    const modDateStr = modTime.toLocaleString();
+
+    row.innerHTML = `
+      <td class="first-cell" data-file-path="${path}">
+        <paper-checkbox id="checkbox-${rowId}"></paper-checkbox>
+        <iron-icon id="icon-${rowId}" class="file-icon" icon="${icon}" style="display:none;"></iron-icon>
+        <img id="thumbnail-${rowId}" class="file-thumbnail" style="display:none;"/>
+        <span title="${path}">${displayName}</span>
+        <paper-icon-button id="menu-btn-${rowId}" icon="icons:more-vert" class="control-button"></paper-icon-button>
+        <paper-ripple recenters></paper-ripple>
+      </td>
+      <td>${modDateStr}</td>
+      <td>${mimeDisplay || (isDir ? "FOLDER" : "FILE")}</td>
+      <td>${sizeDisplay}</td>
+    `;
+
+    // Apply thumbnail or icon immediately (with load/error fallback)
+    this._applyThumbOrIcon(row, icon, thumbnailSrc);
+
     // async enrichment (videos/audios/titles or folder infos)
     this._getFileDisplayInfo(row, (mime || "").split("/")[0], file)
       .then((info) => {
         if (info) this._updateRowDisplayInfo?.(row, (mime || "").split("/")[0], info);
       })
       .catch(() => { /* non-fatal */ });
-
-    // modified time (proto delivers seconds)
-    const modTimeSec = modTimeSecOf(file);
-    const modDateStr = modTimeSec ? new Date(modTimeSec * 1000).toLocaleString() : "";
-
-    row.innerHTML = `
-      <td class="first-cell" data-file-path="${path}">
-        <paper-checkbox id="checkbox-${rowId}"></paper-checkbox>
-        <iron-icon id="icon-${rowId}" class="file-icon" icon="${icon}" style="${thumbnailrc ? "display:none;" : ""}"></iron-icon>
-        <img id="thumbnail-${rowId}" class="file-thumbnail" src="${thumbnailrc}" style="${thumbnailrc ? "display:block;" : "display:none;"}"/>
-        <span title="${path}">${displayName}</span>
-        <paper-icon-button id="menu-btn-${rowId}" icon="icons:more-vert" class="control-button"></paper-icon-button>
-        <paper-ripple recenters></paper-ripple>
-      </td>
-      <td>${modDateStr}</td>
-      <td>${mimeDisplay}</td>
-      <td>${sizeDisplay}</td>
-    `;
 
     // sync checkbox with global selection pub/sub
     Backend.eventHub.subscribe(
@@ -244,6 +296,9 @@ export class FilesListView extends FilesView {
 
   async _getFileDisplayInfo(row, mimeType, file) {
     let displayTitle = nameOf(file);
+    // Keep current icon decision based on MIME
+    const iconName = iconForMime((mimeOf(file) || "").toLowerCase());
+    // Start from existing thumb (if any)
     let thumbnailUrl = thumbOf(file);
 
     try {
@@ -286,19 +341,12 @@ export class FilesListView extends FilesView {
     } catch (err) {
       console.warn(`Extended info failed for ${nameOf(file)}:`, err);
     } finally {
+      // Update name
       const nameSpan = row.querySelector(".first-cell span");
       if (nameSpan) nameSpan.textContent = displayTitle;
 
-      const iconEl = row.querySelector(".file-icon");
-      const thumbEl = row.querySelector(".file-thumbnail");
-      if (thumbnailUrl && thumbEl) {
-        thumbEl.src = thumbnailUrl;
-        thumbEl.style.display = "block";
-        if (iconEl) iconEl.style.display = "none";
-      } else {
-        if (iconEl) iconEl.style.display = "block";
-        if (thumbEl) thumbEl.style.display = "none";
-      }
+      // Re-apply thumb or icon with final info (handles load/error fallback)
+      this._applyThumbOrIcon(row, iconName, thumbnailUrl);
     }
   }
 
@@ -356,9 +404,7 @@ export class FilesListView extends FilesView {
     }
   }
 
-  _handleTableDragOver(evt) {
-    evt.preventDefault();
-  }
+  _handleTableDragOver(evt) { evt.preventDefault(); }
 
   _handleTableMouseOver(evt) {
     const row = evt.target.closest("tr");
@@ -385,7 +431,7 @@ export class FilesListView extends FilesView {
     if (!explorer) return;
 
     const dir = isDirOf(file);
-    const kind = (mimeOf(file) || "").split("/")[0];
+    const kind = (mimeOf(file) || "").split("/")[0]?.toLowerCase();
 
     if (dir) {
       explorer.publishSetDirEvent?.(pathOf(file));

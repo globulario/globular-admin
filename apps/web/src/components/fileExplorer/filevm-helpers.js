@@ -55,6 +55,10 @@ export function thumbOf(v) {
   return v.thumbnail || "";
 }
 
+export function modTimeOf(v) {
+  return v.modeTime
+}
+
 export function modTimeSecOf(v) {
   if (!v) return 0;
   if (typeof v.getModeTime === "function") return v.getModeTime() || 0; // seconds (proto field)
@@ -82,11 +86,12 @@ export function adaptFileVM(vm) {
     getMime: () => f.mime || "",
     getSize: () => (typeof f.size === "number" ? f.size : 0),
     getThumbnail: () => f.thumbnail || "",
-
+    modeTime: f.mode_time || 0,
     // direct fields sometimes accessed by views
     titles: f.titles,
     videos: f.videos,
-    audios: f.audios
+    audios: f.audios,
+    modeTime: f.modeTime || 0
   };
 
   // mirror common fields directly as well

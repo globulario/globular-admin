@@ -34,7 +34,8 @@ import {
   readDir,
   upload,
   getFile as getFileInfo,
-  getImages // HTMLImageElement[] loader for FileVM[]
+  getImages, // HTMLImageElement[] loader for FileVM[]
+  readDirFresh
 } from "../../backend/cms/files";
 
 import { displayError, displayMessage } from "../../backend/ui/notify";
@@ -446,7 +447,7 @@ export class FileExplorer extends HTMLElement {
           this._filesIconView.setSelected({});
           this._filesListView.setSelected({});
           try {
-            const dirVM = await readDir(path, true); // DirVM
+            const dirVM = await readDirFresh(path, true); // DirVM
             if (this._fileNavigator?.reload) this._fileNavigator.reload(adaptDirVM(dirVM));
             if (dirVM.path === this._path) {
               const adapted = adaptDirVM(dirVM);

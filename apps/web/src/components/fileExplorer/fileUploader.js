@@ -464,7 +464,7 @@ export class FilesUploader extends HTMLElement {
   async uploadFiles(path, files) {
     const token = sessionStorage.getItem("__globular_token__") || ""
     const base = (getBaseUrl() || window.location.origin).replace(/\/?$/, "")
-    const url = `${base}/uploads`
+    const url = `${base}/api/file-upload`
 
     const uploadFile = (index) => {
       if (index >= files.length) {
@@ -550,6 +550,7 @@ export class FilesUploader extends HTMLElement {
           fileLnk.onclick = () =>
             Backend.eventHub.publish("follow_link_event_", { path: `${path}/${f.name}` }, true)
         }
+        
         uploadFile(index + 1)
       }
 
