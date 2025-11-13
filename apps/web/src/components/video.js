@@ -833,11 +833,11 @@ export class VideoPlayer extends HTMLElement {
     let thumbBase = path
     if (/\.(mp4|MP4|mkv)$/i.test(path)) thumbBase = path.substring(0, path.lastIndexOf('.'))
     const vtt = buildFileUrl(
-      `${thumbBase.substring(0, thumbBase.lastIndexOf('/') + 1)}.hidden${thumbBase.substring(thumbBase.lastIndexOf('/'))}/__timeline__/thumbnail.vtt`,
+      `${thumbBase.substring(0, thumbBase.lastIndexOf('/') + 1)}.hidden${thumbBase.substring(thumbBase.lastIndexOf('/'))}/__timeline__/thumbnails.vtt`,
       token
     )
-    if (this.player && this.player.setPreviewthumbnails) {
-      this.player.setPreviewthumbnails({ enabled: 'true', src: vtt })
+    if (this.player && this.player.setPreviewThumbnails) {
+      this.player.setPreviewThumbnails({ enabled: 'true', src: vtt })
     }
 
     // set source

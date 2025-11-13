@@ -61,44 +61,51 @@ export class VideoPreview extends HTMLElement {
 
   connectedCallback() {
     this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; }
-        #container {
-          height: ${this._height}px;
-          width: ${this._height}px;
-          position: relative;
-          overflow: hidden;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          user-select: none;
-          -webkit-user-drag: none;
-        }
-        #container:hover { cursor: pointer; }
-        img {
-          display: block;
-          width: auto;
-          max-height: 100%;
-          object-fit: contain;
-          position: absolute;
-          transition: opacity 0.2s ease-in-out;
-          opacity: 1;
-          pointer-events: none;
-        }
-        slot { position: relative; z-index: 1; }
-      </style>
-      <div id="container" draggable="false" aria-label="Video preview">
-        <slot></slot>
-        <img id="preview" alt="">
-        <paper-ripple></paper-ripple>
-      </div>
-    `;
+    <style>
+      :host { display: block; }
+      #container {
+        height: ${this._height}px;
+        width: ${this._height}px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+      #container:hover { cursor: pointer; }
+      img {
+        display: block;
+        width: auto;
+        max-height: 100%;
+        object-fit: contain;
+        position: absolute;
+        transition: opacity 0.2s ease-in-out;
+        opacity: 1;
+        pointer-events: none;        /* << prevent img from catching clicks */
+        -webkit-user-drag: none;     /* << prevent drag ghost */
+      }
+      slot {
+        position: relative;
+        z-index: 1;
+        pointer-events: none;        /* << slot itself */
+      }
+      ::slotted(*) {
+        pointer-events: none;        /* << slotted children don’t intercept */
+      }
+    </style>
+    <div id="container" draggable="false" aria-label="Video preview">
+      <slot></slot>
+      <img id="preview" alt="">
+    </div>
+  `;
+
 
     this._container = this.shadowRoot.querySelector("#container");
     this._previewImg = this.shadowRoot.querySelector("#preview");
 
     if (this._container) {
-      this._container.addEventListener("click", this._boundClick);
       this._container.addEventListener("mouseenter", this._boundEnter);
       this._container.addEventListener("mouseleave", this._boundLeave);
     }
@@ -116,7 +123,7 @@ export class VideoPreview extends HTMLElement {
     this.stopPreview();
 
     if (this._container) {
-      this._container.removeEventListener("click", this._boundClick);
+      this._container.removeEventListener("click", this._boundClick, true);
       this._container.removeEventListener("mouseenter", this._boundEnter);
       this._container.removeEventListener("mouseleave", this._boundLeave);
     }
@@ -172,9 +179,9 @@ export class VideoPreview extends HTMLElement {
     }
   }
 
-  setOnResize(cb)   { this._onresize  = cb; }
-  setOnPreview(cb)  { this._onpreview = cb; }
-  setOnPlay(cb)     { this._onplay    = cb; }
+  setOnResize(cb) { this._onresize = cb; }
+  setOnPreview(cb) { this._onpreview = cb; }
+  setOnPlay(cb) { this._onplay = cb; }
   setFileExplorer(fx) { this._fileExplorer = fx; }
 
   hasTimeline() {
@@ -262,8 +269,8 @@ export class VideoPreview extends HTMLElement {
     const h = this._height || (this._container ? this._container.clientHeight : 0);
     const basisH = this._previewImg.naturalHeight || this._previewImg.offsetHeight || 1;
     const basisW = this._previewImg.naturalWidth || this._previewImg.offsetWidth || 0;
-    const ratio  = h / basisH;
-    this.width   = Math.round(basisW * ratio);
+    const ratio = h / basisH;
+    this.width = Math.round(basisW * ratio);
 
     if (this._onresize) {
       this._onresize(this.width, this._height);
