@@ -34,7 +34,6 @@ export class FilesIconView extends FilesView {
         #container {
           background: var(--surface-color);
           display: flex; flex-direction: column;
-          padding: 8px; height: 100%;
         }
         .dragging { opacity: 0.6; }
       </style>

@@ -18,6 +18,7 @@ import '@polymer/paper-radio-button/paper-radio-button.js';
 import '@polymer/iron-icon/iron-icon.js';
 import '@polymer/paper-progress/paper-progress.js';
 import { SharePanel } from "../share/sharePanel.js"
+import { Dialog } from '../dialog.js';
 
 // Import sub-components
 import "./searchDocument.js";
@@ -45,7 +46,7 @@ import { getCurrentAccount } from "../../backend/rbac/accounts";
 import { getFileAudiosInfo } from '../../backend/media/title';
 import { FilesUploader } from './fileUploader';
 
-// ✅ new: helpers centralize VM/proto normalization
+// ✅ helpers centralize VM/proto normalization
 import { adaptFileVM, adaptDirVM, extractPath } from "./filevm-helpers.js";
 
 function getElementIndex(element) {
@@ -93,11 +94,11 @@ export class FileExplorer extends HTMLElement {
   _fileReader = undefined;
   _imageViewer = undefined;
 
-  // keep a reference to the latest VM for image loading, etc.
   _currentDirVM = undefined;
-
-  // ✅ new: resolved account VM
   _account = null;
+
+  // 🔧 NEW: track current delete-sub for info panel to avoid stacking
+  _currentInfoDeleteSub = { event: null, uuid: null };
 
   constructor() {
     super();
@@ -125,18 +126,18 @@ export class FileExplorer extends HTMLElement {
   }
 
   disconnectedCallback() {
-    // Unsubscribe all events associated with this component context
     for (const name in this._listeners) {
-      try {
-        Backend.eventHub.unsubscribe(name, this._listeners[name]);
-      } catch { /* ignore */ }
+      try { Backend.eventHub.unsubscribe(name, this._listeners[name]); } catch { }
     }
     this._listeners = {};
 
+    // also clean the info delete sub if any
+    this._unsubscribeInfoDelete();
+
     this._closeAllGlobalDialogs();
 
-    if (this._filesIconView?.stopPreview) this._filesIconView.stopPreview();
-    if (this._filesListView?.stopPreview) this._filesListView.stopPreview();
+    this._filesIconView?.stopPreview?.();
+    this._filesListView?.stopPreview?.();
 
     if (FileExplorer.fileUploader && FileExplorer.fileUploader.parentNode === this) {
       this.removeChild(FileExplorer.fileUploader);
@@ -144,6 +145,7 @@ export class FileExplorer extends HTMLElement {
   }
 
   _initializeLayout() {
+    const fileExplorerIcon = new URL('../../assets/icons/folder-flat.svg', import.meta.url).href;
     this.shadowRoot.innerHTML = `
       <style>
         ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -175,11 +177,12 @@ export class FileExplorer extends HTMLElement {
           #enter-full-screen-btn { display: none; }
         }
       </style>
-      <globular-dialog id="globular-file-explorer-dialog" class="file-explorer" name="file-explorer"
+      <globular-dialog id="globular-file-explorer-dialog" class="file-explorer" name="file-explorer" 
         is-moveable="true" is-maximizeable="true" is-resizeable="true"
-        show-icon="true" is-minimizeable="true">
+        show-icon="true" is-minimizeable="true" offset="64">
         <globular-search-document-bar slot="search"></globular-search-document-bar>
         <span id="title-span" slot="title">File Explorer</span>
+        <img slot="icon" src="${fileExplorerIcon}"/>
 
         <paper-icon-button slot="header" id="show-share-panel-btn" icon="social:share"></paper-icon-button>
         <paper-icon-button slot="header" id="navigation-cloud-upload-btn" icon="icons:cloud-upload"></paper-icon-button>
@@ -220,6 +223,7 @@ export class FileExplorer extends HTMLElement {
       </globular-dialog>
     `;
     this._dialog = this.shadowRoot.querySelector("globular-dialog");
+    this._dialog.getPreview = this.getPreview.bind(this);
   }
 
   _initializeComponents() {
@@ -265,6 +269,9 @@ export class FileExplorer extends HTMLElement {
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
 
+    // ensure closing the info manager restores the file view
+    this._informationManager.onclose = () => this._displayView(this._currentDir);
+
     this._sharePanel = null;
   }
 
@@ -272,9 +279,7 @@ export class FileExplorer extends HTMLElement {
     this._dialog.onclose = () => {
       this._filesIconView.hide();
       this._filesListView.hide();
-      if (this._onclose) {
-        this._onclose();
-      }
+      if (this._onclose) this._onclose();
     };
     this._dialog.onmove = () => {
       this._filesIconView.hideMenu();
@@ -305,7 +310,6 @@ export class FileExplorer extends HTMLElement {
     this._backNavigationBtn.addEventListener('click', this._handleNavigationClick.bind(this, 'back'));
     this._fowardNavigationBtn.addEventListener('click', this._handleNavigationClick.bind(this, 'forward'));
     this._upwardNavigationBtn.addEventListener('click', this._handleNavigationClick.bind(this, 'upward'));
-    // Dynamic List button wired in setDir()
   }
 
   _setupBackendSubscriptions() {
@@ -314,9 +318,7 @@ export class FileExplorer extends HTMLElement {
     Backend.eventHub.subscribe("__set_dir_event__",
       (uuid) => { this._listeners["__set_dir_event__"] = uuid; },
       (evt) => {
-        if (evt.file_explorer_id === explorerId) {
-          this._handleSetDirEvent(evt.dir);
-        }
+        if (evt.file_explorer_id === explorerId) this._handleSetDirEvent(evt.dir);
       }, true, this
     );
 
@@ -326,7 +328,7 @@ export class FileExplorer extends HTMLElement {
         const dirPath = extractPath(evt.dir);
         if (dirPath && dirPath === this._path) {
           const cache = getFilesCache();
-          if (cache) cache.invalidate(this._path);
+          cache?.invalidate?.(this._path);
           this._handleRefreshClick();
         }
       }, false, this
@@ -337,28 +339,17 @@ export class FileExplorer extends HTMLElement {
       async (evt) => {
         if (evt.file_explorer_id !== explorerId) return;
         try {
-          const file = await getFileInfo(evt.path); // FileVM | null
+          const file = await getFileInfo(evt.path);
           if (!file) throw new Error("File not found.");
-
           const f = adaptFileVM(file);
-          if (this._sharePanel?.parentElement) {
-            this._sharePanel.parentElement.removeChild(this._sharePanel);
-          }
+          if (this._sharePanel?.parentElement) this._sharePanel.parentElement.removeChild(this._sharePanel);
           const isDir = f.getIsDir();
           const mime = f.getMime();
           const p = f.getPath();
-
-          if (isDir) {
-            this.publishSetDirEvent(p);
-          } else {
-            if ((mime || "").startsWith("video")) {
-              this.playVideo(f);
-            } else if ((mime || "").startsWith("audio")) {
-              this.playAudio(f);
-            } else {
-              this.readFile(f);
-            }
-          }
+          if (isDir) this.publishSetDirEvent(p);
+          else if ((mime || "").startsWith("video")) this.playVideo(f);
+          else if ((mime || "").startsWith("audio")) this.playAudio(f);
+          else this.readFile(f);
         } catch (err) {
           displayError(`Failed to follow link: ${err.message}`, 3000);
         }
@@ -367,12 +358,7 @@ export class FileExplorer extends HTMLElement {
 
     Backend.eventHub.subscribe(`update_globular_service_configuration_evt`,
       (uuid) => { this._listeners[`update_globular_service_configuration_evt`] = uuid; },
-      (event) => {
-        const config = JSON.parse(event);
-        if (config.Name === "file.FileService") {
-          // noop
-        }
-      }, false, this
+      () => { }, false, this
     );
 
     Backend.eventHub.subscribe("file_rename_event",
@@ -396,46 +382,15 @@ export class FileExplorer extends HTMLElement {
       }, false, this
     );
 
+    // 🔧 Centralize info panel show logic
     Backend.eventHub.subscribe(`display_media_infos_${explorerId}_event`,
       (uuid) => { this._listeners[`display_media_infos_${explorerId}_event`] = uuid; },
-      (file) => {
-        let infos = null;
-        if (file.titles && file.titles.length > 0) {
-          this._informationManager.setTitlesInformation(file.titles);
-          infos = file.titles[0];
-        }
-        if (file.videos && file.videos.length > 0) {
-          this._informationManager.setVideosInformation(file.videos);
-          infos = file.videos[0];
-        }
-        if (file.audios && file.audios.length > 0) {
-          this._informationManager.setAudiosInformation(file.audios);
-          infos = file.audios[0];
-        }
-        this._hideAllViewsExcept(this._informationManager);
-        this._closeAllGlobalMenus();
-        this._informationManager.style.display = "";
-
-        if (infos && typeof infos.getId === "function") {
-          Backend.eventHub.subscribe(`_delete_infos_${infos.getId()}_evt`,
-            (uuid2) => { this._listeners[`_delete_infos_${infos.getId()}_evt`] = uuid2; },
-            () => {
-              if (this._informationManager.parentNode) {
-                this._informationManager.parentNode.removeChild(this._informationManager);
-              }
-            }, true, this
-          );
-        }
-      }, false, this
+      (file) => this._showInformation(file), false, this
     );
 
     Backend.eventHub.subscribe(`display_file_infos_${explorerId}_event`,
       (uuid) => { this._listeners[`display_file_infos_${explorerId}_event`] = uuid; },
-      (file) => {
-        this._informationManager.setFileInformation(file);
-        this._hideAllViewsExcept(this._informationManager);
-        this._informationManager.style.display = "";
-      }, false, this
+      (file) => this._showInformation(file), false, this
     );
 
     Backend.eventHub.subscribe("reload_dir_event",
@@ -447,14 +402,14 @@ export class FileExplorer extends HTMLElement {
           this._filesIconView.setSelected({});
           this._filesListView.setSelected({});
           try {
-            const dirVM = await readDirFresh(path, true); // DirVM
+            const dirVM = await readDirFresh(path, true);
             if (this._fileNavigator?.reload) this._fileNavigator.reload(adaptDirVM(dirVM));
             if (dirVM.path === this._path) {
               const adapted = adaptDirVM(dirVM);
               this._currentDirVM = dirVM;
               Backend.eventHub.publish("__set_dir_event__", { dir: adapted, file_explorer_id: explorerId }, true);
             }
-            if (this._diskSpaceManager?.refresh) this._diskSpaceManager.refresh();
+            this._diskSpaceManager?.refresh?.();
           } catch (err) {
             displayError(`Failed to reload directory ${path}: ${err.message}`, 3000);
           } finally {
@@ -468,42 +423,30 @@ export class FileExplorer extends HTMLElement {
 
     Backend.eventHub.subscribe("__play_video__",
       (uuid) => { this._listeners["__play_video__"] = uuid; },
-      (evt) => {
-        if (evt.file_explorer_id === explorerId) {
-          this.playVideo(evt.file);
-        }
-      }, true, this
+      (evt) => { if (evt.file_explorer_id === explorerId) this.playVideo(evt.file); },
+      true, this
     );
 
     Backend.eventHub.subscribe("__play_audio__",
       (uuid) => { this._listeners["__play_audio__"] = uuid; },
-      (evt) => {
-        if (evt.file_explorer_id === explorerId) {
-          this.playAudio(evt.file);
-        }
-      }, true, this
+      (evt) => { if (evt.file_explorer_id === explorerId) this.playAudio(evt.file); },
+      true, this
     );
 
     Backend.eventHub.subscribe("__read_file__",
       (uuid) => { this._listeners["__read_file__"] = uuid; },
-      (evt) => {
-        if (evt.file_explorer_id === explorerId) {
-          this.readFile(evt.file);
-        }
-      }, true, this
+      (evt) => { if (evt.file_explorer_id === explorerId) this.readFile(evt.file); },
+      true, this
     );
 
     Backend.eventHub.subscribe("__show_image__",
       (uuid) => { this._listeners["__show_image__"] = uuid; },
-      (evt) => {
-        if (evt.file_explorer_id === explorerId) {
-          this.showImage(evt.file);
-        }
-      }, true, this
+      (evt) => { if (evt.file_explorer_id === explorerId) this.showImage(evt.file); },
+      true, this
     );
 
     Backend.eventHub.subscribe("__show_share_wizard__",
-      (uuid) => { this._listeners["__show_share_wizard__"] = uuid; },
+      (uuid) => { this._listeners[`__show_share_wizard__`] = uuid; },
       (evt) => {
         if (evt.file_explorer_id === explorerId) {
           evt.wizard.style.position = "absolute";
@@ -521,7 +464,6 @@ export class FileExplorer extends HTMLElement {
   async _loadInitialData() {
     this.displayWaitMessage("Initializing file explorer...");
 
-    // ✅ Resolve current account from session (JWT)
     try {
       this._account = getCurrentAccount();
     } catch (e) {
@@ -529,9 +471,8 @@ export class FileExplorer extends HTMLElement {
       this._account = null;
     }
 
-    // ✅ Set disk space manager account once we know it
     if (this._diskSpaceManager) {
-      if (this._account && this._account.id && this._account.domain) {
+      if (this._account?.id && this._account?.domain) {
         this._diskSpaceManager.account = `${this._account.id}@${this._account.domain}`;
       } else {
         this._diskSpaceManager.style.display = "none";
@@ -569,9 +510,7 @@ export class FileExplorer extends HTMLElement {
       await readAndSetRoot(userDir);
 
       this.resume();
-      if (this._onloaded) {
-        this._onloaded();
-      }
+      this._onloaded?.();
       this._fileIconBtn.click();
     } catch (err) {
       this.resume();
@@ -580,26 +519,180 @@ export class FileExplorer extends HTMLElement {
     }
   }
 
-  // Add this method inside class FileExplorer
-  clearSelections() {
-    // reset paper tray
-    FileExplorer.paperTray = [];
+  // --- put these inside class FileExplorer ---
 
-    // tell both views to clear their internal maps
+  /** Compute quick stats for the current directory */
+  _computeStats(dir) {
+    const files = Array.isArray(dir && dir.files) ? dir.files : [];
+    const total = files.length;
+    let dirs = 0, images = 0, videos = 0, audios = 0, docs = 0;
+
+    for (const f of files) {
+      if (f.is_dir || (f.getIsDir && f.getIsDir())) { dirs++; continue; }
+      const mime = ((f.mime || (f.getMime && f.getMime()) || "") + "").toLowerCase();
+      if (mime.startsWith("image/")) images++;
+      else if (mime.startsWith("video/")) videos++;
+      else if (mime.startsWith("audio/")) audios++;
+      else docs++;
+    }
+    return { total, dirs, images, videos, audios, docs };
+  }
+
+  /** Build once a pretty preview card element (for the dock) */
+  _buildPreviewCard() {
+    const folderIconUrl = new URL('../../assets/icons/folder-flat.svg', import.meta.url).href;
+
+    const card = document.createElement('div');
+    card.style.cssText = [
+      'box-sizing:border-box',
+      'width:320px;height:200px',
+      'display:flex;flex-direction:column',
+      'border-radius:12px',
+      'background:linear-gradient(180deg, rgba(28,28,30,.9) 0%, rgba(28,28,30,.75) 60%, rgba(28,28,30,.6) 100%)',
+      'color:#fff',
+      'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+      'overflow:hidden',
+      'font-family:system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, sans-serif',
+      'backdrop-filter:saturate(140%) blur(2px)',
+      'border:1px solid rgba(255,255,255,.08)',
+      'user-select:none',
+      'cursor:pointer'
+    ].join(';');
+
+    // header
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08)';
+    const icon = document.createElement('img');
+    icon.src = folderIconUrl;
+    icon.alt = 'File Explorer';
+    icon.style.cssText = 'width:22px;height:22px;opacity:.95;filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))';
+    const title = document.createElement('div');
+    title.textContent = 'File Explorer';
+    title.style.cssText = 'font-weight:600;letter-spacing:.2px';
+    header.appendChild(icon);
+    header.appendChild(title);
+
+    // body
+    const body = document.createElement('div');
+    body.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:8px;padding:12px 12px 10px 12px';
+
+    const pathLine = document.createElement('div');
+    pathLine.style.cssText = 'font-size:.9rem;opacity:.95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    pathLine.id = 'fx-prev-path';
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px';
+
+    function makeStat(label, id) {
+      const chip = document.createElement('div');
+      chip.style.cssText = [
+        'display:flex;flex-direction:column;gap:2px',
+        'background:rgba(255,255,255,.06)',
+        'border:1px solid rgba(255,255,255,.08)',
+        'border-radius:10px',
+        'padding:8px 10px',
+        'min-width:0'
+      ].join(';');
+      const n = document.createElement('div');
+      n.id = id;
+      n.style.cssText = 'font-weight:700;font-size:1.05rem;letter-spacing:.2px';
+      const l = document.createElement('div');
+      l.textContent = label;
+      l.style.cssText = 'font-size:.72rem;opacity:.8';
+      chip.appendChild(n); chip.appendChild(l);
+      return chip;
+    }
+
+    const statTotal = makeStat('Items', 'fx-prev-n-total');
+    const statDirs = makeStat('Folders', 'fx-prev-n-dirs');
+    const statImages = makeStat('Images', 'fx-prev-n-img');
+    const statVideos = makeStat('Videos', 'fx-prev-n-vid');
+    const statAudios = makeStat('Audios', 'fx-prev-n-aud');
+
+    grid.appendChild(statTotal);
+    grid.appendChild(statDirs);
+    grid.appendChild(statImages);
+    grid.appendChild(statVideos);
+    grid.appendChild(statAudios);
+
+    // footer
+    const footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid rgba(255,255,255,.08)';
+
+    const hint = document.createElement('div');
+    hint.textContent = 'Click to open';
+    hint.style.cssText = 'font-size:.78rem;opacity:.75';
+
+    const dots = document.createElement('div');
+    dots.style.cssText = 'display:flex;gap:6px';
+    for (let i = 0; i < 3; i++) {
+      const d = document.createElement('span');
+      d.style.cssText = 'width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.3)';
+      dots.appendChild(d);
+    }
+
+    body.appendChild(pathLine);
+    body.appendChild(grid);
+    footer.appendChild(hint);
+    footer.appendChild(dots);
+
+    card.appendChild(header);
+    card.appendChild(body);
+    card.appendChild(footer);
+
+    // Click → bring the dialog to front (best-effort)
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      try {
+        if (this._dialog && this._dialog.open) this._dialog.open();
+        if (this._dialog && this._dialog.focus) this._dialog.focus();
+        document.dispatchEvent(new CustomEvent('dock-activate', { detail: { id: this._id, kind: 'file-explorer' } }));
+      } catch (_) { }
+    });
+
+    // updater
+    card._update = () => {
+      const p = this._path || '';
+      const pathEl = card.querySelector('#fx-prev-path');
+      if (pathEl) pathEl.textContent = p || '/';
+
+      const stats = this._computeStats(this._currentDir || this._currentDirVM || {});
+      function set(sel, v) {
+        const el = card.querySelector(sel);
+        if (el) el.textContent = String(v == null ? 0 : v);
+      }
+      set('#fx-prev-n-total', stats.total);
+      set('#fx-prev-n-dirs', stats.dirs);
+      set('#fx-prev-n-img', stats.images);
+      set('#fx-prev-n-vid', stats.videos);
+      set('#fx-prev-n-aud', stats.audios);
+    };
+
+    return card;
+  }
+
+  /** Return a stable element for the dock; update it each time */
+  getPreview() {
+    if (this.previewElement && this.previewElement._update) {
+      this.previewElement._update();
+      return this.previewElement;
+    }
+    const el = this._buildPreviewCard();
+    this.previewElement = el;
+    if (el._update) el._update();
+    return el;
+  }
+
+  clearSelections() {
+    FileExplorer.paperTray = [];
     this._filesIconView?.setSelected?.({});
     this._filesListView?.setSelected?.({});
-
-    // and also clear the UI checkboxes (each view knows its DOM)
     this._filesIconView?.clearSelectionUI?.();
     this._filesListView?.clearSelectionUI?.();
-
-    // (optional) broadcast in case any other widget mirrors selection state
     Backend.eventHub.publish("__clear_selection_evt__", { file_explorer_id: this._id }, true);
   }
-  
-  _handleRefreshClick() {
-    Backend.eventHub.publish("reload_dir_event", this._path, true);
-  }
+
+  _handleRefreshClick() { Backend.eventHub.publish("reload_dir_event", this._path, true); }
 
   _handleCreateDirectoryClick() {
     const dialogId = "new-dir-dialog";
@@ -663,9 +756,7 @@ export class FileExplorer extends HTMLElement {
     const cancelBtn = dialog.querySelector("#new-dir-cancel-btn");
     const createBtn = dialog.querySelector("#new-dir-create-btn");
 
-    const removeDialog = () => {
-      if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
-    };
+    const removeDialog = () => { if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog); };
 
     cancelBtn.onclick = (evt) => { evt.stopPropagation(); removeDialog(); };
     input.onkeydown = (evt) => { if (evt.keyCode === 13) createBtn.click(); else if (evt.keyCode === 27) cancelBtn.click(); };
@@ -675,17 +766,11 @@ export class FileExplorer extends HTMLElement {
       removeDialog();
 
       const newFolderName = input.value;
-      if (!newFolderName) {
-        displayMessage("Folder name cannot be empty.", 3000);
-        return;
-      }
+      if (!newFolderName) return displayMessage("Folder name cannot be empty.", 3000);
 
       try {
-        if (this._path === "/public") {
-          await addPublicDir(newFolderName);
-        } else {
-          await createDir(this._path, newFolderName);
-        }
+        if (this._path === "/public") await addPublicDir(newFolderName);
+        else await createDir(this._path, newFolderName);
         displayMessage(`Folder "${newFolderName}" created!`, 3000);
         Backend.eventHub.publish("reload_dir_event", this._path, false);
       } catch (err) {
@@ -706,9 +791,11 @@ export class FileExplorer extends HTMLElement {
     }
 
     fileInput.click();
-    fileInput.onchange = () => {
+    fileInput.onchange = async () => {
       if (fileInput.files.length > 0) {
-        upload(this._path, fileInput.files);
+        await upload(this._path, fileInput.files);
+        displayMessage("Files uploaded successfully!", 3000);
+        Backend.eventHub.publish("reload_dir_event", this._path, false);
       }
       fileInput.value = '';
     };
@@ -741,24 +828,12 @@ export class FileExplorer extends HTMLElement {
     const currentIndex = this._navigations.indexOf(this._path);
 
     if (type === 'back') {
-      if (currentIndex > 0) {
-        targetPath = this._navigations[currentIndex - 1];
-      } else {
-        return;
-      }
+      if (currentIndex > 0) targetPath = this._navigations[currentIndex - 1]; else return;
     } else if (type === 'forward') {
-      if (currentIndex < this._navigations.length - 1) {
-        targetPath = this._navigations[currentIndex + 1];
-      } else {
-        return;
-      }
+      if (currentIndex < this._navigations.length - 1) targetPath = this._navigations[currentIndex + 1]; else return;
     } else if (type === 'upward') {
       const pathParts = (this._path || "").split("/");
-      if (pathParts.length > 2) {
-        targetPath = this._path.substring(0, this._path.lastIndexOf("/"));
-      } else {
-        return;
-      }
+      if (pathParts.length > 2) targetPath = this._path.substring(0, this._path.lastIndexOf("/")); else return;
     } else {
       return;
     }
@@ -775,9 +850,7 @@ export class FileExplorer extends HTMLElement {
     this._fileReader.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) {
-      this._sharePanel.parentNode.removeChild(this._sharePanel);
-    }
+    if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
 
     this._filesListBtn.classList.remove("active");
     this._fileIconBtn.classList.remove("active");
@@ -825,23 +898,15 @@ export class FileExplorer extends HTMLElement {
     }
   }
 
-  /** Missing previously — just forwards to setDir */
-  _handleSetDirEvent(dir) {
-    this.setDir(dir);
-  }
-
+  _handleSetDirEvent(dir) { this.setDir(dir); }
 
   setDir(dir, callback) {
-
     this._currentDir = dir;
     this._path = extractPath(dir);
 
     const currentPathIndex = this._navigations.indexOf(this._path);
-    if (currentPathIndex === -1) {
-      this._navigations.push(this._path);
-    } else if (currentPathIndex !== this._navigations.length - 1) {
-      this._navigations = this._navigations.slice(0, currentPathIndex + 1);
-    }
+    if (currentPathIndex === -1) this._navigations.push(this._path);
+    else if (currentPathIndex !== this._navigations.length - 1) this._navigations = this._navigations.slice(0, currentPathIndex + 1);
 
     this._pathNavigator.setDir(dir);
     this._fileNavigator.setDir(dir);
@@ -854,12 +919,11 @@ export class FileExplorer extends HTMLElement {
     this._imageViewer.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) {
-      this._sharePanel.parentNode.removeChild(this._sharePanel);
-    }
+    if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
 
     this._imageViewer.onclose = () => this._displayView(this._currentDir);
     this._fileReader.onclose = () => this._displayView(this._currentDir);
+    this._informationManager.onclose = () => this._displayView(this._currentDir);
 
     this._updateNavigationButtonStates();
     this._updateNavigationListMenu(dir);
@@ -871,12 +935,8 @@ export class FileExplorer extends HTMLElement {
     const enableButton = (btn) => btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
     const disableButton = (btn) => btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
 
-    if (this._backNavigationBtn) {
-      currentPathIndex > 0 ? enableButton(this._backNavigationBtn) : disableButton(this._backNavigationBtn);
-    }
-    if (this._fowardNavigationBtn) {
-      currentPathIndex < this._navigations.length - 1 ? enableButton(this._fowardNavigationBtn) : disableButton(this._fowardNavigationBtn);
-    }
+    if (this._backNavigationBtn) currentPathIndex > 0 ? enableButton(this._backNavigationBtn) : disableButton(this._backNavigationBtn);
+    if (this._fowardNavigationBtn) currentPathIndex < this._navigations.length - 1 ? enableButton(this._fowardNavigationBtn) : disableButton(this._fowardNavigationBtn);
     if (this._upwardNavigationBtn) {
       const pathParts = (this._path || "").split("/");
       pathParts.length > 2 ? enableButton(this._upwardNavigationBtn) : disableButton(this._upwardNavigationBtn);
@@ -908,9 +968,7 @@ export class FileExplorer extends HTMLElement {
           evt.stopPropagation();
           navigationLst.style.display = navigationLst.style.display === "flex" ? "none" : "flex";
         };
-        navigationLst.onmouseleave = () => {
-          navigationLst.style.display = "none";
-        };
+        navigationLst.onmouseleave = () => { navigationLst.style.display = "none"; };
       }
 
       navigationLst.innerHTML = "";
@@ -929,13 +987,9 @@ export class FileExplorer extends HTMLElement {
           const icon = navigationLine.querySelector('iron-icon');
 
           const currentIndex = this._navigations.indexOf(extractPath(currentDir));
-          if (index < currentIndex) {
-            icon.icon = "icons:arrow-back";
-          } else if (index > currentIndex) {
-            icon.icon = "icons:arrow-forward";
-          } else {
-            icon.icon = "icons:check";
-          }
+          if (index < currentIndex) icon.icon = "icons:arrow-back";
+          else if (index > currentIndex) icon.icon = "icons:arrow-forward";
+          else icon.icon = "icons:check";
 
           navigationLine.onmouseover = () => { navigationLine.style.cursor = "pointer"; navigationLine.style.backgroundColor = "var(--palette-action-hover)"; };
           navigationLine.onmouseleave = () => { navigationLine.style.cursor = "default"; navigationLine.style.backgroundColor = "transparent"; };
@@ -947,17 +1001,13 @@ export class FileExplorer extends HTMLElement {
       });
     } else {
       this._lstNavigationBtn.style.display = "none";
-      if (navigationLst?.parentNode) {
-        navigationLst.parentNode.removeChild(navigationLst);
-      }
-
+      if (navigationLst?.parentNode) navigationLst.parentNode.removeChild(navigationLst);
     }
   }
 
   setAtTop() {
     const draggables = document.querySelectorAll(".draggable");
     draggables.forEach(d => d.style.zIndex = 100);
-    //this.style.zIndex = 1000;
   }
 
   displayWaitMessage(message) {
@@ -969,60 +1019,32 @@ export class FileExplorer extends HTMLElement {
     }
   }
 
-  resume() {
-    if (this._progressDiv) {
-      this._progressDiv.style.display = "none";
-    }
-  }
+  resume() { if (this._progressDiv) this._progressDiv.style.display = "none"; }
 
-  hideNavigator() {
-    this._fileNavigator.hide();
-    fireResize();
-  }
+  hideNavigator() { this._fileNavigator.hide(); fireResize(); }
+  showNavigator() { this._fileNavigator.show(); fireResize(); }
 
-  showNavigator() {
-    this._fileNavigator.show();
-    fireResize();
-  }
-
-  openMediaWatching(mediaWatching) {
-    this.appendChild(mediaWatching);
-  }
+  openMediaWatching(mediaWatching) { this.appendChild(mediaWatching); }
 
   playVideo(file) {
     this.style.zIndex = 1;
     let videoInfo = null;
-    if (file?.videos?.length > 0) {
-      videoInfo = file.videos[0];
-    } else if (file?.titles?.length > 0) {
-      videoInfo = file.titles[0];
-    }
+    if (file?.videos?.length > 0) videoInfo = file.videos[0];
+    else if (file?.titles?.length > 0) videoInfo = file.titles[0];
     const path = extractPath(file);
-    if (!path) {
-      displayError("Invalid file path.", 3000);
-      return;
-    }
+    if (!path) return displayError("Invalid file path.", 3000);
     playVideo(path, null, () => { }, videoInfo);
   }
 
   async playAudio(file) {
     this.style.zIndex = 1;
-
     try {
       const audios = await getFileAudiosInfo(file);
       const audioInfo = (audios && audios.length > 0) ? audios[0] : null;
-
       const path = extractPath(file);
-      if (!path) {
-        displayError("Invalid file path.", 3000);
-        return;
-      }
-
-      if (audioInfo) {
-        playAudio(path, () => { }, () => { }, audioInfo);
-      } else {
-        displayMessage("No audio information found for this file.", 3000);
-      }
+      if (!path) return displayError("Invalid file path.", 3000);
+      if (audioInfo) playAudio(path, () => { }, () => { }, audioInfo);
+      else displayMessage("No audio information found for this file.", 3000);
     } catch (err) {
       displayError(`Failed to get audio info: ${err.message}`, 3000);
     }
@@ -1030,17 +1052,12 @@ export class FileExplorer extends HTMLElement {
 
   setSearchResults(results) {
     this.shadowRoot.querySelectorAll("globular-document-search-results").forEach(el => el.parentNode.removeChild(el));
-
     results.style.position = "absolute";
     results.style.zIndex = 1000;
-    results.style.top = "0px";
-    results.style.left = "0px";
-    results.style.right = "0px";
-    results.style.bottom = "0px";
+    results.style.top = "0px"; results.style.left = "0px"; results.style.right = "0px"; results.style.bottom = "0px";
     results.style.backgroundColor = "var(--surface-color)";
     results.style.color = "var(--on-surface-color)";
     results.style.overflow = "auto";
-
     this.appendChild(results);
   }
 
@@ -1048,7 +1065,6 @@ export class FileExplorer extends HTMLElement {
     const filePath = extractPath(file);
     const fileName = filePath.substring(filePath.lastIndexOf("/") + 1);
     const linkName = fileName.includes(".") ? fileName.substring(0, fileName.indexOf(".")) + ".lnk" : fileName + ".lnk";
-
     try {
       await createLink(dest, linkName, (file && file.serializeBinary) ? file : file);
       displayMessage(`Link "${linkName}" created!`, 3000);
@@ -1067,18 +1083,14 @@ export class FileExplorer extends HTMLElement {
   showShareWizard(wizard) {
     this._hideAllViewsExcept(wizard);
     wizard.style.display = "";
-    wizard.onclose = () => {
-      this._displayView(this._currentDir);
-    };
+    wizard.onclose = () => { this._displayView(this._currentDir); };
   }
 
   showImage(file) {
     this._hideAllViewsExcept(this._imageViewer);
     this._imageViewer.style.display = "block";
-
     this._imageViewer.width = this._fileSelectionPanel.offsetWidth;
     this._imageViewer.height = this._fileSelectionPanel.offsetHeight;
-
     for (let i = 0; i < this._imageViewer.children.length; i++) {
       if (this._imageViewer.children[i].name === extractPath(file)) {
         this._imageViewer.activeImage(getElementIndex(this._imageViewer.children[i]));
@@ -1098,24 +1110,16 @@ export class FileExplorer extends HTMLElement {
 
     this._filesListView.hide();
     this._filesIconView.hide();
-    if (FileExplorer.fileUploader?.parentNode) {
-      FileExplorer.fileUploader.parentNode.removeChild(FileExplorer.fileUploader);
-    }
+    if (FileExplorer.fileUploader?.parentNode) FileExplorer.fileUploader.parentNode.removeChild(FileExplorer.fileUploader);
     this._fileReader.style.display = "none";
     this._imageViewer.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) {
-      this._sharePanel.parentNode.removeChild(this._sharePanel);
-    }
+    if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
 
-    if (this._fileUploaderBtn.classList.contains("active")) {
-      this.appendChild(FileExplorer.fileUploader);
-    } else if (this._filesListBtn.classList.contains("active")) {
-      this._filesListView.show();
-    } else {
-      this._filesIconView.show();
-    }
+    if (this._fileUploaderBtn.classList.contains("active")) this.appendChild(FileExplorer.fileUploader);
+    else if (this._filesListBtn.classList.contains("active")) this._filesListView.show();
+    else this._filesIconView.show();
   }
 
   _hideAllViewsExcept(exceptElement) {
@@ -1123,19 +1127,14 @@ export class FileExplorer extends HTMLElement {
       this._filesListView, this._filesIconView,
       this._fileReader, this._imageViewer,
       this._permissionManager, this._informationManager,
-      this._sharePanel,
-      FileExplorer.fileUploader
+      this._sharePanel, FileExplorer.fileUploader
     ];
 
     views.forEach(view => {
       if (view && view !== exceptElement) {
-        if (view === this._filesListView || view === this._filesIconView) {
-          view.hide();
-        } else if (view === FileExplorer.fileUploader) {
-          if (view.parentNode) view.parentNode.removeChild(view);
-        } else {
-          view.style.display = "none";
-        }
+        if (view === this._filesListView || view === this._filesIconView) view.hide();
+        else if (view === FileExplorer.fileUploader) { if (view.parentNode) view.parentNode.removeChild(view); }
+        else view.style.display = "none";
       }
     });
     if (exceptElement) exceptElement.style.display = "";
@@ -1144,22 +1143,15 @@ export class FileExplorer extends HTMLElement {
   _closeAllGlobalMenus() {
     this._filesListView.hideMenu();
     this._filesIconView.hideMenu();
-    document.querySelectorAll("globular-dropdown-menu").forEach(menu => {
-      if (menu.parentNode) menu.parentNode.removeChild(menu);
-    });
-    document.querySelectorAll("#file-actions-menu").forEach(menu => {
-      if (menu.parentNode) menu.parentNode.removeChild(menu);
-    });
-    document.querySelectorAll("#rename-file-dialog").forEach(dialog => {
-      if (dialog.parentNode) dialog.parentNode.removeChild(dialog);
-    });
+    document.querySelectorAll("globular-dropdown-menu").forEach(menu => { if (menu.parentNode) menu.parentNode.removeChild(menu); });
+    document.querySelectorAll("#file-actions-menu").forEach(menu => { if (menu.parentNode) menu.parentNode.removeChild(menu); });
+    document.querySelectorAll("#rename-file-dialog").forEach(dialog => { if (dialog.parentNode) dialog.parentNode.removeChild(dialog); });
   }
 
   async _loadImages(dir, callback) {
     try {
       const vm = dir;
       const list = Array.isArray(vm?.files) ? vm.files : [];
-
       const imageVMs = list.filter(f => (f.mime || "").startsWith("image"));
       if (imageVMs.length === 0) {
         this._imageViewer.innerHTML = "";
@@ -1167,8 +1159,7 @@ export class FileExplorer extends HTMLElement {
         if (callback) callback();
         return;
       }
-
-      const loadedImages = await getImages(imageVMs); // HTMLImageElement[]
+      const loadedImages = await getImages(imageVMs);
       this._imageViewer.innerHTML = "";
       loadedImages.forEach((img, i) => {
         img.name = imageVMs[i].path;
@@ -1186,9 +1177,7 @@ export class FileExplorer extends HTMLElement {
   }
 
   getRoot() {
-    if (!this._root) {
-      return "";
-    }
+    if (!this._root) return "";
     const values = this._root.path ? this._root.path.split("/") : extractPath(this._root).split("/");
     return `/${values[1]}/${values[2]}`;
   }
@@ -1199,17 +1188,74 @@ export class FileExplorer extends HTMLElement {
   }
 
   delete() {
-    if (this.parentNode) {
-      this.parentNode.removeChild(this);
-    }
+    if (this.parentNode) this.parentNode.removeChild(this);
   }
 
   _closeAllGlobalDialogs() {
     document.querySelectorAll("#new-dir-dialog, #rename-file-dialog, #file-actions-menu").forEach(dialog => {
-      if (dialog.parentNode) {
-        dialog.parentNode.removeChild(dialog);
-      }
+      if (dialog.parentNode) dialog.parentNode.removeChild(dialog);
     });
+  }
+
+  // ====== NEW: centralized info panel logic ======
+
+  _unsubscribeInfoDelete() {
+    const { event, uuid } = this._currentInfoDeleteSub || {};
+    if (event && uuid) {
+      try { Backend.eventHub.unsubscribe(event, uuid); } catch { }
+    }
+    this._currentInfoDeleteSub = { event: null, uuid: null };
+  }
+
+  _showInformation(file) {
+    // Always clear before repopulating to avoid stale UI
+    this._informationManager.clear?.();
+
+    // Populate depending on payload shape
+    let infos = null;
+    if (file?.titles?.length > 0) {
+      this._informationManager.setTitlesInformation(file.titles);
+      infos = file.titles[0];
+    }
+    if (file?.videos?.length > 0) {
+      this._informationManager.setVideosInformation(file.videos);
+      infos = infos || file.videos[0];
+    }
+    if (file?.audios?.length > 0) {
+      this._informationManager.setAudiosInformation(file.audios);
+      infos = infos || file.audios[0];
+    }
+    if (!infos && file) {
+      // fallback to raw file info if provided
+      this._informationManager.setFileInformation?.(file);
+    }
+
+    // Show panel
+    this._hideAllViewsExcept(this._informationManager);
+    this._closeAllGlobalMenus();
+    this._informationManager.style.display = "";
+
+    // Ensure close always returns to file view
+    this._informationManager.onclose = () => this._displayView(this._currentDir);
+
+    // Rewire delete subscription safely (avoid stacking from previous opens)
+    this._unsubscribeInfoDelete();
+    const infoId = infos && typeof infos.getId === "function" ? infos.getId() : null;
+    if (infoId) {
+      const delEvt = `_delete_infos_${infoId}_evt`;
+      Backend.eventHub.subscribe(
+        delEvt,
+        (uuid2) => { this._currentInfoDeleteSub = { event: delEvt, uuid: uuid2 }; },
+        () => {
+          this._informationManager.clear?.();
+          this._informationManager.style.display = "none";
+          this._displayView(this._currentDir);
+          this._unsubscribeInfoDelete();
+        },
+        true,
+        this
+      );
+    }
   }
 }
 

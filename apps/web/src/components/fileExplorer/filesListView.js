@@ -303,7 +303,7 @@ export class FilesListView extends FilesView {
 
     try {
       if (mimeType === "video") {
-        const videos = await new Promise((resolve, reject) => getFileVideosInfo(file, resolve, reject));
+        const videos = await new Promise((resolve, reject) => getFileVideosInfo(file.path, resolve, reject));
         if (Array.isArray(videos) && videos.length > 0) {
           file.videos = videos;
           displayTitle = videos[0]?.getDescription?.() || displayTitle;
@@ -311,7 +311,7 @@ export class FilesListView extends FilesView {
           if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
         }
       } else if (mimeType === "audio") {
-        const audios = await new Promise((resolve, reject) => getFileAudiosInfo(file, resolve, reject));
+        const audios = await new Promise((resolve, reject) => getFileAudiosInfo(file.path, resolve, reject));
         if (Array.isArray(audios) && audios.length > 0) {
           file.audios = audios;
           displayTitle = audios[0]?.getTitle?.() || displayTitle;

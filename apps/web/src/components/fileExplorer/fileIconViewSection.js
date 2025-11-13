@@ -99,7 +99,7 @@ export class FileIconViewSection extends HTMLElement {
           text-transform:uppercase; color: var(--palette-text-secondary);
           border-bottom:2px solid var(--palette-divider); width:100%; user-select:none; padding-bottom:5px;
         }
-        .file-type-section .title iron-icon { height:32px; width:32px; user-select:none; margin-left:5px; }
+        .file-type-section .title iron-icon { user-select:none; margin-left:5px; }
         .file-type-section .title paper-checkbox {
           margin-right:5px;
           --paper-checkbox-checked-color: var(--primary-color);

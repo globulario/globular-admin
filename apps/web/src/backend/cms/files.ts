@@ -365,23 +365,22 @@ const SERVICE_METHODS = {
 /* ------------------------------ API ------------------------------ */
 
 /** List a directory; returns a FileVM with .files children. */
-export async function readDir(path: string, includeHidden = false): Promise<DirVM> {
+export async function readDir(path: string, recursive = false): Promise<DirVM> {
   if (CACHE_ENABLED && _cache) {
-    return _cache.getDir(path, /*swr*/ true, includeHidden) as unknown as DirVM;
+    return _cache.getDir(path, /*swr*/ true, recursive) as unknown as DirVM;
   }
-  return readDirFresh(path, includeHidden);
+  return readDirFresh(path, recursive);
 }
-export async function readDirFresh(path: string, includeHidden = false): Promise<DirVM> {
+export async function readDirFresh(path: string, recursive = false): Promise<DirVM> {
   const md = await meta();
   const rq: any = newRq(['ReadDirRequest']);
   const requestedPath = path || '/';
   const encodedPath = encodeURI(requestedPath);
 
   if (typeof rq.setPath === 'function') rq.setPath(encodedPath);
-  if (typeof rq.setRecursive === 'function') rq.setRecursive(false);
+  if (typeof rq.setRecursive === 'function') rq.setRecursive(recursive);
   if (typeof rq.setThumbnailheight === 'function') rq.setThumbnailheight(80);
   if (typeof rq.setThumbnailwidth === 'function') rq.setThumbnailwidth(80);
-  if (typeof rq.setIncludehidden === 'function') rq.setIncludehidden(!!includeHidden);
 
   const client = clientFactory();
   const method = 'readDir' in (client as any) ? 'readDir' : 'readdir';
@@ -611,7 +610,7 @@ async function apiUploadFiles(path: string, files: FileList | File[], onComplete
     xhr.onerror = () => { const err = xhr.responseText || 'upload failed'; onError?.(err); reject(err); };
 
     const base = getBaseUrl() || window.location.origin;
-    const url = base.replace(/\/?$/, '') + '/uploads';
+    const url = base.replace(/\/?$/, '') + '/api/file-upload';
     xhr.open('POST', url, true);
     if (token) xhr.setRequestHeader('token', token);
     xhr.onload = () => { onComplete?.(); resolve(); };
@@ -712,7 +711,7 @@ export async function getHiddenFiles(path: string, subDirName: string): Promise<
     const dir = basePath.substring(0, basePath.lastIndexOf("/") + 1);
     const leaf = basePath.substring(basePath.lastIndexOf("/"));
     const hiddenDirPath = `${dir}.hidden${leaf}/${subDirName}`;
-    return await readDir(hiddenDirPath).catch(() => null);
+    return await readDirFresh(hiddenDirPath, true).catch(() => null);
   } catch (e) {
     console.warn(`getHiddenFiles failed for ${path}:`, e);
     return null;

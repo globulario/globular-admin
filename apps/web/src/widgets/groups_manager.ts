@@ -36,10 +36,10 @@ type TableRow = {
   id?: string;
   icon?: string;
 };
-
+const group = new URL('../assets/icons/group.svg', import.meta.url).href;
 declare global { interface Window { displayGroupId?: (row: TableRow) => string } }
 window.displayGroupId = (row: TableRow) => {
-  const src = row.icon || "assets/icons/group.svg"; // provide a generic group icon in your assets
+  const src = row.icon || group; // provide a generic group icon in your assets
   const id = row.id || "(unknown)";
   return `
     <div class="group-selector" style="display:flex; align-items:center;">

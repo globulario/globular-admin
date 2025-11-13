@@ -230,24 +230,40 @@ export async function getFileTitlesInfo(
   return list;
 }
 
+// title.ts (or wherever getFileVideosInfo lives)
 export async function getFileVideosInfo(
   filePath: string,
   indexPath = DEFAULT_INDEXES.videos
 ): Promise<titlepb.Video[]> {
-  if (fileVideosCache.has(filePath)) return fileVideosCache.get(filePath)!;
+  // normalize + validate ASAP
+  const normalize = (v: unknown, name: string): string => {
+    if (v == null) throw new Error(`${name} is ${v}`);
+    if (typeof v === "string") return v;
+    // common “gotchas”: URL, Path-like objects, Buffers/Uint8Array, numbers
+    if (v instanceof URL) return v.pathname || `${v}`;
+    if (v instanceof Uint8Array) return new TextDecoder().decode(v);
+    return String(v);
+  };
+
+  const safeFilePath = normalize(filePath, "filePath");
+  const safeIndexPath = normalize(indexPath, "indexPath");
+
+  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
 
   const md = await meta();
+
   const rq = new titlepb.GetFileVideosRequest();
-  rq.setFilepath(filePath);
-  rq.setIndexpath(indexPath);
+  rq.setFilepath(safeFilePath);
+  rq.setIndexpath(safeIndexPath);
 
   const rsp = await unary(clientFactory, "getFileVideos", rq, undefined, md) as titlepb.GetFileVideosResponse;
-  // Expect: rsp.getVideos()?.getVideosList()
-  const videosContainer = rsp?.getVideos?.();
+
+  // generated API: rsp.getVideos() -> Videos message -> getVideosList()
+  const videosContainer = rsp.getVideos?.();
   const list: titlepb.Video[] = videosContainer?.getVideosList?.() ?? [];
 
-  list.forEach((v) => videosCache.set(v.getId(), v));
-  fileVideosCache.set(filePath, list);
+  list.forEach(v => videosCache.set(v.getId(), v));
+  fileVideosCache.set(safeFilePath, list);
   return list;
 }
 
@@ -255,20 +271,40 @@ export async function getFileAudiosInfo(
   filePath: string,
   indexPath = DEFAULT_INDEXES.audios
 ): Promise<titlepb.Audio[]> {
-  if (fileAudiosCache.has(filePath)) return fileAudiosCache.get(filePath)!;
+  // normalize + validate (same helper logic as videos)
+  const normalize = (v: unknown, name: string): string => {
+    if (v == null) throw new Error(`${name} is ${v}`);
+    if (typeof v === "string") return v;
+    if (v instanceof URL) return v.pathname || `${v}`;
+    if (v instanceof Uint8Array) return new TextDecoder().decode(v);
+    return String(v);
+  };
+
+  const safeFilePath = normalize(filePath, "filePath");
+  const safeIndexPath = normalize(indexPath, "indexPath");
+
+  if (fileAudiosCache.has(safeFilePath)) return fileAudiosCache.get(safeFilePath)!;
 
   const md = await meta();
-  const rq = new titlepb.GetFileAudiosRequest();
-  rq.setFilepath(filePath);
-  rq.setIndexpath(indexPath);
 
-  const rsp = await unary(clientFactory, "getFileAudios", rq, undefined, md) as titlepb.GetFileAudiosResponse;
-  // Expect: rsp.getAudios()?.getAudiosList()
-  const audiosContainer = rsp?.getAudios?.();
+  const rq = new titlepb.GetFileAudiosRequest();
+  rq.setFilepath(safeFilePath);
+  rq.setIndexpath(safeIndexPath);
+
+  const rsp = await unary(
+    clientFactory,
+    "getFileAudios",
+    rq,
+    undefined,
+    md
+  ) as titlepb.GetFileAudiosResponse;
+
+  // rsp.getAudios() -> Audios message -> getAudiosList()
+  const audiosContainer = rsp.getAudios?.();
   const list: titlepb.Audio[] = audiosContainer?.getAudiosList?.() ?? [];
 
-  list.forEach((a) => audiosCache.set(a.getId(), a));
-  fileAudiosCache.set(filePath, list);
+  list.forEach(a => audiosCache.set(a.getId(), a));
+  fileAudiosCache.set(safeFilePath, list);
   return list;
 }
 
@@ -713,5 +749,5 @@ export async function searchTitles(
 
 // Todo Implement similar streaming searchVideos, searchAudios if needed
 export async function getWatchingTitle(titleId: string): Promise<any> {
-  
+
 }

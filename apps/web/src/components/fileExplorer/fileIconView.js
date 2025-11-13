@@ -325,7 +325,11 @@ export class FileIconView extends HTMLElement {
 
   async _renderVideo(f) {
     try {
-      this._preview = new VideoPreview(f, 72);
+      this._preview = new VideoPreview();
+      await this._preview.setFile(f, 72);
+      if ( !this._preview.hasPreviewImages()) {
+        throw new Error("No preview images available");
+      }
       this._preview.name = nameOf(f);
       this._dom.iconDisplay.appendChild(this._preview);
     } catch {
@@ -420,7 +424,7 @@ export class FileIconView extends HTMLElement {
     const view = this._viewContext;
     if (view?.showContextMenu) {
       // pass the icon element as anchor + highlighter
-      view.showContextMenu(this, this._file, this);
+      view.showContextMenu(this._dom.menuBtn, this._file, this);
     }
   }
 

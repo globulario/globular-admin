@@ -7,6 +7,55 @@ import '@polymer/iron-icons/social-icons'
 import '@polymer/iron-icons/communication-icons'
 import '@polymer/iron-icons/editor-icons'
 
+// --- helpers ---
+function nextFrame() {
+  return new Promise(r => requestAnimationFrame(() => r()));
+}
+
+// Wait until the element reports a non-zero rect.
+// Uses ResizeObserver + rAF, with a safety timeout.
+function whenSized(el, { timeout = 1000 } = {}) {
+  return new Promise(resolve => {
+    let ro;
+    let tid; // declare early so cleanup can safely reference it
+
+    const cleanup = () => {
+      if (ro) {
+        ro.disconnect();
+        ro = undefined;
+      }
+      if (tid != null) {
+        clearTimeout(tid);
+        tid = undefined;
+      }
+    };
+
+    const done = () => {
+      cleanup();
+      resolve();
+    };
+
+    const check = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        done();
+      }
+    };
+
+    if ("ResizeObserver" in window) {
+      ro = new ResizeObserver(check);
+      ro.observe(el);
+    }
+
+    // kick once now and again next frame
+    check();
+    nextFrame().then(check);
+
+    // assign after all the function declarations
+    tid = setTimeout(done, timeout); // don’t hang forever
+  });
+}
+
 export class DropdownMenuItem extends HTMLElement {
   _icon = '';
   _text = '';
@@ -21,6 +70,11 @@ export class DropdownMenuItem extends HTMLElement {
   _separatorSpan = null;
   _itemWrapper = null;
 
+  // --- submenu support ---
+  _submenu = null;   // <globular-dropdown-menu> if present as a child
+  _hot = false;      // pointer is over item or submenu
+  _hideTid = null;   // hide hysteresis timer
+
   constructor(icon, text, shortcut) {
     super();
     this.attachShadow({ mode: 'open' });
@@ -34,16 +88,37 @@ export class DropdownMenuItem extends HTMLElement {
     this._cacheElements();
     this._applyInitialAttributes();
     this._setupEventListeners();
+
+    // Detect an embedded submenu and wire hover logic
+    this._submenu = this.querySelector('globular-dropdown-menu');
+    if (this._submenu) {
+      // Mark submenu "flyout mode" and hide its built-in trigger UI
+      this._submenu.setAttribute('data-submenu', '1');
+      this._submenu.hideBtn?.();
+      this._submenu.style.zIndex = '10002';
+
+      // Hover-to-open (stable with hysteresis)
+      this.addEventListener('pointerenter', this._onItemEnter);
+      this.addEventListener('pointerleave', this._onItemLeave);
+      this._submenu.addEventListener('pointerenter', this._onSubEnter);
+      this._submenu.addEventListener('pointerleave', this._onSubLeave);
+    }
   }
 
   disconnectedCallback() {
     this._cleanupEventListeners();
+    if (this._submenu) {
+      this.removeEventListener('pointerenter', this._onItemEnter);
+      this.removeEventListener('pointerleave', this._onItemLeave);
+      this._submenu.removeEventListener('pointerenter', this._onSubEnter);
+      this._submenu.removeEventListener('pointerleave', this._onSubLeave);
+    }
   }
 
-/*
-  set action(func) { this._action = func; console.log("action set called"); }
-  get action() { console.log("action get called"); return this._action; }
-*/
+  /*
+    set action(func) { this._action = func; }
+    get action() { return this._action; }
+  */
   hideIcon() {
     if (this._iconElement) this._iconElement.style.display = "none";
     if (this._faIconElement) this._faIconElement.style.display = "none";
@@ -60,16 +135,28 @@ export class DropdownMenuItem extends HTMLElement {
         #container { display:flex; flex-direction:column; }
 
         #item-wrapper {
+          position: relative; /* anchor for submenu flyout */
           background-color: var(--surface-color);
           color: var(--on-surface-color);
           display:flex;
           min-width:150px;
           padding:3px;
           transition:background .2s ease, padding .8s linear;
-          position:relative;
           align-items:center;
           justify-content:center;
         }
+
+        /* Invisible "bridge" so pointer can cross into flyout without leaving */
+        #item-wrapper::after {
+          content: "";
+          position: absolute;
+          top: 0;
+          right: -10px;   /* extend a little past the edge */
+          width: 12px;    /* small bridge width */
+          height: 100%;
+          pointer-events: none; /* doesn't block clicks, but avoids tiny gaps visually */
+        }
+
         #item-wrapper:hover { background-color: var(--hover-color, #f0f0f0); cursor:pointer; }
 
         #icon-container, iron-icon {  }
@@ -128,7 +215,7 @@ export class DropdownMenuItem extends HTMLElement {
   }
 
   _cleanupEventListeners() {
-   // this.removeEventListener("click", this._handleItemClick);
+    // this.removeEventListener("click", this._handleItemClick);
   }
 
   _setIcon(icon) {
@@ -147,11 +234,55 @@ export class DropdownMenuItem extends HTMLElement {
     }
   }
 
-  _handleItemClick (evt){
+  // --- submenu hover logic ---
+  _onItemEnter = () => {
+    if (!this._submenu) return;
+    this._hot = true;
+    clearTimeout(this._hideTid);
+    // As a flyout, submenu positions via CSS; just open it.
+    this._submenu.open();
+  };
+
+  _onItemLeave = (e) => {
+    if (!this._submenu) return;
+    if (this._submenu.contains(e.relatedTarget)) return; // moving into submenu
+    this._hot = false;
+    this._scheduleSubmenuHide();
+  };
+
+  _onSubEnter = () => {
+    this._hot = true;
+    clearTimeout(this._hideTid);
+  };
+
+  _onSubLeave = (e) => {
+    if (this.contains(e.relatedTarget)) return; // moving back to item
+    this._hot = false;
+    this._scheduleSubmenuHide();
+  };
+
+  _scheduleSubmenuHide() {
+    clearTimeout(this._hideTid);
+    this._hideTid = setTimeout(() => {
+      if (!this._hot) this._submenu?.close?.();
+    }, 180); // a touch more forgiving
+  }
+
+  _handleItemClick(evt) {
     evt.preventDefault();
     evt.stopPropagation();
+
+    // If this item hosts a submenu, toggle it and DO NOT close the parent menu.
+    const submenu = this.querySelector('globular-dropdown-menu');
+    if (submenu) {
+      if (submenu.isOpen?.()) submenu.close();
+      else submenu.open();
+      return;
+    }
+
+    // Normal leaf action
     this.action?.();
-    this.dispatchEvent(new CustomEvent('on-action', { bubbles:true, composed:true, detail:{} }));
+    this.dispatchEvent(new CustomEvent('on-action', { bubbles: true, composed: true, detail: {} }));
     // Close the nearest dropdown host
     this.closest('globular-dropdown-menu')?.close?.();
   };
@@ -186,6 +317,11 @@ export class DropdownMenu extends HTMLElement {
     this._cacheElements();
     this._applyInitialAttributes();
     this._setupEventListeners();
+
+    // If used as a submenu (child of menu-item), mark so CSS positions flyout properly.
+    if (this.parentElement && this.parentElement.tagName === 'GLOBULAR-DROPDOWN-MENU-ITEM') {
+      this.setAttribute('data-submenu', '1');
+    }
   }
 
   disconnectedCallback() {
@@ -193,17 +329,47 @@ export class DropdownMenu extends HTMLElement {
     this._disarmOutsideClose();
   }
 
-  /** Programmatic positioner (used by FileIconView). */
+  /** Programmatic positioner (still used by top-level menus, context menus, etc.). */
   positionAt(x, y) {
     this.style.position = 'absolute';
     this.style.left = `${Math.round(x)}px`;
-    this.style.top  = `${Math.round(y)}px`;
+    this.style.top = `${Math.round(y)}px`;
   }
 
-  /** Programmatic open at given coordinates. */
+  /** Programmatic open at given coordinates (top-level usage). */
   openAt(x, y) {
     this.positionAt(x, y);
     this.open();
+  }
+
+  _adjustToViewport() {
+    if (!this._isOpen || !this._menuItemsCard) return;
+    const cardRect = this._menuItemsCard.getBoundingClientRect(); // now non-zero
+    const vw = innerWidth, vh = innerHeight, MARGIN = 40;
+
+    let x = parseFloat(this.style.left) || 0;
+    let y = parseFloat(this.style.top) || 0;
+
+    let w = cardRect.width, h = cardRect.height;
+
+    // clamp/flip + optional max-height
+    const spaceRight = vw - (x + w) - MARGIN;
+    if (spaceRight < 0) x = Math.max(MARGIN, vw - w - MARGIN);
+
+    const spaceBottom = vh - (y + h) - MARGIN;
+    if (spaceBottom < 0) {
+      const above = Math.max(MARGIN, vh - h - MARGIN);
+      y = Math.min(y, above);
+      if (y === MARGIN && vh - 2 * MARGIN < h) {
+        // cap height so everything is reachable
+        this._menuItemsCard.style.maxHeight = `${vh - 2 * MARGIN}px`;
+        h = this._menuItemsCard.getBoundingClientRect().height;
+        y = Math.max(MARGIN, Math.min(y, vh - h - MARGIN));
+      }
+    }
+
+    this.style.left = `${Math.round(x)}px`;
+    this.style.top = `${Math.round(y)}px`;
   }
 
   open() {
@@ -218,7 +384,15 @@ export class DropdownMenu extends HTMLElement {
     setTimeout(() => { this._opening = false; }, 0);
 
     this.onopen?.();
-    this.dispatchEvent(new CustomEvent('on-open', { bubbles:true, composed:true }));
+    this.dispatchEvent(new CustomEvent('on-open', { bubbles: true, composed: true }));
+
+    // Wait until it has a real size, then adjust (top-level only)
+    if (!this.hasAttribute('data-submenu')) {
+      whenSized(this._menuItemsCard).then(() => {
+        this._adjustToViewport();   // <- read getBoundingClientRect() here
+      });
+      document.fonts?.ready?.then(() => this._adjustToViewport());
+    }
   }
 
   close() {
@@ -232,7 +406,7 @@ export class DropdownMenu extends HTMLElement {
     this._opening = false;
     this._disarmOutsideClose();
     this.onclose?.();
-    this.dispatchEvent(new CustomEvent('on-close', { bubbles:true, composed:true }));
+    this.dispatchEvent(new CustomEvent('on-close', { bubbles: true, composed: true }));
   }
 
   isOpen() { return this._isOpen; }
@@ -249,7 +423,28 @@ export class DropdownMenu extends HTMLElement {
           user-select:none; margin-right:10px;
         }
         .card-content { display:flex; flex-direction:column; padding:0; }
-        .menu-items { position:absolute; top:25px; left:0; display:none; z-index:1000; }
+
+        /* Default (top-level) dropdown: beneath the trigger */
+        .menu-items { position:absolute; top:25px; left:0; display:none; z-index:100000; overflow: visible; }
+
+        /* Submenu flyout: to the right of the parent item.
+           Make the HOST zero-sized so it never overlays lower items.
+           The inner .menu-items handles all pointer events. */
+        :host([data-submenu="1"]) {
+          position: absolute;
+          width: 0; height: 0;
+        }
+        :host([data-submenu="1"]) #container {
+          position: absolute;
+          inset: auto;
+          pointer-events: none;    /* host UI not clickable */
+        }
+        :host([data-submenu="1"]) .menu-items {
+          pointer-events: auto;    /* the visible flyout is interactive */
+          top: -5px;
+          left: calc(100% + 12px); /* small overlap to remove any gap */
+          z-index: 100002;
+        }
 
         #icon-i:hover, iron-icon:hover { cursor:pointer; }
         #icon-i, iron-icon { display:none; }
@@ -306,13 +501,13 @@ export class DropdownMenu extends HTMLElement {
     this._container?.removeEventListener("click", this._handleContainerClick);
   }
 
-  _handleContainerClick (evt)  {
+  _handleContainerClick(evt) {
     evt.stopPropagation();
     this.isOpen() ? this.close() : this.open();
   };
 
   // --- Outside click handling with arming to avoid same-tick close ---
-  _handleOutsideClickCapture(event){
+  _handleOutsideClickCapture(event) {
     if (this._opening) return; // ignore the click that opened us
     const path = event.composedPath?.() || [];
     if (!path.includes(this) && !this.contains(event.target)) {

@@ -378,9 +378,9 @@ export class FilesView extends HTMLElement {
     menu.hideBtn?.();
 
     // Compute coordinates
-    const rect = getCoords(anchor || document.body);
-    const x = (rect.left || 0) + (anchor?.offsetWidth || 0) + 5;
-    const y = (rect.top || 0) + 4;
+    const rect = anchor.getBoundingClientRect();
+    const x = (rect.left || 0) + rect.width;
+    const y = (rect.top || 0) + 6;
 
     // Open at position (prefer the component’s API)
     if (typeof menu.openAt === "function") {
@@ -391,6 +391,7 @@ export class FilesView extends HTMLElement {
       menu.style.top = `${y}px`;
       menu.open?.();
     }
+
 
     // Keep the tile highlighted while the menu is open
     if (highlightEl) {
@@ -496,7 +497,7 @@ export class FilesView extends HTMLElement {
 
     try {
       displayMessage(`Updating information for: ${absPath}`, 3500);
-      await startProcessVideo({ path: absPath }); // wrapper call
+      await startProcessVideo(absPath); // wrapper call
       displayMessage("Information updated successfully!", 3000);
     } catch (err) {
       displayError(`Failed to update information: ${err?.message || err}`, 3000);
@@ -927,7 +928,7 @@ export class FilesView extends HTMLElement {
 
     try {
       displayMessage(`Generating timeline for: ${absPath}`, 3500);
-      await createVideoTimeLine({ path: absPath, width: 180, fps: 0.2 });
+      await createVideoTimeLine(absPath, 180, 0.2);
       displayMessage("Timeline created successfully!", 3000);
     } catch (err) {
       displayError(`Failed to generate timeline: ${err?.message || err}`, 3000);
@@ -947,7 +948,8 @@ export class FilesView extends HTMLElement {
 
     try {
       displayMessage(`Generating preview for: ${absPath}`, 3500);
-      await createVideoPreview({ path: absPath, height: 128, nb: 20 });
+
+      await createVideoPreview(absPath, 28, 20);
       displayMessage("Preview created successfully!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
       Backend.eventHub.publish("refresh_dir_evt", parent, false);
@@ -969,7 +971,7 @@ export class FilesView extends HTMLElement {
 
     try {
       displayMessage(`Converting to MP4: ${absPath}`, 3500);
-      await convertVideoToMpeg4H264({ path: absPath });
+      await convertVideoToMpeg4H264(absPath);
       displayMessage("Conversion to MP4 done!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
       Backend.eventHub.publish("refresh_dir_evt", parent, false);
@@ -991,7 +993,7 @@ export class FilesView extends HTMLElement {
 
     try {
       displayMessage(`Converting to HLS: ${absPath}`, 3500);
-      await convertVideoToHls({ path: absPath });
+      await convertVideoToHls(absPath);
       displayMessage("Conversion to HLS done!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
       Backend.eventHub.publish("refresh_dir_evt", parent, false);
@@ -1184,7 +1186,7 @@ export class FilesView extends HTMLElement {
         toast.hideToast();
         try {
           const format = mp3Radio.checked ? "mp3" : "mp4";
-          await uploadVideoByUrl({ dest: destDir, format, url });
+          await uploadVideoByUrl(destDir, url, format);
           Backend.eventHub.publish(
             "__upload_link_event__",
             { path: destDir, infos: `Queued ${format} from URL`, done: true, lnk: lnkHtml },

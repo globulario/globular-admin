@@ -35,9 +35,8 @@ function isHiddenOrVirtual(vm) {
 }
 
 /** Replace only exact id / id@domain matches with displayName */
- function accountAwareLabel(segmentName) {
-
-  const acct =  getCurrentAccount();
+function accountAwareLabel(segmentName) {
+  const acct = getCurrentAccount();
   if (!acct) return segmentName;
 
   const id      = acct?.getId?.() ?? acct?.id;
@@ -82,10 +81,22 @@ export class PathNavigator extends HTMLElement {
         .path-segment-text:hover { cursor: pointer; }
         .path-separator-icon { --iron-icon-fill-color: var(--primary-text-color); margin: 0 -2px; }
         .path-separator-icon:hover { cursor: pointer; }
+
+        /* Dropdown card is fixed to viewport; we set left/top from JS to the icon's bottom-left */
         .directories-selector {
-          display: none; flex-direction: column; position: absolute; padding: 5px; z-index: 1000;
-          top: 100%; right: 0; background-color: var(--surface-color); color: var(--primary-text-color);
-          box-shadow: var(--shadow-elevation-2dp); max-height: 240px; overflow-y: auto;
+          display: none;
+          flex-direction: column;
+          position: fixed;              /* <-- fixed to viewport */
+          padding: 5px;
+          z-index: 10000;               /* keep above headers/overlays */
+          left: 0;                      /* computed in JS */
+          top: 0;                       /* computed in JS */
+          background-color: var(--surface-color);
+          color: var(--primary-text-color);
+          box-shadow: var(--shadow-elevation-2dp);
+          max-height: 240px;
+          overflow-y: auto;
+          min-width: 180px;
         }
         .subdirectory-item { padding: 4px 8px; white-space: nowrap; }
         .subdirectory-item:hover { cursor: pointer; background-color: var(--palette-action-hover); }
@@ -153,17 +164,17 @@ export class PathNavigator extends HTMLElement {
     parts.forEach( (segment, idx) => {
       if (acc === "/") acc += segment; else acc = acc ? `${acc}/${segment}` : segment;
       const isLast = idx === parts.length - 1;
-       this._createPathSegmentElement(segment, acc, isLast);
+      this._createPathSegmentElement(segment, acc, isLast);
     });
   }
 
-   _createPathSegmentElement(segmentName, fullPathForSegment, isLastSegment) {
+  _createPathSegmentElement(segmentName, fullPathForSegment, isLastSegment) {
     const segmentDiv = document.createElement("div");
     segmentDiv.className = "path-segment";
 
     const segmentTextSpan = document.createElement("span");
     segmentTextSpan.className = "path-segment-text";
-    segmentTextSpan.textContent =  accountAwareLabel(segmentName);
+    segmentTextSpan.textContent = accountAwareLabel(segmentName);
     if (segmentName.length > 20) segmentTextSpan.title = segmentName;
 
     // navigate to that level on click
@@ -191,8 +202,31 @@ export class PathNavigator extends HTMLElement {
   }
 
   async _toggleSubdirectoryDropdown(iconEl, dropdownEl, parentPath) {
+    const placeCard = (card) => {
+      // Position the dropdown so its top-left is the bottom-left of the icon
+      const r = iconEl.getBoundingClientRect(); // viewport-relative
+      card.style.position = "fixed";
+      card.style.left = `${Math.round(r.left)}px`;
+      card.style.top  = `${Math.round(r.bottom)}px`;
+    };
+
+    const attachReposition = (card) => {
+      const onResize = () => placeCard(card);
+      window.addEventListener("resize", onResize);
+      // store remover on element so we can clean up
+      card._removeReposition = () => window.removeEventListener("resize", onResize);
+    };
+
+    const detachReposition = (card) => {
+      if (card && card._removeReposition) {
+        try { card._removeReposition(); } catch {}
+        delete card._removeReposition;
+      }
+    };
+
     if (dropdownEl && iconEl.icon === ICON_EXPAND_MORE) {
       hide(dropdownEl);
+      detachReposition(dropdownEl);
       setIcon(iconEl, ICON_CHEVRON_RIGHT);
       return dropdownEl;
     }
@@ -205,45 +239,53 @@ export class PathNavigator extends HTMLElement {
       const card = document.createElement("paper-card");
       card.className = "directories-selector";
       show(card, true);
+      // Keep it as a child (shadow tree), but fixed positioning uses viewport coords
       iconEl.parentElement.appendChild(card);
 
       try {
         const dir = await readDir(parentPath, { refresh: true });
         const files = (dir && dir.files) || [];
 
-        files.filter(isDir).filter(vm => !isHiddenOrVirtual(vm)).forEach((sub) => {
-          const item = document.createElement("div");
-          item.className = "subdirectory-item";
-          item.textContent = nameOf(sub);
-          item.addEventListener("click", (evt) => {
-            evt.stopPropagation();
-            this._navigateToPath(pathOf(sub));
-            hide(card);
-            setIcon(iconEl, ICON_CHEVRON_RIGHT);
+        files
+          .filter(isDir)
+          .filter(vm => !isHiddenOrVirtual(vm))
+          .forEach((sub) => {
+            const item = document.createElement("div");
+            item.className = "subdirectory-item";
+            item.textContent = nameOf(sub);
+            item.addEventListener("click", (evt) => {
+              evt.stopPropagation();
+              this._navigateToPath(pathOf(sub));
+              hide(card);
+              detachReposition(card);
+              setIcon(iconEl, ICON_CHEVRON_RIGHT);
+            });
+            card.appendChild(item);
           });
-          card.appendChild(item);
-        });
 
-        // align dropdown to the right edge of the chevron
+        // Position after it renders to get width/height right
         requestAnimationFrame(() => {
-          card.style.right = -1 * (card.offsetWidth - iconEl.offsetWidth) + "px";
+          placeCard(card);
+          attachReposition(card);
         });
 
+        // Hide when leaving the card
         card.addEventListener("mouseleave", () => {
           hide(card);
+          detachReposition(card);
           setIcon(iconEl, ICON_CHEVRON_RIGHT);
         });
 
         dropdownEl = card;
       } catch (e) {
         displayError(e?.message || String(e), 3000);
-        card.remove();
         setIcon(iconEl, ICON_CHEVRON_RIGHT);
         return null;
       }
     } else {
       show(dropdownEl, true);
-      dropdownEl.style.right = -1 * (dropdownEl.offsetWidth - iconEl.offsetWidth) + "px";
+      placeCard(dropdownEl);
+      attachReposition(dropdownEl);
     }
 
     return dropdownEl;

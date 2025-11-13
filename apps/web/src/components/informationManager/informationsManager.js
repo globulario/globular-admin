@@ -158,7 +158,6 @@ export class InformationsManager extends HTMLElement {
   }
 
   _closeSelf() {
-    if (this.parentNode) this.parentNode.removeChild(this);
     if (this._onclose) this._onclose();
   }
 

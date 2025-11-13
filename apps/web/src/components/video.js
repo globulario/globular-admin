@@ -1,12 +1,12 @@
 // src/components/video.js
 
 import Plyr from 'plyr'
+import "./plyr.css"
 import Hls from 'hls.js'
 
 // App bus + helpers (no raw RPC calls)
 import { displayError } from '../backend/ui/notify'
 import { Backend } from '../backend/backend'
-
 
 // Controllers / unified wrappers
 import { readDir } from '../backend/cms/files'
@@ -17,14 +17,19 @@ import { PlayList } from './playlist'
 
 // Proto types still used for declarative <globular-video-track>
 import { Poster, Video } from 'globular-web-client/title/title_pb'
-import { getFileTitlesInfo, getFileVideosInfo, getTitleFiles, getVideoInfo, getWatchingTitle } from '../backend/media/title'
+import {
+  getFileTitlesInfo,
+  getFileVideosInfo,
+  getTitleFiles,
+  getVideoInfo,
+  getWatchingTitle
+} from '../backend/media/title'
 import { getBaseUrl } from '../backend/core/endpoints'
 
 // --------- small helpers ---------
 function getAuthToken() {
   // Central point if you later move token handling to session helpers
-  let token = sessionStorage.getItem('__globular_token__')
-  return token
+  return sessionStorage.getItem('__globular_token__')
 }
 
 // Polyfill for HTMLMediaElement.prototype.playing
@@ -36,8 +41,8 @@ if (!Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playing')) {
   })
 }
 
-/** Build a signed file URL with the current token. */
-function buildFileUrl(rawPath, globule, token = getAuthToken(), application) {
+/** Build a signed file URL with the current token (no globule dependency). */
+function buildFileUrl(rawPath, token = getAuthToken(), application) {
   let url = getBaseUrl()
   const parts = (rawPath || '').split('/').map(p => p.trim()).filter(Boolean)
   parts.forEach(p => (url += '/' + encodeURIComponent(p)))
@@ -49,7 +54,6 @@ function buildFileUrl(rawPath, globule, token = getAuthToken(), application) {
   return url
 }
 
-
 // --------- playlist helper ---------
 
 export function playVideos(videos, name) {
@@ -60,20 +64,22 @@ export function playVideos(videos, name) {
   let i = 0
   const next = async () => {
     if (i >= unique.length) {
-      playVideo(m3u, null, null, null, unique[0] && unique[0].globule)
+      // No globule anymore; keep API compatible by omitting it
+      playVideo(m3u, null, null, null)
       return
     }
 
     const v = unique[i++]
-    const globule = v.globule
-    const indexPath = globule.config.DataPath + '/search/videos'
+
+    // Without globule/config, default to the standard index path
+    const indexPath = '/search/videos'
 
     try {
       const files = await getTitleFiles(v.getId(), indexPath)
       if (files.length > 0) {
         let filePath = files[0]
         if (!/\.(mp4|m3u8|mkv)$/i.test(filePath)) filePath += '/playlist.m3u8'
-        const url = buildFileUrl(filePath, globule)
+        const url = buildFileUrl(filePath)
         m3u += `#EXTINF:${v.getDuration()}, ${v.getDescription()}, tvg-id="${v.getId()}"\n`
         m3u += `${url}\n\n`
       }
@@ -87,9 +93,8 @@ export function playVideos(videos, name) {
 
 // --------- entrypoint used elsewhere ---------
 
-export function playVideo(path, onplay, onclose, title, globule = Backend.getGlobule()) {
-  if (title && !title.globule) title.globule = globule
-
+// (removed globule param; extra args from older callers are harmless in JS)
+export function playVideo(path, onplay, onclose, title) {
   // Close menus
   document.body.querySelectorAll('globular-dropdown-menu').forEach(menu => {
     if (menu.close) menu.close()
@@ -111,22 +116,21 @@ export function playVideo(path, onplay, onclose, title, globule = Backend.getGlo
   vp.onplay = onplay || vp.onplay
   vp.onclose = onclose || vp.onclose
   vp.titleInfo = title || null
-  vp.globule = globule
   if (vp.playlist) vp.playlist.clear()
 
   const watching = document.querySelector('globular-media-watching')
   if (watching && watching.parentNode) watching.parentNode.removeChild(watching)
 
   if ((path || '').endsWith('video.m3u') || (path || '').startsWith('#EXTM3U')) {
-    vp.loadPlaylist(path, globule)
+    vp.loadPlaylist(path)
   } else {
-    vp.play(path, globule, title || null)
+    vp.play(path, title || null)
   }
   return vp
 }
 
-/** Locate subtitles next to a video file using readDir (files controller). */
-async function getSubtitlesFiles(globule, path) {
+/** Locate subtitles next to a video file using readDir (no globule). */
+async function getSubtitlesFiles(path) {
   const subsPath =
     path.substring(0, path.lastIndexOf('.')).substring(0, path.lastIndexOf('/') + 1) +
     '.hidden' + path.substring(path.lastIndexOf('/')) +
@@ -155,7 +159,6 @@ export class VideoPlayer extends HTMLElement {
     // state
     this.titleInfo = null
     this.playlist = new PlayList()
-    this.globule = null
     this.player = null
     this.hls = null
     this.path = ''
@@ -179,6 +182,8 @@ export class VideoPlayer extends HTMLElement {
     this.loop = localStorage.getItem('video_loop') === 'true'
     this.shuffle = localStorage.getItem('video_shuffle') === 'true'
     this.resized = false
+
+    const youtubeLogoUrl = new URL('../assets/icons/youtube-flat.svg', import.meta.url).href;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -207,7 +212,7 @@ export class VideoPlayer extends HTMLElement {
       </style>
       <globular-dialog id="video-container" name="video-player" is-moveable="true" is-maximizeable="true" is-resizeable="true" show-icon="true" is-minimizeable="true">
         <span id="title-span" slot="title">no select</span>
-        <img slot="icon" src="assets/icons/youtube-flat.svg"/>
+        <img slot="icon" src="${youtubeLogoUrl}"/>
         <select slot="header" id="audio-track-selector" style="display:none"></select>
         <paper-icon-button slot="header" id="title-info-button" icon="icons:arrow-drop-down-circle"></paper-icon-button>
         <globular-watching-menu slot="header"></globular-watching-menu>
@@ -257,7 +262,7 @@ export class VideoPlayer extends HTMLElement {
   async connectedCallback() {
     this.player = new Plyr(this.videoElement, {
       captions: { active: true, update: true },
-      controls: ['play-large','play','progress','current-time','mute','volume','captions','settings','pip','fullscreen']
+      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen']
     })
 
     const pipBtn = this.querySelector("[data-plyr='pip']")
@@ -327,7 +332,7 @@ export class VideoPlayer extends HTMLElement {
 
   _handleOrientationChange = () => {
     const o = (screen.orientation || {}).type || screen.mozOrientation || screen.msOrientation
-    if (['landscape-primary','landscape-secondary'].includes(o)) this.becomeFullscreen()
+    if (['landscape-primary', 'landscape-secondary'].includes(o)) this.becomeFullscreen()
   }
 
   _handleVideoPlaying = () => {
@@ -339,8 +344,7 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _handleVideoLoadedData = async () => {
-    const subs = await getSubtitlesFiles(this.globule, this.path)
-    const base = getUrl(this.globule)
+    const subs = await getSubtitlesFiles(this.path)
 
     subs.forEach(f => {
       const track = document.createElement('track')
@@ -352,8 +356,7 @@ export class VideoPlayer extends HTMLElement {
       } catch {
         track.label = langId
       }
-      const enc = f.getPath().split('/').map(encodeURIComponent).join('/')
-      track.src = `${base}${enc.startsWith('/') ? '' : '/'}${enc}`
+      track.src = buildFileUrl(f.getPath())
       track.srclang = langId
       this.player.media.appendChild(track)
     })
@@ -365,15 +368,15 @@ export class VideoPlayer extends HTMLElement {
       for (let i = 0; i < ats.length; i++) {
         const t = ats[i]
         const opt = document.createElement('option')
-        opt.textContent = t.label || t.language || `Track ${i+1}`
+        opt.textContent = t.label || t.language || `Track ${i + 1}`
         opt.value = String(i)
         this.audioTrackSelector.appendChild(opt)
       }
       const lang = navigator.language || navigator.userLanguage || ''
       let def = 0
       for (let i = 0; i < ats.length; i++) {
-        const code = (ats[i].language || '').slice(0,2)
-        if (code && code === lang.slice(0,2)) { ats[i].enabled = true; def = i }
+        const code = (ats[i].language || '').slice(0, 2)
+        if (code && code === lang.slice(0, 2)) { ats[i].enabled = true; def = i }
         else ats[i].enabled = false
       }
       this.audioTrackSelector.value = String(def)
@@ -459,7 +462,7 @@ export class VideoPlayer extends HTMLElement {
       if (this.titleInfo) localStorage.removeItem(this.titleInfo.getId())
 
       if (this.playlist.items.length > 1) this.playlist.playNext()
-      else if (this.loop) this.play(this.path, this.titleInfo && this.titleInfo.globule, this.titleInfo || null)
+      else if (this.loop) this.play(this.path, this.titleInfo || null)
       else this.stop()
     }
   }
@@ -516,9 +519,7 @@ export class VideoPlayer extends HTMLElement {
       try {
         const res = await fetch(this.getAttribute('src'))
         const data = await res.text()
-        const url = new URL(this.getAttribute('src'))
-        const address = `${url.protocol}//${url.host}`
-        this.loadPlaylist(data, Backend.getGlobule(address))
+        this.loadPlaylist(data)
       } catch (e) {
         console.error('Failed to load playlist from src attribute:', e)
         displayError('Failed to load playlist from provided URL.')
@@ -555,14 +556,16 @@ export class VideoPlayer extends HTMLElement {
           }
         }
         this.videoElement.src = ''
-        this.loadPlaylist(m3u, this.globule)
+        this.loadPlaylist(m3u)
       }
     }
   }
 
-  loadPlaylist(path, globule) {
+  loadPlaylist(path) {
     this.playlist.clear()
-    this.playlist.load(path, globule, this, () => {
+    // If your PlayList.load previously expected (path, globule, player, cb),
+    // it should now ignore the second argument or you can update that class similarly.
+    this.playlist.load(path, /* deprecated globule */ undefined, this, () => {
       this._updatePlaylistVisibility()
       setTimeout(fireResize, 500)
     })
@@ -637,67 +640,82 @@ export class VideoPlayer extends HTMLElement {
     preview.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;flex-direction:column;justify-content:flex-start;user-select:none;background:rgba(0,0,0,.5);'
 
+
+    let posterUrl = ''
+    let description = ''
+
     if (this.titleInfo) {
-      const posterUrl = this.titleInfo.getPoster && this.titleInfo.getPoster().getContenturl()
-      if (posterUrl) {
-        preview.style.backgroundImage = `url('${posterUrl}')`
-        preview.style.backgroundSize = 'cover'
-        preview.style.backgroundPosition = 'center center'
-        preview.style.backgroundBlendMode = 'overlay'
-        preview.style.backgroundRepeat = 'no-repeat'
-      }
-
-      const titleSpan = document.createElement('span')
-      titleSpan.style.cssText = 'color:white;padding:2px;font-size:.8rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;position:absolute;bottom:0;'
-      titleSpan.innerHTML = this.titleInfo.getDescription ? this.titleInfo.getDescription() : ''
-      preview._title = titleSpan
-      preview.appendChild(titleSpan)
-
-      const buttons = document.createElement('div')
-      buttons.style.cssText = 'display:flex;justify-content:center;align-items:center;flex-direction:row;flex-grow:1;'
-
-      const mkBtn = (icon, size, handler, id) => {
-        const btn = document.createElement('iron-icon')
-        btn.style.cssText = `fill:white;height:${size}px;width:${size}px;`
-        btn.icon = icon
-        btn.id = id
-        btn.onclick = (evt) => {
-          evt.stopPropagation()
-          handler()
-          document.dispatchEvent(new CustomEvent('refresh-preview', { bubbles: true, composed: true }))
-        }
-        return btn
-      }
-
-      const prev = mkBtn('av:skip-previous', 32, this._skipPrevious, 'preview-skip-previous-btn')
-      const play = mkBtn('av:play-circle-outline', 48, () => this.player && this.player.play(), 'preview-play-btn')
-      const pause = mkBtn('av:pause-circle-outline', 48, () => this.player && this.player.pause(), 'preview-pause-btn')
-      const next = mkBtn('av:skip-next', 32, this._skipNext, 'preview-skip-next-btn')
-
-      if (this.player && this.player.playing) { play.style.display = 'none'; pause.style.display = 'block' }
-      else { play.style.display = 'block'; pause.style.display = 'none' }
-
-      play.onclick = (e) => { e.stopPropagation(); this.player && this.player.play(); play.style.display = 'none'; pause.style.display = 'block' }
-      pause.onclick = (e) => { e.stopPropagation(); this.player && this.player.pause(); play.style.display = 'block'; pause.style.display = 'none' }
-
-      buttons.appendChild(prev); buttons.appendChild(play); buttons.appendChild(pause); buttons.appendChild(next)
-
-      const info = document.createElement('span')
-      info.style.cssText = 'color:white;font-size:1rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:16px;'
-      info.innerHTML = this.trackInfoElement ? this.trackInfoElement.innerHTML : ''
-
-      preview.appendChild(buttons)
-      preview.appendChild(info)
-
-      this.previewElement = preview
+      posterUrl = this.titleInfo.getPoster && this.titleInfo.getPoster().getContenturl()
+      description = this.titleInfo.getDescription ? this.titleInfo.getDescription() : ''
+    }else {
+      description = this.path.substring(this.path.lastIndexOf('/') + 1)
     }
+
+    if (posterUrl) {
+      preview.style.backgroundImage = `url('${posterUrl}')`
+    } else {
+      const clapperUrl = new URL('../assets/images/movie-clapperboard.svg', import.meta.url).href;
+      // or: import clapperUrl from '../assets/images/movie-clapperboard.svg?url';
+
+      preview.style.backgroundImage = `url('${clapperUrl}')`;
+    }
+
+    preview.style.backgroundSize = 'cover'
+    preview.style.backgroundPosition = 'center center'
+    preview.style.backgroundBlendMode = 'overlay'
+    preview.style.backgroundRepeat = 'no-repeat'
+
+
+    const titleSpan = document.createElement('span')
+    titleSpan.style.cssText = 'color:white;padding:2px;font-size:.8rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;position:absolute;bottom:0;'
+    titleSpan.innerHTML = description
+    preview._title = titleSpan
+    preview.appendChild(titleSpan)
+
+    const buttons = document.createElement('div')
+    buttons.style.cssText = 'display:flex;justify-content:center;align-items:center;flex-direction:row;flex-grow:1;'
+
+    const mkBtn = (icon, size, handler, id) => {
+      const btn = document.createElement('iron-icon')
+      btn.style.cssText = `fill:white;height:${size}px;width:${size}px;`
+      btn.icon = icon
+      btn.id = id
+      btn.onclick = (evt) => {
+        evt.stopPropagation()
+        handler()
+        document.dispatchEvent(new CustomEvent('refresh-preview', { bubbles: true, composed: true }))
+      }
+      return btn
+    }
+
+    const prev = mkBtn('av:skip-previous', 32, this._skipPrevious, 'preview-skip-previous-btn')
+    const play = mkBtn('av:play-circle-outline', 48, () => this.player && this.player.play(), 'preview-play-btn')
+    const pause = mkBtn('av:pause-circle-outline', 48, () => this.player && this.player.pause(), 'preview-pause-btn')
+    const next = mkBtn('av:skip-next', 32, this._skipNext, 'preview-skip-next-btn')
+
+    if (this.player && this.player.playing) { play.style.display = 'none'; pause.style.display = 'block' }
+    else { play.style.display = 'block'; pause.style.display = 'none' }
+
+    play.onclick = (e) => { e.stopPropagation(); this.player && this.player.play(); play.style.display = 'none'; pause.style.display = 'block' }
+    pause.onclick = (e) => { e.stopPropagation(); this.player && this.player.pause(); play.style.display = 'block'; pause.style.display = 'none' }
+
+    buttons.appendChild(prev); buttons.appendChild(play); buttons.appendChild(pause); buttons.appendChild(next)
+
+    const info = document.createElement('span')
+    info.style.cssText = 'color:white;font-size:1rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:16px;'
+    info.innerHTML = this.trackInfoElement ? this.trackInfoElement.innerHTML : ''
+
+    preview.appendChild(buttons)
+    preview.appendChild(info)
+
+    this.previewElement = preview
+
 
     return preview
   }
 
-  async play(path, globule, titleInfo) {
+  async play(path, titleInfo) {
     if (titleInfo) {
-      if (!titleInfo.globule) titleInfo.globule = globule
       this.titleInfo = titleInfo
     } else {
       this.titleInfo = null
@@ -707,7 +725,7 @@ export class VideoPlayer extends HTMLElement {
     const token = getAuthToken()
 
     if (!/^https?:\/\//i.test(urlToPlay)) {
-      urlToPlay = buildFileUrl(path, globule, token)
+      urlToPlay = buildFileUrl(path, token)
     } else {
       const u = new URL(urlToPlay)
       const p = new URLSearchParams(u.search)
@@ -741,14 +759,14 @@ export class VideoPlayer extends HTMLElement {
         throw new Error(`HTTP status ${head.status}`)
       }
 
-      this.playContent(path, globule, token, urlToPlay)
+      this.playContent(path, token, urlToPlay)
     } catch (e) {
       displayError(`Failed to access video URL ${urlToPlay}: ${e.message}`)
       this.stop()
     }
   }
 
-  async playContent(path, globule, token, urlToPlay) {
+  async playContent(path, token, urlToPlay) {
     this.resized = false
     this.style.zIndex = 100
 
@@ -793,7 +811,7 @@ export class VideoPlayer extends HTMLElement {
         getWatchingTitle(
           this.titleInfo.getId(),
           (watching) => { if (watching && typeof watching.currentTime === 'number') this.videoElement.currentTime = watching.currentTime },
-          () => {}
+          () => { }
         )
       }
 
@@ -802,7 +820,6 @@ export class VideoPlayer extends HTMLElement {
           'play_video_player_evt_',
           {
             _id: this.titleInfo.getId(),
-            domain: this.titleInfo.globule && this.titleInfo.globule.domain,
             isVideo: this.titleInfo.isVideo,
             currentTime: this.videoElement.currentTime,
             date: new Date()
@@ -817,11 +834,10 @@ export class VideoPlayer extends HTMLElement {
     if (/\.(mp4|MP4|mkv)$/i.test(path)) thumbBase = path.substring(0, path.lastIndexOf('.'))
     const vtt = buildFileUrl(
       `${thumbBase.substring(0, thumbBase.lastIndexOf('/') + 1)}.hidden${thumbBase.substring(thumbBase.lastIndexOf('/'))}/__timeline__/thumbnail.vtt`,
-      globule,
       token
     )
-    if (this.player && this.player.setPreviewthumbnail) {
-      this.player.setPreviewthumbnail({ enabled: 'true', src: vtt })
+    if (this.player && this.player.setPreviewthumbnails) {
+      this.player.setPreviewthumbnails({ enabled: 'true', src: vtt })
     }
 
     // set source
@@ -884,7 +900,6 @@ export class VideoPlayer extends HTMLElement {
     if (this.titleInfo && this.titleInfo.getId) {
       const payload = {
         _id: this.titleInfo.getId(),
-        domain: this.titleInfo.globule && this.titleInfo.globule.address,
         isVideo: this.titleInfo.isVideo,
         currentTime: this.videoElement.currentTime,
         date: new Date()
@@ -912,7 +927,6 @@ export class VideoPlayer extends HTMLElement {
 
     if (this.container.setWidth) this.container.setWidth(w)
     if (this.container.setHeight) this.container.setHeight('auto')
-    fireResize()
   }
 }
 
@@ -946,21 +960,15 @@ export class VideoTrack extends HTMLElement {
       v.setPoster(p)
     }
 
-    const urlObj = new URL(v.getUrl())
-    const globule = Backend.getGlobule(`${urlObj.protocol}//${urlObj.host}`)
-    v.globule = globule
-
     try {
       const fetched = await new Promise((resolve, reject) => {
         getVideoInfo(
           v.getId(),
           (full) => {
             full.setUrl(v.getUrl())
-            full.globule = globule
             resolve(full)
           },
-          reject,
-          globule
+          reject
         )
       })
       return fetched

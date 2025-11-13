@@ -18,10 +18,11 @@ type GroupProtoLike = {
 type AnyGroup = GroupVM | GroupProtoLike | null
 
 const DEFAULT_GROUP_ICON = "assets/icons/group.svg"
+const groupIcon = new URL('../assets/icons/group.svg', import.meta.url).href;
 
 /** Coerce either GroupVM or proto-like object into a GroupVM-like object with icon support */
 function coerceGroup(a: AnyGroup): GroupVM & { icon?: string } {
-    if (!a) return { id: "", name: "", description: "", members: [], icon: DEFAULT_GROUP_ICON } as any
+    if (!a) return { id: "", name: "", description: "", members: [], icon: groupIcon } as any
 
     // If it looks like a VM already
     if ((a as GroupVM).name !== undefined || (a as any).members) {
@@ -31,7 +32,7 @@ function coerceGroup(a: AnyGroup): GroupVM & { icon?: string } {
             name: g.name || "",
             description: g.description || "",
             members: Array.isArray(g.members) ? g.members.slice() : [],
-            icon: g.icon || DEFAULT_GROUP_ICON,
+            icon: g.icon || groupIcon,
         } as any
     }
 
@@ -42,7 +43,7 @@ function coerceGroup(a: AnyGroup): GroupVM & { icon?: string } {
         name: p?.getName?.() || "",
         description: p?.getDescription?.() || "",
         members: p?.getMembersList?.() || [],
-        icon: p?.getIcon?.() || DEFAULT_GROUP_ICON,
+        icon: p?.getIcon?.() || groupIcon,
     } as any
 }
 
@@ -54,7 +55,7 @@ export class GroupView extends HTMLElement {
     public onAdd?: () => void
 
     private root: ShadowRoot
-    private _group: (GroupVM & { icon?: string }) = { id: "", name: "", description: "", members: [], icon: DEFAULT_GROUP_ICON } as any
+    private _group: (GroupVM & { icon?: string }) = { id: "", name: "", description: "", members: [], icon: groupIcon } as any
 
     // cached refs
     private titleEl?: HTMLSpanElement | null

@@ -2,55 +2,61 @@
 
 import { Backend } from "../../backend/backend"; // still used for eventHub
 import { displayError } from "../../backend/ui/notify";
-import * as files from "../../backend/cms/files"; // FileVM helpers, getHiddenFiles, getImages
+import * as files from "../../backend/cms/files"; // getHiddenFiles, getImages
 
-import '@polymer/paper-ripple/paper-ripple.js';
+import "@polymer/paper-ripple/paper-ripple.js";
 
 export class VideoPreview extends HTMLElement {
   /** @type {import('../../backend/cms/files').FileVM | any | null} */
   _file = null;
   /** @type {number} */
   _height = 0;
+
   /** @type {(w:number,h:number)=>void | null} */
   _onresize = null;
   /** @type {()=>void | null} */
   _onpreview = null;
   /** @type {(f:any)=>void | null} */
   _onplay = null;
+
   /** @type {string} */
   _title = "";
   /** @type {any | null} */
   _fileExplorer = null;
 
+  /** DOM refs */
   /** @type {HTMLElement | null} */
   _container = null;
   /** @type {HTMLImageElement | null} */
-  _firstImageElement = null;
-  /** @type {HTMLImageElement[]} */
-  _previewImages = [];
+  _previewImg = null;
+
+  /** Frames (URLs only) */
+  /** @type {string[]} */
+  _frameUrls = [];
   /** @type {number} */
-  _currentPreviewImageIndex = 0;
+  _currentIndex = 0;
   /** @type {number | null} */
   _previewIntervalId = null;
 
   /** @type {ResizeObserver | null} */
   _resizeObserver = null;
 
-  /** Bound handlers for add/removeEventListener symmetry */
+  /** Bound handlers */
   _boundClick = null;
   _boundEnter = null;
   _boundLeave = null;
 
-  /** Hovers/loads */
-  _timelineLoadStarted = false; // guard: only attempt once per file
+  /** State */
+  _timelineLoadStarted = false;
   _destroyed = false;
 
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
+    this.attachShadow({ mode: "open" });
+
     this._boundClick = (e) => this._handleContainerClick(e);
-    this._boundEnter = (e) => this._handleContainerMouseEnter(e);
-    this._boundLeave = (e) => this._handleContainerMouseLeave(e);
+    this._boundEnter = (e) => this._handleMouseEnter(e);
+    this._boundLeave = (e) => this._handleMouseLeave(e);
   }
 
   connectedCallback() {
@@ -59,6 +65,7 @@ export class VideoPreview extends HTMLElement {
         :host { display: block; }
         #container {
           height: ${this._height}px;
+          width: ${this._height}px;
           position: relative;
           overflow: hidden;
           display: flex;
@@ -75,20 +82,20 @@ export class VideoPreview extends HTMLElement {
           object-fit: contain;
           position: absolute;
           transition: opacity 0.2s ease-in-out;
-          opacity: 0;
+          opacity: 1;
           pointer-events: none;
         }
-        .preview-active { opacity: 1; }
-        .preview-inactive { opacity: 0; }
         slot { position: relative; z-index: 1; }
       </style>
       <div id="container" draggable="false" aria-label="Video preview">
         <slot></slot>
+        <img id="preview" alt="">
         <paper-ripple></paper-ripple>
       </div>
     `;
 
     this._container = this.shadowRoot.querySelector("#container");
+    this._previewImg = this.shadowRoot.querySelector("#preview");
 
     if (this._container) {
       this._container.addEventListener("click", this._boundClick);
@@ -96,123 +103,190 @@ export class VideoPreview extends HTMLElement {
       this._container.addEventListener("mouseleave", this._boundLeave);
     }
 
-    // Keep width in sync if the component or container resizes
     this._resizeObserver = new ResizeObserver(() => this._updateWidthAndNotify());
     if (this._container) this._resizeObserver.observe(this._container);
 
     this._destroyed = false;
-    this._loadInitialThumbnail();
+
+    // If we already know some frames (setFile called before connect), show first one
+    this._syncPreviewImage();
   }
 
   disconnectedCallback() {
     this.stopPreview();
 
-    // Remove listeners
     if (this._container) {
       this._container.removeEventListener("click", this._boundClick);
       this._container.removeEventListener("mouseenter", this._boundEnter);
       this._container.removeEventListener("mouseleave", this._boundLeave);
     }
 
-    // Disconnect observer
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
 
-    // Clear image elements to help GC
-    if (this._container) {
-      this._container.querySelectorAll('img').forEach(img => img.remove());
-    }
-    this._firstImageElement = null;
-    this._previewImages = [];
-    this._timelineLoadStarted = false;
     this._destroyed = true;
+    this._previewImg = null;
+    this._container = null;
+    this._timelineLoadStarted = false;
+    this._frameUrls = [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
+  hasPreviewImages() {
+    return this._frameUrls.length > 0;
   }
 
   /** Accepts a FileVM or legacy proto-like object */
-  setFile(file) {
-    if (this._file === file) return; // no-op if same
+  setFile(file, height = 128) {
+    if (this._file === file) return;
+
     this._file = file;
     this._title = this._getPath();
-    this._previewImages = [];
-    this._firstImageElement = null;
+    this._frameUrls = [];
+    this._currentIndex = 0;
     this._timelineLoadStarted = false;
+
+    this.setHeight(height);
     this.stopPreview();
 
-    if (this._container) {
-      this._container.querySelectorAll('img').forEach(img => img.remove());
-    }
+    // First, use primary thumbnail (if any)
     this._loadInitialThumbnail();
+
+    // Then fire-and-forget timeline loading
+    this._ensureTimelineLoaded().catch(() => {
+      // errors are handled inside
+    });
   }
 
   setHeight(height) {
     this._height = height;
     if (this._container) {
       this._container.style.height = `${height}px`;
+      this._container.style.width = `${height}px`;
       this._updateWidthAndNotify();
     }
   }
 
-  setOnResize(callback) { this._onresize = callback; }
-  setOnPreview(callback) { this._onpreview = callback; }
-  setOnPlay(callback) { this._onplay = callback; }
-  setFileExplorer(fileExplorer) { this._fileExplorer = fileExplorer; }
+  setOnResize(cb)   { this._onresize  = cb; }
+  setOnPreview(cb)  { this._onpreview = cb; }
+  setOnPlay(cb)     { this._onplay    = cb; }
+  setFileExplorer(fx) { this._fileExplorer = fx; }
 
-  /** Try to read path from either FileVM or legacy shape */
-  _getPath() {
-    if (!this._file) return "";
-    return typeof this._file.getPath === "function" ? this._file.getPath() : (this._file.path || "");
+  hasTimeline() {
+    return this._frameUrls.length > 1;
   }
 
-  /** Try to read a primary thumbnail URL */
+  startPreview() {
+    if (this._previewIntervalId !== null) return;
+
+    this._currentIndex = 0;
+    this._syncPreviewImage();
+    this._onpreview && this._onpreview();
+
+    const tick = () => {
+      if (document.visibilityState === "hidden") return;
+      if (this._frameUrls.length === 0) return;
+
+      this._currentIndex = (this._currentIndex + 1) % this._frameUrls.length;
+      this._syncPreviewImage();
+    };
+
+    this._previewIntervalId = window.setInterval(tick, 350);
+  }
+
+  stopPreview() {
+    if (this._previewIntervalId !== null) {
+      clearInterval(this._previewIntervalId);
+      this._previewIntervalId = null;
+    }
+    // Reset to first frame if available
+    this._currentIndex = 0;
+    this._syncPreviewImage();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internals
+  // ---------------------------------------------------------------------------
+
+  _getPath() {
+    if (!this._file) return "";
+    return typeof this._file.getPath === "function"
+      ? this._file.getPath()
+      : (this._file.path || "");
+  }
+
   _getPrimaryThumbnail() {
     if (!this._file) return "";
     if (typeof this._file.getThumbnail === "function") return this._file.getThumbnail();
-    if (Array.isArray(this._file.thumbnail) && this._file.thumbnail.length > 0) return this._file.thumbnail[0];
+    if (Array.isArray(this._file.thumbnail) && this._file.thumbnail.length > 0) {
+      return this._file.thumbnail[0];
+    }
     return "";
   }
 
   _loadInitialThumbnail() {
-    if (!this._file || !this._container) return;
-
     const thumb = this._getPrimaryThumbnail();
-    if (thumb) {
-      const img = document.createElement("img");
-      img.decoding = "async";
-      img.loading = "lazy";
-      img.alt = `Thumbnail for ${this._title}`;
-      img.src = thumb;
+    if (!thumb) return;
 
-      img.onload = () => {
-        if (this._destroyed) return;
-        this._firstImageElement = img;
-        this._container.appendChild(img);
-        img.classList.add('preview-active');
-        this._previewImages[0] = img;
-        this._updateWidthAndNotify();
-      };
-      img.onerror = (e) => {
-        console.error("Failed to load initial thumbnail:", e);
-        displayError("Failed to load video thumbnail.", 3000);
-      };
+    // Insert thumbnail as first frame URL
+    if (!this._frameUrls.includes(thumb)) {
+      this._frameUrls.unshift(thumb);
     }
-    // else: no inline thumbnail; will attempt hover previews if present
+
+    // If DOM is ready, apply immediately
+    this._syncPreviewImage();
+  }
+
+  _syncPreviewImage() {
+    if (!this._previewImg) return;
+    const url = this._frameUrls[this._currentIndex] || this._frameUrls[0];
+
+    if (!url) return;
+
+    this._previewImg.alt = `Thumbnail for ${this._title}`;
+    if (this._previewImg.src !== url) {
+      this._previewImg.src = url;
+    }
+
+    this._updateWidthAndNotify();
   }
 
   _updateWidthAndNotify() {
-    // Estimate width using first visible image’s intrinsic ratio
-    const refImg = this._firstImageElement || this._previewImages[0];
-    if (refImg && (refImg.naturalHeight || refImg.offsetHeight)) {
-      const h = this._height || (this._container ? this._container.clientHeight : 0);
-      const basisH = refImg.naturalHeight || refImg.offsetHeight || 1;
-      const basisW = refImg.naturalWidth || refImg.offsetWidth || 0;
-      const ratio = h / basisH;
-      this.width = Math.round(basisW * ratio);
-    } else {
-      this.width = this._container ? this._container.clientWidth : 0;
+    if (!this._previewImg) return;
+
+    const h = this._height || (this._container ? this._container.clientHeight : 0);
+    const basisH = this._previewImg.naturalHeight || this._previewImg.offsetHeight || 1;
+    const basisW = this._previewImg.naturalWidth || this._previewImg.offsetWidth || 0;
+    const ratio  = h / basisH;
+    this.width   = Math.round(basisW * ratio);
+
+    if (this._onresize) {
+      this._onresize(this.width, this._height);
     }
-    this._onresize && this._onresize(this.width, this._height);
+  }
+
+  async _handleMouseEnter(evt) {
+    evt.stopPropagation();
+
+    if (this._frameUrls.length > 1) {
+      this.startPreview();
+      return;
+    }
+
+    const hasTimeline = await this._ensureTimelineLoaded().catch(() => false);
+    if (hasTimeline || this._frameUrls.length > 1 || this._frameUrls.length === 1) {
+      this.startPreview();
+    }
+  }
+
+  _handleMouseLeave(evt) {
+    evt.stopPropagation();
+    this.stopPreview();
   }
 
   _handleContainerClick(evt) {
@@ -220,115 +294,77 @@ export class VideoPreview extends HTMLElement {
     this._playVideo();
   }
 
-  async _handleContainerMouseEnter(evt) {
-    evt.stopPropagation();
-
-    // Already have a sequence? just start it
-    if (this._previewImages.length > 1) {
-      this.startPreview();
-      return;
-    }
-
-    // Avoid parallel loads and redundant calls
+  async _ensureTimelineLoaded() {
     if (this._timelineLoadStarted) {
-      this.startPreview();
-      return;
+      return this._frameUrls.length > 1;
     }
     this._timelineLoadStarted = true;
 
     const path = this._getPath();
-    if (!path) return;
+    if (!path) {
+      this._emitTimelineLoaded(false);
+      return false;
+    }
 
     try {
-      // hidden frames under: .hidden/<basename>/__timeline__
-      const dir = await files.getHiddenFiles(path, "__timeline__"); // DirVM | null
-      const list = dir?.files || [];
-
+      // .hidden/<basename>/__preview__
+      const dir = await files.getHiddenFiles(path, "__preview__");
+      const list = (dir && dir.files) || [];
       if (list.length === 0) {
-        // No extra frames; if we at least have 1 image, animate it (noop) else skip
-        if (this._previewImages.length === 1) this.startPreview();
-        return;
+        this._emitTimelineLoaded(false);
+        return false;
       }
 
-      // Load images as HTMLImageElements via files facade (auth handled inside)
-      const imgs = await files.getImages(list);
-      if (this._destroyed) return;
-
-      const validImgs = imgs.filter(img => img instanceof HTMLImageElement);
-      // Keep first thumbnail (if present) as frame 0, then add timeline frames
-      this._previewImages = [...this._previewImages, ...validImgs];
-
-      if (this._container && this._previewImages.length > 0) {
-        this._previewImages.forEach(img => {
-          if (!img.parentNode) {
-            img.classList.add('preview-inactive');
-            img.decoding = "async";
-            img.loading = "lazy";
-            this._container.appendChild(img);
-          }
-        });
-        this.startPreview();
+      const imgs = await files.getImages(list); // returns HTMLImageElement[]
+      if (this._destroyed || !imgs || imgs.length === 0) {
+        this._emitTimelineLoaded(false);
+        return false;
       }
-    } catch (error) {
-      console.error("Error loading preview images:", error);
+
+      const urls = imgs
+        .filter(img => img instanceof HTMLImageElement)
+        .map(img => img.src)
+        .filter(Boolean);
+
+      if (urls.length === 0) {
+        this._emitTimelineLoaded(false);
+        return false;
+      }
+
+      // Ensure primary thumbnail stays first (if any)
+      const thumb = this._getPrimaryThumbnail();
+      if (thumb && !this._frameUrls.includes(thumb)) {
+        this._frameUrls.unshift(thumb);
+      }
+
+      // Append timeline frames without duplicates
+      for (const u of urls) {
+        if (!this._frameUrls.includes(u)) {
+          this._frameUrls.push(u);
+        }
+      }
+
+      const hasTimeline = this._frameUrls.length > 1;
+      this._emitTimelineLoaded(hasTimeline);
+
+      // If we are already in the DOM, update displayed image
+      this._syncPreviewImage();
+
+      return hasTimeline;
+    } catch (err) {
+      console.error("Error loading preview images:", err);
       displayError("Failed to load video previews.", 3000);
+      this._emitTimelineLoaded(false);
+      return false;
     }
   }
 
-  _handleContainerMouseLeave(evt) {
-    evt.stopPropagation();
-    this.stopPreview();
-  }
-
-  /** Public: start cycling frames */
-  startPreview() {
-    if (this._previewIntervalId !== null) return;
-
-    this._currentPreviewImageIndex = 0;
-    this._onpreview && this._onpreview();
-
-    if (this._previewImages.length > 0) {
-      this._showImage(this._previewImages[0]);
-    }
-
-    // If the tab is hidden, don’t burn CPU; resume when visible
-    const tick = () => {
-      if (document.visibilityState === "hidden") return;
-      if (this._previewImages.length === 0) return;
-
-      this._previewImages.forEach(img => img.classList.remove('preview-active'));
-      this._currentPreviewImageIndex =
-        (this._currentPreviewImageIndex + 1) % this._previewImages.length;
-
-      const imgToShow = this._previewImages[this._currentPreviewImageIndex];
-      if (imgToShow) this._showImage(imgToShow);
-    };
-
-    this._previewIntervalId = window.setInterval(tick, 350);
-  }
-
-  _showImage(imgToShow) {
-    if (!this._container) return;
-    this._container.querySelectorAll('img').forEach(img => {
-      if (img === imgToShow) img.classList.add('preview-active');
-      else img.classList.remove('preview-active');
-    });
-  }
-
-  /** Public: stop cycling, revert to first frame if possible */
-  stopPreview() {
-    if (this._previewIntervalId !== null) {
-      clearInterval(this._previewIntervalId);
-      this._previewIntervalId = null;
-    }
-
-    if (this._firstImageElement) {
-      this._showImage(this._firstImageElement);
-    } else if (this._previewImages.length > 0) {
-      this._showImage(this._previewImages[0]);
-    } else if (this._container) {
-      this._container.querySelectorAll('img').forEach(img => img.classList.remove('preview-active'));
-    }
+  _emitTimelineLoaded(hasTimeline) {
+    this.dispatchEvent(new CustomEvent("timeline-loaded", {
+      bubbles: true,
+      composed: true,
+      detail: { hasTimeline },
+    }));
   }
 
   _playVideo() {
@@ -348,4 +384,4 @@ export class VideoPreview extends HTMLElement {
   }
 }
 
-customElements.define('globular-video-preview', VideoPreview);
+customElements.define("globular-video-preview", VideoPreview);
