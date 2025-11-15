@@ -41,6 +41,7 @@ export class FilesUploader extends HTMLElement {
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: var(--surface-color); }
         ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+
         #container {
           background-color: var(--surface-color);
           position: relative;
@@ -49,42 +50,206 @@ export class FilesUploader extends HTMLElement {
           flex-direction: column;
           height: ${this.height}px;
           width: ${this.width}px;
+          box-shadow: var(--shadow-elevation-2dp, 0 2px 4px rgba(0,0,0,0.24));
+          border-left: 1px solid var(--palette-divider);
         }
-        .collapse-torrent-panel { display:flex; flex-direction:column; max-height:200px; overflow:auto; width:100%; }
-        .content { display:flex; flex-direction:column; flex-grow:1; }
-        .card-content { border-left:1px solid var(--palette-divider); overflow-y:auto; flex-grow:1; max-height:calc(100vh - 200px); min-height:300px; }
-        .table { width:100%; display:flex; flex-direction:column; }
-        .table-header { border-bottom:1px solid var(--palette-divider); padding-bottom:5px; }
-        .table-body { position:relative; width:100%; display:flex; flex-direction:column; }
-        .table-header, .table-row { display:flex; flex-direction:row; width:100%; }
-        .table-row { border-bottom:1px solid var(--palette-divider); }
-        .table-cell { padding:5px; display:flex; align-items:center; justify-content:flex-start; }
-        .file-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; display:inline-block; }
-        .file-path { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; display:inline-block; text-decoration:underline; flex-grow:1; }
-        .file-path:hover { cursor:pointer; }
-        .speedometer-div { min-width:60px; text-align:right; padding-right:5px; }
-        paper-card { background-color:var(--surface-color); color:var(--primary-text-color); }
+
+        .content {
+          display: flex;
+          flex-direction: column;
+          flex-grow: 1;
+          min-height: 0;
+        }
+
+        .header-bar {
+          display: flex;
+          align-items: center;
+          background: var(--surface-color-dark, var(--palette-primary-accent));
+          border-bottom: 1px solid var(--palette-divider);
+        }
+
         paper-tabs {
-          background:var(--surface-color);
-          border-left:1px solid var(--palette-divider);
-          width:100%;
+          background: transparent;
+          width: 100%;
           --paper-tabs-selection-bar-color: var(--primary-color);
           color: var(--primary-text-color);
           --paper-tab-ink: var(--palette-action-disabled);
         }
-        #close-btn { display:none; }
+
+        #close-btn {
+          display: none;
+          margin-right: 4px;
+        }
+
+        .card-content {
+          padding: 0;
+          border-left: 1px solid var(--palette-divider);
+          overflow-y: auto;
+          flex-grow: 1;
+          max-height: calc(100vh - 220px);
+          min-height: 260px;
+        }
+
+        .table {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .table-header {
+          border-bottom: 1px solid var(--palette-divider);
+          padding: 4px 0;
+          font-size: 0.8rem;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--secondary-text-color);
+        }
+
+        .table-body {
+          position: relative;
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .table-header,
+        .table-row {
+          display: flex;
+          flex-direction: row;
+          width: 100%;
+        }
+
+        .table-row {
+          border-bottom: 1px solid var(--palette-divider);
+          transition: background 0.15s ease, opacity 0.15s ease;
+        }
+
+        .table-row:hover {
+          background: var(--hover-background-color, rgba(255,255,255,0.02));
+        }
+
+        .table-row.completed {
+          opacity: 0.85;
+        }
+
+        .table-cell {
+          padding: 4px 6px;
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          font-size: 0.85rem;
+        }
+
+        .table-cell:first-child {
+          width: 32px;
+          justify-content: center;
+        }
+
+        .table-cell.size-cell {
+          min-width: 72px;
+          justify-content: flex-end;
+          font-variant-numeric: tabular-nums;
+        }
+
+        .file-name {
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          display: inline-block;
+        }
+
+        .file-path {
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          display: inline-block;
+          text-decoration: underline;
+          flex-grow: 1;
+          cursor: pointer;
+        }
+
+        .file-path:hover {
+          text-decoration: none;
+        }
+
+        .speedometer-div {
+          min-width: 60px;
+          text-align: right;
+          padding-right: 5px;
+          font-variant-numeric: tabular-nums;
+        }
+
+        paper-card {
+          background-color: var(--surface-color);
+          color: var(--primary-text-color);
+        }
+
+        /* Status bar at bottom */
+        #status-bar {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 8px;
+          border-top: 1px solid var(--palette-divider);
+          font-size: 0.8rem;
+          background: var(--surface-color-dark, rgba(0,0,0,0.02));
+          color: var(--secondary-text-color);
+        }
+
+        #status-indicator {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--palette-action-disabled, rgba(150,150,150,0.7));
+          box-shadow: 0 0 0 0 rgba(0,0,0,0.15);
+        }
+
+        #status-bar.busy #status-indicator {
+          background: var(--primary-color);
+          animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+          0% {
+            transform: scale(1);
+            box-shadow: 0 0 0 0 rgba(0,0,0,0.15);
+          }
+          50% {
+            transform: scale(1.25);
+            box-shadow: 0 0 0 4px rgba(0,0,0,0.05);
+          }
+          100% {
+            transform: scale(1);
+            box-shadow: 0 0 0 0 rgba(0,0,0,0.0);
+          }
+        }
+
+        .status-text-strong {
+          color: var(--primary-text-color);
+        }
+
         @media (max-width: 500px) {
           .table { width: calc(100vw - 5px); }
-          .table-cell { padding:0px; }
-          .card-content { max-height: calc(100vh - 120px); height: calc(100vh - 120px); }
-          #container { height:100%; width:100%; }
-          #close-btn { display:block; }
-          .file-path { max-width: calc(100vw - 160px); }
+          .table-cell { padding: 2px 4px; }
+          .card-content {
+            max-height: calc(100vh - 140px);
+            height: calc(100vh - 140px);
+          }
+          #container {
+            height: 100%;
+            width: 100%;
+          }
+          #close-btn {
+            display: block;
+          }
+          .file-path {
+            max-width: calc(100vw - 160px);
+          }
         }
       </style>
       <div id="container">
         <div class="content">
-          <div style="display:flex; align-items:center; background: var(--palette-primary-accent);">
+          <div class="header-bar">
             <paper-tabs id="tabs" selected="0">
               <paper-tab id="file-upload-tab">Files</paper-tab>
               <paper-tab id="links-download-tab">Videos</paper-tab>
@@ -92,20 +257,40 @@ export class FilesUploader extends HTMLElement {
             </paper-tabs>
             <paper-icon-button id="close-btn" icon="icons:close"></paper-icon-button>
           </div>
-          <div class="card-content" style="padding:0px;">
+
+          <div class="card-content">
             <div class="table" id="files-upload-table">
-              <div class="table-header files-list-view-header"></div>
+              <div class="table-header files-list-view-header">
+                <div class="table-cell"></div>
+                <div class="table-cell" style="flex:1;">Transfer</div>
+                <div class="table-cell size-cell">Size</div>
+              </div>
               <div class="table-body" id="file-upload-tbody"></div>
             </div>
+
             <div class="table" id="links-download-table" style="display:none;">
-              <div class="table-header files-list-view-header"></div>
+              <div class="table-header files-list-view-header">
+                <div class="table-cell"></div>
+                <div class="table-cell" style="flex:1;">Video Download</div>
+                <div class="table-cell size-cell">Status</div>
+              </div>
               <div class="table-body" id="links-download-tbody"></div>
             </div>
+
             <div class="table" id="torrents-download-table" style="display:none;">
-              <div class="table-header files-list-view-header"></div>
+              <div class="table-header files-list-view-header">
+                <div class="table-cell"></div>
+                <div class="table-cell" style="flex:1;">Torrent</div>
+                <div class="table-cell size-cell">Speed</div>
+              </div>
               <div class="table-body" id="torrent-download-tbody"></div>
             </div>
           </div>
+        </div>
+
+        <div id="status-bar">
+          <div id="status-indicator"></div>
+          <span id="status-text"><span class="status-text-strong">Idle</span> — no active transfers</span>
         </div>
       </div>
     `
@@ -122,17 +307,45 @@ export class FilesUploader extends HTMLElement {
     this.tabsEl = this.shadowRoot.querySelector("#tabs")
 
     this.allTables = this.shadowRoot.querySelectorAll(".table")
+
+    this.statusBar = this.shadowRoot.querySelector("#status-bar")
+    this.statusIndicator = this.shadowRoot.querySelector("#status-indicator")
+    this.statusText = this.shadowRoot.querySelector("#status-text")
+
+    // simple counters for nicer status messages
+    this._activeFileUploads = 0
+    this._activeLinkDownloads = 0
+    this._activeTorrents = new Set()
+  }
+
+  setStatus(message, busy = false) {
+    if (this.statusText) {
+      this.statusText.innerHTML = message || `<span class="status-text-strong">Idle</span> — no active transfers`
+    }
+    if (this.statusBar) {
+      this.statusBar.classList.toggle("busy", !!busy)
+    }
   }
 
   addEventListeners() {
     const setSelected = (idx) => { if (this.tabsEl) this.tabsEl.selected = idx }
-    this.filesUploadTab.addEventListener("click", () => { this.switchTab("files-upload-table"); setSelected(0) })
-    this.linksDownloadTab.addEventListener("click", () => { this.switchTab("links-download-table"); setSelected(1) })
-    this.torrentsDownloadTab.addEventListener("click", () => { this.switchTab("torrents-download-table"); setSelected(2) })
+
+    this.filesUploadTab.addEventListener("click", () => {
+      this.switchTab("files-upload-table")
+      setSelected(0)
+    })
+    this.linksDownloadTab.addEventListener("click", () => {
+      this.switchTab("links-download-table")
+      setSelected(1)
+    })
+    this.torrentsDownloadTab.addEventListener("click", () => {
+      this.switchTab("torrents-download-table")
+      setSelected(2)
+    })
 
     const closeBtn = this.shadowRoot.querySelector("#close-btn")
     if (closeBtn) {
-      closeBtn.addEventListener("click", () => this.style.display = "none")
+      closeBtn.addEventListener("click", () => (this.style.display = "none"))
     }
 
     // New upload event (no .globule needed)
@@ -144,7 +357,7 @@ export class FilesUploader extends HTMLElement {
       this
     )
 
-    // Link download progress events (keep handling, ignore globule)
+    // Link download progress events
     Backend.eventHub.subscribe(
       "__upload_link_event__",
       (_uuid) => {},
@@ -174,7 +387,7 @@ export class FilesUploader extends HTMLElement {
   }
 
   initializeData() {
-    // Single-backend mode: just attach once
+    this.setStatus(`<span class="status-text-strong">Idle</span> — no active transfers`, false)
     this.getTorrentLnks()
     this.getTorrentsInfo()
   }
@@ -207,7 +420,7 @@ export class FilesUploader extends HTMLElement {
 
     if (sizeText) {
       const cellSize = document.createElement("div")
-      cellSize.className = "table-cell"
+      cellSize.className = "table-cell size-cell"
       cellSize.innerHTML = sizeText
       row.appendChild(cellSize)
     }
@@ -247,23 +460,29 @@ export class FilesUploader extends HTMLElement {
     let row = this.shadowRoot.querySelector(`#${id}`)
 
     if (done || infos === "done") {
+      // Finished
       if (!row) return
       const spanTitle = row.querySelector(`#${id}_title`)
       if (spanTitle) {
         displayMessage(`File ${spanTitle.innerHTML} was uploaded!`, 3000)
         const info = spanTitle.innerHTML
+        const fileName = info.split(": ")[1] || info
         const contentHtml = `
           <div style="display:flex; flex-direction:column; width:100%; align-items:flex-start; font-size:.85rem;">
-            <span id="file-lnk" class="file-path">${info.split(": ")[1] || info}</span>
+            <span id="file-lnk" class="file-path">${fileName}</span>
             <span id="dir-lnk" class="file-path">${path}</span>
           </div>
         `
         row.querySelector(".table-cell:nth-child(2)").innerHTML = contentHtml
+
         const cancelBtn = row.querySelector("#cancel-btn")
-        if (cancelBtn) cancelBtn.onclick = () => (row.style.display = "none")
+        if (cancelBtn) {
+          // After completion, close just hides the row
+          cancelBtn.onclick = () => (row.parentNode && row.parentNode.removeChild(row))
+        }
 
         const fileClick = () =>
-          Backend.eventHub.publish("follow_link_event_", { path: `${path}/${info.split(": ")[1] || info}` }, true)
+          Backend.eventHub.publish("follow_link_event_", { path: `${path}/${fileName}` }, true)
         const dirClick = () => Backend.eventHub.publish("follow_link_event_", { path }, true)
 
         const fileEl = row.querySelector("#file-lnk")
@@ -271,10 +490,21 @@ export class FilesUploader extends HTMLElement {
         if (fileEl) fileEl.onclick = fileClick
         if (dirEl) dirEl.onclick = dirClick
       }
+
+      this._activeLinkDownloads = Math.max(0, this._activeLinkDownloads - 1)
+      if (this._activeFileUploads === 0 && this._activeLinkDownloads === 0 && this._activeTorrents.size === 0) {
+        this.setStatus(`<span class="status-text-strong">Idle</span> — no active transfers`, false)
+      } else {
+        this.setStatus(`Some transfers are still running…`, true)
+      }
       return
     }
 
+    // Still running
     if (!row) {
+      this._activeLinkDownloads++
+      this.setStatus(`Downloading video from link…`, true)
+
       const contentHtml = `
         <div style="display:flex; flex-direction:column; width:100%; align-items:flex-start; font-size:.85rem;">
           <span id="${id}_title" style="text-align:left; width:100%;">${infos}</span>
@@ -290,7 +520,8 @@ export class FilesUploader extends HTMLElement {
             "You're about to cancel video upload. Is this what you want to do?",
             () => {
               Backend.eventHub.publish("cancel_upload_event", JSON.stringify({ pid, path }), false)
-              row.style.display = "none"
+              if (row) row.style.display = "none"
+              this._activeLinkDownloads = Math.max(0, this._activeLinkDownloads - 1)
             },
             () => {},
             "yes-delete-upload-video",
@@ -320,6 +551,9 @@ export class FilesUploader extends HTMLElement {
     let row = this.shadowRoot.querySelector(`#${id}`)
 
     if (!row) {
+      this._activeTorrents.add(uuid)
+      this.setStatus(`Downloading torrents…`, true)
+
       const contentHtml = `
         <div style="display:flex; flex-direction:column; width:100%; align-items:flex-start; font-size:.85rem;">
           <div style="display:flex; align-items:center; width:100%;">
@@ -352,6 +586,10 @@ export class FilesUploader extends HTMLElement {
               } catch (e) {
                 displayError(e, 3000)
               }
+              this._activeTorrents.delete(uuid)
+              if (this._activeFileUploads === 0 && this._activeLinkDownloads === 0 && this._activeTorrents.size === 0) {
+                this.setStatus(`<span class="status-text-strong">Idle</span> — no active transfers`, false)
+              }
             },
             () => {},
             "yes-delete-torrent",
@@ -376,15 +614,24 @@ export class FilesUploader extends HTMLElement {
     if (torrent.getPercent() === 100) {
       if (progressBar) progressBar.style.display = "none"
       if (speedo) speedo.innerHTML = "Done"
+      row.classList.add("completed")
       const titleEl = row.querySelector(`#${id}_title`)
       if (titleEl) {
         titleEl.classList.add("file-path")
         titleEl.onclick = () =>
           Backend.eventHub.publish("follow_link_event_", { path: `${torrent.getDestination()}/${torrent.getName()}` }, true)
       }
+      this._activeTorrents.delete(uuid)
+      if (this._activeFileUploads === 0 && this._activeLinkDownloads === 0 && this._activeTorrents.size === 0) {
+        this.setStatus(`<span class="status-text-strong">Idle</span> — no active transfers`, false)
+      } else {
+        this.setStatus(`Some transfers are still running…`, true)
+      }
     } else {
       if (speedo) speedo.innerHTML = formatBytes(torrent.getDownloadrate(), 1)
       if (progressBar) progressBar.value = torrent.getPercent()
+      this._activeTorrents.add(uuid)
+      this.setStatus(`Downloading torrents…`, true)
     }
 
     const collapseBtn = row.querySelector(`#_${uuid}-collapse-btn`)
@@ -462,13 +709,25 @@ export class FilesUploader extends HTMLElement {
    * Upload local files with progress using XHR directly (token header).
    */
   async uploadFiles(path, files) {
+    if (!files || files.length === 0) return
+
     const token = sessionStorage.getItem("__globular_token__") || ""
     const base = (getBaseUrl() || window.location.origin).replace(/\/?$/, "")
     const url = `${base}/api/file-upload`
 
+    this._activeFileUploads += files.length
+    this.setStatus(`Uploading ${this._activeFileUploads} file(s)…`, true)
+
     const uploadFile = (index) => {
       if (index >= files.length) {
+        this._activeFileUploads = Math.max(0, this._activeFileUploads - files.length)
         Backend.eventHub.publish("reload_dir_event", path, false)
+
+        if (this._activeFileUploads === 0 && this._activeLinkDownloads === 0 && this._activeTorrents.size === 0) {
+          this.setStatus(`<span class="status-text-strong">Idle</span> — no active transfers`, false)
+        } else {
+          this.setStatus(`Some transfers are still running…`, true)
+        }
         return
       }
 
@@ -480,6 +739,8 @@ export class FilesUploader extends HTMLElement {
         uploadFile(index + 1)
         return
       }
+
+      let xhr = null
 
       if (!row) {
         const size = getFileSizeString(f.size)
@@ -514,7 +775,7 @@ export class FilesUploader extends HTMLElement {
       fd.append("multiplefiles", f, f.name)
       fd.append("path", path)
 
-      const xhr = new XMLHttpRequest()
+      xhr = new XMLHttpRequest()
       xhr.open("POST", url, true)
       if (token) {
         // Keep compatibility with your backend expecting `token` header
@@ -542,19 +803,35 @@ export class FilesUploader extends HTMLElement {
           uploadFile(index + 1)
           return
         }
+
         displayMessage(`File ${f.name} was uploaded`, 3000)
-        if (row && row.parentNode) row.parentNode.removeChild(row)
-        const fileLnk = this.shadowRoot.querySelector(`#${id} #file-lnk`)
+        row.classList.add("completed")
+
+        const progress = row.querySelector("paper-progress")
+        if (progress) {
+          progress.value = 100
+          progress.style.display = "none"
+        }
+
+        const fileLnk = row.querySelector("#file-lnk")
         if (fileLnk) {
           fileLnk.classList.add("file-path")
           fileLnk.onclick = () =>
             Backend.eventHub.publish("follow_link_event_", { path: `${path}/${f.name}` }, true)
         }
-        
+
+        // After completion, the close button just clears the row
+        const cancelBtn = row.querySelector("#cancel-btn")
+        if (cancelBtn) {
+          cancelBtn.onclick = () => {
+            if (row.parentNode) row.parentNode.removeChild(row)
+          }
+        }
+
         uploadFile(index + 1)
       }
 
-      // Hook cancel button to abort this xhr
+      // Hook cancel button to abort this xhr (while in progress)
       const cancelBtn = row.querySelector("#cancel-btn")
       if (cancelBtn) {
         cancelBtn.onclick = () => {

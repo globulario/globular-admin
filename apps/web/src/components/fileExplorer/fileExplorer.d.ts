@@ -65,6 +65,7 @@ export class FileExplorer extends HTMLElement {
   _root = undefined;            // DirVM
   _navigations = [];
   _onerror = (err) => displayError(err, 3000);
+  _navigatingFromHistory = false;
   _dialog = undefined;
   _onclose = undefined;
   _onopen = undefined;
@@ -740,12 +741,14 @@ export class FileExplorer extends HTMLElement {
     if (type === 'back') {
       if (currentIndex > 0) {
         targetPath = this._navigations[currentIndex - 1];
+        this._navigatingFromHistory = true; // 🔧 moving along history
       } else {
         return;
       }
     } else if (type === 'forward') {
       if (currentIndex < this._navigations.length - 1) {
         targetPath = this._navigations[currentIndex + 1];
+        this._navigatingFromHistory = true; // 🔧 moving along history
       } else {
         return;
       }
@@ -753,6 +756,7 @@ export class FileExplorer extends HTMLElement {
       const pathParts = (this._path || "").split("/");
       if (pathParts.length > 2) {
         targetPath = this._path.substring(0, this._path.lastIndexOf("/"));
+        // upward is *not* a history move → normal push/truncate logic
       } else {
         return;
       }
@@ -762,6 +766,7 @@ export class FileExplorer extends HTMLElement {
 
     this.publishSetDirEvent(targetPath);
   }
+
 
   _handleViewToggleClick(viewType, evt) {
     evt.stopPropagation();
@@ -827,15 +832,27 @@ export class FileExplorer extends HTMLElement {
   }
 
   setDir(dir, callback) {
-
-    this._currentDir = dir;        // DirVM
-    this._path = dir.path || "";
+    this._currentDir = dir;
+    this._path = extractPath(dir);
 
     const currentPathIndex = this._navigations.indexOf(this._path);
-    if (currentPathIndex === -1) {
-      this._navigations.push(this._path);
-    } else if (currentPathIndex !== this._navigations.length - 1) {
-      this._navigations = this._navigations.slice(0, currentPathIndex + 1);
+
+    if (this._navigatingFromHistory) {
+      // 🔧 We’re moving along existing history: do NOT truncate forward entries
+      this._navigatingFromHistory = false;
+
+      // If somehow this path wasn’t in history, just append it.
+      if (currentPathIndex === -1) {
+        this._navigations.push(this._path);
+      }
+    } else {
+      // Normal navigation (clicking folders, path segments, upward, etc.)
+      if (currentPathIndex === -1) {
+        this._navigations.push(this._path);
+      } else if (currentPathIndex !== this._navigations.length - 1) {
+        // Jump into the middle of history → cut off forward entries
+        this._navigations = this._navigations.slice(0, currentPathIndex + 1);
+      }
     }
 
     this._pathNavigator.setDir(dir);
@@ -849,16 +866,16 @@ export class FileExplorer extends HTMLElement {
     this._imageViewer.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) {
-      this._sharePanel.parentNode.removeChild(this._sharePanel);
-    }
+    if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
 
     this._imageViewer.onclose = () => this._displayView(this._currentDir);
     this._fileReader.onclose = () => this._displayView(this._currentDir);
+    this._informationManager.onclose = () => this._displayView(this._currentDir);
 
     this._updateNavigationButtonStates();
     this._updateNavigationListMenu(dir);
   }
+
 
   _updateNavigationButtonStates() {
     const currentPathIndex = this._navigations.indexOf(this._path);
@@ -959,7 +976,6 @@ export class FileExplorer extends HTMLElement {
       this._progressDiv.style.display = "block";
       const messageDiv = this._progressDiv.querySelector("#progress-message");
       messageDiv.innerHTML = message;
-      Backend.eventHub.publish("refresh_dir_evt", this._path, false);
     }
   }
 

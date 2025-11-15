@@ -1,5 +1,6 @@
 import '@polymer/paper-button/paper-button.js';
 import '@polymer/paper-slider/paper-slider.js';
+import '@polymer/iron-icon/iron-icon.js';
 
 import { createThumbmail, fireResize } from './utility';
 import domtoimage from 'dom-to-image';
@@ -40,7 +41,7 @@ export class ImageCropper extends HTMLElement {
       this.shadowRoot.querySelector(".resize-image").cmp = this.shadowRoot;
       this.shadowRoot.querySelector(".resize-image").onload = () => {
         this.shadowRoot.querySelector('.slidecontainer').style.display = 'block';
-        this.shadowRoot.querySelector('.crop').style.display = 'initial';
+        this.shadowRoot.querySelector('.crop').style.display = 'inline-flex';
 
         const widthTotal = this.shadowRoot.querySelector(".resize-image").offsetWidth;
         this.shadowRoot.querySelector(".resize-container").style.width = widthTotal + 'px';
@@ -87,7 +88,7 @@ export class ImageCropper extends HTMLElement {
 
   crop() {
     this.shadowRoot.querySelector('.crop').style.display = 'none';
-    this.shadowRoot.querySelector('.reset').style.display = 'initial';
+    this.shadowRoot.querySelector('.reset').style.display = 'inline-flex';
     this.shadowRoot.querySelector('.slidecontainer').style.display = 'none';
 
     const image = this.shadowRoot.querySelector('.resize-image');
@@ -146,10 +147,12 @@ export class ImageCropper extends HTMLElement {
   connectedCallback() {
     let minHeigth = this.getAttribute('min-height');
     let minHeight = minHeigth ? minHeigth : '350px';
-    let backgroundColor = this.getAttribute('background-color') || 'var(--surface-color)';
+
+    // Allow overrides but fall back to theme variables
+    let backgroundColor = this.getAttribute('background-color') || 'var(--surface-elevated-color)';
     let onBackgroundColor = this.getAttribute('on-background-color') || 'var(--on-surface-color)';
-    let buttonColor = this.getAttribute('button-color') || 'var(--secondary-color)';
-    let onButtonColor = this.getAttribute('on-button-color') || 'var(--on-secondary-color)';
+    let buttonColor = this.getAttribute('button-color') || 'var(--primary-color)';
+    let onButtonColor = this.getAttribute('on-button-color') || 'var(--on-primary-color)';
 
     let width = this.getAttribute('width') || '200px';
     let height = this.getAttribute('height') || '200px';
@@ -162,43 +165,137 @@ export class ImageCropper extends HTMLElement {
             color: ${onBackgroundColor};
             position: relative;
             min-height: ${minHeight};
+            padding: 8px 10px 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle-color);
+            box-shadow: var(--dockbar-shadow, 0 6px 18px rgba(0,0,0,0.08));
+            display:flex;
+            flex-direction:column;
+            gap:8px;
           }
-          .slidecontainer { width: 100%; display:none; z-index: 1; margin-top:8px; }
-          .slider { -webkit-appearance:none; width:100%; height:15px; border-radius:5px; background:#d3d3d3; outline:none; opacity:.9; transition: opacity .2s; }
-          .slider:hover { opacity:1; }
-          .slider::-webkit-slider-thumb { -webkit-appearance:none; width:25px; height:25px; border-radius:50%; background:#2196F3; cursor:pointer; }
-          .slider::-moz-range-thumb { width:25px; height:25px; border-radius:50%; background:#2196F3; cursor:pointer; border:none; }
-          .resize-container { position:relative; display:inline-block; cursor:move; margin:0 auto; }
+
+          .toolbar {
+            display:flex;
+            align-items:center;
+            gap:6px;
+          }
+
+          .slidecontainer {
+            flex:1;
+            width: 100%;
+            display:none;
+            z-index: 1;
+            margin-left:auto;
+          }
+
+          .slider {
+            width:100%;
+            --paper-slider-knob-color: ${buttonColor};
+            --paper-slider-active-color: ${buttonColor};
+            --paper-slider-knob-start-color: ${buttonColor};
+            --paper-slider-pin-color: ${buttonColor};
+          }
+
+          .resize-container {
+            position:relative;
+            display:inline-block;
+            cursor:move;
+            margin:0 auto;
+          }
           .resize-container img { display:block; }
-          .resize-container:hover img, .resize-container:active img { outline: 2px dashed gray; }
-          .parent{ width:99%; height:99%; overflow:hidden; position:absolute; top:0; left:0; }
-          .center{ position:absolute; width:${width}; height:${height}; top: calc(50% - ${width}/2); left: calc(50% - ${height}/2); z-index:2; background: rgba(255,255,255,.3); border:2px solid #cecece; }
-          .imageCropped{ position:relative; left:-2px; top:-2px; }
-          .uploader{ z-index:1; position:relative; display:none; }
-          .lb_uploader{ z-index:1; position:relative; cursor:pointer; }
-          .crop, .reset { display:none; }
-          .btn{ z-index:1; position:relative; font-size:.85rem; border:none; color:${onButtonColor}; background:${buttonColor}; max-height:32px; }
+          .resize-container:hover img,
+          .resize-container:active img {
+            outline: 2px dashed var(--border-subtle-color);
+          }
+
+          .parent{
+            width:100%;
+            height:100%;
+            overflow:hidden;
+            position:relative;
+            flex:1;
+          }
+
+          .center{
+            position:absolute;
+            width:${width};
+            height:${height};
+            top: calc(50% - ${height}/2);
+            left: calc(50% - ${width}/2);
+            z-index:2;
+            background: color-mix(in srgb, var(--surface-color) 35%, transparent);
+            border:2px solid var(--border-strong-color);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-strong-color) 50%, transparent);
+          }
+
+          .imageCropped{
+            position:relative;
+            left:-2px;
+            top:-2px;
+          }
+
+          .uploader{
+            z-index:1;
+            position:relative;
+            display:none;
+          }
+
+          .lb_uploader{
+            z-index:1;
+            position:relative;
+            cursor:pointer;
+          }
+
+          .crop,
+          .reset {
+            display:none;
+          }
+
+          .btn{
+            z-index:1;
+            position:relative;
+            font-size:.85rem;
+            border:none;
+            color:${onButtonColor};
+            background:${buttonColor};
+            max-height:32px;
+            border-radius:999px;
+            padding:4px 12px;
+            text-transform: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+          }
+
+          .btn[disabled]{
+            opacity:0.7;
+            box-shadow:none;
+          }
         </style>
         <div id="container">
-          <div style="display:flex; padding-top:5px; padding-right:4px;">
+          <div class="toolbar">
             <label class='lb_uploader' for='uploader'>
               <slot name='select'>
-                <paper-button class='btn' toggles raised ><slot name='selectText'>Select</slot></paper-button>
+                <paper-button class='btn' toggles raised>
+                  <slot name='selectText'>Select</slot>
+                </paper-button>
               </slot>
             </label>
             <label class='reset'>
               <slot name='reset'>
-                <paper-button class='btn' toggles raised ><slot name='resetText'>Reset</slot></paper-button>
+                <paper-button class='btn' toggles raised>
+                  <slot name='resetText'>Reset</slot>
+                </paper-button>
               </slot>
             </label>
             <label class='crop'>
               <slot name='crop'>
-                <paper-button class='btn' toggles raised ><slot name='cropText'>Crop</slot></paper-button>
+                <paper-button class='btn' toggles raised>
+                  <slot name='cropText'>Crop</slot>
+                </paper-button>
               </slot>
             </label>
             <input type="file" class="uploader" id='uploader'/>
             <div class="slidecontainer">
-              <paper-slider id="myRange" class="slider"> </paper-slider>
+              <paper-slider id="myRange" class="slider"></paper-slider>
             </div>
           </div>
           <div class='parent'>
@@ -238,166 +335,238 @@ export class ImageCropper extends HTMLElement {
 window.customElements.define('globular-image-cropper', ImageCropper);
 
 // ----------------------------------------------------------
-// PanZoomCanvas (unchanged except for cleanup)
+// PanZoomCanvas
 // ----------------------------------------------------------
 
 function trackTransforms(ctx) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", 'svg');
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   let xform = svg.createSVGMatrix();
-  ctx.getTransform = function () { return xform; };
+  ctx.getTransform = () => xform;
 
-  const savedTransforms = [];
+  const saved = [];
   const save = ctx.save;
-  ctx.save = function () { savedTransforms.push(xform.translate(0, 0)); return save.call(ctx); };
+  ctx.save = function () {
+    saved.push(xform.translate(0, 0));
+    return save.call(ctx);
+  };
 
   const restore = ctx.restore;
-  ctx.restore = function () { xform = savedTransforms.pop(); return restore.call(ctx); };
+  ctx.restore = function () {
+    xform = saved.pop();
+    return restore.call(ctx);
+  };
 
   const scale = ctx.scale;
-  ctx.scale = function (sx, sy) { xform = xform.scaleNonUniform(sx, sy); return scale.call(ctx, sx, sy); };
+  ctx.scale = function (sx, sy) {
+    xform = xform.scaleNonUniform(sx, sy);
+    return scale.call(ctx, sx, sy);
+  };
 
   const rotate = ctx.rotate;
-  ctx.rotate = function (radians) { xform = xform.rotate(radians * 180 / Math.PI); return rotate.call(ctx, radians); };
+  ctx.rotate = function (rad) {
+    xform = xform.rotate((rad * 180) / Math.PI);
+    return rotate.call(ctx, rad);
+  };
 
   const translate = ctx.translate;
-  ctx.translate = function (dx, dy) { xform = xform.translate(dx, dy); return translate.call(ctx, dx, dy); };
+  ctx.translate = function (dx, dy) {
+    xform = xform.translate(dx, dy);
+    return translate.call(ctx, dx, dy);
+  };
 
   const transform = ctx.transform;
   ctx.transform = function (a, b, c, d, e, f) {
-    const m2 = svg.createSVGMatrix(); m2.a=a; m2.b=b; m2.c=c; m2.d=d; m2.e=e; m2.f=f;
-    xform = xform.multiply(m2);
+    const m = svg.createSVGMatrix();
+    m.a = a; m.b = b; m.c = c; m.d = d; m.e = e; m.f = f;
+    xform = xform.multiply(m);
     return transform.call(ctx, a, b, c, d, e, f);
   };
 
   const setTransform = ctx.setTransform;
   ctx.setTransform = function (a, b, c, d, e, f) {
-    xform.a=a; xform.b=b; xform.c=c; xform.d=d; xform.e=e; xform.f=f;
+    xform.a = a; xform.b = b; xform.c = c; xform.d = d; xform.e = e; xform.f = f;
     return setTransform.call(ctx, a, b, c, d, e, f);
   };
 
   const pt = svg.createSVGPoint();
-  ctx.transformedPoint = function (x, y) { pt.x = x; pt.y = y; return pt.matrixTransform(xform.inverse()); }
+  ctx.transformedPoint = function (x, y) {
+    pt.x = x;
+    pt.y = y;
+    return pt.matrixTransform(xform.inverse());
+  };
 }
 
 export class PanZoomCanvas extends HTMLElement {
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
+    this.attachShadow({ mode: "open" });
+
     this.shadowRoot.innerHTML = `
-          <style>
-              :host { display:block; position:relative; width:100%; height:100%; overflow:hidden; }
-              canvas { display:block; width:100%; height:100%; }
-          </style>
-          <canvas id="panZoomCanvas"></canvas>
-      `;
-    this.canvas = this.shadowRoot.getElementById('panZoomCanvas');
-    this.ctx = this.canvas.getContext('2d');
+      <style>
+        :host {
+          display:block;
+          width:100%;
+          height:100%;
+          overflow:hidden;
+          position:relative;
+        }
+        canvas {
+          width:100%;
+          height:100%;
+          display:block;
+        }
+      </style>
+      <canvas id="panZoomCanvas"></canvas>
+    `;
+
+    /** @type {HTMLCanvasElement} */
+    this.canvas = this.shadowRoot.querySelector("canvas");
+    this.ctx = this.canvas.getContext("2d");
     this.image = new Image();
+    this._panZoomSetup = false;
   }
 
   connectedCallback() {
-    this.canvas.width = this.getAttribute('width') || window.innerWidth;
-    this.canvas.height = this.getAttribute('height') || window.innerHeight;
+    this._resizeToHost();
+
+    // prepare transform tracking once
+    trackTransforms(this.ctx);
 
     this.image.onload = () => {
-      this.setupPanZoom();
-
-      if (this.canvas.width == 0 || this.canvas.height == 0) {
-        this.canvas.width = this.image.width;
-        this.canvas.height = this.image.height;
-      }
-      const fitScaleX = this.canvas.width / this.image.width;
-      const fitScaleY = this.canvas.height / this.image.height;
-      const initialZoom = Math.min(fitScaleX, fitScaleY);
-      const initialTranslationX = (this.canvas.width - this.image.width * initialZoom) / 2;
-      const initialTranslationY = (this.canvas.height - this.image.height * initialZoom) / 2;
-
-      const ctx = this.canvas.getContext('2d');
-      ctx.setTransform(initialZoom, 0, 0, initialZoom, initialTranslationX, initialTranslationY);
-      this.redraw();
+      this._resizeToHost();
+      this._ensurePanZoom();
+      this._fitToView();  // 1x or fit, centered
     };
 
-    this.image.src = this.getAttribute('src');
+    if (this.hasAttribute("src")) {
+      this.image.src = this.getAttribute("src");
+    }
+
+    // Re-fit on container resize to keep ratio correct.
+    this._resizeObserver = new ResizeObserver(() => {
+      this._resizeToHost();
+      if (this.image && this.image.complete) {
+        this._fitToView();
+      }
+    });
+    this._resizeObserver.observe(this);
   }
 
-  attributeChangedCallback(name, _oldValue, newValue) {
-    if (name === 'src') this.image.src = newValue;
+  disconnectedCallback() {
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
   }
 
-  static get observedAttributes() { return ['src']; }
+  static get observedAttributes() { return ["src"]; }
+  attributeChangedCallback(name, _old, value) {
+    if (name === "src") this.image.src = value;
+  }
 
-  setupPanZoom() {
-    const canvas = this.shadowRoot.getElementById('panZoomCanvas');
-    const ctx = this.canvas.getContext('2d');
-    trackTransforms(ctx);
+  _resizeToHost() {
+    const rect = this.getBoundingClientRect();
+    const w = rect.width || 1;
+    const h = rect.height || 1;
+    this.canvas.width = w;
+    this.canvas.height = h;
+  }
 
-    this.lastX = canvas.width / 2; this.lastY = canvas.height / 2;
-    let dragStart, dragged;
+  _ensurePanZoom() {
+    if (this._panZoomSetup) return;
+    this._panZoomSetup = true;
 
-    canvas.addEventListener('mousedown', (evt) => {
-      document.body.style.userSelect = 'none';
-      this.lastX = evt.offsetX || (evt.pageX - canvas.offsetLeft);
-      this.lastY = evt.offsetY || (evt.pageY - canvas.offsetTop);
+    const ctx = this.ctx;
+    const canvas = this.canvas;
+
+    this.lastX = canvas.width / 2;
+    this.lastY = canvas.height / 2;
+    let dragStart = null;
+
+    canvas.addEventListener("mousedown", (evt) => {
+      this.lastX = evt.offsetX;
+      this.lastY = evt.offsetY;
       dragStart = ctx.transformedPoint(this.lastX, this.lastY);
-      this.style.cursor = 'grabbing';
-      dragged = false;
-    }, false);
+      this.style.cursor = "grabbing";
+    });
 
-    canvas.addEventListener('mousemove', (evt) => {
-      this.lastX = evt.offsetX || (evt.pageX - canvas.offsetLeft);
-      this.lastY = evt.offsetY || (evt.pageY - canvas.offsetTop);
-      dragged = true;
-      if (dragStart) {
-        const pt = ctx.transformedPoint(this.lastX, this.lastY);
-        ctx.translate(pt.x - dragStart.x, pt.y - dragStart.y);
-        this.style.cursor = 'move';
-        this.redraw();
-      } else {
-        this.style.cursor = 'grab';
+    canvas.addEventListener("mousemove", (evt) => {
+      this.lastX = evt.offsetX;
+      this.lastY = evt.offsetY;
+
+      if (!dragStart) {
+        this.style.cursor = "grab";
+        return;
       }
-    }, false);
 
-    canvas.addEventListener('mouseup', () => {
+      const pt = ctx.transformedPoint(this.lastX, this.lastY);
+      ctx.translate(pt.x - dragStart.x, pt.y - dragStart.y);
+      this.redraw();
+    });
+
+    const stopDrag = () => {
       dragStart = null;
-      this.style.cursor = 'grab';
-    }, false);
-
-    const handleScroll = (evt) => {
-      const delta = evt.wheelDelta ? evt.wheelDelta / 200 : evt.detail ? -evt.detail : 0;
-      if (delta) this.zoom(delta);
-      evt.preventDefault();
-      return false;
+      this.style.cursor = "grab";
     };
+    canvas.addEventListener("mouseup", stopDrag);
+    canvas.addEventListener("mouseleave", stopDrag);
 
-    canvas.addEventListener('DOMMouseScroll', handleScroll, false);
-    canvas.addEventListener('mousewheel', handleScroll, false);
+    canvas.addEventListener("wheel", (evt) => {
+      evt.preventDefault();
+      const delta = evt.deltaY < 0 ? 1 : -1;
+      this.zoom(delta);
+    });
+  }
+
+  _fitToView() {
+    if (!this.image || !this.image.width || !this.image.height) return;
+
+    const ctx = this.ctx;
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    const iw = this.image.width;
+    const ih = this.image.height;
+
+    // 1x if it fits, else downscale; never upscale.
+    const naturalZoom = 1;
+    const fitZoom = Math.min(cw / iw, ch / ih);
+    const zoom = Math.min(naturalZoom, fitZoom);
+
+    const tx = (cw - iw * zoom) / 2;
+    const ty = (ch - ih * zoom) / 2;
+
+    ctx.setTransform(zoom, 0, 0, zoom, tx, ty);
+    this.redraw();
   }
 
   zoom(clicks) {
     const scaleFactor = 1.1;
-    const ctx = this.canvas.getContext('2d');
+    const ctx = this.ctx;
+
     const pt = ctx.transformedPoint(this.lastX, this.lastY);
     ctx.translate(pt.x, pt.y);
+
     const factor = Math.pow(scaleFactor, clicks);
     ctx.scale(factor, factor);
+
     ctx.translate(-pt.x, -pt.y);
     this.redraw();
   }
 
   redraw() {
-    const canvas = this.shadowRoot.getElementById('panZoomCanvas');
-    const ctx = this.canvas.getContext('2d');
+    const ctx = this.ctx;
+    const canvas = this.canvas;
+
     const p1 = ctx.transformedPoint(0, 0);
     const p2 = ctx.transformedPoint(canvas.width, canvas.height);
     ctx.clearRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.restore();
+
     ctx.drawImage(this.image, 0, 0);
   }
 }
-customElements.define('globular-pan-zoom-canvas', PanZoomCanvas);
+
+customElements.define("globular-pan-zoom-canvas", PanZoomCanvas);
+
 
 // ----------------------------------------------------------
 // ImageViewer
@@ -410,49 +579,201 @@ export class ImageViewer extends HTMLElement {
     const shadowRoot = this.attachShadow({ mode: 'open' });
 
     shadowRoot.innerHTML = `
-      <style>
-        ::-webkit-scrollbar { width:5px; height:5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
-        .modal { z-index:3000; display:none; position:absolute; left:0; top:0; width:100%; height:100%;
-                 overflow:auto; background-color:rgba(0,0,0,.94); font-family: Verdana,sans-serif;
-                 display:flex; justify-content:center; align-items:center; }
-        #info { background-color:#2196F3; left:88px; font-size:18px; text-align:center; color:white;
-                margin-top:8px; padding:5px 16px; }
-        #leftA, #rightA { position:absolute; top:53%; transform:translate(0%,-53%); font-size:30px;
-                          background-color:#3e3c3c99; color:white; }
-        #leftA { left:0; } #rightA { right:0; }
-        .btn, .button { border:none; display:inline-block; padding:8px 16px; background-color:#3e3c3c99; color:white; cursor:pointer; }
-        .display-topright { background-color:#3e3c3c99; color:white; position:absolute; right:0; top:0; z-index:100; }
-        .display-topleft { background-color:#3e3c3c99; color:white; z-index:100; position:absolute; left:0; top:0; font-size:25px; text-align:center; padding:4px 16px; }
-        .container { padding:0.01em 16px; overflow:hidden; }
-        .image { max-width:100%; height:auto; transform-origin:center center; transform:scale(1); z-index:0; }
-        iron-icon { color:white; width:32px; height:32px; }
-        @media (max-width:768px){ .modal{ padding-top:50px; } }
-        #zoomBtns { position:absolute; top:15px; right:100px; user-select:none; }
-        iron-icon:hover { cursor:pointer; }
-      </style>
+    <style>
+      ::-webkit-scrollbar { width:5px; height:5px; }
+      ::-webkit-scrollbar-track { background: var(--surface-color); }
+      ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); }
+      ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+      .modal {
+        z-index:3000;
+        display:none;
+        position:absolute;
+        top:0;
+        left:0;
+        right:0;
+        bottom:0;
+        overflow:hidden;
+        background-color:rgba(0,0,0,.94);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial;
+        display:flex;
+        justify-content:center;
+        align-items:center;
+      }
+
+      .container {
+        width: min(75vw, 1200px);
+        height: min(75vh, 800px);
+        background-color: var(--surface-elevated-color);
+        border-radius: 12px;
+        border:1px solid var(--dialog-border-color);
+        box-shadow: var(--dockbar-shadow, 0 18px 45px rgba(0,0,0,0.55));
+        padding: 0;
+        position:relative;
+        overflow:hidden;
+        display:flex;
+        flex-direction:column;
+      }
+
+      #content {
+        flex:1;
+        position:relative;
+        background-color: var(--surface-color);
+      }
+
+      globular-pan-zoom-canvas {
+        position:absolute;
+        inset:0;
+        width:100%;
+        height:100%;
+      }
+
+      #info {
+        background-color: var(--primary-color);
+        left:88px;
+        font-size:14px;
+        text-align:center;
+        color:var(--on-primary-color);
+        margin-top:8px;
+        padding:4px 12px;
+        border-bottom-right-radius: 10px;
+        border-top-right-radius: 0;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      }
+
+      .btn,
+      .button {
+        border:none;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding:6px 12px;
+        background-color: color-mix(in srgb, #000 65%, transparent);
+        color:var(--on-primary-color);
+        cursor:pointer;
+        border-radius:999px;
+      }
+
+      #leftA, #rightA {
+        position:absolute;
+        top:50%;
+        transform:translateY(-50%);
+        font-size:20px;
+        background-color: color-mix(in srgb, #000 65%, transparent);
+        color:var(--on-primary-color);
+        border-radius:999px;
+        width:40px;
+        height:40px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border:1px solid var(--border-subtle-color);
+        cursor:pointer;
+        user-select:none;
+        padding:0;        /* keep glyph centered */
+        line-height:1;
+      }
+      #leftA  { left:12px;  }
+      #rightA { right:12px; }
+
+      .display-topright {
+        position:absolute;
+        right:12px;
+        top:10px;
+        z-index:100;
+        background-color: color-mix(in srgb, #000 65%, transparent);
+        color:var(--on-primary-color);
+        border-radius:999px;
+        width:34px;
+        height:34px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        padding:0;        /* center '×' */
+        line-height:1;
+        font-size:20px;
+      }
+
+      .display-topleft {
+        position:absolute;
+        left:12px;
+        top:10px;
+        z-index:100;
+        background-color: color-mix(in srgb, #000 65%, transparent);
+        color:var(--on-primary-color);
+        font-size:13px;
+        text-align:center;
+        padding:4px 10px;
+        border-radius:999px;
+      }
+
+      .image {
+        max-width:100%;
+        height:auto;
+        transform-origin:center center;
+        transform:scale(1);
+        z-index:0;
+      }
+
+      iron-icon {
+        color:var(--on-primary-color);
+        width:24px;
+        height:24px;
+      }
+
+      @media (max-width:768px){
+        .container {
+          width:100vw;
+          height:100vh;
+          border-radius:0;
+        }
+      }
+
+      #zoomBtns {
+        position:absolute;
+        top:14px;
+        right:56px; /* comfortably inside */
+        user-select:none;
+        display:flex;
+        gap:6px;
+        padding:4px 6px;
+        border-radius:999px;
+        background-color: color-mix(in srgb, #000 65%, transparent);
+        border:1px solid var(--border-subtle-color);
+      }
+
+      #zoomBtns iron-icon { cursor:pointer; }
+
+      #zoomBtns iron-icon:hover,
+      #leftA:hover,
+      #rightA:hover,
+      .display-topright:hover {
+        filter:brightness(1.12);
+      }
+    </style>
       <div id="imageViewer" class="modal" >
-        <span id='closeBtn' class="button display-topright" style='color:white;font-size:30px;'>×</span>
-        <div id='counter' class='display-topleft' ></div>
-        <div id='info' class='display-topleft btn' style="display:none;">Description</div>
-        <div class="container" id="imageContainer">
+        <paper-icon-button icon="icons:close" id="closeBtn" class="button display-topright"></paper-icon-button>
+        <div id="counter" class="display-topleft"></div>
+        <div id="info" class="display-topleft btn" style="display:none; left:auto; right:auto;">Description</div>
+        <div class="container">
           <div id="content">
-            <slot name='images' style="display:none;"><span style='color:white;'>No images to show</span></slot>
-            <globular-pan-zoom-canvas height="600" width="800"></globular-pan-zoom-canvas>
-          </div>
-          <div id='leftA' class="button">❮</div>
-          <div id='rightA' class="button">❯</div>
-          <div id='zoomBtns'>
-            <iron-icon id='zoomInBtn' class="btn" icon="icons:add"></iron-icon>
-            <iron-icon id='zoomOutBtn' class="btn" icon="icons:remove"></iron-icon>
+            <slot name="images" style="display:none;"><span style="color:white;">No images to show</span></slot>
+            <globular-pan-zoom-canvas></globular-pan-zoom-canvas>
+            <paper-icon-button icon="icons:chevron-left" id="leftA"  class="button"></paper-icon-button>
+            <paper-icon-button icon="icons:chevron-right" id="rightA" class="button"></paper-icon-button>
+            <div id="zoomBtns">
+              <iron-icon id="zoomInBtn"  class="btn" icon="icons:add"></iron-icon>
+              <iron-icon id="zoomOutBtn" class="btn" icon="icons:remove"></iron-icon>
+            </div>
           </div>
         </div>
       </div>`;
 
     if (!this.hasAttribute('closeable')) {
       shadowRoot.querySelector('#closeBtn').style.display = 'none';
-      shadowRoot.querySelector("#zoomBtns").style.right = '10px';
+      shadowRoot.querySelector("#zoomBtns").style.right = '12px';
     }
 
     shadowRoot.querySelector('#closeBtn').addEventListener('click', () => {
@@ -482,40 +803,39 @@ export class ImageViewer extends HTMLElement {
   attributeChangedCallback() {
     if (this.hasAttribute('closeable')) {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'block';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '100px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '56px';
     } else {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'none';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '10px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '12px';
     }
   }
 
   connectedCallback() {
-    const imageContainer = this.shadowRoot.querySelector('#imageViewer');
-    this.shadowRoot.querySelector("globular-pan-zoom-canvas").setAttribute("height", imageContainer.offsetHeight * .88);
-    this.shadowRoot.querySelector("globular-pan-zoom-canvas").setAttribute("width", imageContainer.offsetWidth * .88);
-
-    if (this.children.length != 0) {
-      for (let i = 0; i < this.children.length; i++) {
+    if (this.children.length !== 0) {
+      const cant = this.children.length;
+      for (let i = 0; i < cant; i++) {
         const ch = this.children[i];
         ch.style.maxHeight = '75vh';
-        if (this.parentNode.tagName == "BODY") ch.style.maxHeight = 'calc(100vh - 20px)';
+        if (this.parentNode.tagName === "BODY") {
+          ch.style.maxHeight = 'calc(100vh - 20px)';
+        }
       }
       this.populateChildren();
     }
 
     if (this.hasAttribute('closeable')) {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'block';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '100px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '56px';
     } else {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'none';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '10px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '12px';
     }
   }
 
   get noinfo() { return this.hasAttribute('noinfo'); }
 
   populateChildren() {
-    if (this.children.length != 0) {
+    if (this.children.length !== 0) {
       const cant = this.children.length;
       for (let i = 0; i < cant; i++) {
         this.children[i].style.display = (i === 0) ? 'block' : 'none';
@@ -524,7 +844,7 @@ export class ImageViewer extends HTMLElement {
         this.children[i].style.maxHeight = '75vh';
       }
       this.shadowRoot.querySelector('#counter').innerHTML = '1/' + cant;
-      if (this.index == -1) this.index = 0;
+      if (this.index === -1) this.index = 0;
       this.activeImage(this.index);
     } else {
       this.shadowRoot.querySelector('#leftA').style.display = 'none';
@@ -539,7 +859,8 @@ export class ImageViewer extends HTMLElement {
     this.children[index].style.display = 'block';
     this.shadowRoot.querySelector('#counter').innerHTML = (index + 1) + '/' + (cant);
     this.index = index;
-    this.shadowRoot.querySelector("globular-pan-zoom-canvas").setAttribute("src", this.children[index].getAttribute("src"));
+    this.shadowRoot.querySelector("globular-pan-zoom-canvas")
+      .setAttribute("src", this.children[index].getAttribute("src"));
   }
 
   addImage(e) {
@@ -552,7 +873,6 @@ export class ImageViewer extends HTMLElement {
 
   redraw(){}
 
-  // ✅ updated: no globule; URLs should already be usable/signed upstream.
   loadImgFrom(ele) {
     const imgs = ele.querySelectorAll('img');
     this.style.display = 'block';
@@ -562,14 +882,17 @@ export class ImageViewer extends HTMLElement {
       const newPic = document.createElement('img');
       newPic.setAttribute('slot', 'images');
       newPic.setAttribute('src', src);
-      if (imgs[i].getAttribute('data-info')) newPic.setAttribute('data-info', imgs[i].getAttribute('data-info'));
+      if (imgs[i].getAttribute('data-info')) {
+        newPic.setAttribute('data-info', imgs[i].getAttribute('data-info'));
+      }
       this.addImage(newPic);
     }
   }
 
   infoClick(title, fn) {
     this.shadowRoot.querySelector('#info').innerHTML = title;
-    this.shadowRoot.querySelector('#info').addEventListener('click', function func(event) { fn(event); });
+    this.shadowRoot.querySelector('#info')
+      .addEventListener('click', function func(event) { fn(event); });
   }
 
   nextImage() {
@@ -577,7 +900,7 @@ export class ImageViewer extends HTMLElement {
     const cant = ch.length;
     let actived, index = 0;
     for (let i = 0; i < cant; i++) {
-      if (ch[i].style.display == 'block') {
+      if (ch[i].style.display === 'block') {
         actived = (i < cant - 1) ? ch[i + 1] : ch[0];
         index = (i < cant - 1) ? (i + 1) : 0;
       }
@@ -586,7 +909,8 @@ export class ImageViewer extends HTMLElement {
     if (actived) {
       actived.style.display = 'block';
       this.shadowRoot.querySelector('#counter').innerHTML = (index + 1) + '/' + (cant);
-      this.shadowRoot.querySelector("globular-pan-zoom-canvas").setAttribute("src", ch[index].getAttribute("src"));
+      this.shadowRoot.querySelector("globular-pan-zoom-canvas")
+        .setAttribute("src", ch[index].getAttribute("src"));
     }
   }
 
@@ -595,7 +919,7 @@ export class ImageViewer extends HTMLElement {
     const cant = ch.length;
     let actived, index = cant - 1;
     for (let i = 0; i < cant; i++) {
-      if (ch[i].style.display == 'block') {
+      if (ch[i].style.display === 'block') {
         actived = (i > 0) ? ch[i - 1] : ch[cant - 1];
         index = (i > 0) ? (i - 1) : (cant - 1);
       }
@@ -604,11 +928,13 @@ export class ImageViewer extends HTMLElement {
     if (actived) {
       actived.style.display = 'block';
       this.shadowRoot.querySelector('#counter').innerHTML = (index + 1) + '/' + (cant);
-      this.shadowRoot.querySelector("globular-pan-zoom-canvas").setAttribute("src", ch[index].getAttribute("src"));
+      this.shadowRoot.querySelector("globular-pan-zoom-canvas")
+        .setAttribute("src", ch[index].getAttribute("src"));
     }
   }
 }
 window.customElements.define('globular-image-viewer', ImageViewer);
+
 
 // ----------------------------------------------------------
 // ImageSelector (globule-free; uses file backend helpers)
@@ -628,20 +954,63 @@ export class ImageSelector extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        #container{ color: var(--primary-text-color); }
-        .image-selector{ max-width:200px; position:relative; }
-        #delete-cover-image-btn {
-          ${url.length == 0 ? "display:none;" : "display:block;"}
-          z-index:100; position:absolute; top:-10px; left:-16px; background-color:black;
-          --paper-icon-button-ink-color:white; --iron-icon-fill-color:white;
-          border-bottom:1px solid var(--palette-divider); border-right:1px solid var(--palette-divider);
-          padding:4px; width:30px; height:30px; --iron-icon-width:24px; --iron-icon-height:24px;
+        #container{
+          color: var(--on-surface-color);
+          font-size:0.9rem;
+          display:flex;
+          flex-direction:column;
+          gap:4px;
         }
+
+        #label{
+          opacity:0.9;
+        }
+
+        .image-selector{
+          max-width:200px;
+          position:relative;
+          border-radius:8px;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+        }
+
+        #delete-cover-image-btn {
+          ${url.length == 0 ? "display:none;" : "display:flex;"}
+          z-index:100;
+          position:absolute;
+          top:-10px;
+          left:-16px;
+          background-color: color-mix(in srgb, #000 70%, transparent);
+          --paper-icon-button-ink-color:white;
+          --iron-icon-fill-color:white;
+          border-bottom:1px solid var(--palette-divider);
+          border-right:1px solid var(--palette-divider);
+          padding:4px;
+          width:30px;
+          height:30px;
+          --iron-icon-width:20px;
+          --iron-icon-height:20px;
+          border-radius:999px;
+          align-items:center;
+          justify-content:center;
+        }
+
         #drop-zone{
-          min-width:180px; transition: background .2s ease,padding .8s linear;
+          min-width:180px;
+          transition: background .15s ease, padding .15s linear, filter .15s ease;
           background-color: var(--surface-color);
-          position:relative; border:2px dashed var(--palette-divider); border-radius:5px;
-          min-height:120px; display:flex; align-items:center; justify-content:center; padding:5px;
+          position:relative;
+          border:2px dashed var(--border-subtle-color);
+          border-radius:10px;
+          min-height:120px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding:5px;
+        }
+        #drop-zone.drag-over {
+          background-color: color-mix(in srgb, var(--surface-color) 90%, var(--primary-color) 10%);
+          border-color: var(--primary-color);
+          filter:brightness(1.02);
         }
       </style>
       <div id="container">
@@ -667,7 +1036,7 @@ export class ImageSelector extends HTMLElement {
           paper-button{ font-size:.8rem; }
         </style>
         <div id="yes-no-picture-delete-box">
-          <div>Your about to remove ${label} image</div>
+          <div>You're about to remove ${label} image</div>
           <img style="max-height:256px; object-fit:contain; width:100%;" src="${this.imageUrl}"></img>
           <div>Is it what you want to do?</div>
           <div style="justify-content:flex-end;">
@@ -693,15 +1062,25 @@ export class ImageSelector extends HTMLElement {
 
     const imageCoverDropZone = this.shadowRoot.querySelector("#drop-zone");
 
-    imageCoverDropZone.ondragenter = (evt) => { evt.stopPropagation(); evt.preventDefault(); imageCoverDropZone.style.filter = "invert(10%)"; };
-    imageCoverDropZone.ondragleave = (evt) => { evt.preventDefault(); imageCoverDropZone.style.filter = ""; };
-    imageCoverDropZone.ondragover   = (evt) => { evt.stopPropagation(); evt.preventDefault(); };
+    imageCoverDropZone.ondragenter = (evt) => {
+      evt.stopPropagation();
+      evt.preventDefault();
+      imageCoverDropZone.classList.add("drag-over");
+    };
+    imageCoverDropZone.ondragleave = (evt) => {
+      evt.preventDefault();
+      imageCoverDropZone.classList.remove("drag-over");
+    };
+    imageCoverDropZone.ondragover   = (evt) => {
+      evt.stopPropagation();
+      evt.preventDefault();
+    };
 
     // ✅ updated: when files are dropped from your file-explorer, use new backend helpers
     imageCoverDropZone.ondrop = async (evt) => {
       evt.stopPropagation();
       evt.preventDefault();
-      imageCoverDropZone.style.filter = "";
+      imageCoverDropZone.classList.remove("drag-over");
 
       if (evt.dataTransfer.files.length > 0) {
         // Local file from desktop
@@ -709,7 +1088,7 @@ export class ImageSelector extends HTMLElement {
         const reader = new FileReader();
         reader.onload = (event) => {
           const dataUrl = event.target.result;
-          this.deleteBtn.style.display = "block";
+          this.deleteBtn.style.display = "flex";
           this.imageUrl = dataUrl;
           this.image.src = dataUrl;
           if (this.onselectimage) this.onselectimage(dataUrl);
@@ -729,14 +1108,14 @@ export class ImageSelector extends HTMLElement {
 
       for (const path of paths) {
         try {
-          // Optional: fetch metadata (not strictly required for thumbnail)
+          // Optional meta fetch
           // await getFileMeta(path, domain);
 
           // Build a signed/authorized URL for preview (no globule)
           const url = await buildFileUrl(path, { domain, purpose: 'preview' }); // adjust args if your helper differs
 
           createThumbmail(url, 500, (dataUrl) => {
-            this.deleteBtn.style.display = "block";
+            this.deleteBtn.style.display = "flex";
             this.image.src = dataUrl;
             this.imageUrl = dataUrl;
             if (this.onselectimage) this.onselectimage(dataUrl);
@@ -750,7 +1129,7 @@ export class ImageSelector extends HTMLElement {
 
   setImageUrl(url) {
     this.image.src = url;
-    this.deleteBtn.style.display = url && url.length > 0 ? "block" : "none";
+    this.deleteBtn.style.display = url && url.length > 0 ? "flex" : "none";
   }
 
   getImageUrl() {
@@ -796,7 +1175,7 @@ export class ImageSelector extends HTMLElement {
 customElements.define('globular-image-selector', ImageSelector);
 
 // ----------------------------------------------------------
-// ImageGallery (no globule; unchanged logic)
+// ImageGallery (no globule; themed)
 // ----------------------------------------------------------
 export class ImageGallery extends HTMLElement {
   constructor() {
@@ -805,27 +1184,122 @@ export class ImageGallery extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
         <style>
-        *,*::before,*::after { margin:0; padding:0; outline:none; box-sizing:border-box; }
-        .container { margin:0 auto; max-width:700px; max-height:100vh; background-color:white; }
+        *,*::before,*::after {
+          margin:0;
+          padding:0;
+          outline:none;
+          box-sizing:border-box;
+        }
+
+        .container {
+          margin:0 auto;
+          max-width:700px;
+          max-height:100vh;
+          background-color: var(--surface-elevated-color);
+          border-radius: 12px;
+          border:1px solid var(--border-subtle-color);
+          box-shadow: var(--dockbar-shadow, 0 8px 22px rgba(0,0,0,0.35));
+          overflow:hidden;
+        }
+
         .xy-center { position:absolute; top:50%; left:50%; transform: translate(-50%, -50%); }
         .transition { transition: all 350ms ease-in-out; }
-        .r-3-2 { width:100%; padding-bottom:66.667%; background-color:#ddd; }
-        .image-holder { background-position:center center; background-repeat:no-repeat; background-size:auto 100%; }
-        .gallery-wrapper { position:relative; overflow:hidden; }
-        .gallery { position:relative; white-space:nowrap; font-size:0; }
-        .item-wrapper { cursor:pointer; width:23%; display:inline-block; background-color:white; }
-        .gallery-item { opacity:.5; } .gallery-item.active { opacity:1; }
-        .controls { font-size:0; border-top:none; }
-        .move-btn { display:inline-block; width:50%; border:none; color:#ccc; background:transparent; padding:.2em 1.5em; }
-        .move-btn.left  { cursor:w-resize; } .move-btn.right { cursor:e-resize; }
-        #leftA, #rightA { font-size:16px; background:#3e3c3c99; color:white; }
-        #leftA { text-align:left; } #rightA { text-align:right; }
-        .feature{ position:relative; }
-        paper-icon-button { position:absolute; top:0; left:0; background:black; height:25px; width:25px; }
-        globular-image-viewer { position:fixed; top:0; bottom:0; left:0; right:0; }
-        #close-btn{ position:absolute; top:0; left:0; background:black;
-                    --paper-icon-button-ink-color:white; --iron-icon-fill-color:white;
-                    border-bottom:1px solid var(--palette-divider); border-right:1px solid var(--palette-divider); }
+
+        .r-3-2 {
+          width:100%;
+          padding-bottom:66.667%;
+          background-color: var(--surface-color);
+        }
+
+        .image-holder {
+          background-position:center center;
+          background-repeat:no-repeat;
+          background-size:contain;
+        }
+
+        .gallery-wrapper {
+          position:relative;
+          overflow:hidden;
+          background-color: var(--surface-color);
+        }
+
+        .gallery {
+          position:relative;
+          white-space:nowrap;
+          font-size:0;
+        }
+
+        .item-wrapper {
+          cursor:pointer;
+          width:23%;
+          display:inline-block;
+          background-color:var(--surface-color);
+        }
+
+        .gallery-item {
+          opacity:.5;
+        }
+        .gallery-item.active {
+          opacity:1;
+        }
+
+        .controls {
+          font-size:0;
+          border-top:1px solid var(--border-subtle-color);
+          background-color: var(--surface-color);
+        }
+
+        .move-btn {
+          display:inline-block;
+          width:50%;
+          border:none;
+          color:var(--on-surface-color);
+          background:transparent;
+          padding:.4em 1.5em;
+          font-size:0.85rem;
+          cursor:pointer;
+          user-select:none;
+        }
+
+        .move-btn.left  { text-align:left; }
+        .move-btn.right { text-align:right; }
+
+        #leftA, #rightA {
+          font-size:16px;
+          color:var(--on-surface-color);
+        }
+
+        .feature{
+          position:relative;
+          background-color: var(--surface-color);
+        }
+
+        paper-icon-button {
+          position:absolute;
+          top:0;
+          left:0;
+          background: color-mix(in srgb, #000 65%, transparent);
+          height:30px;
+          width:30px;
+          --iron-icon-width:20px;
+          --iron-icon-height:20px;
+          border-bottom:1px solid var(--palette-divider);
+          border-right:1px solid var(--palette-divider);
+          border-radius:0 0 6px 0;
+          --iron-icon-fill-color:white;
+        }
+
+        globular-image-viewer {
+          position:fixed;
+          top:0;
+          bottom:0;
+          left:0;
+          right:0;
+        }
+
+        #close-btn{
+          --paper-icon-button-ink-color:white;
+        }
         </style>
         <div class="container">
           <div class="feature">
@@ -868,7 +1342,7 @@ export class ImageGallery extends HTMLElement {
           paper-button{ font-size:.8rem; }
         </style>
         <div id="yes-no-picture-delete-box">
-          <div>Your about to remove image from the gallery</div>
+          <div>You're about to remove image from the gallery</div>
           <img style="max-height:256px; object-fit:contain; width:100%;" src="${this.featured().image.src}"></img>
           <span style="font-size:.75rem;">${decodeURIComponent(url.pathname)}</span>
           <div>Is it what you want to do?</div>
@@ -890,7 +1364,7 @@ export class ImageGallery extends HTMLElement {
         displayMessage(
           `<div style="display:flex; flex-direction:column;">
              <span style="font-size:.85rem;">${url.pathname}</span>
-             <span>was remove from the gallery</span>
+             <span>was removed from the gallery</span>
            </div>`,
           3000
         );
@@ -972,7 +1446,8 @@ export class ImageGallery extends HTMLElement {
         this.featured().index = index;
         this.featured().style.backgroundImage = 'url(' + img.src + ')';
         this.featured().image = img;
-    } }
+      }
+    }
   }
 
   getImages() {
@@ -1023,8 +1498,12 @@ export class ImageGallery extends HTMLElement {
     this.left = this.left || 0;
     this.leftInterval = setInterval(() => {
       this.gallery.style.left = this.left + '%';
-      if (this.left < 0) this.left += this.scrollRate;
-      else { this.left = -this.itemWidth; this.galleryWrapRight(); }
+      if (this.left < 0) {
+        this.left += this.scrollRate;
+      } else {
+        this.left = -this.itemWidth;
+        this.galleryWrapRight();
+      }
     }, 9);
   }
 

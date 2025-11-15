@@ -157,7 +157,15 @@ export class DropdownMenuItem extends HTMLElement {
           pointer-events: none; /* doesn't block clicks, but avoids tiny gaps visually */
         }
 
-        #item-wrapper:hover { background-color: var(--hover-color, #f0f0f0); cursor:pointer; }
+        #item-wrapper:hover {
+          cursor: pointer;
+          filter: invert(1%); /* or remove entirely */
+          background-color: color-mix(
+            in srgb,
+            var(--surface-color) 94%,
+            var(--on-surface-color) 6%
+          );
+        }
 
         #icon-container, iron-icon {  }
         #fa-icon { display:none; font-size:1.2rem; }
@@ -167,8 +175,7 @@ export class DropdownMenuItem extends HTMLElement {
 
         .separator {
           display:none;
-          border-top:1px solid var(--palette-divider, lightgray);
-          margin-top:2px; padding-top:2px;
+          margin-top:1px;
         }
       </style>
 
@@ -321,6 +328,11 @@ export class DropdownMenu extends HTMLElement {
     // If used as a submenu (child of menu-item), mark so CSS positions flyout properly.
     if (this.parentElement && this.parentElement.tagName === 'GLOBULAR-DROPDOWN-MENU-ITEM') {
       this.setAttribute('data-submenu', '1');
+      if (this._menuItemsCard) {
+        this._menuItemsCard.style.top = '0px';
+        this._menuItemsCard.style.left =  '90px';
+        this._menuItemsCard.style.zIndex = '100002';
+      }
     }
   }
 
@@ -425,7 +437,7 @@ export class DropdownMenu extends HTMLElement {
         .card-content { display:flex; flex-direction:column; padding:0; }
 
         /* Default (top-level) dropdown: beneath the trigger */
-        .menu-items { position:absolute; top:25px; left:0; display:none; z-index:100000; overflow: visible; }
+        .menu-items { position:absolute; top:25px; left:0; display:none; z-index:100000; overflow: visible; box-shadow: var(--elevation-8); border: 1px solid var(--divider-color); background-color: var(--palette-divider); }
 
         /* Submenu flyout: to the right of the parent item.
            Make the HOST zero-sized so it never overlays lower items.

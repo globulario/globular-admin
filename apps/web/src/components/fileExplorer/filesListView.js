@@ -50,7 +50,7 @@ function iconForMime(m) {
   if (!m) return "icons:insert-drive-file";
   if (m.startsWith("video/")) return "av:movie";
   if (m.startsWith("audio/")) return "av:music-note";
-  if (m.startsWith("text/"))  return "editor:insert-drive-file";
+  if (m.startsWith("text/")) return "editor:insert-drive-file";
   return "icons:insert-drive-file";
 }
 
@@ -63,43 +63,177 @@ export class FilesListView extends FilesView {
     // Shadow DOM scaffold
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
-      <style>
-        :host { display:block; width:100%; height:100%; overflow-y:auto; }
-        table { width:100%; border-collapse:collapse; background:var(--surface-color); color:var(--primary-text-color); user-select:none; }
-        thead tr { background:var(--surface-color-dark,#f0f0f0); border-bottom:1px solid var(--palette-divider); }
-        th { padding:8px 12px; text-align:left; font-weight:500; font-size:.9rem; cursor:pointer; }
-        th:hover { background:var(--paper-grey-200,#eee); }
-        tbody tr { border-bottom:1px solid var(--palette-divider); transition:background .2s ease; }
-        tbody tr:last-child { border-bottom:none; }
-        tbody tr:hover { background:var(--paper-grey-100,#f5f5f5); }
-        tbody tr.active { filter:brightness(1.05); }
-        tbody tr.selected { background:var(--primary-light-color,#e0f2f7); }
-        td { padding:8px 12px; font-size:.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px; }
-        .first-cell { display:flex; align-items:center; position:relative; max-width:none; }
-        .first-cell span { flex-grow:1; padding-left:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
-        .first-cell span:hover { text-decoration:underline; }
-        .first-cell paper-checkbox { visibility:hidden; --paper-checkbox-checked-color:var(--primary-color); --paper-checkbox-unchecked-color:var(--palette-action-disabled); }
-        .first-cell paper-icon-button { min-width:40px; visibility:hidden; --iron-icon-fill-color:var(--palette-action-disabled); }
-        .file-icon { height:24px; width:24px; margin-right:8px; }
-        .file-thumbnail { height:32px; width:32px; object-fit:contain; margin-right:8px; display:none; }
-        tbody tr:hover .first-cell paper-checkbox,
-        tbody tr.active .first-cell paper-checkbox { visibility:visible; }
-        tbody tr:hover .first-cell paper-icon-button,
-        tbody tr.active .first-cell paper-icon-button { visibility:visible; }
-        globular-dropdown-menu { position:absolute; top:0; left:0; z-index:100; }
-      </style>
-      <table>
-        <thead>
-          <tr>
-            <th class="name_header_div">Name</th>
-            <th class="modified_header_div">Modified</th>
-            <th class="mime_header_div">Type</th>
-            <th class="size_header_div">Size</th>
-          </tr>
-        </thead>
-        <tbody id="files-list-view-info"></tbody>
-      </table>
-    `;
+    <style>
+      :host {
+        display: block;
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+        background: var(--surface-color);
+        color: var(--primary-text-color);
+        scrollbar-width: thin;
+        scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+                        var(--scroll-track, var(--surface-color));
+      }
+
+      /* Chrome/WebKit */
+      :host::-webkit-scrollbar {
+        width: 10px;
+      }
+      :host::-webkit-scrollbar-track {
+        background: var(--scroll-track, var(--surface-color));
+      }
+      :host::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb, var(--palette-divider));
+        border-radius: 6px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface-color);
+        color: var(--on-surface-color);
+        user-select: none;
+      }
+
+      thead tr {
+        background: var(--table-header-bg,
+                        var(--surface-variant, var(--surface-color)));
+        border-bottom: 1px solid var(--palette-divider);
+      }
+
+      th {
+        padding: 4px 8px;
+        text-align: left;
+        font-weight: 500;
+        font-size: .9rem;
+        cursor: pointer;
+      }
+
+      th:hover {
+        background: var(--table-header-hover-bg,
+                        var(--row-hover-bg, rgba(0,0,0,0.04)));
+      }
+
+      tbody tr {
+        border-bottom: 1px solid var(--palette-divider);
+        transition: background .2s ease;
+      }
+
+      tbody tr:last-child {
+        border-bottom: none;
+      }
+
+      tbody tr:hover {
+        background: var(--row-hover-bg,
+                        rgba(0,0,0,0.04));
+      }
+
+      tbody tr.active {
+        filter: brightness(1.05);
+      }
+
+      tbody tr.selected {
+        background: var(--row-selected-bg,
+                        rgba(25,118,210,0.12)); /* safe default for both themes */
+      }
+
+      td {
+        padding: 8px 12px;
+        font-size: .85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+      }
+
+      .first-cell {
+        display: flex;
+        align-items: center;
+        position: relative;
+        max-width: none;
+      }
+
+      .first-cell span {
+        flex-grow: 1;
+        padding-left: 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+        color: var(--on-surface-color);
+      }
+
+      .first-cell span:hover {
+        text-decoration: underline;
+      }
+
+      .first-cell paper-checkbox {
+        visibility: hidden;
+        --paper-checkbox-checked-color: var(--primary-color, #1976d2);
+        --paper-checkbox-unchecked-color: var(--palette-action-disabled, #9e9e9e);
+        --paper-checkbox-checkmark-color: var(--on-primary-color, #fff);
+        --paper-checkbox-label-color: var(--primary-text-color);
+      }
+
+      .first-cell paper-icon-button {
+        min-width: 40px;
+        visibility: hidden;
+        --iron-icon-fill-color: var(--palette-action-disabled, #9e9e9e);
+      }
+
+      .file-icon {
+        height: 24px;
+        width: 24px;
+        margin-right: 8px;
+        --iron-icon-fill-color: var(--on-surface-color);
+      }
+
+      .file-thumbnail {
+        height: 32px;
+        width: 32px;
+        object-fit: contain;
+        margin-right: 8px;
+        display: none;
+      }
+
+      tbody tr:hover .first-cell paper-checkbox,
+      tbody tr.active .first-cell paper-checkbox {
+        visibility: visible;
+      }
+
+      tbody tr:hover .first-cell paper-icon-button,
+      tbody tr.active .first-cell paper-icon-button {
+        visibility: visible;
+      }
+
+      globular-dropdown-menu {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 100;
+      }
+
+      tr.dragging {
+        opacity: 0.6;
+      }
+
+      tr.drop-target {
+        outline: 1px dashed var(--palette-primary, #1976d2);
+      }
+    </style>
+    <table>
+      <thead>
+        <tr>
+          <th class="name_header_div">Name</th>
+          <th class="modified_header_div">Modified</th>
+          <th class="mime_header_div">Type</th>
+          <th class="size_header_div">Size</th>
+        </tr>
+      </thead>
+      <tbody id="files-list-view-info"></tbody>
+    </table>
+  `;
 
     this._domRefs = {
       fileListViewBody: this.shadowRoot.querySelector("#files-list-view-info"),
@@ -157,7 +291,7 @@ export class FilesListView extends FilesView {
   /** Show thumbnail if provided; otherwise show icon (with safe fallback if thumb fails). */
   _applyThumbOrIcon(row, iconName, thumbUrl) {
     const iconEl = row.querySelector(".file-icon");
-    const imgEl  = row.querySelector(".file-thumbnail");
+    const imgEl = row.querySelector(".file-thumbnail");
 
     // guard: if no elements, nothing to do
     if (!iconEl || !imgEl) return;
@@ -291,6 +425,9 @@ export class FilesListView extends FilesView {
       }
     });
 
+    // Attach row-level drag & drop behavior
+    this._attachRowDnD(row, file);
+
     return row;
   }
 
@@ -369,42 +506,126 @@ export class FilesListView extends FilesView {
     }
   }
 
+  // Background table drop → let FilesView decide (URL / OS files / internal)
   _handleTableDrop(evt) {
+    this.handleDropEvent(evt); // FilesView implementation
+  }
+
+  _handleTableDragOver(evt) {
     evt.preventDefault();
-
-    const filesDataTransfer = evt.dataTransfer.getData("files");
-    const domainDataTransfer = evt.dataTransfer.getData("domain");
-    const fileListTransfer = evt.dataTransfer.files;
-
-    if (fileListTransfer && fileListTransfer.length > 0) {
-      Backend.eventHub.publish(
-        "__upload_files_event__",
-        { dir: getCurrentExplorerPath(this._fileExplorer || this._fileExplorer), files: Array.from(fileListTransfer), lnk: null },
-        true
-      );
-    } else if (filesDataTransfer && domainDataTransfer) {
-      try {
-        const files = JSON.parse(filesDataTransfer);
-        const sourceId = evt.dataTransfer.getData("id");
-        const explorer = this._fileExplorer || this._fileExplorer;
-        if (explorer && Array.isArray(files) && files.length > 0) {
-          const destPath = getCurrentExplorerPath(explorer);
-          files.forEach((f) => {
-            Backend.eventHub.publish(
-              `drop_file_${(explorer.id || "explorer")}_event`,
-              { file: f, dir: destPath, id: sourceId, domain: domainDataTransfer },
-              true
-            );
-          });
-        }
-      } catch (e) {
-        console.error("Error processing dropped files:", e);
-        displayError("Failed to process dropped files.", 3000);
-      }
+    if (evt.dataTransfer) {
+      evt.dataTransfer.dropEffect = (evt.ctrlKey || evt.metaKey) ? "copy" : "move";
     }
   }
 
-  _handleTableDragOver(evt) { evt.preventDefault(); }
+  // ---- Row-level drag helpers ----
+
+  _attachRowDnD(row, file) {
+    if (!row || !file) return;
+
+    // Dragging the row
+    row.draggable = true;
+    row.addEventListener("dragstart", (evt) => this._handleRowDragStart(evt, row, file));
+    row.addEventListener("dragend", (evt) => this._handleRowDragEnd(evt, row));
+
+    // If it's a directory, allow dropping on that row (move/copy into that dir)
+    if (isDirOf(file)) {
+      row.addEventListener("dragover", (evt) => {
+        evt.preventDefault();
+        if (evt.dataTransfer) {
+          evt.dataTransfer.dropEffect = (evt.ctrlKey || evt.metaKey) ? "copy" : "move";
+        }
+        row.classList.add("drop-target");
+      });
+      row.addEventListener("dragleave", () => {
+        row.classList.remove("drop-target");
+      });
+      row.addEventListener("drop", (evt) => this._handleRowDrop(evt, row, file));
+    }
+  }
+
+  _handleRowDragStart(evt, row, file) {
+    evt.stopPropagation();
+    const dt = evt.dataTransfer;
+    if (!dt || !file) return;
+
+    const path = pathOf(file);
+    let pathsToDrag = [path];
+
+    // If this file is selected, drag the entire selection set
+    if (this._selected && this._selected[path]) {
+      pathsToDrag = Object.keys(this._selected);
+    }
+
+    dt.setData("files", JSON.stringify(pathsToDrag));
+    dt.setData("id", this._fileExplorer?.id || "");
+    dt.setData("domain", this._fileExplorer?.globule?.domain || "");
+    dt.effectAllowed = "copyMove";
+
+    row.classList.add("dragging");
+  }
+
+  _handleRowDragEnd(evt, row) {
+    evt.stopPropagation();
+    if (row) row.classList.remove("dragging");
+    const root = this.shadowRoot || this;
+    root.querySelectorAll("tr.drop-target").forEach((el) => el.classList.remove("drop-target"));
+  }
+
+  _handleRowDrop(evt, row, file) {
+    evt.preventDefault();
+    evt.stopPropagation();
+    row.classList.remove("drop-target");
+
+    const dt = evt.dataTransfer;
+    if (!dt || !file) return;
+
+    const targetPath = pathOf(file);
+    const html = dt.getData("text/html") || "";
+
+    // 1) External URL (IMDB etc.) or general URL drop
+    const url = dt.getData("Url");
+    if (url) {
+      this._currentDir = file;
+      this._handleUrlDrop(url, html);
+      return;
+    }
+
+    // 2) OS files dropped from the desktop -> upload into this directory
+    if (dt.files && dt.files.length > 0) {
+      this._currentDir = file;
+      this._handleFileDrop(dt.files, html);
+      return;
+    }
+
+    // 3) Internal drag from any FileExplorer
+    const filesData = dt.getData("files");
+    if (!filesData) return;
+
+    let files;
+    try {
+      files = JSON.parse(filesData);
+    } catch {
+      files = [];
+    }
+    const id = dt.getData("id");
+    const domain = dt.getData("domain");
+    if (!id || !files || files.length === 0) return;
+
+    // Clear visual selection (checkboxes will be reset by FilesView after move/copy)
+    this._fileExplorer?.clearSelections?.();
+
+    Backend.eventHub.publish(
+      `drop_file_${this._fileExplorer.id}_event`,
+      {
+        file: files[0],
+        dir: targetPath,
+        id,
+        domain,
+      },
+      true
+    );
+  }
 
   _handleTableMouseOver(evt) {
     const row = evt.target.closest("tr");

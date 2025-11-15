@@ -91,6 +91,7 @@ export class FileIconView extends HTMLElement {
   /* ---------- Private: Structure / DOM ---------- */
   _template() {
     // NOTE: CSS mirrors the legacy .file-icon-div look & behavior
+    // but now uses theme variables for dark / light mode.
     return `
       <style>
       :host {
@@ -101,50 +102,64 @@ export class FileIconView extends HTMLElement {
         fill: var(--on-surface-color, black);
       }
 
+      /* ShadyCSS-friendly: NO nested var() here */
+      paper-checkbox {
+        --paper-checkbox-unchecked-color: #999;
+        --paper-checkbox-checked-color: #4dabf7;
+        --paper-checkbox-checkmark-color: #fff;
+        --paper-checkbox-label-color: inherit;
+      }
 
-       paper-checkbox {
-          --paper-checkbox-unchecked-color: #999; /* Border color */
-          --paper-checkbox-checked-color: #4dabf7; /* Fill when checked */
-          --paper-checkbox-checkmark-color: white; /* ✓ color */
-       }
 
       /* Main card container (auto-height so name can grow) */
-      .file-icon-content{
-        display:flex; position:relative; flex-direction:column;
-        margin:5px; padding:5px; padding-top:25px;
-        border-radius:2.5px;
-        border:1px solid var(--palette-background-paper);
-        transition: background .2s ease, padding .8s linear;
-        background-color: var(--palette-background-default);
-        
+      .file-icon-content {
+        display: flex;
+        position: relative;
+        flex-direction: column;
+        margin: 5px;
+        padding: 5px;
+        padding-top: 25px;
+        border-radius: 4px;
+        border: 1px solid var(--divider-color, var(--palette-divider));
+        transition: background .15s ease, box-shadow .15s ease, transform .1s ease;
+        background-color: var(--surface-color);
+        color: var(--on-surface-color);
 
         /* width is fixed; height adapts to icon + name */
         width: var(--file-icon-width, 110px);
         min-width: var(--file-icon-width, 110px);
         height: auto;
 
-        justify-content:flex-start; align-items:center;
-        user-select:none;
+        justify-content: flex-start;
+        align-items: center;
+        user-select: none;
       }
 
-      /* Hover cursor & active filter from legacy */
-      .file-icon-content:hover { cursor: pointer; }
-      :host(.active) .file-icon-content { filter: invert(10%); }
+      /* Hover cursor & active filter */
+      .file-icon-content:hover {
+        cursor: pointer;
+        background-color: var(--surface-hover-color, var(--surface-color));
+      }
+
+      :host(.active) .file-icon-content {
+        filter: invert(7%);
+      }
 
       /* Icon / image area — fixed thumb height so name has its space */
-      .icon-display{
-        display:flex;
+      .icon-display {
+        display: flex;
         width: 100%;
-        height: var(--file-icon-thumb-size, 64px); /* <= control thumbnail height */
-        justify-content:center; align-items:center;
+        height: var(--file-icon-thumb-size, 48px); /* thumbnail height */
+        justify-content: center;
+        align-items: center;
       }
       .icon-display iron-icon {
-        height: var(--file-icon-thumb-size, 64px);
-        width: var(--file-icon-thumb-size, 64px);
+        height: var(--file-icon-thumb-size, 48px);
+        width: var(--file-icon-thumb-size, 48px);
       }
       .icon-display img {
-        display:block;
-        max-height: var(--file-icon-thumb-size, 64px);
+        display: block;
+        max-height: var(--file-icon-thumb-size, 48px);
         max-width: 100%;
         object-fit: contain; /* fully visible inside the box */
       }
@@ -170,41 +185,66 @@ export class FileIconView extends HTMLElement {
       }
 
       /* Shortcut badge (reply icon) */
-      .shortcut-icon{ position:absolute; bottom:-5px; left:0; }
-      .shortcut-icon iron-icon{
-        background:white; fill:black; height:16px; width:16px;
+      .shortcut-icon {
+        position: absolute;
+        bottom: -5px;
+        left: 0;
+      }
+      .shortcut-icon iron-icon {
+        height: 16px;
+        width: 16px;
+        margin-left: 2px;
+        border-radius: 50%;
+        background: var(--surface-color);
+        fill: var(--on-surface-color);
+        box-shadow: 0 0 3px rgba(0,0,0,.35);
       }
 
       /* Controls default hidden like legacy */
-      .control-element{ position:absolute; z-index:10; display:none; visibility:hidden; }
-      #checkbox{ 
-        top:5px; 
-        left:5px; 
+      .control-element {
+        position: absolute;
+        z-index: 10;
+        display: none;
+        visibility: hidden;
+      }
+      #checkbox {
+        top: 5px;
+        left: 5px;
         border-color: var(--on-surface-color, black);
       }
 
       /* thumbtack */
-      #thumbtack-icon{
-        top:8px; left:32px; height:12px; fill:var(--palette-action-disabled);
+      #thumbtack-icon {
+        top: 8px;
+        left: 32px;
+        height: 12px;
+        fill: var(--palette-action-disabled);
       }
 
       /* menu button area top-right */
-      #menu-btn{ top:-6px; right:-6px; }
+      #menu-btn {
+        top: -6px;
+        right: -6px;
+      }
 
       /* Show controls on hover/active/selected */
       :host(:hover) .control-element,
       :host(.active) .control-element,
-      :host(.selected) .control-element { display:block; visibility:visible; }
+      :host(.selected) .control-element {
+        display: block;
+        visibility: visible;
+      }
 
       /* Selected state hints */
-      :host(.selected){
-        border:1px solid var(--secondary-color, green);
-        box-shadow:0 0 5px var(--secondary-color-light, lightgreen);
+      :host(.selected) .file-icon-content {
+        border-color: var(--secondary-color, #4caf50);
+        box-shadow: 0 0 6px var(--secondary-color-light, rgba(76,175,80,.6));
       }
 
       /* Slight hover lift */
-      .file-icon-content:hover { filter: brightness(1.03); }
-
+      .file-icon-content:hover {
+        transform: translateY(-1px);
+      }
       </style>
 
       <div class="file-icon-content">
@@ -240,10 +280,8 @@ export class FileIconView extends HTMLElement {
   clearSelectionUI() {
     // keep both shadow & light DOM safe
     const root = this.shadowRoot || this;
-    // your tiles normally set a data-path or similar on the checkbox
     root.querySelectorAll('paper-checkbox, input[type="checkbox"]').forEach(cb => {
       this.classList.remove("selected");
-      
       try { cb.checked = false; cb.removeAttribute('checked'); } catch { }
     });
   }
@@ -289,7 +327,7 @@ export class FileIconView extends HTMLElement {
     const keyPath = pathOf(this._file);
     Backend.eventHub.subscribe(
       `__file_select_unselect_${keyPath}`,
-      () => { },
+      () => {},
       (checked) => {
         this._dom.checkbox.checked = !!checked;
         this._applySelection(!!checked);
@@ -327,7 +365,7 @@ export class FileIconView extends HTMLElement {
     try {
       this._preview = new VideoPreview();
       await this._preview.setFile(f, 72);
-      if ( !this._preview.hasPreviewImages()) {
+      if (!this._preview.hasPreviewImages()) {
         throw new Error("No preview images available");
       }
       this._preview.name = nameOf(f);
@@ -423,7 +461,6 @@ export class FileIconView extends HTMLElement {
 
     const view = this._viewContext;
     if (view?.showContextMenu) {
-      // pass the icon element as anchor + highlighter
       view.showContextMenu(this._dom.menuBtn, this._file, this);
     }
   }

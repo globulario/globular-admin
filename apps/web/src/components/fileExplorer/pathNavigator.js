@@ -75,6 +75,7 @@ export class PathNavigator extends HTMLElement {
           flex-grow: 1; background-color: var(--surface-color); color: var(--primary-text-color);
           display: flex; align-items: center; user-select: none; flex-wrap: wrap;
           padding: 0 5px; overflow-x: auto;
+          border-bottom: 1px solid var(--palette-divider);
         }
         .path-segment { display: flex; align-items: center; position: relative; padding: 2px 0; }
         .path-segment-text { max-width: 350px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; user-select: none; padding: 0 4px; }

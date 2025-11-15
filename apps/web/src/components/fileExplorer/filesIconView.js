@@ -29,18 +29,51 @@ export class FilesIconView extends FilesView {
     this.attachShadow({ mode: "open" });
 
     this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; width: 100%; height: 100%; overflow-y: auto; }
-        #container {
-          background: var(--surface-color);
-          display: flex; flex-direction: column;
-        }
-        .dragging { opacity: 0.6; }
-      </style>
-      <div id="container" class="no-select">
-        <slot></slot>
-      </div>
-    `;
+    <style>
+      :host {
+        display: block;
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+        background: var(--surface-color);
+        color: var(--primary-text-color);
+        scrollbar-width: thin;
+        scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+                        var(--scroll-track, var(--surface-color));
+      }
+
+      /* Chrome/WebKit scrollbars */
+      :host::-webkit-scrollbar {
+        width: 10px;
+      }
+      :host::-webkit-scrollbar-track {
+        background: var(--scroll-track, var(--surface-color));
+      }
+      :host::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb, var(--palette-divider));
+        border-radius: 6px;
+      }
+
+
+
+      #container {
+        background: var(--surface-color);
+        color: var(--primary-text-color);
+        display: flex;
+        flex-direction: column;
+        padding: 8px;
+        z-index: 100;
+      }
+
+      .dragging {
+        opacity: 0.6;
+      }
+    </style>
+    <div id="container" class="no-select">
+     
+      <slot></slot>
+    </div>
+  `;
     this.container = this.shadowRoot.querySelector("#container");
 
     // delegated listeners on container
@@ -77,66 +110,36 @@ export class FilesIconView extends FilesView {
     if (this.menu?.parentNode) this.menu.parentNode.removeChild(this.menu);
   }
 
+  /**
+   * Drop anywhere on the icon grid background.
+   * This should support:
+   * - OS files dropped from the desktop
+   * - external URLs (IMDB, etc.)
+   * - internal drag from another FileExplorer or from this one
+   *
+   * We just delegate to FilesView.handleDropEvent so we get the
+   * same Copy/Move/Create Link menu logic as the old version.
+   */
   _handleContainerDrop(evt) {
-    evt.preventDefault();
-    evt.stopPropagation();
-
-    const filesJson = evt.dataTransfer.getData("files");
-    const domainFromDnD = evt.dataTransfer.getData("domain");
-    const fileList = evt.dataTransfer.files;
-
-    // Native OS files → upload event
-    if (fileList && fileList.length > 0) {
-      const currentPath =
-        (typeof this.getCurrentPath === "function" && this.getCurrentPath()) ||
-        this._path ||
-        (this._currentDir && (this._currentDir.getPath?.() || this._currentDir.path)) ||
-        "/";
-
-      Backend.eventHub.publish(
-        "__upload_files_event__",
-        { dir: currentPath, files: Array.from(fileList), lnk: null },
-        true
-      );
-      return;
-    }
-
-    // Internal drag payload (legacy contract): files = array of string paths
-    if (filesJson) {
-      try {
-        const files = JSON.parse(filesJson);
-        if (!Array.isArray(files) || files.length === 0) return;
-
-        const destPath =
-          (typeof this.getCurrentPath === "function" && this.getCurrentPath()) ||
-          this._path ||
-          (this._currentDir && (this._currentDir.getPath?.() || this._currentDir.path)) ||
-          "/";
-
-        const sourceId = evt.dataTransfer.getData("id") ||
-          (this._fileExplorer?.id || this._fileExplorer?.id || "");
-        const feId = this._fileExplorer?.id || this._fileExplorer?.id || "explorer";
-        const domain = domainFromDnD || "";
-
-        // Publish one event per file (legacy)
-        files.forEach((fPath) => {
-          Backend.eventHub.publish(
-            `drop_file_${feId}_event`,
-            { file: fPath, dir: destPath, id: sourceId, domain },
-            true
-          );
-        });
-      } catch (e) {
-        console.error("Error parsing dropped files data:", e);
-        displayError("Failed to process dropped files.", 3000);
-      }
-    }
+    this.handleDropEvent(evt); // method from FilesView
   }
 
+
+  /**
+   * Allow drops over the icon area and hint move/copy mode with cursor.
+   */
   _handleContainerDragOver(evt) {
     evt.preventDefault();
-    evt.dataTransfer.dropEffect = (evt.ctrlKey || evt.metaKey) ? "copy" : "move";
-    (this._fileExplorer?.setAtTop || this._fileExplorer?.setAtTop)?.();
+    const dt = evt.dataTransfer;
+    if (dt) {
+      // Ctrl/meta = copy, default = move
+      dt.dropEffect = (evt.ctrlKey || evt.metaKey) ? "copy" : "move";
+    }
+
+    // Keep same behavior as before – keep the explorer "awake"
+    if (this._fileExplorer?.setAtTop) {
+      this._fileExplorer.setAtTop();
+    }
   }
 
   /* ---------- Rendering ---------- */

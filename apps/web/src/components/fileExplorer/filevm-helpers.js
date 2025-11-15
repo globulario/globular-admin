@@ -67,8 +67,24 @@ export function modTimeSecOf(v) {
 }
 
 /** Convenience alias so old code that called extractPath keeps working */
+/** Helper to extract a path from a DirVM/FileVM/String */
 export function extractPath(v) {
-  return pathOf(v);
+  if (!v) return "";
+
+  // Simple string
+  if (typeof v === "string") return v;
+
+  // Plain JS objects with .path
+  if (typeof v.path === "string") return v.path;
+
+  // Proto-style objects with getPath()
+  if (typeof v.getPath === "function") return v.getPath();
+
+  // Some events might wrap the file/dir
+  if (v.file) return extractPath(v.file);
+  if (v.dir) return extractPath(v.dir);
+
+  return "";
 }
 
 /**

@@ -2,7 +2,10 @@
 
 import { Backend } from "../../backend/backend"; // still used for eventHub
 import { displayError } from "../../backend/ui/notify";
-import * as files from "../../backend/cms/files"; // getHiddenFiles, getImages
+
+// Use specific helpers instead of wildcard import
+// Expectation: these are thin wrappers over readDir + image loading in your new files.ts
+import { getHiddenFiles, getImages } from "../../backend/cms/files";
 
 import "@polymer/paper-ripple/paper-ripple.js";
 
@@ -83,16 +86,16 @@ export class VideoPreview extends HTMLElement {
         position: absolute;
         transition: opacity 0.2s ease-in-out;
         opacity: 1;
-        pointer-events: none;        /* << prevent img from catching clicks */
-        -webkit-user-drag: none;     /* << prevent drag ghost */
+        pointer-events: none;        /* prevent img from catching clicks */
+        -webkit-user-drag: none;     /* prevent drag ghost */
       }
       slot {
         position: relative;
         z-index: 1;
-        pointer-events: none;        /* << slot itself */
+        pointer-events: none;
       }
       ::slotted(*) {
-        pointer-events: none;        /* << slotted children don’t intercept */
+        pointer-events: none;
       }
     </style>
     <div id="container" draggable="false" aria-label="Video preview">
@@ -101,17 +104,19 @@ export class VideoPreview extends HTMLElement {
     </div>
   `;
 
-
     this._container = this.shadowRoot.querySelector("#container");
     this._previewImg = this.shadowRoot.querySelector("#preview");
 
     if (this._container) {
+      //this._container.addEventListener("click", this._boundClick);
       this._container.addEventListener("mouseenter", this._boundEnter);
       this._container.addEventListener("mouseleave", this._boundLeave);
     }
 
-    this._resizeObserver = new ResizeObserver(() => this._updateWidthAndNotify());
-    if (this._container) this._resizeObserver.observe(this._container);
+    if (typeof ResizeObserver !== "undefined") {
+      this._resizeObserver = new ResizeObserver(() => this._updateWidthAndNotify());
+      if (this._container) this._resizeObserver.observe(this._container);
+    }
 
     this._destroyed = false;
 
@@ -123,7 +128,7 @@ export class VideoPreview extends HTMLElement {
     this.stopPreview();
 
     if (this._container) {
-      this._container.removeEventListener("click", this._boundClick, true);
+      this._container.removeEventListener("click", this._boundClick);
       this._container.removeEventListener("mouseenter", this._boundEnter);
       this._container.removeEventListener("mouseleave", this._boundLeave);
     }
@@ -315,22 +320,22 @@ export class VideoPreview extends HTMLElement {
 
     try {
       // .hidden/<basename>/__preview__
-      const dir = await files.getHiddenFiles(path, "__preview__");
+      const dir = await getHiddenFiles(path, "__preview__");
       const list = (dir && dir.files) || [];
       if (list.length === 0) {
         this._emitTimelineLoaded(false);
         return false;
       }
 
-      const imgs = await files.getImages(list); // returns HTMLImageElement[]
+      const imgs = await getImages(list); // returns HTMLImageElement[]
       if (this._destroyed || !imgs || imgs.length === 0) {
         this._emitTimelineLoaded(false);
         return false;
       }
 
       const urls = imgs
-        .filter(img => img instanceof HTMLImageElement)
-        .map(img => img.src)
+        .filter((img) => img instanceof HTMLImageElement)
+        .map((img) => img.src)
         .filter(Boolean);
 
       if (urls.length === 0) {
@@ -367,11 +372,13 @@ export class VideoPreview extends HTMLElement {
   }
 
   _emitTimelineLoaded(hasTimeline) {
-    this.dispatchEvent(new CustomEvent("timeline-loaded", {
-      bubbles: true,
-      composed: true,
-      detail: { hasTimeline },
-    }));
+    this.dispatchEvent(
+      new CustomEvent("timeline-loaded", {
+        bubbles: true,
+        composed: true,
+        detail: { hasTimeline },
+      })
+    );
   }
 
   _playVideo() {

@@ -12,13 +12,16 @@ import { getFile, readText } from "../../backend/cms/files";
 
 import "@polymer/iron-icon/iron-icon.js";
 import "@polymer/paper-checkbox/paper-checkbox.js";
+import "@polymer/iron-icons/image-icons";
+import "@polymer/iron-icons/av-icons";
+import "@polymer/iron-icons/image-icons";
 import { playVideos } from "../video";
 import { playAudios } from "../audio";
 import "./fileIconView";
 
 // ---------- small shared utilities ----------
 const ICON_FOR_SECTION = {
-  audio: "av:music-note",
+  audio: "image:music-note",
   video: "av:movie",
   image: "image:collections",
   default: "icons:folder",
@@ -26,8 +29,9 @@ const ICON_FOR_SECTION = {
 
 function buildFileHttpUrl(path) {
   // Build a stable absolute URL to the file path served by your backend's file HTTP server.
-  // Assumes your server serves files by absolute path. Adjust here if your server expects a query style path.
-  const base = (window.location && window.location.origin) ? window.location.origin.replace(/\/$/, "") : "";
+  const base = (window.location && window.location.origin)
+    ? window.location.origin.replace(/\/$/, "")
+    : "";
   const normalized = (path || "").startsWith("/") ? path : `/${path || ""}`;
   return `${base}${normalized}`;
 }
@@ -37,7 +41,7 @@ async function tryGetAccessToken() {
     if (typeof Backend.getAccessToken === "function") {
       return await Backend.getAccessToken();
     }
-  } catch (_) {}
+  } catch (_) { }
   return undefined;
 }
 
@@ -81,53 +85,103 @@ export class FileIconViewSection extends HTMLElement {
   /** ---------- template / dom ---------- */
   _template() {
     return `
-      <style>
-        :host { display:flex; flex-direction:column; width:100%; }
+    <style>
+      :host {
+        display:flex;
+        flex-direction:column;
+        width:100%;
+      }
 
-        #select-all-checkbox {
-          --paper-checkbox-unchecked-color: #999; /* Border color */
-          --paper-checkbox-checked-color: #4dabf7; /* Fill when checked */
-          --paper-checkbox-checkmark-color: white; /* ✓ color */
-       }
+      /* ShadyCSS-friendly: NO nested var() here */
+      paper-checkbox {
+        --paper-checkbox-unchecked-color: #999;
+        --paper-checkbox-checked-color: #4dabf7;
+        --paper-checkbox-checkmark-color: #fff;
+        --paper-checkbox-label-color: inherit;
+      }
 
-        iron-icon {
-          fill: var(--on-surface-color, black);
-        } 
-        .file-type-section { display:flex; flex-direction:column; padding:10px 0; }
-        .file-type-section .title {
-          display:flex; align-items:center; font-size:1.2rem; font-weight:400;
-          text-transform:uppercase; color: var(--palette-text-secondary);
-          border-bottom:2px solid var(--palette-divider); width:100%; user-select:none; padding-bottom:5px;
-        }
-        .file-type-section .title iron-icon { user-select:none; margin-left:5px; }
-        .file-type-section .title paper-checkbox {
-          margin-right:5px;
-          --paper-checkbox-checked-color: var(--primary-color);
-          --paper-checkbox-unchecked-color: var(--palette-action-disabled);
-        }
-        .file-type-section .title span { font-weight:400; font-size:1rem; flex-grow:1; padding-left:5px; color: var(--on-surface-color, black); }
-        .file-type-section .content {
-          display:flex; flex-wrap:wrap; margin:16px 0; justify-content:flex-start; gap:10px;
-        }
-        .playlist-actions { display:flex; align-items:center; gap:8px; }
-        .playlist-actions iron-icon { height:24px; width:24px; cursor:pointer; fill: var(--palette-text-secondary); }
-        .playlist-actions iron-icon:hover { fill: var(--primary-color); }
-      </style>
+      iron-icon {
+        fill: var(--on-surface-color, black);
+      }
 
-      <div class="file-type-section">
-        <div class="title">
-          <paper-checkbox id="select-all-checkbox"></paper-checkbox>
-          <iron-icon id="section-type-icon"></iron-icon>
-          <span>
-            ${this._fileType}
-            <span id="section_count"></span>
-          </span>
-          <div id="playlist-actions" class="playlist-actions"></div>
-        </div>
-        <div class="content" id="file_section_content"><slot></slot></div>
+      .file-type-section {
+        display:flex;
+        flex-direction:column;
+        padding:10px 0;
+      }
+
+      .file-type-section .title {
+        display:flex;
+        align-items:center;
+        font-size:1.2rem;
+        font-weight:400;
+        text-transform:uppercase;
+        width:100%;
+        user-select:none;
+        padding-bottom:5px;
+
+        background-color: var(--surface-color);
+        color: var(--secondary-text-color, var(--palette-text-secondary));
+        border-bottom: 1px solid var(--divider-color, var(--palette-divider));
+      }
+
+      .file-type-section .title iron-icon {
+        user-select:none;
+        margin-left:5px;
+      }
+
+      .file-type-section .title span {
+        font-weight:400;
+        font-size:1rem;
+        flex-grow:1;
+        padding-left:5px;
+        color: var(--on-surface-color, black);
+      }
+
+      .file-type-section .content {
+        display:flex;
+        flex-wrap:wrap;
+        margin:16px 0;
+        justify-content:flex-start;
+        gap:10px;
+        background-color: var(--surface-alt-color, transparent);
+      }
+
+      .playlist-actions {
+        display:flex;
+        align-items:center;
+        gap:8px;
+        background-color: var(--surface-color);
+        z-index:1000;
+      }
+
+      .playlist-actions iron-icon {
+        height:24px;
+        width:24px;
+        cursor:pointer;
+        fill: var(--secondary-text-color, var(--palette-text-secondary));
+      }
+
+      .playlist-actions iron-icon:hover {
+        fill: var(--primary-color);
+      }
+    </style>
+
+    <div class="file-type-section">
+      <div class="title">
+        <paper-checkbox id="select-all-checkbox"></paper-checkbox>
+        <iron-icon id="section-type-icon"></iron-icon>
+        <span>
+          ${this._fileType}
+          <span id="section_count"></span>
+        </span>
+        <div id="playlist-actions" class="playlist-actions"></div>
       </div>
-    `;
+      <div class="content" id="file_section_content"><slot></slot></div>
+    </div>
+  `;
   }
+
 
   _cacheDom() {
     const $ = (s) => this.shadowRoot.querySelector(s);
@@ -279,7 +333,6 @@ export class FileIconViewSection extends HTMLElement {
       if (hls?.path) playlistPath = `${hls.path}/playlist.m3u8`;
     }
     if (!playlistPath && playlist?.path) {
-      // last resort: use playlist.json.path if it looks like a file path
       playlistPath = playlist.path;
     }
     if (!playlistPath) return "";

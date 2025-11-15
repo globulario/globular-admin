@@ -97,46 +97,147 @@ export class FileNavigator extends HTMLElement {
 
   _initializeLayout() {
     this.shadowRoot.innerHTML = `
-      <style>
-        :host {
-          display: flex; flex-direction: column; width: 100%; height: 100%;
-          user-select: none; background-color: var(--surface-color); color: var(--primary-text-color);
-        }
-        #file-navigator-div { min-width: 360px; flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto; }
-        select {
-          padding: 8px; background: var(--surface-color); color: var(--primary-text-color);
-          font-size: 1.0rem; font-family: var(--font-family); width: 100%; border: none; outline: none;
-          margin-bottom: 10px; border-bottom: 1px solid var(--palette-divider);
-        }
-        .section-header {
-          font-weight: bold; padding: 8px 10px; background: var(--surface-color-dark, #f0f0f0);
-          margin-top: 10px; border-top: 1px solid var(--palette-divider);
-        }
-        .directory-item {
-          display:flex; align-items:center; padding:5px 0; position:relative; cursor:pointer;
-        }
-        .directory-item:hover { background-color: var(--paper-grey-100, #f5f5f5); }
-        .directory-item.selected { background-color: var(--primary-selected-bg, rgba(0,0,0,.06)); }
-        .directory-item iron-icon { height:24px; width:24px; --iron-icon-fill-color: var(--palette-action-disabled); flex-shrink:0; }
-        .folder-name-span { margin-left:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-grow:1; }
-        .expand-toggle { margin-right:5px; cursor:pointer; }
-        .folder-icon { margin-right:5px; }
-        .directory-lnk { display:flex; align-items:center; flex-grow:1; overflow:hidden; }
-        .directory-sub-files { display:none; flex-direction:column; }
-        .directory-item.drag-over { box-shadow:0 0 5px 2px var(--primary-color); background: var(--primary-light-color); }
-        .directory-item.drag-over .folder-icon { --iron-icon-fill-color: var(--primary-color); }
-      </style>
+    <style>
+      :host {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        user-select: none;
+        background-color: var(--surface-color);
+        color: var(--primary-text-color);
+      }
 
-      <div id="file-navigator-div">
-        <select id="peer-select"></select>
-        <div class="section-header">My Files</div>
-        <div id="user-files-div"></div>
-        <div class="section-header">Shared with me</div>
-        <div id="shared-files-div"></div>
-        <div class="section-header">Public</div>
-        <div id="public-files-div"></div>
-      </div>
-    `;
+      /* Scrollbars for modern browsers (element that actually scrolls) */
+      #file-navigator-div {
+        min-width: 360px;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        border-right: 1px solid var(--palette-divider);
+        scrollbar-width: thin;
+        scrollbar-color: var(--scroll-thumb, rgba(120,120,120,0.7))
+                         var(--scroll-track, rgba(0,0,0,0.05));
+      }
+
+      /* Chrome/WebKit scrollbars */
+      #file-navigator-div::-webkit-scrollbar {
+        width: 10px;
+      }
+      #file-navigator-div::-webkit-scrollbar-track {
+        background: var(--scroll-track, rgba(0,0,0,0.05));
+      }
+      #file-navigator-div::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb, rgba(120,120,120,0.7));
+        border-radius: 6px;
+      }
+
+      select {
+        padding: 8px;
+        background: var(--surface-color);
+        color: var(--primary-text-color);
+        font-size: 1.0rem;
+        font-family: var(--font-family);
+        width: 100%;
+        border: none;
+        outline: none;
+        margin-bottom: 10px;
+        border-bottom: 1px solid var(--palette-divider);
+      }
+
+      .section-header {
+        background-color: var(--surface-subheader-color,
+                               var(--surface-alt-color, var(--surface-color)));
+        color: var(--secondary-text-color, var(--palette-text-secondary));
+        font-weight: 600;
+        border-bottom: 1px solid var(--palette-divider);
+        padding: 6px 8px;
+        margin-top: 4px;
+        margin-bottom: 2px;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        letter-spacing: 0.04em;
+      }
+
+      .directory-item {
+        display: flex;
+        align-items: center;
+        padding: 5px 0;
+        position: relative;
+        cursor: pointer;
+      }
+
+      .directory-item:hover {
+        background-color: var(--list-hover-bg,
+                               var(--palette-action-hover, rgba(255,255,255,0.06)));
+      }
+
+      .directory-item.selected {
+        background-color: var(--list-selected-bg,
+                               var(--primary-selected-bg, rgba(0,0,0,0.06)));
+      }
+
+      .directory-item iron-icon {
+        height: 24px;
+        width: 24px;
+        --iron-icon-fill-color: var(--on-surface-color, var(--primary-text-color));
+        flex-shrink: 0;
+      }
+
+      .folder-name-span {
+        margin-left: 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-grow: 1;
+        color: var(--on-surface-color, var(--primary-text-color));
+      }
+
+      .expand-toggle {
+        margin-right: 5px;
+        cursor: pointer;
+      }
+
+      .folder-icon {
+        margin-right: 5px;
+        width: 20px;
+        height: 20px;
+      }
+
+      .directory-lnk {
+        display: flex;
+        align-items: center;
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      .directory-sub-files {
+        display: none;
+        flex-direction: column;
+      }
+
+      .directory-item.drag-over {
+        box-shadow: 0 0 5px 2px var(--primary-color);
+        background-color: var(--drag-over-bg,
+                               var(--primary-light-color, rgba(25,118,210,0.18)));
+      }
+
+      .directory-item.drag-over .folder-icon {
+        --iron-icon-fill-color: var(--primary-color);
+      }
+    </style>
+
+    <div id="file-navigator-div">
+      <select id="peer-select"></select>
+      <div class="section-header">My Files</div>
+      <div id="user-files-div"></div>
+      <div class="section-header">Shared with me</div>
+      <div id="shared-files-div"></div>
+      <div class="section-header">Public</div>
+      <div id="public-files-div"></div>
+    </div>
+  `;
   }
 
   _cacheDomElements() {
@@ -275,8 +376,8 @@ export class FileNavigator extends HTMLElement {
     const pad = 10 * level;
     const html = `
       <div id="${id}" class="directory-item" style="padding-left:${pad}px;">
-        <iron-icon id="${id}_expand_btn" icon="icons:chevron-right" class="expand-toggle" style="--iron-icon-fill-color:var(--palette-action-disabled);"></iron-icon>
-        <iron-icon id="${id}_shrink_btn" icon="icons:expand-more" class="expand-toggle" style="--iron-icon-fill-color:var(--palette-action-active); display:none;"></iron-icon>
+        <iron-icon id="${id}_expand_btn" icon="icons:chevron-right" class="expand-toggle" style="--iron-icon-fill-color:var(--on-surface-color, var(--primary-text-color));"></iron-icon>
+        <iron-icon id="${id}_shrink_btn" icon="icons:expand-more" class="expand-toggle" style="--iron-icon-fill-color:var(--on-surface-color, var(--primary-text-color)); display:none;"></iron-icon>
         <div class="directory-lnk" id="${id}_directory_lnk">
           <iron-icon id="${id}_directory_icon" icon="icons:folder" class="folder-icon"></iron-icon>
           <span class="folder-name-span" title="${displayName}">${displayName}</span>
@@ -574,8 +675,8 @@ export class FileNavigator extends HTMLElement {
         typeof rsp?.getSharedresourceList === "function"
           ? rsp.getSharedresourceList()
           : Array.isArray(rsp?.sharedResources)
-          ? rsp.sharedResources
-          : [];
+            ? rsp.sharedResources
+            : [];
 
       const perUser = {}; // ownerKey => VM
 
@@ -590,7 +691,7 @@ export class FileNavigator extends HTMLElement {
         if (!ownerId || ownerId === acc.id || ownerId === subject) return;
 
         let ownerAcc = null;
-        try { ownerAcc = await getAccount(ownerId); } catch (_) {}
+        try { ownerAcc = await getAccount(ownerId); } catch (_) { }
         const ownerAccId =
           ownerAcc?.id || (typeof ownerAcc?.getId === "function" ? ownerAcc.getId() : ownerId);
         const ownerAccDomain =

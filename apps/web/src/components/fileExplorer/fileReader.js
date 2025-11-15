@@ -103,60 +103,107 @@ export class GlobularFileReader extends HTMLElement {
   }
 
   /* ------------------------------ layout ------------------------------ */
-  _initializeLayout() {
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host {
-          display: flex;
-          flex-direction: column;
-          width: 100%;
-          height: 100%;
-          background: var(--surface-color);
-          color: var(--primary-text-color);
-        }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+_initializeLayout() {
+  this.shadowRoot.innerHTML = `
+    <style>
+      :host {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        background: var(--surface-color);
+        color: var(--on-surface-color, var(--primary-text-color));
+      }
 
-        #content { display: none; flex-direction: column; width: 100%; height: 100%; }
-        #header {
-          display: flex; align-items: center; gap: 8px;
-          background: var(--surface-color);
-          color: var(--on-surface-color);
-          border-bottom: 1px solid var(--palette-divider);
-          padding: 8px;
-          flex-shrink: 0;
-        }
-        #title {
-          flex: 1; text-align: center; font-size: 1.2rem; font-weight: 500;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        #close-btn { --iron-icon-fill-color: var(--palette-text-accent); cursor: pointer; }
+      /* Scrollbars on the host container if it ever scrolls */
+      :host::-webkit-scrollbar { width: 5px; height: 5px; }
+      :host::-webkit-scrollbar-track {
+        background: var(--scroll-track, var(--surface-color));
+      }
+      :host::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb, var(--palette-divider));
+      }
 
-        #frame {
-          width: 100%; height: 100%; border: none; background: white; flex: 1;
-        }
-        #loading {
-          position: absolute; inset: 48px 8px 8px; display: none;
-          align-items: center; justify-content: center; background: transparent;
-          pointer-events: none;
-        }
-        #loading span {
-          padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.05);
-          font-size: .9rem;
-        }
-      </style>
-      <div id="content" role="dialog" aria-modal="true" aria-label="File viewer">
-        <div id="header">
-          <span id="title"></span>
-          <paper-icon-button icon="icons:close" id="close-btn" title="Close (Esc)"></paper-icon-button>
-        </div>
-        <!-- NOTE: no sandbox in markup; we toggle it dynamically -->
-        <iframe id="frame"></iframe>
-        <div id="loading"><span>Loading…</span></div>
+      #content {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        background: var(--surface-color);
+      }
+
+      #header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--surface-color);
+        color: var(--on-surface-color, var(--primary-text-color));
+        border-bottom: 1px solid var(--palette-divider);
+        padding: 8px;
+        flex-shrink: 0;
+      }
+
+      #title {
+        flex: 1;
+        text-align: center;
+        font-size: 1.2rem;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #close-btn {
+        --iron-icon-fill-color: var(--palette-text-accent, var(--primary-color));
+        cursor: pointer;
+      }
+
+      #frame {
+        width: 100%;
+        height: 100%;
+        border: none;
+        flex: 1;
+        background: var(--file-reader-page-bg, #ffffff);
+      }
+
+      #loading {
+        position: absolute;
+        inset: 48px 8px 8px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        pointer-events: none;
+      }
+
+      #loading span {
+        padding: 6px 10px;
+        border-radius: 8px;
+        background: var(
+          --surface-elevated-color,
+          rgba(0, 0, 0, 0.06)
+        );
+        color: var(--on-surface-color, var(--primary-text-color));
+        font-size: .9rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,.25);
+      }
+    </style>
+
+    <div id="content" role="dialog" aria-modal="true" aria-label="File viewer">
+      <div id="header">
+        <span id="title"></span>
+        <paper-icon-button
+          icon="icons:close"
+          id="close-btn"
+          title="Close (Esc)">
+        </paper-icon-button>
       </div>
-    `;
-  }
+      <!-- NOTE: no sandbox in markup; we toggle it dynamically -->
+      <iframe id="frame"></iframe>
+      <div id="loading"><span>Loading…</span></div>
+    </div>
+  `;
+}
 
   _cacheDomElements() {
     this._domRefs.content = this.shadowRoot.querySelector("#content");

@@ -81,6 +81,7 @@ export class FileExplorer extends HTMLElement {
   _backNavigationBtn = undefined;
   _fowardNavigationBtn = undefined;
   _upwardNavigationBtn = undefined;
+  _navigationListCard = null;
   _lstNavigationBtn = undefined;
   _createDirectoryBtn = undefined;
   _uploadBtn = undefined;
@@ -147,81 +148,207 @@ export class FileExplorer extends HTMLElement {
   _initializeLayout() {
     const fileExplorerIcon = new URL('../../assets/icons/folder-flat.svg', import.meta.url).href;
     this.shadowRoot.innerHTML = `
-      <style>
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
-        paper-icon-button:hover { cursor: pointer; }
-        #file-navigation-panel, #file-selection-panel {
-          background-color: var(--surface-color);
-          color: var(--primary-text-color);
-        }
-        #file-explorer-content { display: flex; flex-direction: column; height: calc(100% - 40px); }
-        #file-explorer-layout { display: flex; flex-grow: 1; overflow: hidden; }
-        globular-file-reader { height: 100%; }
-        globular-permissions-manager, globular-informations-manager {
-          background-color: var(--surface-color);
-          position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-          overflow: auto; z-index: 100;
-        }
-        #progress-div {
-          position: absolute; bottom: 0; left: 10px;
-          display: none; font-size: 0.85rem;
-          background-color: var(--surface-color);
-          z-index: 1000;
-        }
-        .card-actions { display: flex; }
-        @media (max-width: 500px) {
-          .footer { width: calc(100vw - 35px); bottom: 0; position: fixed; }
-          #file-explorer-content { margin-bottom: 40px; }
-          #enter-full-screen-btn { display: none; }
-        }
-      </style>
-      <globular-dialog id="globular-file-explorer-dialog" class="file-explorer" name="file-explorer" 
-        is-moveable="true" is-maximizeable="true" is-resizeable="true"
-        show-icon="true" is-minimizeable="true" offset="64">
-        <globular-search-document-bar slot="search"></globular-search-document-bar>
-        <span id="title-span" slot="title">File Explorer</span>
-        <img slot="icon" src="${fileExplorerIcon}"/>
+    <style>
+      /* -------- scrollbars: use theme vars (light & dark) -------- */
+      ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--scroll-track);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb);
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--scroll-thumb-hover);
+      }
 
-        <paper-icon-button slot="header" id="show-share-panel-btn" icon="social:share"></paper-icon-button>
-        <paper-icon-button slot="header" id="navigation-cloud-upload-btn" icon="icons:cloud-upload"></paper-icon-button>
-        <paper-icon-button slot="header" id="navigation-create-dir-btn" icon="icons:create-new-folder"></paper-icon-button>
-        <paper-icon-button slot="header" id="navigation-refresh-btn" icon="icons:refresh"></paper-icon-button>
+      paper-icon-button:hover {
+        cursor: pointer;
+      }
 
-        <div id="file-explorer-content" class="card-content no-select">
-          <div id="file-navigation-header">
-            <div id="btn-group-0" style="display: flex;">
-              <paper-icon-button id="navigation-back-btn" icon="icons:arrow-back"></paper-icon-button>
-              <paper-icon-button id="navigation-forward-btn" icon="icons:arrow-forward"></paper-icon-button>
-              <paper-icon-button id="navigation-upward-btn" icon="icons:arrow-upward"></paper-icon-button>
-              <paper-icon-button id="navigation-lst-btn" icon="icons:list" style="display: none;"></paper-icon-button>
-            </div>
-            <globular-path-navigator style="flex-grow: 1;"></globular-path-navigator>
+      /* local helper: prefer divider-color, fall back to palette-divider */
+      :host {
+        --fx-border-color: var(--divider-color, var(--palette-divider));
+      }
+
+      #file-navigation-panel,
+      #file-selection-panel {
+        background-color: var(--surface-color);
+        color: var(--on-surface-color);
+      }
+
+      #file-navigation-panel {
+        border-right: 1px solid var(--fx-border-color);
+      }
+
+      #file-explorer-content {
+        display: flex;
+        flex-direction: column;
+        height: calc(100% - 40px);
+        background-color: var(--surface-color);
+        color: var(--on-surface-color);
+      }
+
+      #file-navigation-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--fx-border-color);
+        background-color: var(--surface-color);
+      }
+
+      #file-explorer-layout {
+        display: flex;
+        flex-grow: 1;
+        overflow: hidden;
+      }
+
+      globular-file-reader {
+        height: 100%;
+      }
+
+      globular-permissions-manager,
+      globular-informations-manager {
+        background-color: var(--surface-color);
+        color: var(--on-surface-color);
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        overflow: auto;
+        z-index: 100;
+      }
+
+      #progress-div {
+        position: absolute;
+        bottom: 0;
+        left: 10px;
+        display: none;
+        font-size: 0.85rem;
+        background-color: var(--surface-color);
+        color: var(--on-surface-color);
+        border: 1px solid var(--fx-border-color);
+        border-radius: 6px 6px 0 0;
+        padding: 4px 8px;
+        box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+      }
+
+      #progress-div paper-progress {
+        width: 120px;
+        margin-left: 8px;
+      }
+
+      #active-directory {
+        display: none;
+        padding: 0 8px;
+        font-size: 0.75rem;
+        color: var(--palette-text-secondary, var(--on-surface-color));
+        opacity: 0.8;
+      }
+
+      .card-actions.footer {
+        display: flex;
+        align-items: center;
+        background-color: var(--surface-color);
+        color: var(--on-surface-color);
+        border-top: 1px solid var(--fx-border-color);
+      }
+
+      @media (max-width: 500px) {
+        .footer {
+          width: calc(100vw - 35px);
+          bottom: 0;
+          position: fixed;
+        }
+        #file-explorer-content {
+          margin-bottom: 40px;
+        }
+        #enter-full-screen-btn {
+          display: none;
+        }
+      }
+    </style>
+
+    <globular-dialog
+      id="globular-file-explorer-dialog"
+      class="file-explorer"
+      name="file-explorer"
+      overflow="hidden"
+      is-moveable="true"
+      is-maximizeable="true"
+      is-resizeable="true"
+      show-icon="true"
+      is-minimizeable="true"
+      offset="64">
+
+      <globular-search-document-bar slot="search"></globular-search-document-bar>
+      <span id="title-span" slot="title">File Explorer</span>
+      <img slot="icon" src="${fileExplorerIcon}"/>
+
+      <paper-icon-button slot="header" id="show-share-panel-btn" icon="social:share"></paper-icon-button>
+      <paper-icon-button slot="header" id="navigation-cloud-upload-btn" icon="icons:cloud-upload"></paper-icon-button>
+      <paper-icon-button slot="header" id="navigation-create-dir-btn" icon="icons:create-new-folder"></paper-icon-button>
+      <paper-icon-button slot="header" id="navigation-refresh-btn" icon="icons:refresh"></paper-icon-button>
+
+      <div id="file-explorer-content" class="card-content no-select">
+        <div id="file-navigation-header">
+          <div id="btn-group-0" style="display: flex;">
+            <paper-icon-button id="navigation-back-btn" icon="icons:arrow-back"></paper-icon-button>
+            <paper-icon-button id="navigation-forward-btn" icon="icons:arrow-forward"></paper-icon-button>
+            <paper-icon-button id="navigation-upward-btn" icon="icons:arrow-upward"></paper-icon-button>
+            <paper-icon-button id="navigation-lst-btn" icon="icons:list" style="display: none;"></paper-icon-button>
           </div>
-          <globular-split-view id="file-explorer-layout">
-            <globular-split-pane id="file-navigation-panel" style="width: 360px;">
-              <globular-file-navigator ></globular-file-navigator>
-            </globular-split-pane>
-            <globular-split-pane id="file-selection-panel" style="position: relative; width: 100%;">
-              <slot></slot>
-              <div id="progress-div">
-                <span id="progress-message">Loading...</span>
-                <paper-progress id="globular-dir-loading-progress-bar" indeterminate></paper-progress>
-              </div>
-            </globular-split-pane>
-          </globular-split-view>
+          <globular-path-navigator style="flex-grow: 1;"></globular-path-navigator>
         </div>
 
-        <div class="card-actions footer" style="background-color: var(--surface-color);">
-          <globular-disk-space-manager account="sa@localhost" style="display: none;"></globular-disk-space-manager>
-          <span style="flex-grow: 1;"></span>
-          <paper-icon-button id="files-icon-btn" class="active" icon="icons:view-module" style="--iron-icon-fill-color: var(--palette-action-active);" role="button" tabindex="0" aria-disabled="false"></paper-icon-button>
-          <paper-icon-button id="files-list-btn" icon="icons:view-list" style="--iron-icon-fill-color: var(--palette-action-disabled);" role="button" tabindex="1" aria-disabled="false" ></paper-icon-button>
-          <paper-icon-button id="file_uploader_icon" icon="icons:file-upload" style="--iron-icon-fill-color: var(--palette-action-disabled);" ></paper-icon-button >
-        </div>
-      </globular-dialog>
-    `;
+        <globular-split-view id="file-explorer-layout">
+          <globular-split-pane id="file-navigation-panel" style="width: 360px;">
+            <globular-file-navigator></globular-file-navigator>
+          </globular-split-pane>
+          <globular-split-pane id="file-selection-panel" style="position: relative; width: 100%;">
+            <slot></slot>
+            <div id="progress-div">
+              <span id="progress-message">Loading...</span>
+              <paper-progress id="globular-dir-loading-progress-bar" indeterminate></paper-progress>
+            </div>
+          </globular-split-pane>
+        </globular-split-view>
+      </div>
+
+      <div class="card-actions footer">
+        <span id="active-directory" style="display:none;"></span>
+        <globular-disk-space-manager account="sa@localhost" style="display: none;"></globular-disk-space-manager>
+        <span style="flex-grow: 1;"></span>
+        <paper-icon-button
+          id="files-icon-btn"
+          class="active"
+          icon="icons:view-module"
+          style="--iron-icon-fill-color: var(--palette-action-active);"
+          role="button"
+          tabindex="0"
+          aria-disabled="false">
+        </paper-icon-button>
+        <paper-icon-button
+          id="files-list-btn"
+          icon="icons:view-list"
+          style="--iron-icon-fill-color: var(--palette-action-disabled);"
+          role="button"
+          tabindex="1"
+          aria-disabled="false">
+        </paper-icon-button>
+        <paper-icon-button
+          id="file_uploader_icon"
+          icon="icons:file-upload"
+          style="--iron-icon-fill-color: var(--palette-action-disabled);">
+        </paper-icon-button>
+      </div>
+    </globular-dialog>
+  `;
     this._dialog = this.shadowRoot.querySelector("globular-dialog");
     this._dialog.getPreview = this.getPreview.bind(this);
   }
@@ -641,13 +768,11 @@ export class FileExplorer extends HTMLElement {
     card.appendChild(footer);
 
     // Click → bring the dialog to front (best-effort)
-    card.addEventListener('click', (e) => {
-      e.stopPropagation();
-      try {
-        if (this._dialog && this._dialog.open) this._dialog.open();
-        if (this._dialog && this._dialog.focus) this._dialog.focus();
-        document.dispatchEvent(new CustomEvent('dock-activate', { detail: { id: this._id, kind: 'file-explorer' } }));
-      } catch (_) { }
+    card.addEventListener('click', () => {
+      // after the handle undocks the dialog, gently focus it
+      if (this._dialog && this._dialog.focus) {
+        queueMicrotask(() => this._dialog.focus());
+      }
     });
 
     // updater
@@ -824,21 +949,39 @@ export class FileExplorer extends HTMLElement {
 
   _handleNavigationClick(type, evt) {
     evt.stopPropagation();
-    let targetPath = this._path;
-    const currentIndex = this._navigations.indexOf(this._path);
+
+    if (!this._navigations.length) return;
 
     if (type === 'back') {
-      if (currentIndex > 0) targetPath = this._navigations[currentIndex - 1]; else return;
-    } else if (type === 'forward') {
-      if (currentIndex < this._navigations.length - 1) targetPath = this._navigations[currentIndex + 1]; else return;
-    } else if (type === 'upward') {
-      const pathParts = (this._path || "").split("/");
-      if (pathParts.length > 2) targetPath = this._path.substring(0, this._path.lastIndexOf("/")); else return;
-    } else {
+      if (this._navigationIndex > 0) {
+        this._navigationIndex--;
+        this._navigatingFromHistory = true;
+        const targetPath = this._navigations[this._navigationIndex];
+        this.publishSetDirEvent(targetPath);
+      }
       return;
     }
 
-    this.publishSetDirEvent(targetPath);
+    if (type === 'forward') {
+      if (this._navigationIndex < this._navigations.length - 1) {
+        this._navigationIndex++;
+        this._navigatingFromHistory = true;
+        const targetPath = this._navigations[this._navigationIndex];
+        this.publishSetDirEvent(targetPath);
+      }
+      return;
+    }
+
+    if (type === 'upward') {
+      const path = this._path || "";
+      const pathParts = path.split("/");
+      if (pathParts.length > 2) {
+        const targetPath = path.substring(0, path.lastIndexOf("/"));
+        // upward is a *new* navigation, not history → let setDir manage history
+        this.publishSetDirEvent(targetPath);
+      }
+      return;
+    }
   }
 
   _handleViewToggleClick(viewType, evt) {
@@ -904,9 +1047,43 @@ export class FileExplorer extends HTMLElement {
     this._currentDir = dir;
     this._path = extractPath(dir);
 
-    const currentPathIndex = this._navigations.indexOf(this._path);
-    if (currentPathIndex === -1) this._navigations.push(this._path);
-    else if (currentPathIndex !== this._navigations.length - 1) this._navigations = this._navigations.slice(0, currentPathIndex + 1);
+    if (!this._path) {
+      // no path, nothing useful to track
+      this._updateNavigationButtonStates();
+      this._updateNavigationListMenu(dir);
+      return;
+    }
+
+    // Update active directory display
+    const activeDirSpan = this.shadowRoot.querySelector("#active-directory");
+    if (activeDirSpan) {
+      activeDirSpan.textContent = this._path || "/";
+      activeDirSpan.style.display = "block";
+    }
+
+    if (!this._navigations.length) {
+      // first visited directory
+      this._navigations = [this._path];
+      this._navigationIndex = 0;
+    } else if (this._navigatingFromHistory) {
+      // We are moving along existing history: do NOT change _navigations
+      // _navigationIndex has already been set in _handleNavigationClick
+      this._navigatingFromHistory = false;
+
+      // Make sure the history entry at that index matches the new path
+      this._navigations[this._navigationIndex] = this._path;
+    } else {
+      // Normal navigation (clicking folders, path navigator, create dir, etc.)
+      // Browser-like behavior: if we're not at the end, drop "forward" entries
+      if (this._navigationIndex < this._navigations.length - 1) {
+        this._navigations = this._navigations.slice(0, this._navigationIndex + 1);
+      }
+
+      this._navigations.push(this._path);
+      this._navigationIndex = this._navigations.length - 1;
+    }
+
+    // --- existing UI updates ---
 
     this._pathNavigator.setDir(dir);
     this._fileNavigator.setDir(dir);
@@ -919,7 +1096,9 @@ export class FileExplorer extends HTMLElement {
     this._imageViewer.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
+    if (this._sharePanel?.parentNode) {
+      this._sharePanel.parentNode.removeChild(this._sharePanel);
+    }
 
     this._imageViewer.onclose = () => this._displayView(this._currentDir);
     this._fileReader.onclose = () => this._displayView(this._currentDir);
@@ -928,82 +1107,141 @@ export class FileExplorer extends HTMLElement {
     this._updateNavigationButtonStates();
     this._updateNavigationListMenu(dir);
   }
-
   _updateNavigationButtonStates() {
-    const currentPathIndex = this._navigations.indexOf(this._path);
+    const idx = this._navigationIndex;
+    const total = this._navigations.length;
 
-    const enableButton = (btn) => btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
-    const disableButton = (btn) => btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
+    const enableButton = (btn) => btn && btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
+    const disableButton = (btn) => btn && btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
 
-    if (this._backNavigationBtn) currentPathIndex > 0 ? enableButton(this._backNavigationBtn) : disableButton(this._backNavigationBtn);
-    if (this._fowardNavigationBtn) currentPathIndex < this._navigations.length - 1 ? enableButton(this._fowardNavigationBtn) : disableButton(this._fowardNavigationBtn);
+    if (!total || idx < 0) {
+      disableButton(this._backNavigationBtn);
+      disableButton(this._fowardNavigationBtn);
+      disableButton(this._upwardNavigationBtn);
+      return;
+    }
+
+    if (this._backNavigationBtn) {
+      idx > 0 ? enableButton(this._backNavigationBtn) : disableButton(this._backNavigationBtn);
+    }
+    if (this._fowardNavigationBtn) {
+      idx < total - 1 ? enableButton(this._fowardNavigationBtn) : disableButton(this._fowardNavigationBtn);
+    }
     if (this._upwardNavigationBtn) {
       const pathParts = (this._path || "").split("/");
       pathParts.length > 2 ? enableButton(this._upwardNavigationBtn) : disableButton(this._upwardNavigationBtn);
     }
   }
 
-  _updateNavigationListMenu(currentDir) {
+  _updateNavigationListMenu(/* currentDir */) {
     if (!this._lstNavigationBtn) return;
 
-    let navigationLst = this._lstNavigationBtn.parentNode.querySelector(".directories-selector");
+    // Host for absolute positioning (the button group div)
+    const host = this._lstNavigationBtn.parentNode;
+    if (!host) return;
 
-    if (this._navigations.length > 1) {
-      this._lstNavigationBtn.style.display = "block";
-      if (!navigationLst) {
-        navigationLst = document.createElement("paper-card");
-        navigationLst.className = "directories-selector";
-        navigationLst.style.display = "none";
-        navigationLst.style.flexDirection = "column";
-        navigationLst.style.position = "absolute";
-        navigationLst.style.padding = "5px";
-        navigationLst.style.zIndex = "100";
-        navigationLst.style.top = "calc(100% + 5px)";
-        navigationLst.style.left = "0px";
-        navigationLst.style.backgroundColor = "var(--surface-color)";
-        navigationLst.style.color = "var(--primary-text-color)";
-        this._lstNavigationBtn.parentNode.appendChild(navigationLst);
-
-        this._lstNavigationBtn.onclick = (evt) => {
-          evt.stopPropagation();
-          navigationLst.style.display = navigationLst.style.display === "flex" ? "none" : "flex";
-        };
-        navigationLst.onmouseleave = () => { navigationLst.style.display = "none"; };
-      }
-
-      navigationLst.innerHTML = "";
-      const range = document.createRange();
-
-      this._navigations.forEach((path, index) => {
-        if (!path.includes(".hidden")) {
-          const html = `
-            <div style="display: flex; align-items: center; padding: 4px;">
-              <iron-icon style="height: 16px; width: 16px; margin-right: 8px;"></iron-icon>
-              <span>${path.split("/").pop() || "Root"}</span>
-            </div>
-          `;
-          navigationLst.appendChild(range.createContextualFragment(html));
-          const navigationLine = navigationLst.children[navigationLst.children.length - 1];
-          const icon = navigationLine.querySelector('iron-icon');
-
-          const currentIndex = this._navigations.indexOf(extractPath(currentDir));
-          if (index < currentIndex) icon.icon = "icons:arrow-back";
-          else if (index > currentIndex) icon.icon = "icons:arrow-forward";
-          else icon.icon = "icons:check";
-
-          navigationLine.onmouseover = () => { navigationLine.style.cursor = "pointer"; navigationLine.style.backgroundColor = "var(--palette-action-hover)"; };
-          navigationLine.onmouseleave = () => { navigationLine.style.cursor = "default"; navigationLine.style.backgroundColor = "transparent"; };
-          navigationLine.onclick = () => {
-            navigationLst.style.display = "none";
-            this.publishSetDirEvent(this._navigations[index]);
-          };
-        }
-      });
-    } else {
-      this._lstNavigationBtn.style.display = "none";
-      if (navigationLst?.parentNode) navigationLst.parentNode.removeChild(navigationLst);
+    // Make sure the host is a positioning context
+    const hostStyle = getComputedStyle(host);
+    if (hostStyle.position === "static" || !hostStyle.position) {
+      host.style.position = "relative";
     }
+
+    // Create the card once and keep a reference to it
+    let navigationLst = this._navigationListCard;
+    if (!navigationLst || !navigationLst.isConnected) {
+      navigationLst = document.createElement("paper-card");
+      navigationLst.className = "directories-selector";
+      navigationLst.style.display = "none";
+      navigationLst.style.flexDirection = "column";
+      navigationLst.style.position = "absolute";
+      navigationLst.style.padding = "5px";
+      navigationLst.style.zIndex = "1000";
+      navigationLst.style.top = "calc(100% + 5px)";
+      navigationLst.style.left = "0px";
+      navigationLst.style.backgroundColor = "var(--surface-color)";
+      navigationLst.style.color = "var(--primary-text-color)";
+      host.appendChild(navigationLst);
+      this._navigationListCard = navigationLst;
+
+      // Toggle visibility on button click
+      this._lstNavigationBtn.onclick = (evt) => {
+        evt.stopPropagation();
+        const cur = navigationLst.style.display;
+        navigationLst.style.display = (cur === "flex") ? "none" : "flex";
+      };
+
+      // Hide when mouse leaves the card
+      navigationLst.addEventListener("mouseleave", () => {
+        navigationLst.style.display = "none";
+      });
+    }
+
+    // --- Build unique paths + last index for each path ---
+    const uniquePaths = [];
+    const lastIndexByPath = new Map();
+
+    this._navigations.forEach((path, idx) => {
+      if (!path || path.includes(".hidden")) return;
+      if (!uniquePaths.includes(path)) {
+        uniquePaths.push(path);
+      }
+      // track the most recent index of this path
+      lastIndexByPath.set(path, idx);
+    });
+
+    // If only one unique entry, hide button & list
+    if (uniquePaths.length <= 1) {
+      this._lstNavigationBtn.style.display = "none";
+      navigationLst.style.display = "none";
+      navigationLst.innerHTML = "";
+      return;
+    }
+
+    // We have history → show the button
+    this._lstNavigationBtn.style.display = "inline-flex";
+
+    // Rebuild the list content
+    navigationLst.innerHTML = "";
+    const range = document.createRange();
+    const currentHistIndex = this._navigationIndex;
+
+    uniquePaths.forEach((path) => {
+      const histIdx = lastIndexByPath.get(path);
+      if (histIdx == null) return;
+
+      const label = path.split("/").pop() || "Root";
+      const html = `
+        <div style="display: flex; align-items: center; padding: 4px;">
+          <iron-icon style="height: 16px; width: 16px; margin-right: 8px;"></iron-icon>
+          <span>${label}</span>
+        </div>
+      `;
+      navigationLst.appendChild(range.createContextualFragment(html));
+
+      const navigationLine = navigationLst.lastElementChild;
+      const icon = navigationLine.querySelector("iron-icon");
+
+      if (histIdx < currentHistIndex) icon.icon = "icons:arrow-back";
+      else if (histIdx > currentHistIndex) icon.icon = "icons:arrow-forward";
+      else icon.icon = "icons:check";
+
+      navigationLine.onmouseover = () => {
+        navigationLine.style.cursor = "pointer";
+        navigationLine.style.backgroundColor = "var(--palette-action-hover)";
+      };
+      navigationLine.onmouseleave = () => {
+        navigationLine.style.cursor = "default";
+        navigationLine.style.backgroundColor = "transparent";
+      };
+      navigationLine.onclick = () => {
+        navigationLst.style.display = "none";
+        this._navigationIndex = histIdx;
+        this._navigatingFromHistory = true; // move along history
+        this.publishSetDirEvent(this._navigations[histIdx]);
+      };
+    });
   }
+
 
   setAtTop() {
     const draggables = document.querySelectorAll(".draggable");
@@ -1015,7 +1253,6 @@ export class FileExplorer extends HTMLElement {
       this._progressDiv.style.display = "block";
       const messageDiv = this._progressDiv.querySelector("#progress-message");
       messageDiv.innerHTML = message;
-      Backend.eventHub.publish("refresh_dir_evt", this._path, false);
     }
   }
 

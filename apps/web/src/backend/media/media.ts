@@ -61,7 +61,6 @@ export async function createVideoTimeLine(absPath: string, width = 180, fps = 0.
 export async function createVideoPreview(absPath: string, height = 128, nb = 20): Promise<void> {
   const md = await meta();
   const rq = new mediapb.CreateVideoPreviewRequest();
-  console.log(absPath, height, nb);
   rq.setPath(absPath);
   rq.setHeight(height);
   rq.setNb(nb);

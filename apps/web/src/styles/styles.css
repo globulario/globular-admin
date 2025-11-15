@@ -1,12 +1,16 @@
 
 :root {
   --primary-color: #1976d2;
+  
   --secondary-color: #26a69a;
   --background-color: #f5f6f8;
   --surface-color: #ffffff;
   --text-primary-color: #ffffff;
   --on-surface-color: #1f2937;
   --divider-color: color-mix(in srgb, var(--on-surface-color) 12%, var(--surface-color));
+  --palette-divider: rgba(0, 0, 0, 0.12);
+  --palette-action-active:rgba(0, 0, 0, 0.95);
+  --palette-action-disabled: rgba(0, 0, 0, 0.25);
 }
 html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial; }
 #app { padding: 16px; }

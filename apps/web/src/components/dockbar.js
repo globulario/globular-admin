@@ -80,12 +80,12 @@ export class DialogHandle extends HTMLElement {
     }
     this._isDocked = false;
     if (this._minimizeBtn) this._minimizeBtn.style.display = "block";
-    if (this._previewContainer) this._previewContainer.innerHTML = "";
   }
 
   blur() {
     this._isFocused = false;
-    if (this._container) this._container.style.border = "1px solid var(--divider-color)";
+    if (this._container)
+      this._container.style.border = "1px solid var(--border-subtle-color, var(--divider-color))";
   }
 
   focus() {
@@ -95,44 +95,58 @@ export class DialogHandle extends HTMLElement {
     });
     this._isFocused = true;
     this._dialog?.focus();
-    if (this._container) this._container.style.border = "1px solid var(--primary-color)";
+    if (this._container)
+      this._container.style.border = "1px solid var(--primary-light-color)";
   }
 
   hasFocus() { return this._isFocused; }
 
   _renderHTML() {
     this.shadowRoot.innerHTML = `
-      <style>
+            <style>
         #container {
           position: relative;
           display: flex;
           flex-direction: column;
-          background-color: var(--surface-color);
-          border: 1px solid var(--divider-color);
+          background-color: var(--surface-elevated-color);
+          border: 1px solid var(--border-subtle-color, var(--divider-color));
+          border-radius: 6px;
           height: var(--dialog-handle-height);
           width: var(--dialog-handle-width);
           overflow: hidden;
           box-sizing: border-box;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.35);
         }
         #header-bar {
           display: flex;
           align-items: center;
           z-index: 1000;
-          background-color: var(--primary-light-color, lightgray);
-          color: var(--on-primary-color, black);
-          padding: 2px;
+          background-color: var(--primary-light-color);
+          color: var(--on-primary-color);
+          padding: 2px 4px;
         }
         #close-btn, #minimize-btn {
-          width: 24px; height: 24px; margin-right: 2px; padding: 5px;
-          color: var(--on-primary-color, white);
+          width: 22px;
+          height: 22px;
+          margin-right: 2px;
+          padding: 4px;
+          color: var(--on-primary-color);
         }
         #title-span {
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          flex-grow: 1; font-size: 0.85rem; padding: 0 4px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          flex-grow: 1;
+          font-size: 0.8rem;
+          padding: 0 4px;
         }
         .preview-container {
-          flex-grow: 1; overflow: hidden; display: flex;
-          align-items: center; justify-content: center; background-color: var(--background-color);
+          flex-grow: 1;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: var(--surface-color);
         }
       </style>
       <div id="container">
@@ -497,36 +511,41 @@ export class Dockbar extends HTMLElement {
 
   _renderHTML() {
     this.shadowRoot.innerHTML = `
-      <style>
-        #container {
-          position: fixed;  /* predictable centering */
-          bottom: 0;
-          left: 0;
-          right: 0;
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-          justify-content: center;
-          user-select: none;
-        }
-        #dockbar {
-          z-index: 1000;
-          display: none;
-          flex-direction: row;
-          align-items: center;
-          padding: 10px;
-          border-radius: 5px;
-          background-color: var(--surface-color);
-          border: 1px solid var(--divider-color);
-          color: var(--on-surface-color);
-          height: auto;
-          min-width: 400px;
-          margin-bottom: 10px;
-        }
-        #dockbar ::slotted(globular-dialog-handles) {
-          margin: 0 5px;
-        }
-      </style>
+    <style>
+      #container {
+        position: fixed;
+        bottom: 0;
+        left: 50%;
+        right: 50%;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center; /* horizontally center #dockbar */
+        user-select: none;
+        /* no transform, no pointer-events hacks */
+      }
+
+      #dockbar {
+        pointer-events: auto;
+        z-index: 1000;
+        display: none;
+        flex-direction: row;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: 10px;
+        background-color: var(--surface-elevated-color, var(--surface-color));
+        border: 1px solid var(--border-subtle-color, var(--divider-color));
+        color: var(--on-surface-color);
+        height: auto;
+        min-width: 260px;
+        margin-bottom: 10px;
+        box-shadow: var(--dockbar-shadow);
+      }
+
+      #dockbar ::slotted(globular-dialog-handles) {
+        margin: 0 4px;
+      }
+    </style>
       <div id="container">
         <paper-card id="dockbar"><slot></slot></paper-card>
       </div>

@@ -13,6 +13,8 @@ import {
   removeFile,
   renameFile,
   createArchive,
+  copyFiles,
+  moveFiles
 } from "../../backend/cms/files";
 
 import {
@@ -271,32 +273,67 @@ export class FilesView extends HTMLElement {
       dropEvt,
       () => { },
       async (infos) => {
-        // if (!this._fileExplorer || this._fileExplorer.style?.zIndex !== "1000") return;
+        try {
+          // Optional: if you want to ignore drops when explorer is in background
+          // if (!this._fileExplorer || this._fileExplorer.style?.zIndex !== "1000") return;
 
-        const originalDiv = document.getElementById(infos.id);
-        if (originalDiv?.parentNode) originalDiv.parentNode.style.display = "none";
-        if (!this._editMode) this._editMode = "cut";
+          // 1) Build the list of source paths
+          if (!this._editMode) this._editMode = "cut"; // default to move
 
-        FileExplorer.paperTray = [];
-        if (Object.keys(this._selected).length > 0) {
-          for (const key in this._selected) {
-            FileExplorer.paperTray.push(pathOf(this._selected[key]));
+          FileExplorer.paperTray = [];
+
+          if (this._selected && Object.keys(this._selected).length > 0) {
+            // Multi-selection: we already store **paths** in paperTray
+            for (const key in this._selected) {
+              // pathOf already used elsewhere to normalize FileVM -> string path
+              FileExplorer.paperTray.push(pathOf(this._selected[key]));
+            }
+          } else if (infos && infos.file) {
+            // Single item dragged
+            FileExplorer.paperTray.push(infos.file);
           }
-        } else if (infos.file) {
-          FileExplorer.paperTray.push(infos.file);
-        }
 
-        if (infos.domain !== (this._fileExplorer.globule && this._fileExplorer.globule.domain)) {
-          if (this._handleCrossDomainFileDrop) await this._handleCrossDomainFileDrop(infos);
-        } else {
-          if (this._handleSameDomainFileDrop) await this._handleSameDomainFileDrop(infos);
+          const srcPaths = (FileExplorer.paperTray || [])
+            .filter((p) => !!p)
+            .map((p) => (typeof p === "string" ? p : p.path || p._path || "")) // should normally already be strings
+            .filter((p) => p && typeof p === "string");
+
+          if (srcPaths.length === 0) {
+            return;
+          }
+
+          // 2) Destination directory (from the drop payload, or current dir as fallback)
+          const destDir = (infos && infos.dir) || this._path || "/";
+
+          // 3) Execute backend operation
+          const isCopy = this._editMode === "copy";
+
+          if (isCopy) {
+            await copyFiles(destDir, srcPaths);
+          } else {
+            await moveFiles(destDir, srcPaths);
+          }
+
+          // 4) Cleanup selection/edit mode
+          this._selected = {};
+          this._fileExplorer?.clearSelections?.();
+          this._editMode = undefined; // reset to default
+
+          // 5) Refresh view to reflect backend state
+          Backend.eventHub.publish(
+            "reload_dir_event",
+            this._path || destDir,
+            true
+          );
+        } catch (e) {
+          console.error("Error handling drop_file event", e);
+          displayError("Failed to complete file operation.", 4000);
         }
-        this._selected = {};
-        this._fileExplorer?.clearSelections?.();
       },
       true,
       this
     );
+
   }
 
   // legacy EventHub opener: open_files_menu_{id}_event
@@ -318,7 +355,6 @@ export class FilesView extends HTMLElement {
   }
 
   // ---------- ensure menu is attached & wired ----------
-  // in filesView.js
   _ensureMenuWired() {
     if (!this._contextMenu) return;
 
@@ -349,11 +385,8 @@ export class FilesView extends HTMLElement {
     this._copyMenuItem = this._contextMenu.querySelector("#copy-menu-item");
     this._pasteMenuItem = this._contextMenu.querySelector("#paste-menu-item");
 
-
-
     // 6) Finally wire the actions (unchanged)
     this._setupMenuActions();
-
   }
 
   _closeContextMenu() { this.hideMenu(); }
@@ -391,7 +424,6 @@ export class FilesView extends HTMLElement {
       menu.style.top = `${y}px`;
       menu.open?.();
     }
-
 
     // Keep the tile highlighted while the menu is open
     if (highlightEl) {
@@ -619,29 +651,33 @@ export class FilesView extends HTMLElement {
     // ---------- CASE 1: multi or any directory -> archive ----------
     if (manySelected || anyDirSelected) {
       const files = selected.map((f) => pathOf(f)).filter(Boolean);
-      if (!files.length) return;
+      if (!files.length) {
+        this._closeContextMenu();
+        return;
+      }
 
       const token = getToken();
       const uuid = makeArchiveName();
-      this._file_explorer_?.displayWaitMessage?.("Creating archive for selected items...");
+      this._fileExplorer?.displayWaitMessage?.("Creating archive for selected items...");
 
       try {
         const archivePath = await createArchive(files, uuid, token); // returns server path like /tmp/_abc.tar.gz
         const url = withTokenUrl(buildFileHttpUrl(archivePath), token);
 
-        this._file_explorer_?.displayWaitMessage?.("Downloading archive...");
+        this._fileExplorer?.displayWaitMessage?.("Downloading archive...");
         await downloadByUrl(url, `${uuid}.tar.gz`);
 
-        this._file_explorer_?.displayWaitMessage?.("Removing temporary archive...");
+        this._fileExplorer?.displayWaitMessage?.("Removing temporary archive...");
         await removeFile(archivePath, token);
 
         displayMessage("Archive downloaded and cleaned up.", 2500);
       } catch (err) {
         displayError(`Archive download failed: ${err?.message || err}`, 4000);
       } finally {
-        this._file_explorer_?.resume?.();
+        this._fileExplorer?.resume?.();
         this._fileExplorer?.clearSelections?.();
         this._selected = {};
+        this._closeContextMenu();
       }
       return;
     }
@@ -661,12 +697,16 @@ export class FilesView extends HTMLElement {
       } finally {
         this._fileExplorer?.clearSelections?.();
         this._selected = {};
+        this._closeContextMenu();
       }
       return;
     }
 
     // ---------- CASE 3: no selection -> fall back to context file ----------
-    if (!ctxFile) return;
+    if (!ctxFile) {
+      this._closeContextMenu();
+      return;
+    }
 
     const token = getToken();
     const filePath = pathOf(ctxFile);
@@ -675,24 +715,25 @@ export class FilesView extends HTMLElement {
     if (isDirOf(ctxFile)) {
       // right-clicked on a directory → archive flow
       const uuid = makeArchiveName();
-      this._file_explorer_?.displayWaitMessage?.(`Creating archive for ${fileName}...`);
+      this._fileExplorer?.displayWaitMessage?.(`Creating archive for ${fileName}...`);
       try {
         const archivePath = await createArchive([filePath], uuid, token);
         const url = withTokenUrl(buildFileHttpUrl(archivePath), token);
 
-        this._file_explorer_?.displayWaitMessage?.("Downloading archive...");
+        this._fileExplorer?.displayWaitMessage?.("Downloading archive...");
         await downloadByUrl(url, `${fileName}.tar.gz`);
 
-        this._file_explorer_?.displayWaitMessage?.("Removing temporary archive...");
+        this._fileExplorer?.displayWaitMessage?.("Removing temporary archive...");
         await removeFile(archivePath, token);
 
         displayMessage("Archive downloaded and cleaned up.", 2500);
       } catch (err) {
         displayError(`Directory download failed: ${err?.message || err}`, 4000);
       } finally {
-        this._file_explorer_?.resume?.();
+        this._fileExplorer?.resume?.();
         this._selected = {};
         this._fileExplorer?.clearSelections?.();
+        this._closeContextMenu();
       }
       return;
     }
@@ -705,15 +746,18 @@ export class FilesView extends HTMLElement {
     } catch (err) {
       displayError(`Download failed: ${err?.message || err}`, 4000);
     } finally {
-      // after the try/finally blocks where you clear selection
       this._selected = {};
       this._fileExplorer?.clearSelections?.();
+      this._closeContextMenu();
     }
   }
 
   async _handleDeleteAction() {
     let filesToDelete = this._getFilesForAction();
-    if (!filesToDelete.length) return;
+    if (!filesToDelete.length) {
+      this._closeContextMenu();
+      return;
+    }
 
     const listHtml = filesToDelete.map((f) => `<div>${pathOf(f)}</div>`).join("");
 
@@ -949,10 +993,10 @@ export class FilesView extends HTMLElement {
     try {
       displayMessage(`Generating preview for: ${absPath}`, 3500);
 
-      await createVideoPreview(absPath, 28, 20);
+      await createVideoPreview(absPath, 80, 20);
       displayMessage("Preview created successfully!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
-      Backend.eventHub.publish("refresh_dir_evt", parent, false);
+      Backend.eventHub.publish("reload_dir_event", parent, false);
     } catch (err) {
       displayError(`Failed to generate preview: ${err?.message || err}`, 3000);
     } finally {
@@ -974,7 +1018,7 @@ export class FilesView extends HTMLElement {
       await convertVideoToMpeg4H264(absPath);
       displayMessage("Conversion to MP4 done!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
-      Backend.eventHub.publish("refresh_dir_evt", parent, false);
+      Backend.eventHub.publish("reload_dir_event", parent, false);
     } catch (err) {
       displayError(`Failed to convert to MP4: ${err?.message || err}`, 3000);
     } finally {
@@ -996,7 +1040,7 @@ export class FilesView extends HTMLElement {
       await convertVideoToHls(absPath);
       displayMessage("Conversion to HLS done!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
-      Backend.eventHub.publish("refresh_dir_evt", parent, false);
+      Backend.eventHub.publish("reload_dir_event", parent, false);
     } catch (err) {
       displayError(`Failed to convert to HLS: ${err?.message || err}`, 3000);
     } finally {

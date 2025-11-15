@@ -77,11 +77,12 @@ export class InformationsManager extends HTMLElement {
   _renderShell() {
     this.shadowRoot.innerHTML = `
       <style>
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+
 
         #container {
+                ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: var(--surface-color); }
+        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
           display: flex; flex-direction: column;
           padding: 8px; z-index: 100;
           background: var(--surface-color);

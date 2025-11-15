@@ -5,24 +5,66 @@
   --surface-color: #ffffff;
   --on-surface-color: #1d2025;
   --primary-color: #3b82f6;
+  --primary-text-color: #1d2025;
   --on-primary-color: #ffffff;
+
+  /* NEW: shared helpers */
+  --surface-elevated-color: color-mix(in srgb, var(--surface-color) 98%, #000 2%);
+  --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 10%, transparent);
+  --border-strong-color: color-mix(in srgb, var(--on-surface-color) 22%, transparent);
+
+  --primary-light-color: color-mix(in srgb, var(--primary-color) 80%, #ffffff 20%);
+  --primary-dark-color: color-mix(in srgb, var(--primary-color) 80%, #000000 20%);
+
   --error-color: #ef4444;
   --success-color: #10b981;
   --scroll-thumb: rgba(0, 0, 0, 0.3);
   --scroll-thumb-hover: rgba(0, 0, 0, 0.5);
   --scroll-track: rgba(0, 0, 0, 0.05);
+
+  /* keep divider in sync with new helpers */
+  --divider-color: var(--border-subtle-color);
 }
 
+
+:root:not([data-theme="dark"]) {
+  --surface-elevated-color: #ffffff;
+  /* pure white */
+  --dialog-border-color: rgba(0, 0, 0, 0.12);
+  --dockbar-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
+/* DARK THEME OVERRIDES */
 :root[data-theme="dark"] {
   --background-color: #0f1216;
   --surface-color: #171b21;
+  --surface-elevated-color: #1f252f;
+  /* slightly brighter for dialogs/dockbar */
   --on-surface-color: #e5e7eb;
-  --primary-color: #60a5fa;
-  --on-primary-color: #0b0f14;
+
+  /* header is slightly lighter than primary-color */
+  --primary-color: #1f1e1e;
+  --primary-light-color: color-mix(in srgb, var(--primary-color) 60%, #4b5563 40%);
+  --primary-dark-color: color-mix(in srgb, var(--primary-color) 80%, #020617 20%);
+
+  --on-primary-color: #ffffff;
+
   --error-color: #f87171;
   --success-color: #34d399;
+
   --scroll-thumb: rgba(255, 255, 255, 0.25);
   --scroll-thumb-hover: rgba(255, 255, 255, 0.45);
   --scroll-track: rgba(255, 255, 255, 0.05);
-}
 
+  --palette-action-active: rgba(255, 255, 255, 0.95);
+  --palette-action-disabled: rgba(255, 255, 255, 0.25);
+  --palette-divider: rgba(255, 255, 255, 0.12);
+
+  /* stronger border in dark so edges are visible */
+  --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 18%, transparent);
+  --border-strong-color: color-mix(in srgb, var(--on-surface-color) 32%, transparent);
+  --divider-color: var(--border-subtle-color);
+
+  --dialog-border-color: rgba(255, 255, 255, 0.09);
+  --dockbar-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}

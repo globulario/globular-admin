@@ -336,14 +336,20 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _handleVideoPlaying = () => {
+    // Only auto-resize once per load; after that user can resize manually
     if (!this.resized) {
-      let w = this.videoElement.videoWidth || 720
-      if (this.playlist.count() > 1) w += 350
-      this.resize(w)
+      const { width } = this._getFittedVideoSize()
+      this.resize(width) // height will be computed in resize()
     }
   }
 
   _handleVideoLoadedData = async () => {
+    // On first load, size the dialog to fit within viewport (both W & H)
+    if (!this.resized) {
+      const { width, height } = this._getFittedVideoSize()
+      this.resize(width, height)
+    }
+    
     const subs = await getSubtitlesFiles(this.path)
 
     subs.forEach(f => {
@@ -647,7 +653,7 @@ export class VideoPlayer extends HTMLElement {
     if (this.titleInfo) {
       posterUrl = this.titleInfo.getPoster && this.titleInfo.getPoster().getContenturl()
       description = this.titleInfo.getDescription ? this.titleInfo.getDescription() : ''
-    }else {
+    } else {
       description = this.path.substring(this.path.lastIndexOf('/') + 1)
     }
 
@@ -912,16 +918,65 @@ export class VideoPlayer extends HTMLElement {
       localStorage.setItem(this.titleInfo.getId(), String(this.videoElement.currentTime))
     }
   }
+  /**
+ * Compute a video size that fits nicely on the current screen.
+ * Keeps aspect ratio, clamps to ~80% of viewport.
+ */
+  _getFittedVideoSize() {
+    const nativeW = this.videoElement.videoWidth || 720
+    const nativeH = this.videoElement.videoHeight || Math.round(nativeW * 9 / 16)
+
+    const viewportW =
+      window.innerWidth ||
+      document.documentElement.clientWidth ||
+      screen.width ||
+      nativeW
+
+    const viewportH =
+      window.innerHeight ||
+      document.documentElement.clientHeight ||
+      screen.height ||
+      nativeH
+
+    const maxW = viewportW * 0.8
+    const maxH = viewportH * 0.8
+
+    let scale = 1
+    if (nativeW > maxW || nativeH > maxH) {
+      const scaleW = maxW / nativeW
+      const scaleH = maxH / nativeH
+      scale = Math.min(scaleW, scaleH)
+    }
+
+    return {
+      width: Math.round(nativeW * scale),
+      height: Math.round(nativeH * scale)
+    }
+  }
 
   resize(containerWidth) {
     if (this.isMinimized) return
+
     this.resized = true
 
-    let w = containerWidth || 720
+    // Prefer an explicit containerWidth, then native video width, then 720
+    let w = containerWidth || this.videoElement.videoWidth || 720
+
     const nativeW = this.videoElement.videoWidth || 0
-    const listW = this.playlist && this.playlist.offsetWidth ? this.playlist.offsetWidth : 0
-    if (nativeW > 0 && w > nativeW) w = nativeW
-    if (this.playlist.count() > 1 && this.playlist.style.display !== 'none') w += listW
+    const listW =
+      this.playlist && this.playlist.offsetWidth ? this.playlist.offsetWidth : 0
+
+    // Don’t go wider than the video itself (before adding playlist)
+    if (nativeW > 0 && w > nativeW) {
+      w = nativeW
+    }
+
+    // If playlist is visible and has more than one item, add its width
+    if (this.playlist.count() > 1 && this.playlist.style.display !== 'none') {
+      w += listW
+    }
+
+    // Clamp to screen width
     const max = screen.width * 0.95
     if (w > max) w = max
 

@@ -100,7 +100,10 @@ export class Dialog extends HTMLElement {
 
         const backgroundColor = this.getAttribute("background-color") || "var(--surface-color)";
         const color = this.getAttribute("color") || "var(--on-surface-color)";
-        const overflow = this.getAttribute("overflow") === "hidden" ? "hidden" : "auto";
+
+        let overflow = "hidden";
+        if (!this.getAttribute("overflow"))
+            overflow = this.getAttribute("overflow")
 
         this.shadowRoot.innerHTML = `
       <style>
@@ -116,22 +119,25 @@ export class Dialog extends HTMLElement {
         }
 
         .dialog {
-          border: solid 1px var(--divider-color);
-          border-top: solid 1px var(--primary-color);
-          transform-origin: top left;
-          opacity: 1;
-          background-color: ${backgroundColor};
-          color: ${color};
-          border-radius: 4px;
-          position: absolute;
-          display: flex;
-          flex-direction: column;
-          top: 0px;
-          left: 0px;
-          z-index: 100;
-          overflow: hidden;
-          user-select: none;
-          box-sizing: border-box;
+            border: 1px solid var(--dialog-border-color);
+            border-top: 1px solid var(--border-strong-color, var(--palette-divider));
+            transform-origin: top left;
+            opacity: 1;
+            background-color: ${backgroundColor};
+            color: ${color};
+            border-radius: 8px;
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            top: 0px;
+            left: 0px;
+            z-index: 100;
+            overflow: hidden;
+            user-select: none;
+            box-sizing: border-box;
+            box-shadow:
+                0 18px 45px rgba(0,0,0,0.6),
+                0 0 0 1px rgba(0,0,0,0.6); /* tighter edge in dark mode */
         }
 
         .dialog.minimizing { animation: minimize 1s ease-in-out forwards; pointer-events: none; }
@@ -174,7 +180,11 @@ export class Dialog extends HTMLElement {
           padding: 1px;
         }
 
-        .dialog_button:hover { cursor: pointer; border-color: white; }
+        .dialog_button:hover {
+            background-color: rgba(0,0,0,0.06);
+            border-radius: 50%;
+            transition: background 120ms ease;
+        }
         .dialog_button:active { border: solid 1px lightblue; }
 
         .dialog_buttons { display: flex; flex-direction: row; justify-content: flex-end; width: 100%; }
@@ -183,13 +193,14 @@ export class Dialog extends HTMLElement {
         .dialog_icon img { width: 32px; height: 32px; }
 
         .dialog_header {
-          background-color: var(--primary-light-color);
-          color: var(--on-primary-color);
-          display: flex;
-          align-items: center;
-          flex-direction: row;
-          width: 100%;
-          cursor: grab;
+            background-color: var(--primary-light-color);
+            color: var(--on-primary-color);
+            display: flex;
+            align-items: center;
+            flex-direction: row;
+            width: 100%;
+            cursor: grab;
+            box-shadow: 0 1px 0 rgba(0,0,0,0.12);
         }
 
         .dialog_header_buttons { display: flex; flex-direction: row; justify-content: flex-end; align-items: center; flex-grow: 1; }
@@ -213,6 +224,7 @@ export class Dialog extends HTMLElement {
           left: 0px !important;
           height: calc(100vh - var(--dialog-top-offset, 0px)) !important;
         }
+
       </style>
 
       <paper-card id="dialog_div" class="dialog">
@@ -446,8 +458,8 @@ export class Dialog extends HTMLElement {
     _handleMinimizeClick = (e) => {
         e.stopPropagation();
         const dockbarCoords = dockbar.getCoords();
-        const dialogCoords =getCoords(this._dialogElement);
-        
+        const dialogCoords = getCoords(this._dialogElement);
+
         const offsetLeft = dockbarCoords.left - dialogCoords.left + 2;
         const offsetTop = dockbarCoords.top - dialogCoords.top - 40;
 
