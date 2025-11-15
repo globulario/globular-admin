@@ -43,6 +43,7 @@ import { displayError, displayMessage } from "../../backend/ui/notify";
 import { getCurrentAccount } from "../../backend/rbac/accounts";
 import { getFileAudiosInfo } from '../../backend/media/title';
 import { FilesUploader } from './fileUploader';
+import { pathOf } from './filevm-helpers';
 
 /** Helper to extract a path from a DirVM/FileVM/String */
 function extractPath(v) {
@@ -727,7 +728,7 @@ export class FileExplorer extends HTMLElement {
       this._sharePanel.style.left = "0px";
       this._sharePanel.style.right = "0px";
       this._sharePanel.style.bottom = "0px";
-      this._sharePanel.onclose = () => {};
+      this._sharePanel.onclose = () => { };
     }
     this._hideAllViewsExcept(this._sharePanel);
     this._sharePanel.style.display = "";
@@ -1019,14 +1020,14 @@ export class FileExplorer extends HTMLElement {
     this.style.zIndex = 1;
 
     try {
-      const audios = await getFileAudiosInfo(file);
-      const audioInfo = (audios && audios.length > 0) ? audios[0] : null;
-
-      const path = file?.path || "";
+      const path = pathOf(file);
       if (!path) {
         displayError("Invalid file path.", 3000);
         return;
       }
+
+      const audios = await getFileAudiosInfo(path);
+      const audioInfo = (audios && audios.length > 0) ? audios[0] : null;
 
       if (audioInfo) {
         playAudio(path, () => { }, () => { }, audioInfo);

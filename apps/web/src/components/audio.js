@@ -19,7 +19,7 @@ import { getBaseUrl } from "../backend/core/endpoints"
 
 // --- Constants ---
 const AUDIO_PLAYER_ID = "globular-audio-player-instance"
-const DEFAULT_AUDIO_COVER = "assets/icons/music-quavers-flat.svg"
+const DEFAULT_AUDIO_COVER = "../assets/icons/music-quavers-flat.svg"
 
 const AUDIO_LOOP_STORAGE_KEY = "audio_loop"
 const AUDIO_SHUFFLE_STORAGE_KEY = "audio_shuffle"
@@ -230,7 +230,10 @@ export class AudioPlayer extends HTMLElement {
 
   // --------- template ----------
 
+
   _renderHTML() {
+
+    const icon = new URL(DEFAULT_AUDIO_COVER, import.meta.url).href;
     this.shadowRoot.innerHTML = `
       <style>
         .header{display:flex;align-items:center;color:var(--palette-text-accent);background-color:var(--palette-primary-accent);}
@@ -277,7 +280,7 @@ export class AudioPlayer extends HTMLElement {
 
       <globular-dialog id="audio-container" name="audio-player" is-moveable="true" show-icon="true" is-minimizeable="true">
         <span id="title-span" slot="title">no select</span>
-        <img slot="icon" src="${DEFAULT_AUDIO_COVER}"/>
+        <img slot="icon" src="${icon}"/>
         <div id="content">
           <slot name="playlist"></slot>
           <div class="vz-wrapper">

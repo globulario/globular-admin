@@ -72,7 +72,7 @@ export class PathNavigator extends HTMLElement {
       <style>
         :host { display: flex; }
         #path-navigator-box {
-          flex-grow: 1; background-color: var(--surface-color); color: var(--primary-text-color);
+          flex-grow: 1; background-color: var(--surface-color); color: var(--on-surface-color, var(--primary-text-color));
           display: flex; align-items: center; user-select: none; flex-wrap: wrap;
           padding: 0 5px; overflow-x: auto;
           border-bottom: 1px solid var(--palette-divider);
@@ -80,7 +80,7 @@ export class PathNavigator extends HTMLElement {
         .path-segment { display: flex; align-items: center; position: relative; padding: 2px 0; }
         .path-segment-text { max-width: 350px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; user-select: none; padding: 0 4px; }
         .path-segment-text:hover { cursor: pointer; }
-        .path-separator-icon { --iron-icon-fill-color: var(--primary-text-color); margin: 0 -2px; }
+        .path-separator-icon { --iron-icon-fill-color: var(--on-surface-color, var(--primary-text-color)); margin: 0 -2px; }
         .path-separator-icon:hover { cursor: pointer; }
 
         /* Dropdown card is fixed to viewport; we set left/top from JS to the icon's bottom-left */
@@ -93,7 +93,7 @@ export class PathNavigator extends HTMLElement {
           left: 0;                      /* computed in JS */
           top: 0;                       /* computed in JS */
           background-color: var(--surface-color);
-          color: var(--primary-text-color);
+          color: var(--on-surface-color, var(--primary-text-color));
           box-shadow: var(--shadow-elevation-2dp);
           max-height: 240px;
           overflow-y: auto;

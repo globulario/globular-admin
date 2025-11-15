@@ -277,26 +277,26 @@ export class FilesView extends HTMLElement {
           // Optional: if you want to ignore drops when explorer is in background
           // if (!this._fileExplorer || this._fileExplorer.style?.zIndex !== "1000") return;
 
-          // 1) Build the list of source paths
+          // 1) Build the list of source paths (purely local to this operation)
           if (!this._editMode) this._editMode = "cut"; // default to move
 
-          FileExplorer.paperTray = [];
+          let srcPaths = [];
 
           if (this._selected && Object.keys(this._selected).length > 0) {
-            // Multi-selection: we already store **paths** in paperTray
             for (const key in this._selected) {
-              // pathOf already used elsewhere to normalize FileVM -> string path
-              FileExplorer.paperTray.push(pathOf(this._selected[key]));
+              srcPaths.push(pathOf(this._selected[key]));
             }
           } else if (infos && infos.file) {
-            // Single item dragged
-            FileExplorer.paperTray.push(infos.file);
+            const single = infos.file;
+            const asPath =
+              typeof single === "string"
+                ? single
+                : single.path || single._path || "";
+            if (asPath) srcPaths.push(asPath);
           }
 
-          const srcPaths = (FileExplorer.paperTray || [])
-            .filter((p) => !!p)
-            .map((p) => (typeof p === "string" ? p : p.path || p._path || "")) // should normally already be strings
-            .filter((p) => p && typeof p === "string");
+          srcPaths = srcPaths
+            .filter((p) => !!p && typeof p === "string");
 
           if (srcPaths.length === 0) {
             return;
@@ -537,40 +537,73 @@ export class FilesView extends HTMLElement {
       this._closeContextMenu();
     }
   }
-
   _handleCutAction() {
+    const files = this._getFilesForAction();
+    if (!files || files.length === 0) {
+      this._closeContextMenu();
+      return;
+    }
+
+    const paths = files.map((f) => pathOf(f));
     this._editMode = "cut";
-    FileExplorer.paperTray = this._getFilesForAction().map((f) => pathOf(f));
+    this._fileExplorer?.setClipboard?.("cut", paths);
+
     this._selected = {};
     this._fileExplorer?.clearSelections?.();
     this._closeContextMenu();
   }
 
   _handleCopyAction() {
+    const files = this._getFilesForAction();
+    if (!files || files.length === 0) {
+      this._closeContextMenu();
+      return;
+    }
+
+    const paths = files.map((f) => pathOf(f));
     this._editMode = "copy";
-    FileExplorer.paperTray = this._getFilesForAction().map((f) => pathOf(f));
+    this._fileExplorer?.setClipboard?.("copy", paths);
+
     this._selected = {};
     this._fileExplorer?.clearSelections?.();
     this._closeContextMenu();
   }
-
   async _handlePasteAction() {
-    const dest = pathOf(this._contextMenu.file);
-    if (!FileExplorer.paperTray?.length) {
+    const clipboard = this._fileExplorer?.getClipboard?.() || {};
+    const srcPaths = (clipboard.items || []).filter((p) => !!p && typeof p === "string");
+    const mode = clipboard.mode || this._editMode || "cut";
+
+    if (!srcPaths.length) {
       displayMessage("Nothing to paste.", 2500);
       this._closeContextMenu();
       return;
     }
 
-    displayError(
-      "Copy/Move is not yet wired in the new filesystem wrapper. Expose `copy/move` in `backend/cms/files` and swap them here (see TODO in code).",
-      6000
-    );
+    // Paste into the currently opened directory
+    const destDir = this._path || (this._fileExplorer && this._fileExplorer._path) || "/";
+    const isCopy = (mode === "copy");
 
-    this._editMode = "";
-    FileExplorer.paperTray = [];
-    this._closeContextMenu();
+    try {
+      if (isCopy) {
+        await copyFiles(destDir, srcPaths);
+      } else {
+        await moveFiles(destDir, srcPaths);
+      }
+
+      this._selected = {};
+      this._fileExplorer?.clearSelections?.();
+      this._fileExplorer?.clearClipboard?.();
+      this._editMode = "";
+
+      Backend.eventHub.publish("reload_dir_event", destDir, true);
+    } catch (err) {
+      console.error("Paste failed", err);
+      displayError(err?.message || "Paste failed.", 4000);
+    } finally {
+      this._closeContextMenu();
+    }
   }
+
 
   async _handleOpenInNewTabAction() {
     const file = this._contextMenu.file;
@@ -777,12 +810,17 @@ export class FilesView extends HTMLElement {
               await removeFile(p);
             }
           }
+
           displayMessage("Delete complete.", 2500);
           filesToDelete.forEach((f) => {
             const full = pathOf(f);
             const parent = full.substring(0, full.lastIndexOf("/")) || "/";
             Backend.eventHub.publish("reload_dir_event", parent, false);
           });
+
+          // Clear selection in the explorer so the bar hides too
+          this._selected = {};
+          this._fileExplorer?.clearSelections?.();
         } catch (err) {
           displayError(`Failed to delete: ${err?.message || err}`, 3000);
         }
@@ -1324,12 +1362,19 @@ export class FilesView extends HTMLElement {
 
     const executeDropAction = async (mode) => {
       this._editMode = mode;
-      FileExplorer.paperTray = [];
 
-      if (Object.keys(this._selected).length > 0) {
-        for (const key in this._selected) FileExplorer.paperTray.push(pathOf(this._selected[key]));
+      const localPaths = [];
+
+      if (this._selected && Object.keys(this._selected).length > 0) {
+        for (const key in this._selected) {
+          localPaths.push(pathOf(this._selected[key]));
+        }
       }
-      filesData.forEach((p) => FileExplorer.paperTray.push(p));
+
+      filesData.forEach((p) => {
+        const asPath = typeof p === "string" ? p : p.path || p._path || "";
+        if (asPath) localPaths.push(asPath);
+      });
 
       if (id) {
         const draggedDiv = document.getElementById(id);
@@ -1358,6 +1403,22 @@ export class FilesView extends HTMLElement {
       if (menu.parentNode) menu.parentNode.removeChild(menu);
       this._fileExplorer?.removeEventListener?.("move", moveListener);
     };
+  }
+
+  getSelectedFiles() {
+    const res = [];
+    if (this._selected) {
+      for (const k in this._selected) {
+        res.push(this._selected[k]);
+      }
+    }
+    return res;
+  }
+
+  _selectionChanged() {
+    if (this._fileExplorer?.updateSelectionBar) {
+      this._fileExplorer.updateSelectionBar(this.getSelectedFiles());
+    }
   }
 
   // ---------- Confirm dialog helper ----------

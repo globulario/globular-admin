@@ -56,7 +56,19 @@ function iconForMime(m) {
 
 export class FilesListView extends FilesView {
   _dir = null;
+  _active = false; // track current active state
 
+  setActive(isActive) {
+    this._active = !!isActive;
+  }
+
+  resetActive() {
+    this._active = false;
+  }
+
+  isActive() {
+    return !!this._active;
+  }
   constructor() {
     super();
 
@@ -681,6 +693,8 @@ export class FilesListView extends FilesView {
       row.classList.remove("selected");
       if (this._selected) delete this._selected[row.dataset.filePath];
     }
+
+    this._selectionChanged?.();
   }
 }
 

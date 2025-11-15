@@ -322,34 +322,80 @@ export class FileNavigator extends HTMLElement {
   async reload(dirVM, callback) {
     const key = pathOf(dirVM);
     const cached = this._dirsCache.get(key);
+
+    const isPublicRoot = key === "/public";
+    const isSharedPath = key === "/shared" || key.startsWith("/shared/");
+
+    // Helper: purge cache entries under a prefix (including the prefix itself)
+    const purgeCacheUnder = (prefix) => {
+      const prefixWithSlash = prefix.endsWith("/") ? prefix : prefix + "/";
+      const keys = Array.from(this._dirsCache.keys());
+      for (const k of keys) {
+        if (k === prefix || k.startsWith(prefixWithSlash)) {
+          this._dirsCache.delete(k);
+        }
+      }
+    };
+
+    // ---------------- PUBLIC SECTION ----------------
+    if (isPublicRoot) {
+      // We rebuild the entire Public section, so clear its cache & DOM.
+      purgeCacheUnder("/public");
+
+      this._domRefs.publicFilesDiv.innerHTML = "";
+      this._domRefs.publicFilesDiv.__initialized = false;
+
+      await this._initPublic();
+      this._domRefs.publicFilesDiv.__initialized = true;
+
+      callback && callback();
+      return;
+    }
+
+    // ---------------- SHARED SECTION ----------------
+    if (isSharedPath) {
+      // Shared is grouped under a synthetic /shared root, rebuild whole section.
+      purgeCacheUnder("/shared");
+
+      this._domRefs.sharedFilesDiv.innerHTML = "";
+      this._domRefs.sharedFilesDiv.__initialized = false;
+      this._domRefs.sharedFilesDiv.__populated = false;
+
+      await this._initShared();
+      this._domRefs.sharedFilesDiv.__initialized = true;
+
+      callback && callback();
+      return;
+    }
+
+    // ---------------- USER FILES SECTION ----------------
     if (!cached) {
       console.warn(`Attempted to reload non-cached directory: ${key}`);
       callback && callback();
       return;
     }
 
-    // Remove old DOM nodes
-    const parentDiv = this.shadowRoot.querySelector(`#${cached.parentId}`);
-    if (parentDiv) {
-      const node = parentDiv.querySelector(`#${cached.id}`);
-      node?.parentElement?.removeChild(node);
-      const filesDiv = this.shadowRoot.querySelector(`#${cached.id}_files_div`);
-      filesDiv?.parentElement?.removeChild(filesDiv);
-    }
-    this._dirsCache.delete(key);
+    // 1) Remove old DOM nodes for *this* dir (row + children container)
+    const row = this.shadowRoot.getElementById(cached.id);
+    const filesDiv = this.shadowRoot.getElementById(`${cached.id}_files_div`);
 
-    // Re-append in the same section
-    if (key !== "/public" && !key.startsWith("/shared/")) {
-      this._initTreeView(dirVM, this._domRefs.userFilesDiv, cached.level);
-    } else if (key === "/public") {
-      this._domRefs.publicFilesDiv.__initialized = false;
-      await this._initPublic();
-      this._domRefs.publicFilesDiv.__initialized = true;
-    } else {
-      this._domRefs.sharedFilesDiv.__initialized = false;
-      await this._initShared();
-      this._domRefs.sharedFilesDiv.__initialized = true;
+    if (row && row.parentElement) {
+      row.parentElement.removeChild(row);
     }
+    if (filesDiv && filesDiv.parentElement) {
+      filesDiv.parentElement.removeChild(filesDiv);
+    }
+
+    // 2) Purge this directory AND all its descendants from the cache
+    purgeCacheUnder(key);
+
+    // 3) Re-append it under the same parent container at the same level
+    const parentDiv =
+      this.shadowRoot.getElementById(cached.parentId) ||
+      this._domRefs.userFilesDiv; // fallback: root "My Files" section
+
+    this._initTreeView(dirVM, parentDiv, cached.level);
+
     callback && callback();
   }
 

@@ -19,6 +19,8 @@ import '@polymer/iron-icon/iron-icon.js';
 import '@polymer/paper-progress/paper-progress.js';
 import { SharePanel } from "../share/sharePanel.js"
 import { Dialog } from '../dialog.js';
+import './paperTray.js';
+import './selectionBar.js';
 
 // Import sub-components
 import "./searchDocument.js";
@@ -56,6 +58,7 @@ function getElementIndex(element) {
 export class FileExplorer extends HTMLElement {
   static paperTray = [];
   static fileUploader = null;
+  static editMode = "";
 
   _id = null;
   _path = undefined;
@@ -311,6 +314,8 @@ export class FileExplorer extends HTMLElement {
             <globular-file-navigator></globular-file-navigator>
           </globular-split-pane>
           <globular-split-pane id="file-selection-panel" style="position: relative; width: 100%;">
+            <globular-papertray id="paper-tray"></globular-papertray>
+            <globular-selectionbar id="selection-bar"></globular-selectionbar>
             <slot></slot>
             <div id="progress-div">
               <span id="progress-message">Loading...</span>
@@ -366,6 +371,58 @@ export class FileExplorer extends HTMLElement {
     this._documentSearchBar = this.shadowRoot.querySelector("globular-search-document-bar");
     this._documentSearchBar.setFileExplorer(this);
     this._fileExplorerContent = this.shadowRoot.querySelector("#file-explorer-content");
+    // NEW: paper tray
+    this._paperTray = this.shadowRoot.querySelector("globular-papertray");
+    if (this._paperTray) {
+      this._paperTray.setFileExplorer(this);
+    }
+
+    this._selectionBar = this.shadowRoot.querySelector("globular-selectionbar");
+    if (this._selectionBar) {
+      this._selectionBar.setFileExplorer(this);
+      this._selectionBar.addEventListener('selection-bar-action', (evt) => {
+        const action = evt.detail?.action;
+
+        // Ask views who is active instead of poking privates
+        const view =
+          (this._filesListView?.isActive?.()) ? this._filesListView :
+            (this._filesIconView?.isActive?.()) ? this._filesIconView :
+              null;
+
+        const selectionClearingActions = ['cut', 'copy', 'delete', 'download', 'clear-selection'];
+
+        if (!view && action === 'clear-selection') {
+          this.clearSelections();
+          this.updateSelectionBar?.([]);
+          return;
+        }
+
+        switch (action) {
+          case 'cut':
+            view?._handleCutAction?.();
+            break;
+          case 'copy':
+            view?._handleCopyAction?.();
+            break;
+          case 'delete':
+            view?._handleDeleteAction?.();
+            break;
+          case 'download':
+            view?._handleDownloadAction?.();
+            break;
+          case 'clear-selection':
+            this.clearSelections();
+            break;
+        }
+
+        // After any action that logically clears the selection,
+        // explicitly hide the selection bar.
+        if (selectionClearingActions.includes(action)) {
+          this.updateSelectionBar?.([]);
+        }
+      });
+    }
+
 
     this._filesListView = new FilesListView();
     this._filesListView.id = "globular-files-list-view";
@@ -525,7 +582,6 @@ export class FileExplorer extends HTMLElement {
       async (path) => {
         if (this._path && path && path === this._path) {
           this.displayWaitMessage(`Loading ${path}...`);
-          FileExplorer.paperTray = [];
           this._filesIconView.setSelected({});
           this._filesListView.setSelected({});
           try {
@@ -796,6 +852,46 @@ export class FileExplorer extends HTMLElement {
     return card;
   }
 
+  updateSelectionBar(files) {
+    this._selectionBar?.setSelection?.(files || []);
+  }
+
+  clearSelections() {
+    this._filesIconView?.setSelected?.({});
+    this._filesListView?.setSelected?.({});
+    this._filesIconView?.clearSelectionUI?.();
+    this._filesListView?.clearSelectionUI?.();
+
+    // Tell the selection bar there is no active selection anymore
+    this.updateSelectionBar?.([]);
+
+    Backend.eventHub.publish(
+      "__clear_selection_evt__",
+      { file_explorer_id: this._id },
+      true
+    );
+  }
+
+  /** Set clipboard content (mode + paths) */
+  setClipboard(mode, paths) {
+    this._paperTray?.setClipboard?.(mode, paths);
+  }
+
+  /** Append to clipboard */
+  appendToClipboard(mode, paths) {
+    this._paperTray?.appendToClipboard?.(mode, paths);
+  }
+
+  /** Clear clipboard (used after paste or Clear button) */
+  clearClipboard() {
+    this._paperTray?.clearClipboard?.();
+  }
+
+  /** Get clipboard for context-menu Paste */
+  getClipboard() {
+    return this._paperTray?.getClipboard?.() || { mode: "", items: [] };
+  }
+
   /** Return a stable element for the dock; update it each time */
   getPreview() {
     if (this.previewElement && this.previewElement._update) {
@@ -809,7 +905,6 @@ export class FileExplorer extends HTMLElement {
   }
 
   clearSelections() {
-    FileExplorer.paperTray = [];
     this._filesIconView?.setSelected?.({});
     this._filesListView?.setSelected?.({});
     this._filesIconView?.clearSelectionUI?.();
@@ -1024,6 +1119,7 @@ export class FileExplorer extends HTMLElement {
 
     this._filesListView.hideMenu();
     this._filesIconView.hideMenu();
+    this.clearSelections();
   }
 
   async publishSetDirEvent(path) {
@@ -1276,12 +1372,13 @@ export class FileExplorer extends HTMLElement {
   async playAudio(file) {
     this.style.zIndex = 1;
     try {
-      const audios = await getFileAudiosInfo(file);
-      const audioInfo = (audios && audios.length > 0) ? audios[0] : null;
       const path = extractPath(file);
       if (!path) return displayError("Invalid file path.", 3000);
-      if (audioInfo) playAudio(path, () => { }, () => { }, audioInfo);
-      else displayMessage("No audio information found for this file.", 3000);
+      const audios = await getFileAudiosInfo(path);
+      const audioInfo = (audios && audios.length > 0) ? audios[0] : null;
+
+      playAudio(path, () => { }, () => { }, audioInfo);
+     
     } catch (err) {
       displayError(`Failed to get audio info: ${err.message}`, 3000);
     }

@@ -453,6 +453,8 @@ export class FileIconView extends HTMLElement {
       if (!this._dom.checkbox.checked) this._dom.checkbox.style.display = "none";
       delete this._viewContext._selected[pathOf(this._file)];
     }
+
+    this._viewContext?._selectionChanged?.();
   }
 
   _openMenu() {

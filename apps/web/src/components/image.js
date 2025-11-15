@@ -333,7 +333,6 @@ export class ImageCropper extends HTMLElement {
 }
 
 window.customElements.define('globular-image-cropper', ImageCropper);
-
 // ----------------------------------------------------------
 // PanZoomCanvas
 // ----------------------------------------------------------
@@ -420,7 +419,7 @@ export class PanZoomCanvas extends HTMLElement {
     `;
 
     /** @type {HTMLCanvasElement} */
-    this.canvas = this.shadowRoot.querySelector("canvas");
+    this.canvas = /** @type {HTMLCanvasElement} */ (this.shadowRoot.querySelector("canvas"));
     this.ctx = this.canvas.getContext("2d");
     this.image = new Image();
     this._panZoomSetup = false;
@@ -435,7 +434,7 @@ export class PanZoomCanvas extends HTMLElement {
     this.image.onload = () => {
       this._resizeToHost();
       this._ensurePanZoom();
-      this._fitToView();  // 1x or fit, centered
+      this._fitToView();  // 1x or fit, centered (no upscale)
     };
 
     if (this.hasAttribute("src")) {
@@ -589,12 +588,9 @@ export class ImageViewer extends HTMLElement {
         z-index:3000;
         display:none;
         position:absolute;
-        top:0;
-        left:0;
-        right:0;
-        bottom:0;
+        inset:0;
         overflow:hidden;
-        background-color:rgba(0,0,0,.94);
+        background-color: var(--dialog-backdrop-color, rgba(15,18,22,0.75));
         font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial;
         display:flex;
         justify-content:center;
@@ -602,10 +598,10 @@ export class ImageViewer extends HTMLElement {
       }
 
       .container {
-        width: min(75vw, 1200px);
-        height: min(75vh, 800px);
+        width: min(76vw, 1200px);
+        height: min(76vh, 820px);
         background-color: var(--surface-elevated-color);
-        border-radius: 12px;
+        border-radius: 16px;
         border:1px solid var(--dialog-border-color);
         box-shadow: var(--dockbar-shadow, 0 18px 45px rgba(0,0,0,0.55));
         padding: 0;
@@ -650,10 +646,23 @@ export class ImageViewer extends HTMLElement {
         align-items:center;
         justify-content:center;
         padding:6px 12px;
-        background-color: color-mix(in srgb, #000 65%, transparent);
+        background-color: color-mix(in srgb, var(--on-surface-color) 6%, transparent);
         color:var(--on-primary-color);
         cursor:pointer;
         border-radius:999px;
+        min-width:32px;
+        min-height:32px;
+        transition:
+          background-color 120ms ease-out,
+          transform 120ms ease-out,
+          box-shadow 120ms ease-out;
+      }
+
+      .btn:hover,
+      .button:hover {
+        background-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+        transform: translateY(-0.5px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.28);
       }
 
       #leftA, #rightA {
@@ -661,7 +670,7 @@ export class ImageViewer extends HTMLElement {
         top:50%;
         transform:translateY(-50%);
         font-size:20px;
-        background-color: color-mix(in srgb, #000 65%, transparent);
+        background-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
         color:var(--on-primary-color);
         border-radius:999px;
         width:40px;
@@ -672,36 +681,35 @@ export class ImageViewer extends HTMLElement {
         border:1px solid var(--border-subtle-color);
         cursor:pointer;
         user-select:none;
-        padding:0;        /* keep glyph centered */
+        padding:0;
         line-height:1;
       }
-      #leftA  { left:12px;  }
-      #rightA { right:12px; }
+      #leftA  { left:16px;  }
+      #rightA { right:16px; }
 
       .display-topright {
         position:absolute;
-        right:12px;
-        top:10px;
+        right:16px;
+        top:14px;
         z-index:100;
-        background-color: color-mix(in srgb, #000 65%, transparent);
+        background-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
         color:var(--on-primary-color);
         border-radius:999px;
-        width:34px;
-        height:34px;
+        width:36px;
+        height:36px;
         display:flex;
         align-items:center;
         justify-content:center;
-        padding:0;        /* center '×' */
+        padding:0;
         line-height:1;
-        font-size:20px;
       }
 
       .display-topleft {
         position:absolute;
-        left:12px;
-        top:10px;
+        left:16px;
+        top:14px;
         z-index:100;
-        background-color: color-mix(in srgb, #000 65%, transparent);
+        background-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
         color:var(--on-primary-color);
         font-size:13px;
         text-align:center;
@@ -719,8 +727,44 @@ export class ImageViewer extends HTMLElement {
 
       iron-icon {
         color:var(--on-primary-color);
-        width:24px;
-        height:24px;
+        width:20px;
+        height:20px;
+      }
+
+      /* ───────── filename / resolution pill ───────── */
+
+      #metaBar {
+        position:absolute;
+        left:16px;
+        bottom:16px;
+        max-width:calc(100% - 32px);
+        padding:4px 12px;
+        border-radius:999px;
+        font-size:12px;
+        line-height:1.3;
+        background-color: color-mix(in srgb, var(--on-surface-color) 16%, transparent);
+        color:var(--on-surface-color);
+        backdrop-filter: blur(10px);
+        display:none;          /* shown when we have data */
+        align-items:center;
+        gap:6px;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+
+      #metaName {
+        font-weight:500;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+
+      #metaSize {
+        opacity:0.78;
+      }
+
+      #metaDot {
+        opacity:0.65;
       }
 
       @media (max-width:768px){
@@ -729,27 +773,33 @@ export class ImageViewer extends HTMLElement {
           height:100vh;
           border-radius:0;
         }
+        #leftA { left:10px; }
+        #rightA { right:10px; }
+        #metaBar {
+          left:10px;
+          bottom:10px;
+          max-width:calc(100% - 20px);
+        }
       }
 
       #zoomBtns {
         position:absolute;
         top:14px;
-        right:56px; /* comfortably inside */
+        right:72px;
         user-select:none;
         display:flex;
-        gap:6px;
+        gap:4px;
         padding:4px 6px;
         border-radius:999px;
-        background-color: color-mix(in srgb, #000 65%, transparent);
+        background-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
         border:1px solid var(--border-subtle-color);
       }
 
-      #zoomBtns iron-icon { cursor:pointer; }
+      #zoomBtns iron-icon {
+        cursor:pointer;
+      }
 
-      #zoomBtns iron-icon:hover,
-      #leftA:hover,
-      #rightA:hover,
-      .display-topright:hover {
+      #zoomBtns iron-icon:hover {
         filter:brightness(1.12);
       }
     </style>
@@ -761,11 +811,20 @@ export class ImageViewer extends HTMLElement {
           <div id="content">
             <slot name="images" style="display:none;"><span style="color:white;">No images to show</span></slot>
             <globular-pan-zoom-canvas></globular-pan-zoom-canvas>
-            <paper-icon-button icon="icons:chevron-left" id="leftA"  class="button"></paper-icon-button>
+
+            <paper-icon-button icon="icons:chevron-left"  id="leftA"  class="button"></paper-icon-button>
             <paper-icon-button icon="icons:chevron-right" id="rightA" class="button"></paper-icon-button>
+
             <div id="zoomBtns">
               <iron-icon id="zoomInBtn"  class="btn" icon="icons:add"></iron-icon>
               <iron-icon id="zoomOutBtn" class="btn" icon="icons:remove"></iron-icon>
+            </div>
+
+            <!-- filename / resolution -->
+            <div id="metaBar">
+              <span id="metaName"></span>
+              <span id="metaDot">•</span>
+              <span id="metaSize"></span>
             </div>
           </div>
         </div>
@@ -773,7 +832,7 @@ export class ImageViewer extends HTMLElement {
 
     if (!this.hasAttribute('closeable')) {
       shadowRoot.querySelector('#closeBtn').style.display = 'none';
-      shadowRoot.querySelector("#zoomBtns").style.right = '12px';
+      shadowRoot.querySelector("#zoomBtns").style.right = '16px';
     }
 
     shadowRoot.querySelector('#closeBtn').addEventListener('click', () => {
@@ -803,10 +862,10 @@ export class ImageViewer extends HTMLElement {
   attributeChangedCallback() {
     if (this.hasAttribute('closeable')) {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'block';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '56px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '72px';
     } else {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'none';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '12px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '16px';
     }
   }
 
@@ -825,10 +884,10 @@ export class ImageViewer extends HTMLElement {
 
     if (this.hasAttribute('closeable')) {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'block';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '56px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '72px';
     } else {
       this.shadowRoot.querySelector('#closeBtn').style.display = 'none';
-      this.shadowRoot.querySelector("#zoomBtns").style.right = '12px';
+      this.shadowRoot.querySelector("#zoomBtns").style.right = '16px';
     }
   }
 
@@ -852,15 +911,29 @@ export class ImageViewer extends HTMLElement {
     }
   }
 
+  /** Update which image is shown + counter + pan-zoom src + meta bar */
   activeImage(index) {
     const cant = this.children.length;
-    for (let i = 0; i < cant; i++) this.children[i].style.display = 'none';
-    if (!this.children[index]) return;
-    this.children[index].style.display = 'block';
-    this.shadowRoot.querySelector('#counter').innerHTML = (index + 1) + '/' + (cant);
+    if (cant === 0) return;
+
+    if (index < 0) index = 0;
+    if (index >= cant) index = cant - 1;
+
+    for (let i = 0; i < cant; i++) {
+      this.children[i].style.display = 'none';
+    }
+
+    const img = this.children[index];
+    img.style.display = 'block';
+
+    this.shadowRoot.querySelector('#counter').innerHTML = (index + 1) + '/' + cant;
     this.index = index;
+
+    const src = img.getAttribute("src");
     this.shadowRoot.querySelector("globular-pan-zoom-canvas")
-      .setAttribute("src", this.children[index].getAttribute("src"));
+      .setAttribute("src", src);
+
+    this._updateMeta(img);
   }
 
   addImage(e) {
@@ -898,42 +971,86 @@ export class ImageViewer extends HTMLElement {
   nextImage() {
     const ch = this.children;
     const cant = ch.length;
-    let actived, index = 0;
+    if (cant === 0) return;
+
+    let index = 0;
     for (let i = 0; i < cant; i++) {
       if (ch[i].style.display === 'block') {
-        actived = (i < cant - 1) ? ch[i + 1] : ch[0];
         index = (i < cant - 1) ? (i + 1) : 0;
+        break;
       }
-      ch[i].style.display = 'none';
     }
-    if (actived) {
-      actived.style.display = 'block';
-      this.shadowRoot.querySelector('#counter').innerHTML = (index + 1) + '/' + (cant);
-      this.shadowRoot.querySelector("globular-pan-zoom-canvas")
-        .setAttribute("src", ch[index].getAttribute("src"));
-    }
+    this.activeImage(index);
   }
 
   prevImage() {
     const ch = this.children;
     const cant = ch.length;
-    let actived, index = cant - 1;
+    if (cant === 0) return;
+
+    let index = cant - 1;
     for (let i = 0; i < cant; i++) {
       if (ch[i].style.display === 'block') {
-        actived = (i > 0) ? ch[i - 1] : ch[cant - 1];
         index = (i > 0) ? (i - 1) : (cant - 1);
+        break;
       }
-      ch[i].style.display = 'none';
     }
-    if (actived) {
-      actived.style.display = 'block';
-      this.shadowRoot.querySelector('#counter').innerHTML = (index + 1) + '/' + (cant);
-      this.shadowRoot.querySelector("globular-pan-zoom-canvas")
-        .setAttribute("src", ch[index].getAttribute("src"));
+    this.activeImage(index);
+  }
+
+  /** Show filename + resolution in the bottom pill */
+  _updateMeta(imgEl) {
+    const metaBar = this.shadowRoot.querySelector('#metaBar');
+    const nameSpan = this.shadowRoot.querySelector('#metaName');
+    const sizeSpan = this.shadowRoot.querySelector('#metaSize');
+    const dotSpan  = this.shadowRoot.querySelector('#metaDot');
+    if (!metaBar || !nameSpan || !sizeSpan || !dotSpan) return;
+
+    // prefer data-name, then alt, then src filename
+    let base = imgEl.getAttribute('data-name')
+            || imgEl.getAttribute('alt')
+            || imgEl.getAttribute('src')
+            || '';
+
+    let fileName = base;
+    try {
+      const url = new URL(base, window.location.href);
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length) fileName = parts[parts.length - 1];
+    } catch {
+      if (base.indexOf('/') !== -1) {
+        const parts = base.split('/');
+        fileName = parts[parts.length - 1];
+      }
+    }
+
+    const applySize = () => {
+      const w = imgEl.naturalWidth || imgEl.width || 0;
+      const h = imgEl.naturalHeight || imgEl.height || 0;
+
+      nameSpan.textContent = fileName || '';
+      sizeSpan.textContent = (w && h) ? `${w} × ${h}` : '';
+      dotSpan.style.display = (fileName && w && h) ? 'inline' : 'none';
+
+      if (!fileName && !(w && h)) {
+        metaBar.style.display = 'none';
+      } else {
+        metaBar.style.display = 'flex';
+      }
+    };
+
+    // if already loaded, we can read size immediately
+    if (imgEl.complete && imgEl.naturalWidth) {
+      applySize();
+    } else {
+      metaBar.style.display = 'none';
+      imgEl.addEventListener('load', applySize, { once: true });
     }
   }
 }
+
 window.customElements.define('globular-image-viewer', ImageViewer);
+
 
 
 // ----------------------------------------------------------

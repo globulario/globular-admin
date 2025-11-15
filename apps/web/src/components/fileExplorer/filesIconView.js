@@ -23,6 +23,7 @@ export class FilesIconView extends FilesView {
   _imageHeight = DEFAULT_IMAGE_HEIGHT;
   _imageWidth = DEFAULT_IMAGE_WIDTH;
   _isActive = false;
+  _active = false; // <- add this
 
   constructor() {
     super();
@@ -86,8 +87,20 @@ export class FilesIconView extends FilesView {
   }
 
   /* ---------- Active state ---------- */
-  setActive(isActive) { this._isActive = isActive; }
-  resetActive() { this._isActive = false; }
+  setActive(isActive) {
+    const v = !!isActive;
+    this._isActive = v;  // legacy/local
+    this._active = v;    // standard flag used by others
+  }
+
+  resetActive() {
+    this.setActive(false);
+  }
+
+  isActive() {
+    // single source of truth
+    return !!this._active;
+  }
 
   // inside class FilesIconView
   clearSelectionUI() {
