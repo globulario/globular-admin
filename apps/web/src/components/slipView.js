@@ -1,55 +1,4 @@
 /**
- * Extracts a pixel value from a CSS style string (e.g., '10px').
- * @param {string} styleValue The CSS string to parse.
- * @returns {number} The parsed pixel value or 0 if invalid.
- */
-const extractPxValue = (styleValue) => {
-    const match = styleValue.match(/^([0-9.]+)px$/);
-    return match ? parseFloat(match[1]) : 0;
-};
-
-/**
- * Extracts a computed style value from an element and converts it to a number.
- * @param {HTMLElement} element The element.
- * @param {string} style The CSS style property name.
- * @returns {number} The value in pixels.
- */
-const extractComputedStyleValue = (element, style) => {
-    const computedStyle = window.getComputedStyle(element);
-    return extractPxValue(computedStyle[style]);
-};
-
-/**
- * Calculates the total horizontal padding, border, and margin of an element.
- * @param {HTMLElement} element The element.
- * @returns {number} The total horizontal extra width.
- */
-const getExtraWidth = (element) => {
-    const style = window.getComputedStyle(element);
-    return extractPxValue(style.paddingLeft) +
-           extractPxValue(style.paddingRight) +
-           extractPxValue(style.borderLeftWidth) +
-           extractPxValue(style.borderRightWidth) +
-           extractPxValue(style.marginLeft) +
-           extractPxValue(style.marginRight);
-};
-
-/**
- * Calculates the total vertical padding, border, and margin of an element.
- * @param {HTMLElement} element The element.
- * @returns {number} The total vertical extra height.
- */
-const getExtraHeight = (element) => {
-    const style = window.getComputedStyle(element);
-    return extractPxValue(style.paddingTop) +
-           extractPxValue(style.paddingBottom) +
-           extractPxValue(style.borderTopWidth) +
-           extractPxValue(style.borderBottomWidth) +
-           extractPxValue(style.marginTop) +
-           extractPxValue(style.marginBottom);
-};
-
-/**
  * A container Web Component that creates a resizable split view.
  * It automatically inserts splitter sliders between child <globular-split-pane> elements.
  *
@@ -59,6 +8,8 @@ const getExtraHeight = (element) => {
 export class SplitView extends HTMLElement {
     // Private fields for encapsulation.
     #splitters = [];
+    #isVertical = false;
+    #slotObserver = null;
 
     constructor() {
         super();
@@ -66,13 +17,25 @@ export class SplitView extends HTMLElement {
 
         this.shadowRoot.innerHTML = `
             <style>
+                :host {
+                    display: flex;
+                    width: 100%;
+                    height: 100%;
+                    min-width: 0;
+                    min-height: 0;
+                }
                 .splitter {
                     display: flex;
+                    flex: 1 1 auto;
                     width: 100%;
                     height: 100%; /* Ensure it takes up full height */
                 }
                 /* Slot styles are fine, but could be moved to host if desired */
                 ::slotted(globular-split-pane) {
+                    flex: 1 1 0;
+                    min-width: 0;
+                    min-height: 0;
+                    display: flex;
                     overflow: auto;
                 }
                 ::-webkit-scrollbar {
@@ -104,14 +67,23 @@ export class SplitView extends HTMLElement {
         this.#insertSplitters();
     }
 
+    disconnectedCallback() {
+        if (this.#slotObserver) {
+            this.#slotObserver.disconnect();
+        }
+    }
+
     /**
      * Uses a MutationObserver to react to changes in slotted children.
      * @private
      */
     #observeSlottedPanes() {
-        const slot = this.shadowRoot.querySelector('slot');
-        const observer = new MutationObserver(() => this.#insertSplitters());
-        observer.observe(slot, { childList: true });
+        if (!this.#slotObserver) {
+            this.#slotObserver = new MutationObserver(() => this.#insertSplitters());
+        } else {
+            this.#slotObserver.disconnect();
+        }
+        this.#slotObserver.observe(this, { childList: true });
     }
 
     /**
@@ -119,8 +91,11 @@ export class SplitView extends HTMLElement {
      * @private
      */
     #insertSplitters() {
+        if (this.#slotObserver) {
+            this.#slotObserver.disconnect();
+        }
+
         const panes = this.querySelectorAll("globular-split-pane");
-        const splitterContainer = this.shadowRoot.querySelector(".splitter");
 
         // Clear existing sliders.
         this.#splitters.forEach(slider => slider.remove());
@@ -132,7 +107,21 @@ export class SplitView extends HTMLElement {
             const pane2 = panes[i + 1];
             const slider = new SplitSlider(pane1, pane2);
             this.insertBefore(slider, pane2);
+            if (this.#isVertical) {
+                slider.setVertical();
+            } else {
+                slider.setHorizontal();
+            }
+            const basisProp = this.#isVertical ? "height" : "width";
+            const pane1Basis = pane1.style[basisProp];
+            const pane2Basis = pane2.style[basisProp];
+            if (!pane1.style.flex) pane1.style.flex = pane1Basis ? `0 0 ${pane1Basis}` : "1 1 0";
+            if (!pane2.style.flex) pane2.style.flex = pane2Basis ? `0 0 ${pane2Basis}` : "1 1 0";
             this.#splitters.push(slider);
+        }
+
+        if (this.#slotObserver) {
+            this.#slotObserver.observe(this, { childList: true });
         }
     }
 
@@ -142,6 +131,7 @@ export class SplitView extends HTMLElement {
     setVertical() {
         this.shadowRoot.querySelector(".splitter").style.flexDirection = "column";
         this.#splitters.forEach(slider => slider.setVertical());
+        this.#isVertical = true;
         // Trigger a reflow to recalculate sizes.
         window.dispatchEvent(new Event('resize'));
     }
@@ -152,6 +142,7 @@ export class SplitView extends HTMLElement {
     setHorizontal() {
         this.shadowRoot.querySelector(".splitter").style.flexDirection = "row";
         this.#splitters.forEach(slider => slider.setHorizontal());
+        this.#isVertical = false;
         // Trigger a reflow to recalculate sizes.
         window.dispatchEvent(new Event('resize'));
     }
@@ -168,20 +159,34 @@ export class SplitSlider extends HTMLElement {
     #panes; // An array [pane1, pane2]
     #isDragging = false;
     #isVertical = false;
-    #lastPosition = { x: 0, y: 0 };
+    #containerRect = null;
+    #pointerOffset = 0;
+    #activePointerId = null;
+    #isCollapsed = false;
+    #lastSize = null;
+    #toggleBtn = null;
 
-    constructor(panes, view) { // Removed 'view' as it's not needed
+    constructor(pane1, pane2) { // Removed 'view' as it's not needed
         super();
         this.attachShadow({ mode: 'open' });
 
-        this.#panes = panes;
+        this.#panes = [pane1, pane2];
 
         this.shadowRoot.innerHTML = `
             <style>
+                :host {
+                    display: flex;
+                    align-items: stretch;
+                    justify-content: center;
+                    min-width: 5px;
+                    min-height: 0;
+                }
                 .slider {
                     background-color: var(--surface-color);
                     transition: background-color 0.2s ease-in-out;
                     flex-shrink: 0; /* Prevents the slider from shrinking */
+                    align-self: stretch;
+                    position: relative;
                 }
                 .slider:hover {
                     background-color: darkgrey; /* Highlight on hover */
@@ -198,14 +203,42 @@ export class SplitSlider extends HTMLElement {
                     height: 0.3rem;
                     cursor: row-resize;
                 }
+                .collapse-btn {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    border: 1px solid var(--palette-divider);
+                    background: var(--surface-elevated-color, var(--surface-color));
+                    color: var(--primary-text-color);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.8rem;
+                    cursor: pointer;
+                    z-index: 2;
+                }
             </style>
-            <div class="slider horizontal-slider"></div>
+            <div class="slider horizontal-slider">
+                <button class="collapse-btn" title="Toggle left pane"></button>
+            </div>
         `;
 
         this.slider = this.shadowRoot.querySelector(".slider");
+        this.#toggleBtn = this.shadowRoot.querySelector(".collapse-btn");
 
         // Use pointer events for robust drag handling.
         this.slider.addEventListener('pointerdown', this.#onPointerDown);
+        if (this.#toggleBtn) {
+            this.#toggleBtn.addEventListener("click", (evt) => {
+                evt.stopPropagation();
+                this.#toggleCollapse();
+            });
+            this.#updateToggleIcon();
+        }
     }
 
     /**
@@ -216,6 +249,7 @@ export class SplitSlider extends HTMLElement {
         this.slider.classList.add("vertical-slider");
         this.slider.style.cursor = "row-resize";
         this.#isVertical = true;
+        this.#updateToggleIcon();
     }
 
     /**
@@ -226,6 +260,7 @@ export class SplitSlider extends HTMLElement {
         this.slider.classList.add("horizontal-slider");
         this.slider.style.cursor = "col-resize";
         this.#isVertical = false;
+        this.#updateToggleIcon();
     }
 
     /**
@@ -234,10 +269,17 @@ export class SplitSlider extends HTMLElement {
      * @param {PointerEvent} e
      */
     #onPointerDown = (e) => {
+        if (this.#toggleBtn && (e.target === this.#toggleBtn || this.#toggleBtn.contains(e.target))) {
+            return;
+        }
         e.preventDefault(); // Prevent text selection
         this.#isDragging = true;
-        this.#lastPosition = { x: e.clientX, y: e.clientY };
-        
+        this.#containerRect = this.parentElement?.getBoundingClientRect() || null;
+        const sliderRect = this.getBoundingClientRect();
+        this.#pointerOffset = this.#isVertical ? e.clientY - sliderRect.top : e.clientX - sliderRect.left;
+        this.#activePointerId = e.pointerId;
+        this.slider.setPointerCapture(e.pointerId);
+
         // Add move and up listeners to the whole document body for reliability.
         document.body.addEventListener('pointermove', this.#onPointerMove);
         document.body.addEventListener('pointerup', this.#onPointerUp);
@@ -255,22 +297,35 @@ export class SplitSlider extends HTMLElement {
     #onPointerMove = (e) => {
         if (!this.#isDragging) return;
 
-        const deltaX = e.clientX - this.#lastPosition.x;
-        const deltaY = e.clientY - this.#lastPosition.y;
-
-        let paneToResize = this.#panes[0];
-        let newFlexBasis;
-
-        if (this.#isVertical) {
-            newFlexBasis = paneToResize.offsetHeight + deltaY;
-            paneToResize.style.flex = `0 0 ${newFlexBasis}px`;
-        } else {
-            newFlexBasis = paneToResize.offsetWidth + deltaX;
-            paneToResize.style.flex = `0 0 ${newFlexBasis}px`;
+        if (!this.#containerRect) {
+            this.#containerRect = this.parentElement?.getBoundingClientRect() || null;
+            if (!this.#containerRect) return;
         }
-        
-        // Update last position for the next move event.
-        this.#lastPosition = { x: e.clientX, y: e.clientY };
+
+        const paneToResize = this.#panes[0];
+        const siblingPane = this.#panes[1];
+        if (!paneToResize || !siblingPane) return;
+
+        const sliderRect = this.getBoundingClientRect();
+        const sliderSize = this.#isVertical ? sliderRect.height : sliderRect.width;
+        const minPrimary = Number(paneToResize.getAttribute("min-size")) || 120;
+        const minSecondary = Number(siblingPane.getAttribute("min-size")) || 120;
+
+        let newPos;
+        if (this.#isVertical) {
+            newPos = e.clientY - this.#containerRect.top - this.#pointerOffset;
+            const maxSize = this.#containerRect.height - sliderSize - minSecondary;
+            newPos = Math.min(Math.max(newPos, minPrimary), maxSize);
+        } else {
+            newPos = e.clientX - this.#containerRect.left - this.#pointerOffset;
+            const maxSize = this.#containerRect.width - sliderSize - minSecondary;
+            newPos = Math.min(Math.max(newPos, minPrimary), maxSize);
+        }
+
+        this.#applyPaneSize(newPos);
+        this.#isCollapsed = false;
+        this.#lastSize = paneToResize.getBoundingClientRect()[this.#isVertical ? "height" : "width"];
+        this.#updateToggleIcon();
     }
 
     /**
@@ -279,14 +334,54 @@ export class SplitSlider extends HTMLElement {
      */
     #onPointerUp = () => {
         this.#isDragging = false;
+        this.#containerRect = null;
         
         // Remove the move and up listeners.
         document.body.removeEventListener('pointermove', this.#onPointerMove);
         document.body.removeEventListener('pointerup', this.#onPointerUp);
+
+        if (this.#activePointerId !== null) {
+            this.slider.releasePointerCapture(this.#activePointerId);
+            this.#activePointerId = null;
+        }
         
         // Clean up body styles.
         document.body.style.userSelect = '';
         document.body.style.cursor = 'default';
+    }
+
+    #applyPaneSize(size) {
+        const pane = this.#panes[0];
+        if (!pane) return;
+        const sibling = this.#panes[1];
+        const safeSize = Math.max(0, size);
+        pane.style.flex = `0 0 ${safeSize}px`;
+        if (sibling) sibling.style.flex = "1 1 0";
+    }
+
+    #toggleCollapse() {
+        const pane = this.#panes[0];
+        if (!pane) return;
+        if (!this.#isCollapsed) {
+            const current = pane.getBoundingClientRect()[this.#isVertical ? "height" : "width"];
+            this.#lastSize = current > 0 ? current : (Number(pane.getAttribute("min-size")) || 240);
+            this.#applyPaneSize(0);
+            this.#isCollapsed = true;
+        } else {
+            const minSize = Number(pane.getAttribute("min-size")) || 120;
+            const restored = Math.max(minSize, this.#lastSize || minSize);
+            this.#applyPaneSize(restored);
+            this.#isCollapsed = false;
+        }
+        this.#updateToggleIcon();
+    }
+
+    #updateToggleIcon() {
+        if (!this.#toggleBtn) return;
+        const expandedIcon = this.#isVertical ? "∧" : "⟨";
+        const collapsedIcon = this.#isVertical ? "∨" : "⟩";
+        this.#toggleBtn.textContent = this.#isCollapsed ? collapsedIcon : expandedIcon;
+        this.#toggleBtn.title = this.#isCollapsed ? "Show pane" : "Hide pane";
     }
 }
 
@@ -304,6 +399,13 @@ export class SplitPane extends HTMLElement {
 
         this.shadowRoot.innerHTML = `
             <style>
+                :host {
+                    display: flex;
+                    flex: 1 1 0;
+                    min-width: 0;
+                    min-height: 0;
+                    position: relative;
+                }
                 .splitter__pane {
                     flex: 1 1 auto;
                     position: relative;
@@ -318,7 +420,7 @@ export class SplitPane extends HTMLElement {
                     left: 0;
                     bottom: 0;
                     right: 0;
-                    overflow: auto; /* Ensures slotted content can scroll */
+                    overflow: hidden;
                 }
                 ::-webkit-scrollbar {
                     width: 5px;

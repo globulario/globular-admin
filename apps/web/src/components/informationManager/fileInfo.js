@@ -46,7 +46,7 @@ export class FileInfo extends HTMLElement {
     for (const n of names) {
       const fn = obj[n];
       if (typeof fn === "function") {
-        try { return fn.call(obj); } catch {}
+        try { return fn.call(obj); } catch { }
       }
       if (n in obj) return obj[n];
     }
@@ -99,6 +99,8 @@ export class FileInfo extends HTMLElement {
           gap: 20px;
           align-items: flex-start;
           flex-wrap: wrap;
+          overflow-y: auto;
+          overflow-x: hidden;
         }
         img {
           max-height: 180px;

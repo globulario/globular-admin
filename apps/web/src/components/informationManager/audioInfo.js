@@ -111,15 +111,15 @@ export class AudioInfo extends HTMLElement {
                 paper-button {
                     /* Custom styles for paper-button if needed */
                     --paper-button-flat-keyboard-focus: {
-                        background-color: var(--palette-primary-light);
+                        background-color: var(--primary-light-color);
                     };
-                    background-color: var(--palette-primary-main);
-                    color: var(--palette-primary-contrast);
+                    background-color: var(--primary-color);
+                    color: var(--on-primary-color);
                     padding: 8px 16px;
                     border-radius: 4px;
                 }
                 paper-button:hover {
-                    background-color: var(--palette-primary-dark);
+                    background-color: var(--primary-dark-color);
                 }
             </style>
             <div id="container">

@@ -80,25 +80,25 @@ export class InformationsManager extends HTMLElement {
 
 
         #container {
-                ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+          ::-webkit-scrollbar { width: 5px; height: 5px; }
+          ::-webkit-scrollbar-track { background: var(--surface-color); }
+          ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
           display: flex; flex-direction: column;
           padding: 8px; z-index: 100;
-          background: var(--surface-color);
-          color: var(--on-surface-color);
+          background: var(--surface-elevated-color, var(--surface-color));
+          color: var(--primary-text-color);
           font-size: 1rem; user-select: none;
           max-height: calc(100vh - 100px);
-          overflow-y: auto; overflow-x: hidden;
+          overflow: hidden;
         }
         #header {
           display: flex; align-items: center;
           line-height: 20px; padding-bottom: 10px;
-          border-bottom: 2px solid var(--palette-divider);
+          border-bottom: 2px solid var(--divider-color, var(--palette-divider));
           margin-bottom: 10px;
         }
         #header paper-icon-button {
-          min-width: 40px; color: var(--primary-text-color);
+          min-width: 40px; color: var(--secondary-text-color, var(--primary-text-color));
         }
         #header paper-icon-button:hover { color: var(--primary-color); }
 
@@ -313,7 +313,7 @@ export class InformationsManager extends HTMLElement {
       <iron-icon icon="icons:info" style="margin-right: 10px;"></iron-icon>
       <div class="title-wrap">
         <span class="title-main-text">${name}</span>
-        <span class="title-sub-text" style="color: var(--palette-text-secondary);">Properties</span>
+        <span class="title-sub-text" style="color: var(--secondary-text-color);">Properties</span>
       </div>
     `;
 

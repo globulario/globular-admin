@@ -33,13 +33,13 @@ export class SearchDocumentBar extends HTMLElement {
           font-size: 1.2rem;
         }
         ::placeholder {
-          color: var(--palette-text-accent);
+          color: var(--on-text-color, var(--palette-text-accent));
           opacity: 1;
         }
         iron-icon {
           padding-left: 11px;
           padding-right: 11px;
-          --iron-icon-fill-color: var(--palette-text-accent);
+          --iron-icon-fill-color: var(--on-text-color, var(--palette-text-accent));
         }
         input:focus { 
           outline: none; 

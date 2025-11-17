@@ -108,11 +108,11 @@ export class AudioInfoEditor extends HTMLElement {
           padding-top:15px; margin-top:20px;
         }
         paper-button{
-          background: var(--palette-primary-main);
-          color: var(--palette-primary-contrast);
+          background: var(--primary-color);
+          color: var(--on-primary-color);
           padding:8px 16px; border-radius:4px;
         }
-        paper-button:hover{ background: var(--palette-primary-dark); }
+        paper-button:hover{ background: var(--primary-dark-color); }
         iron-icon { color: var(--primary-text-color, inherit); }
         iron-icon:hover { color: var(--primary-color); }
         iron-collapse{ display:flex; flex-direction:column; margin:5px; }

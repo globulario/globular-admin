@@ -21,6 +21,7 @@ import { SharePanel } from "../share/sharePanel.js"
 import { Dialog } from '../dialog.js';
 import './paperTray.js';
 import './selectionBar.js';
+import '../slipView.js';
 
 // Import sub-components
 import "./searchDocument.js";
@@ -118,6 +119,8 @@ export class FileExplorer extends HTMLElement {
 
     if (FileExplorer.fileUploader === null) {
       FileExplorer.fileUploader = new FilesUploader();
+      FileExplorer.fileUploader.id = "globular-files-uploader";
+      FileExplorer.fileUploader.setAttribute("style", "position:absolute; z-index:1000; right:15px; bottom:2px;");
     }
   }
 
@@ -187,6 +190,7 @@ export class FileExplorer extends HTMLElement {
       }
 
       #file-explorer-content {
+        position: relative;
         display: flex;
         flex-direction: column;
         height: calc(100% - 40px);
@@ -314,8 +318,10 @@ export class FileExplorer extends HTMLElement {
             <globular-file-navigator></globular-file-navigator>
           </globular-split-pane>
           <globular-split-pane id="file-selection-panel" style="position: relative; width: 100%;">
-            <globular-papertray id="paper-tray"></globular-papertray>
-            <globular-selectionbar id="selection-bar"></globular-selectionbar>
+            <div style="position: relative; height: auto; width: 100%;" id="file-explorer-main-view">
+              <globular-papertray id="paper-tray"></globular-papertray>
+              <globular-selectionbar id="selection-bar"></globular-selectionbar>
+            </div>
             <slot></slot>
             <div id="progress-div">
               <span id="progress-message">Loading...</span>
@@ -489,7 +495,7 @@ export class FileExplorer extends HTMLElement {
 
     this._filesListBtn.addEventListener('click', this._handleViewToggleClick.bind(this, 'list'));
     this._fileIconBtn.addEventListener('click', this._handleViewToggleClick.bind(this, 'icon'));
-    this._fileUploaderBtn.addEventListener('click', this._handleViewToggleClick.bind(this, 'uploader'));
+    this._fileUploaderBtn.addEventListener('click', this._handleShowUploader.bind(this));
 
     this._backNavigationBtn.addEventListener('click', this._handleNavigationClick.bind(this, 'back'));
     this._fowardNavigationBtn.addEventListener('click', this._handleNavigationClick.bind(this, 'forward'));
@@ -514,6 +520,11 @@ export class FileExplorer extends HTMLElement {
           const cache = getFilesCache();
           cache?.invalidate?.(this._path);
           this._handleRefreshClick();
+          // display the files uploader if not already visible
+          if (FileExplorer.fileUploader?.parentNode !== this._fileExplorerContent) {
+            this._fileExplorerContent.appendChild(FileExplorer.fileUploader);
+            this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
+          }
         }
       }, false, this
     );
@@ -929,10 +940,11 @@ export class FileExplorer extends HTMLElement {
             top: 50px;
             z-index: 100;
             background-color: var(--surface-color);
-            color: var(--primary-text-color);
+            color: var(--on-surface-color);
             box-shadow: var(--shadow-elevation-2dp);
             border-radius: 8px;
             overflow: hidden;
+            border: 1px solid var(--palette-divider);
           }
           .new-dir-dialog-actions {
             font-size: .85rem;
@@ -940,16 +952,16 @@ export class FileExplorer extends HTMLElement {
             justify-content: flex-end;
             display: flex;
             background-color: var(--surface-color);
-            color: var(--primary-text-color);
+            color: var(--on-surface-color);
             padding: 8px;
             border-top: 1px solid var(--palette-divider);
           }
           .card-content { padding: 16px; }
           paper-input {
-            --paper-input-container-color: var(--primary-text-color);
-            --paper-input-container-focus-color: var(--primary-color);
-            --paper-input-container-label-floating-color: var(--primary-color);
-            --paper-input-container-input-color: var(--primary-text-color);
+            --paper-input-container-color: var(--on-surface-color);
+            --paper-input-container-focus-color: var(--on-surface-color);
+            --paper-input-container-label-floating-color: var(--on-surface-color);
+            --paper-input-container-input-color: var(--on-surface-color);
           }
         </style>
         <paper-card id="${dialogId}">
@@ -1079,6 +1091,19 @@ export class FileExplorer extends HTMLElement {
     }
   }
 
+  _handleShowUploader(evt) {
+    evt.stopPropagation();
+
+    if (FileExplorer.fileUploader?.parentNode) {
+      FileExplorer.fileUploader.parentNode.removeChild(FileExplorer.fileUploader);
+      this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
+    } else {
+      this._fileExplorerContent.appendChild(FileExplorer.fileUploader);
+      this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
+    }
+
+  }
+
   _handleViewToggleClick(viewType, evt) {
     evt.stopPropagation();
 
@@ -1095,7 +1120,6 @@ export class FileExplorer extends HTMLElement {
     this._fileUploaderBtn.classList.remove("active");
     this._filesListBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
     this._fileIconBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
-    this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
 
     if (viewType === 'list') {
       this._filesListView.show();
@@ -1109,12 +1133,6 @@ export class FileExplorer extends HTMLElement {
       this._filesListView.setActive(false);
       this._fileIconBtn.classList.add("active");
       this._fileIconBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
-    } else if (viewType === 'uploader') {
-      this.appendChild(FileExplorer.fileUploader);
-      this._filesIconView.setActive(false);
-      this._filesListView.setActive(false);
-      this._fileUploaderBtn.classList.add("active");
-      this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
     }
 
     this._filesListView.hideMenu();
@@ -1378,7 +1396,7 @@ export class FileExplorer extends HTMLElement {
       const audioInfo = (audios && audios.length > 0) ? audios[0] : null;
 
       playAudio(path, () => { }, () => { }, audioInfo);
-     
+
     } catch (err) {
       displayError(`Failed to get audio info: ${err.message}`, 3000);
     }
@@ -1444,15 +1462,14 @@ export class FileExplorer extends HTMLElement {
 
     this._filesListView.hide();
     this._filesIconView.hide();
-    if (FileExplorer.fileUploader?.parentNode) FileExplorer.fileUploader.parentNode.removeChild(FileExplorer.fileUploader);
+
     this._fileReader.style.display = "none";
     this._imageViewer.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
     if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
 
-    if (this._fileUploaderBtn.classList.contains("active")) this.appendChild(FileExplorer.fileUploader);
-    else if (this._filesListBtn.classList.contains("active")) this._filesListView.show();
+    if (this._filesListBtn.classList.contains("active")) this._filesListView.show();
     else this._filesIconView.show();
   }
 
@@ -1461,13 +1478,12 @@ export class FileExplorer extends HTMLElement {
       this._filesListView, this._filesIconView,
       this._fileReader, this._imageViewer,
       this._permissionManager, this._informationManager,
-      this._sharePanel, FileExplorer.fileUploader
+      this._sharePanel
     ];
 
     views.forEach(view => {
       if (view && view !== exceptElement) {
         if (view === this._filesListView || view === this._filesIconView) view.hide();
-        else if (view === FileExplorer.fileUploader) { if (view.parentNode) view.parentNode.removeChild(view); }
         else view.style.display = "none";
       }
     });

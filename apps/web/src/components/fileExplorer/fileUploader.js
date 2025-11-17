@@ -43,15 +43,13 @@ export class FilesUploader extends HTMLElement {
         ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
 
         #container {
-          background-color: var(--surface-color);
-          position: relative;
+          background-color: var(--surface-elevated-color, var(--surface-color));
           font-size: 1rem;
           display: flex;
           flex-direction: column;
           height: ${this.height}px;
           width: ${this.width}px;
           box-shadow: var(--shadow-elevation-2dp, 0 2px 4px rgba(0,0,0,0.24));
-          border-left: 1px solid var(--palette-divider);
         }
 
         .content {
@@ -71,8 +69,8 @@ export class FilesUploader extends HTMLElement {
         paper-tabs {
           background: transparent;
           width: 100%;
-          --paper-tabs-selection-bar-color: var(--primary-color);
-          color: var(--primary-text-color);
+          --paper-tabs-selection-bar-color: var(--on-surface-color);
+          color: var(--on-surface-color);
           --paper-tab-ink: var(--palette-action-disabled);
         }
 
@@ -83,7 +81,6 @@ export class FilesUploader extends HTMLElement {
 
         .card-content {
           padding: 0;
-          border-left: 1px solid var(--palette-divider);
           overflow-y: auto;
           flex-grow: 1;
           max-height: calc(100vh - 220px);
@@ -106,7 +103,6 @@ export class FilesUploader extends HTMLElement {
         }
 
         .table-body {
-          position: relative;
           width: 100%;
           display: flex;
           flex-direction: column;
@@ -181,7 +177,7 @@ export class FilesUploader extends HTMLElement {
 
         paper-card {
           background-color: var(--surface-color);
-          color: var(--primary-text-color);
+          color: var(--on-surface-color);
         }
 
         /* Status bar at bottom */
@@ -225,7 +221,7 @@ export class FilesUploader extends HTMLElement {
         }
 
         .status-text-strong {
-          color: var(--primary-text-color);
+          color: var(--on-surface-color);
         }
 
         @media (max-width: 500px) {
@@ -425,7 +421,7 @@ export class FilesUploader extends HTMLElement {
       row.appendChild(cellSize)
     }
 
-    if (cancelAction) cancelBtn.addEventListener("click", cancelAction)
+    if (cancelAction) cancelBtn.onclick = cancelAction
     return row
   }
 
@@ -557,8 +553,8 @@ export class FilesUploader extends HTMLElement {
       const contentHtml = `
         <div style="display:flex; flex-direction:column; width:100%; align-items:flex-start; font-size:.85rem;">
           <div style="display:flex; align-items:center; width:100%;">
-            <div style="display:flex; width:32px; height:32px; justify-content:center; align-items:center; position:relative;">
-              <iron-icon id="_${uuid}-collapse-btn" icon="unfold-less" style="--iron-icon-fill-color:var(--primary-text-color);"></iron-icon>
+            <div style="display:flex; width:32px; height:32px; justify-content:center; align-items:center;">
+              <iron-icon id="_${uuid}-collapse-btn" icon="unfold-less" style="--iron-icon-fill-color:var(--on-surface-color);"></iron-icon>
               <paper-ripple class="circle" recenters></paper-ripple>
             </div>
             <span id="${id}_title" class="file-path" style="flex-grow:1;">${torrent.getName()}</span>

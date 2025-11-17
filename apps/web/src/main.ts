@@ -37,12 +37,15 @@ import { applyTheme, watchSystemTheme } from './theme/theme'
 import { Backend } from "./backend/backend";
 import { getEventClient } from "./backend/event/event"; // your factory for EventServiceClient
 import { getBaseUrl } from "./backend/core/endpoints";
+import { restoreSession, enableVisibilityAutoRefresh } from "./backend/core/auth";
+
+
+//restoreSession();
+//enableVisibilityAutoRefresh(); // optional but nice
 
 // A getter that always reads the *current* token/baseUrl.
 // Works before login (no token) and after login (token set in sessionStorage).
 function currentEventClient() {
-  const base = getBaseUrl();
-  const token = sessionStorage.getItem("__globular_token__") || "";
   return getEventClient(); // build a grpc-web client with creds if token present
 }
 

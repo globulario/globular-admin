@@ -154,7 +154,7 @@ _initializeLayout() {
       }
 
       #close-btn {
-        --iron-icon-fill-color: var(--palette-text-accent, var(--primary-color));
+        --iron-icon-fill-color: var(--on-surface-color, var(--primary-text-color));
         cursor: pointer;
       }
 

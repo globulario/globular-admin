@@ -48,15 +48,16 @@ export function isExpiringSoon(padMs = 60_000): boolean {
 
 // Ensure a fresh token (rpc.unary will call this before each call)
 export async function ensureFreshToken(minTtlMs = 60_000): Promise<void> {
+  
   const t = _token || sessionStorage.getItem(TOKEN_KEY);
   if (!t) return;
   const exp = tokenExpMs();
   if (!exp) return;
   if (Date.now() >= exp - minTtlMs) {
-    //await refresh(); // now coalesced
+   
+    await refresh(); // now safe, no loop
   }
 }
-
 
 function scheduleRefresh(token: string) {
   safeClearTimer();
@@ -98,8 +99,14 @@ export function enableVisibilityAutoRefresh(padMs = 120_000) {
 // ---------------------------------------------------------------------
 export function setToken(t?: string) {
   _token = t;
-  if (t) sessionStorage.setItem(TOKEN_KEY, t);
-  else sessionStorage.removeItem(TOKEN_KEY);
+  safeClearTimer();
+
+  if (t) {
+    sessionStorage.setItem(TOKEN_KEY, t);
+    scheduleRefresh(t);
+  } else {
+    sessionStorage.removeItem(TOKEN_KEY);
+  }
 }
 
 export function getToken() {
@@ -133,29 +140,51 @@ export async function login(username: string, password: string): Promise<string>
 
 // core/auth.ts (add near the top)
 let _refreshInFlight: Promise<string> | undefined;
+function callRefreshToken(
+  rq: authpb.RefreshTokenRqst
+): Promise<authpb.RefreshTokenRsp> {
+  return new Promise((resolve, reject) => {
+    const client = factory();
+    const md = metadata(); // sends Authorization: Bearer <token> if needed
+
+    client.refreshToken(rq, md, (err, rsp) => {
+      if (err) return reject(err);
+      if (!rsp) return reject(new Error("No response from refreshToken"));
+      resolve(rsp);
+    });
+  });
+}
 
 // Replace your refresh() with a coalesced version:
 export async function refresh(): Promise<string> {
-  // if a refresh is already running, just await it
+  // If a refresh is already running, just await it
   if (_refreshInFlight) return _refreshInFlight;
 
   _refreshInFlight = (async () => {
-    const rq = new authpb.RefreshTokenRqst();
     const token = _token || sessionStorage.getItem(TOKEN_KEY);
-    if (!token) { _refreshInFlight = undefined; throw new Error("No refresh token available"); }
-    (rq as any).setToken?.(token);
+    if (!token) {
+      _refreshInFlight = undefined;
+      throw new Error("No refresh token available");
+    }
 
-    const rsp = await unary<
-      authpb.RefreshTokenRqst,
-      authpb.RefreshTokenRsp
-    >(factory, "refreshToken", rq, SERVICE);
+    const rq = new authpb.RefreshTokenRqst();
+    // tolerate different codegen variants
+    (rq as any).setToken?.(token);
+    (rq as any).setTokEn?.(token); // optional if you’ve seen weird casing
+
+    // 🔴 important: call the client directly, not rpc.unary()
+    const rsp = await callRefreshToken(rq);
 
     const next = rsp.getToken();
-    if (!next) { _refreshInFlight = undefined; throw new Error("Refresh returned no token"); }
+    if (!next) {
+      _refreshInFlight = undefined;
+      throw new Error("Refresh returned no token");
+    }
 
     _token = next;
     sessionStorage.setItem(TOKEN_KEY, next);
     scheduleRefresh(next);
+
     _refreshInFlight = undefined;
     return next;
   })();
@@ -167,29 +196,25 @@ export async function refresh(): Promise<string> {
     throw e;
   }
 }
-
 // Explicit “force” refresh (same RPC; just a clearer intent for callers)
 export async function forceRefresh(): Promise<string> {
-  const rsp = await unary<authpb.RefreshTokenRqst, authpb.RefreshTokenRsp>(
-    factory,
-    "refreshToken",
-    (() => {
-      const rq = new authpb.RefreshTokenRqst();
-      const token = _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
-      if (!token) throw new Error("No token available to refresh");
-      rq.setToken(token);
-      return rq;
-    })(),
-    SERVICE
-  );
+  const token = _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
+  if (!token) throw new Error("No token available to refresh");
 
-  const token = rsp.getToken();
-  if (!token) throw new Error("Refresh returned no token");
-  _token = token;
-  sessionStorage.setItem(TOKEN_KEY, token);
-  scheduleRefresh(token);
-  return token;
+  const rq = new authpb.RefreshTokenRqst();
+  (rq as any).setToken?.(token);
+
+  const rsp = await callRefreshToken(rq);
+
+  const next = rsp.getToken();
+  if (!next) throw new Error("Refresh returned no token");
+
+  _token = next;
+  sessionStorage.setItem(TOKEN_KEY, next);
+  scheduleRefresh(next);
+  return next;
 }
+
 
 export function restoreSession() {
   const token = sessionStorage.getItem(TOKEN_KEY);

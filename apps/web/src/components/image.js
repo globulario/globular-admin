@@ -21,9 +21,9 @@ export class ImageCropper extends HTMLElement {
     this.attachShadow({ mode: 'open' });
   }
 
-  get width()  { return this.hasAttribute('width'); }
+  get width() { return this.hasAttribute('width'); }
   get height() { return this.hasAttribute('height'); }
-  get rounded(){ return this.hasAttribute('rounded'); }
+  get rounded() { return this.hasAttribute('rounded'); }
 
   setCropImage(dataUrl) { this.croppedImage = dataUrl; }
 
@@ -325,7 +325,11 @@ export class ImageCropper extends HTMLElement {
     }
 
     if (this.croppedImage != null) {
-      this.shadowRoot.querySelector('.imageCropped').src = this.croppedImage;
+      let src = this.croppedImage
+      let token = sessionStorage.getItem("__globular_token__");
+      const rawUrl = new URL(src);
+      rawUrl.searchParams.set("token", token);
+      this.shadowRoot.querySelector('.imageCropped').src = rawUrl.toString();
     }
 
     this.dragElement(this.shadowRoot.querySelector(".resize-container"));
@@ -438,7 +442,11 @@ export class PanZoomCanvas extends HTMLElement {
     };
 
     if (this.hasAttribute("src")) {
-      this.image.src = this.getAttribute("src");
+      let src = this.getAttribute("src");
+      let token = sessionStorage.getItem("__globular_token__");
+      const rawUrl = new URL(src);
+      rawUrl.searchParams.set("token", token);
+      this.image.src = rawUrl.toString();
     }
 
     // Re-fit on container resize to keep ratio correct.
@@ -944,7 +952,7 @@ export class ImageViewer extends HTMLElement {
     this.shadowRoot.querySelector('#rightA').style.display = 'block';
   }
 
-  redraw(){}
+  redraw() { }
 
   loadImgFrom(ele) {
     const imgs = ele.querySelectorAll('img');
@@ -1003,14 +1011,14 @@ export class ImageViewer extends HTMLElement {
     const metaBar = this.shadowRoot.querySelector('#metaBar');
     const nameSpan = this.shadowRoot.querySelector('#metaName');
     const sizeSpan = this.shadowRoot.querySelector('#metaSize');
-    const dotSpan  = this.shadowRoot.querySelector('#metaDot');
+    const dotSpan = this.shadowRoot.querySelector('#metaDot');
     if (!metaBar || !nameSpan || !sizeSpan || !dotSpan) return;
 
     // prefer data-name, then alt, then src filename
     let base = imgEl.getAttribute('data-name')
-            || imgEl.getAttribute('alt')
-            || imgEl.getAttribute('src')
-            || '';
+      || imgEl.getAttribute('alt')
+      || imgEl.getAttribute('src')
+      || '';
 
     let fileName = base;
     try {
@@ -1188,7 +1196,7 @@ export class ImageSelector extends HTMLElement {
       evt.preventDefault();
       imageCoverDropZone.classList.remove("drag-over");
     };
-    imageCoverDropZone.ondragover   = (evt) => {
+    imageCoverDropZone.ondragover = (evt) => {
       evt.stopPropagation();
       evt.preventDefault();
     };
@@ -1444,9 +1452,9 @@ export class ImageGallery extends HTMLElement {
     this.images = [];
 
     this.leftBtn.ontouchstart = this.leftBtn.onmouseenter = (e) => this.moveLeft(e);
-    this.leftBtn.ontouchend   = this.leftBtn.onmouseleave = (e) => this.stopMovement(e);
+    this.leftBtn.ontouchend = this.leftBtn.onmouseleave = (e) => this.stopMovement(e);
     this.rightBtn.ontouchstart = this.rightBtn.onmouseenter = (e) => this.moveRight(e);
-    this.rightBtn.ontouchend   = this.rightBtn.onmouseleave = (e) => this.stopMovement(e);
+    this.rightBtn.ontouchend = this.rightBtn.onmouseleave = (e) => this.stopMovement(e);
 
     this.closeBtn = this.shadowRoot.querySelector("#close-btn");
     this.closeBtn.onclick = () => {

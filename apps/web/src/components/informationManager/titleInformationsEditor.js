@@ -105,11 +105,11 @@ export class TitleInfoEditor extends HTMLElement {
         .input-field paper-input,.input-field iron-autogrow-textarea{width:100%;}
         .button-cell{display:table-cell;width:48px;vertical-align:middle;}
         .button-cell iron-icon{color:var(--primary-text-color);}
-        .button-cell iron-icon:hover{color:var(--palette-primary-main);cursor:pointer;}
+        .button-cell iron-icon:hover{color:var(--primary-color);cursor:pointer;}
 
         .action-div{display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--palette-divider);padding-top:15px;margin-top:20px;}
-        paper-button{background:var(--palette-primary-main);color:var(--palette-primary-contrast);padding:8px 16px;border-radius:4px;}
-        paper-button:hover{background:var(--palette-primary-dark);}
+        paper-button{background:var(--primary-color);color:var(--on-primary-color);padding:8px 16px;border-radius:4px;}
+        paper-button:hover{background:var(--primary-dark-color);}
         select{background:var(--surface-color);color:var(--primary-text-color);border:1px solid var(--palette-divider);outline:0;padding:8px;border-radius:4px;box-sizing:border-box;}
         select option{background:var(--surface-color);color:var(--primary-text-color);}
 

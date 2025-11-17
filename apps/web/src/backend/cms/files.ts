@@ -569,10 +569,9 @@ export async function removeDir(path: string): Promise<void> {
 
 export async function renameFile(path: string, newName: string, oldName?: string): Promise<void> {
   const md = await meta();
-  const parent = parentOf(path);
   const rq = newRq(SERVICE_METHODS.rename.rq);
-  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(parent || '/'));
-  else rq.path = encodeURI(parent || '/');
+  if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'));
+  else rq.path = encodeURI(path || '/');
   if (typeof rq.setOldName === 'function') rq.setOldName(oldName ?? basename(path));
   else rq.oldName = oldName ?? basename(path);
   if (typeof rq.setNewName === 'function') rq.setNewName(newName);
@@ -580,8 +579,8 @@ export async function renameFile(path: string, newName: string, oldName?: string
   const method = pickMethod(clientFactory(), SERVICE_METHODS.rename.method);
   await unary(clientFactory, method, rq, undefined, md);
   if (CACHE_ENABLED && _cache) {
-    const oldParent = parent;
-    const newPath = parent + '/' + newName;
+    const oldParent = path;
+    const newPath = path + '/' + newName;
     const newParent = parentOf(newPath);
     _cache.invalidate(oldParent);
     _cache.invalidate(newParent);

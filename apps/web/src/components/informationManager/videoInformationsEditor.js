@@ -108,8 +108,8 @@ export class VideoInfoEditor extends HTMLElement {
         .button-cell iron-icon { color:var(--primary-text-color); }
         .button-cell iron-icon:hover { color:var(--primary-color); cursor:pointer; }
         .action-div { display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--palette-divider); padding-top:15px; margin-top:20px; }
-        paper-button { background-color:var(--palette-primary-main); color:var(--palette-primary-contrast); padding:8px 16px; border-radius:4px; }
-        paper-button:hover { background-color:var(--palette-primary-dark); }
+        paper-button { background-color:var(--primary-color); color:var(--on-primary-color); padding:8px 16px; border-radius:4px; }
+        paper-button:hover { background-color:var(--primary-dark-color); }
         .person-section-header { display:table-row; border-bottom:1px solid var(--palette-divider); margin-bottom:10px; }
         .person-section-header .label { font-weight:500; font-size:1.1rem; padding-bottom:8px; }
         .person-section-header .button-cell { position:relative; }

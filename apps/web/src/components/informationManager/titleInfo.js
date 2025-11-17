@@ -311,7 +311,7 @@ const TITLE_INFO_GLOBAL_STYLE = `
   margin-right: 5px;
   user-select: none;
   border-radius: 4px;
-  background-color: var(--palette-background-dark);
+  background-color: var(--surface-color-dark, var(--surface-elevated-color));
 }
 
 .rating-star {
@@ -324,7 +324,7 @@ const TITLE_INFO_GLOBAL_STYLE = `
 .title-rating-div {
   display: flex;
   align-items: center;
-  color: var(--palette-text-secondary);
+  color: var(--secondary-text-color);
   font-size: 1rem;
   margin-top: 10px;
 }
@@ -433,17 +433,20 @@ const TITLE_INFO_GLOBAL_STYLE = `
 .episode-small-div:hover { box-shadow: var(--shadow-elevation-4dp); cursor: pointer; }
 .episode-small-div img { width: 100%; height: 132px; object-fit: cover; display: block; }
 .episode-number-badge {
-  position: absolute; top: 8px; right: 8px; background-color: rgba(0,0,0,0.7);
-  color: lightgray; font-weight: 600; font-size: 1.1rem; padding: 4px 8px; border-radius: 4px;
+  position: absolute; top: 8px; right: 8px;
+  background-color: color-mix(in srgb, var(--surface-color-dark, #000) 90%, transparent);
+  color: var(--on-primary-color);
+  font-weight: 600; font-size: 1.1rem; padding: 4px 8px; border-radius: 4px;
 }
 .play-episode-button {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  color: rgb(0, 179, 255); font-size: 48px; opacity: 0; transition: opacity 0.2s ease;
+  color: var(--primary-light-color, rgb(0, 179, 255)); font-size: 48px; opacity: 0; transition: opacity 0.2s ease;
 }
 .episode-small-div:hover .play-episode-button { opacity: 1; }
 .slide-on-panel {
-  color: white; position: absolute; bottom: 0; left: 0; right: 0;
-  background: rgba(0,0,0,.8); padding: 8px; border-top: 1px solid rgba(0,0,0,.6);
+  color: var(--on-primary-color); position: absolute; bottom: 0; left: 0; right: 0;
+  background: color-mix(in srgb, var(--surface-color-dark, #000) 85%, transparent); padding: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--surface-color-dark, #000) 70%, transparent);
   display: flex; align-items: center; transform: translateY(100%); transition: transform 0.3s ease;
 }
 .episode-small-div:hover .slide-on-panel { transform: translateY(0); }

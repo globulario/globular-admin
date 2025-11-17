@@ -614,7 +614,7 @@ export class FileExplorer extends HTMLElement {
             top: 50px;
             z-index: 100;
             background-color: var(--surface-color);
-            color: var(--primary-text-color);
+            color: var(--on-surface-color);
             box-shadow: var(--shadow-elevation-2dp);
             border-radius: 8px;
             overflow: hidden;
@@ -625,16 +625,16 @@ export class FileExplorer extends HTMLElement {
             justify-content: flex-end;
             display: flex;
             background-color: var(--surface-color);
-            color: var(--primary-text-color);
+            color: var(--on-surface-color);
             padding: 8px;
             border-top: 1px solid var(--palette-divider);
           }
           .card-content { padding: 16px; }
           paper-input {
-            --paper-input-container-color: var(--primary-text-color);
-            --paper-input-container-focus-color: var(--primary-color);
-            --paper-input-container-label-floating-color: var(--primary-color);
-            --paper-input-container-input-color: var(--primary-text-color);
+            --paper-input-container-color: var(--on-surface-color);
+            --paper-input-container-focus-color: var(--on-surface-color);
+            --paper-input-container-label-floating-color: var(--on-surface-color);
+            --paper-input-container-input-color: var(--on-surface-color);
           }
         </style>
         <paper-card id="${dialogId}">

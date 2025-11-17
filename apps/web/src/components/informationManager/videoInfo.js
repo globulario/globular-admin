@@ -16,9 +16,9 @@ const VIDEO_INFO_GLOBAL_STYLE = `
 .title-poster-div { padding-right:20px; }
 .title-informations-div { font-size:1em; min-width:350px; max-width:450px; }
 .title-poster-div img { max-width:320px; max-height:350px; object-fit:cover; width:auto; height:auto; }
-.title-genre-span { border:1px solid var(--palette-divider); padding:1px 5px; margin-right:5px; user-select:none; border-radius:4px; background-color:var(--palette-background-dark); }
+.title-genre-span { border:1px solid var(--palette-divider); padding:1px 5px; margin-right:5px; user-select:none; border-radius:4px; background-color:var(--surface-color-dark, var(--surface-elevated-color)); }
 .rating-star { --iron-icon-fill-color: rgb(245 197 24); padding-right:10px; height:30px; width:30px; }
-.title-rating-div { display:flex; align-items:center; color:var(--palette-text-secondary); font-size:1rem; margin-top:10px; }
+.title-rating-div { display:flex; align-items:center; color:var(--secondary-text-color); font-size:1rem; margin-top:10px; }
 #rating-span { font-weight:600; font-size:1.2rem; color:var(--primary-text-color); user-select:none; }
 .title-genres-div { padding:5px; display:flex; flex-wrap:wrap; font-size:.9rem; gap:5px; }
 .title-credit { flex-grow:1; color:var(--primary-text-color); border-bottom:1px solid var(--palette-divider); width:100%; margin-bottom:10px; padding-bottom:5px; }
@@ -87,8 +87,8 @@ export class VideoInfo extends HTMLElement {
         ${VIDEO_INFO_GLOBAL_STYLE}
         .title-div { color:var(--primary-text-color); user-select:none; }
         .action-div { display:flex; justify-content:flex-end; gap:10px; padding-top:15px; border-top:1px solid var(--palette-divider); margin-top:15px; }
-        paper-button { background-color:var(--palette-primary-main); color:var(--palette-primary-contrast); padding:8px 16px; border-radius:4px; }
-        paper-button:hover { background-color:var(--palette-primary-dark); }
+        paper-button { background-color:var(--primary-color); color:var(--on-primary-color); padding:8px 16px; border-radius:4px; }
+        paper-button:hover { background-color:var(--primary-dark-color); }
         @media only screen and (max-width: 600px) {
           .title-div { flex-direction:column; max-height:calc(100vh - 300px); overflow-y:auto; overflow-x:hidden; }
           .title-poster-img { max-width:256px; max-height:256px; }

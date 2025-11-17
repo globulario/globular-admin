@@ -55,6 +55,7 @@ import "@polymer/paper-progress/paper-progress.js";
 import "@polymer/paper-card/paper-card.js";
 
 import { FileExplorer } from "./fileExplorer.js";
+import { get } from "@polymer/polymer/lib/utils/path";
 
 // ---- helpers to build HTTP file URL (replaces getUrl(globule)) ----
 function buildFileHttpUrl(path, isHls) {
@@ -410,6 +411,9 @@ export class FilesView extends HTMLElement {
     // Hide the menu’s own trigger button; we open programmatically
     menu.hideBtn?.();
 
+    // Keep the coords for reference
+    menu.reference_element = highlightEl;
+
     // Compute coordinates
     const rect = anchor.getBoundingClientRect();
     const x = (rect.left || 0) + rect.width;
@@ -483,8 +487,10 @@ export class FilesView extends HTMLElement {
     this._renameMenuItem.action = () => {
       const file = this._contextMenu.file;
       if (!file) return;
-      const coords = getCoords(document.body);
-      this.rename(document.body, file, coords.top + 60);
+      let coords = getCoords(this._contextMenu.reference_element);
+      //coords.left += this._contextMenu.reference_element.offsetWidth;
+      coords.top += this._contextMenu.reference_element.offsetHeight / 2;
+      this.rename(document.body, file, coords);
       this._closeContextMenu();
     };
 
@@ -1087,7 +1093,7 @@ export class FilesView extends HTMLElement {
   }
 
   // ---------- Rename dialog ----------
-  async rename(parent, file, offsetPx = 80) {
+  async rename(parent, file, rect) {
     const currentName = nameOf(file);
     const parentPath = (pathOf(file) || "").substring(0, pathOf(file).lastIndexOf("/")) || "/";
 
@@ -1097,6 +1103,7 @@ export class FilesView extends HTMLElement {
           display:flex;position:absolute;flex-direction:column;left:5px;min-width:260px;
           z-index:100;background:var(--surface-color);color:var(--primary-text-color);
           box-shadow:var(--shadow-elevation-2dp);border-radius:8px;overflow:hidden;
+          border:1px solid var(--palette-divider);
         }
         .rename-file-dialog-actions{
           font-size:.85rem;align-items:center;justify-content:flex-end;display:flex;
@@ -1104,7 +1111,7 @@ export class FilesView extends HTMLElement {
         }
         .card-content{padding:16px;}
       </style>
-      <paper-card id="rename-file-dialog" style="top:${offsetPx}px;">
+      <paper-card id="rename-file-dialog">
         <div class="card-content">
           <paper-input id="rename-file-input" label="New name" value="${currentName}"></paper-input>
         </div>
@@ -1115,6 +1122,7 @@ export class FilesView extends HTMLElement {
       </paper-card>
     `;
 
+
     let dlg = document.body.querySelector("#rename-file-dialog");
     if (!dlg) {
       const range = document.createRange();
@@ -1122,9 +1130,13 @@ export class FilesView extends HTMLElement {
       dlg = document.body.querySelector("#rename-file-dialog");
       dlg.addEventListener("mouseover", (e) => e.stopPropagation());
       dlg.addEventListener("mouseenter", (e) => e.stopPropagation());
-    } else {
-      dlg.style.top = `${offsetPx}px`;
     }
+
+
+    const left = (rect.left || 0) + 5;
+    const top = (rect.top || 0) + 5;
+    dlg.style.left = `${left}px`;
+    dlg.style.top = `${top}px`;
 
     const input = dlg.querySelector("#rename-file-input");
     setTimeout(() => {
@@ -1156,7 +1168,7 @@ export class FilesView extends HTMLElement {
       if (!newName || newName === currentName) return;
 
       try {
-        await renameFile({ dirPath: parentPath, oldName: currentName, newName });
+        await renameFile(parentPath, newName, currentName);
         displayMessage(`Renamed ${currentName} to ${newName}`, 2500);
         Backend.eventHub.publish("reload_dir_event", parentPath, false);
       } catch (err) {
@@ -1301,7 +1313,7 @@ export class FilesView extends HTMLElement {
         true
       );
       displayMessage(`Uploading ${files.length} file(s)...`, 2500);
-      await uploadFilesHttp({ destPath: destDir, files });
+      await uploadFilesHttp(destDir, files );
     } catch (err) {
       displayError(`Failed to upload files: ${err?.message || err}`, 3000);
     }

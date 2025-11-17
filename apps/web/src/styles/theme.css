@@ -6,6 +6,7 @@
   --on-surface-color: #1d2025;
   --primary-color: #3b82f6;
   --primary-text-color: #1d2025;
+  --secondary-text-color: color-mix(in srgb, var(--on-surface-color) 70%, transparent);
   --on-primary-color: #ffffff;
 
   /* NEW: shared helpers */
@@ -15,6 +16,21 @@
 
   --primary-light-color: color-mix(in srgb, var(--primary-color) 80%, #ffffff 20%);
   --primary-dark-color: color-mix(in srgb, var(--primary-color) 80%, #000000 20%);
+
+  --surface-color-dark: color-mix(in srgb, var(--surface-color) 92%, #000 8%);
+  --palette-background-dark: color-mix(in srgb, var(--surface-color) 85%, #000 15%);
+  --palette-background-paper: var(--surface-elevated-color);
+
+  --palette-primary: var(--primary-color);
+  --palette-primary-main: var(--primary-color);
+  --palette-primary-light: var(--primary-light-color);
+  --palette-primary-dark: var(--primary-dark-color);
+  --palette-primary-contrast: var(--on-primary-color);
+  --palette-primary-accent: color-mix(in srgb, var(--primary-color) 92%, var(--on-primary-color) 8%);
+
+  --palette-text-primary: var(--primary-text-color);
+  --palette-text-secondary: var(--secondary-text-color);
+  --palette-text-accent: color-mix(in srgb, var(--on-surface-color) 85%, transparent);
 
   --error-color: #ef4444;
   --success-color: #10b981;
@@ -41,6 +57,8 @@
   --surface-elevated-color: #1f252f;
   /* slightly brighter for dialogs/dockbar */
   --on-surface-color: #e5e7eb;
+  --primary-text-color: var(--on-surface-color);
+  --secondary-text-color: color-mix(in srgb, var(--on-surface-color) 65%, transparent);
 
   /* header is slightly lighter than primary-color */
   --primary-color: #1f1e1e;
@@ -58,7 +76,15 @@
 
   --palette-action-active: rgba(255, 255, 255, 0.95);
   --palette-action-disabled: rgba(255, 255, 255, 0.25);
-  --palette-divider: rgba(255, 255, 255, 0.12);
+  --palette-divider: rgb(83, 83, 83);
+  --surface-color-dark: color-mix(in srgb, var(--surface-color) 70%, #000 30%);
+  --palette-background-dark: color-mix(in srgb, var(--surface-elevated-color) 75%, #000 25%);
+  --palette-background-paper: var(--surface-elevated-color);
+  --palette-primary-accent: color-mix(in srgb, var(--primary-color) 85%, var(--on-surface-color) 15%);
+
+  --palette-text-primary: var(--primary-text-color);
+  --palette-text-secondary: var(--secondary-text-color);
+  --palette-text-accent: color-mix(in srgb, var(--on-surface-color) 90%, transparent);
 
   /* stronger border in dark so edges are visible */
   --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 18%, transparent);

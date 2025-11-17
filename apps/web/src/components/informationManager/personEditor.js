@@ -98,8 +98,8 @@ export class PersonEditor extends HTMLElement {
         .button-cell iron-icon { color:var(--primary-text-color); }
         .button-cell iron-icon:hover { color:var(--primary-color); cursor:pointer; }
         .action-buttons-bottom { display:flex; justify-content:flex-end; gap:10px; padding-top:15px; }
-        paper-button { background-color:var(--palette-primary-main); color:var(--palette-primary-contrast); padding:8px 16px; border-radius:4px; }
-        paper-button:hover { background-color:var(--palette-primary-dark); }
+        paper-button { background-color:var(--primary-color); color:var(--on-primary-color); padding:8px 16px; border-radius:4px; }
+        paper-button:hover { background-color:var(--primary-dark-color); }
       </style>
 
       <div id="container">

@@ -94,7 +94,7 @@ export class BlogPostInfo extends HTMLElement {
             transition: box-shadow .2s ease, transform .2s ease;
           }
           .blog-post-card:hover { box-shadow: var(--shadow-elevation-6dp); transform: translateY(-2px); cursor: pointer; }
-          .image-box { position: relative; width: 100%; height: 50%; overflow: hidden; background: #0002; }
+          .image-box { position: relative; width: 100%; height: 50%; overflow: hidden; background: var(--surface-color-dark, rgba(0,0,0,0.12)); }
           .image-box img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; display:${thumbnail ? "block" : "none"}; }
           .blog-post-card:hover .image-box img { transform: scale(1.05); }
           .text-content { display: flex; flex-direction: column; padding: 10px; flex: 1; justify-content: space-between; }
