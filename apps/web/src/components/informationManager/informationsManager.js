@@ -338,6 +338,7 @@ export class InformationsManager extends HTMLElement {
     const cmp = new FileInfo();
     cmp.file = file;
     const id = file.getPath ? file.getPath() : name; // path is unique; use as id for delete match
+    this.path = id; // expose path for external reference
     this._appendInfo(cmp, file, id);
   }
 

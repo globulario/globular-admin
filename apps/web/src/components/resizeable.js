@@ -35,6 +35,40 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
   const cssMaxW = parseInt(getComputedStyle(div).maxWidth || '', 10);
   const maxWidth = Number(div.maxWidth) || (Number.isFinite(cssMaxW) ? cssMaxW : 0); // 0 means "no max"
 
+  const getParentRect = () => {
+    const parent = div.offsetParent || div.parentElement || document.documentElement;
+    if (!parent || parent === document.documentElement || parent === document.body) {
+      return { left: 0, top: 0, width: document.documentElement.clientWidth || window.innerWidth, height: document.documentElement.clientHeight || window.innerHeight };
+    }
+    const rect = parent.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  };
+
+  const clampToParentBounds = () => {
+    const parentRect = getParentRect();
+    if (!parentRect) return;
+    const rect = div.getBoundingClientRect();
+
+    let newWidth = rect.width;
+    let newHeight = rect.height;
+    let newLeft = rect.left - parentRect.left;
+    let newTop = rect.top - parentRect.top;
+
+    const maxAllowedWidth = parentRect.width;
+    const maxAllowedHeight = parentRect.height;
+
+    newWidth = Math.min(Math.max(newWidth, minWidth), maxAllowedWidth);
+    newHeight = Math.min(Math.max(newHeight, minHeight), maxAllowedHeight);
+
+    newLeft = Math.min(Math.max(newLeft, 0), Math.max(parentRect.width - newWidth, 0));
+    newTop = Math.min(Math.max(newTop, 0), Math.max(parentRect.height - newHeight, 0));
+
+    div.style.width = `${newWidth}px`;
+    div.style.height = `${newHeight}px`;
+    div.style.left = `${newLeft}px`;
+    div.style.top = `${newTop}px`;
+  };
+
   let isResizingWidth = false;
   let isResizingHeight = false;
 
@@ -48,6 +82,7 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
       div.style.height = 'auto';
     }
 
+    clampToParentBounds();
     if (name) {
       localStorage.setItem(
         `__${name}_dimension__`,
@@ -72,6 +107,7 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
       div.style.width = `${maxWidth}px`;
     }
   }
+  clampToParentBounds();
 
   // ---------- 3) Create resize handles ----------
   const createHandle = (id, styles, cursor) => {
@@ -157,9 +193,13 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
     let newHeight = div.offsetHeight;
 
     if (isResizingWidth) {
+      const parentRectClamp = getParentRect();
+      const rect = div.getBoundingClientRect();
       if (side === 'right') {
         // Expand/shrink to the right edge
         newWidth = clientX - leftPage;
+        const rightSpace = parentRectClamp.width - Math.max(rect.left - parentRectClamp.left, 0);
+        newWidth = Math.min(newWidth, rightSpace);
       } else {
         // Expand/shrink from the left edge: keep right edge fixed.
         const rightPx = rect.right;
@@ -167,7 +207,8 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
 
         // Move the left edge to follow the pointer so the right edge stays in place.
         const newLeft = Math.round(clientX - parentRect.left);
-        div.style.left = `${newLeft}px`;
+        const clampedLeft = Math.min(Math.max(newLeft, 0), Math.max(parentRectClamp.width - newWidth, 0));
+        div.style.left = `${clampedLeft}px`;
       }
       newWidth = Math.max(newWidth, minWidth);
       if (maxWidth > 0) newWidth = Math.min(newWidth, maxWidth);
@@ -175,11 +216,15 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
     }
 
     if (isResizingHeight) {
+      const parentRectClamp = getParentRect();
       newHeight = clientY - topPage - headerHeight;
+      const bottomSpace = parentRectClamp.height - Math.max(div.getBoundingClientRect().top - parentRectClamp.top, 0) - headerHeight;
+      newHeight = Math.min(newHeight, bottomSpace);
       newHeight = Math.max(newHeight, minHeight);
       div.style.height = `${newHeight}px`;
     }
 
+    clampToParentBounds();
     onresize?.(div.offsetWidth, div.offsetHeight);
     fireResize();
   };

@@ -75,10 +75,8 @@ export class PermissionsManager extends HTMLElement {
 
   // ---------------- Public API ----------------
   set path(path) {
-    if (this._path !== path) {
-      this._path = path
-      this._fetchAndSetPermissions(path)
-    }
+    this._path = path
+    this._fetchAndSetPermissions(path)
   }
   get path() { return this._path }
 
@@ -110,10 +108,34 @@ export class PermissionsManager extends HTMLElement {
   _renderInitialStructure() {
     this.shadowRoot.innerHTML = `
       <style>
+        :host {
+          display: block;
+          width: 100%;
+          height: 100%;
+          overflow-y: auto;
+          background: var(--surface-color);
+          color: var(--primary-text-color);
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+                          var(--scroll-track, var(--surface-color));
+        }
+
+        /* Chrome/WebKit scrollbars */
+        :host::-webkit-scrollbar {
+          width: 10px;
+        }
+        :host::-webkit-scrollbar-track {
+          background: var(--scroll-track, var(--surface-color));
+        }
+        :host::-webkit-scrollbar-thumb {
+          background: var(--scroll-thumb, var(--palette-divider));
+          border-radius: 6px;
+        }
+
         #container {
           display: flex; flex-direction: column; padding: 8px;
           background-color: var(--surface-color); color: var(--primary-text-color);
-          user-select: none; max-height: calc(100vh - 80px); overflow-y: auto;
+          user-select: none;
         }
         #header {
           display:flex; align-items:center; padding-bottom:10px;

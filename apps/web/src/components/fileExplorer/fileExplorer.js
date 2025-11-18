@@ -461,11 +461,15 @@ export class FileExplorer extends HTMLElement {
 
     this._permissionManager.onclose = () => {
       this._permissionManager.style.display = "none";
+      this._permissionManager.path = null;
       this._displayView(this._currentDir);
       return false;
     };
     // ensure closing the info manager restores the file view
-    this._informationManager.onclose = () => this._displayView(this._currentDir);
+    this._informationManager.onclose = () =>{ 
+      this._informationManager.path = null;
+        this._displayView(this._currentDir)
+      };
 
     this._sharePanel = null;
   }
@@ -612,6 +616,18 @@ export class FileExplorer extends HTMLElement {
               Backend.eventHub.publish("__set_dir_event__", { dir: adapted, file_explorer_id: explorerId }, true);
             }
             this._diskSpaceManager?.refresh?.();
+            if (this._permissionManager?.path) {
+              const currentPermissionPath = this._permissionManager.path;
+              this._permissionManager._path = undefined;
+              this._permissionManager.path = currentPermissionPath;
+              this._permissionManager.style.display = "";
+            }
+            if (this._informationManager?.path) {
+              const currentInfoPath = this._informationManager.path;
+              this._informationManager._path = undefined;
+              this._informationManager.path = currentInfoPath;
+              this._informationManager.style.display = "";
+            }
           } catch (err) {
             displayError(`Failed to reload directory ${path}: ${err.message}`, 3000);
           } finally {
@@ -1224,8 +1240,7 @@ export class FileExplorer extends HTMLElement {
 
     this._imageViewer.onclose = () => this._displayView(this._currentDir);
     this._fileReader.onclose = () => this._displayView(this._currentDir);
-    this._informationManager.onclose = () => this._displayView(this._currentDir);
-
+ 
     this._updateNavigationButtonStates();
     this._updateNavigationListMenu(dir);
   }
@@ -1592,9 +1607,6 @@ export class FileExplorer extends HTMLElement {
     this._hideAllViewsExcept(this._informationManager);
     this._closeAllGlobalMenus();
     this._informationManager.style.display = "";
-
-    // Ensure close always returns to file view
-    this._informationManager.onclose = () => this._displayView(this._currentDir);
 
     // Rewire delete subscription safely (avoid stacking from previous opens)
     this._unsubscribeInfoDelete();

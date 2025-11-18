@@ -170,7 +170,7 @@ export class FileIconView extends HTMLElement {
         max-width: 100%;
         margin: 6px auto 0 auto;
         text-align: center;
-        font-size: .85rem;
+        font-size: .75rem;
         line-height: 1.1em;
 
         /* wrapping rules to handle hashes/long tokens */
