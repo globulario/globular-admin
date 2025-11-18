@@ -323,15 +323,15 @@ export class FileExplorer extends HTMLElement {
               <globular-selectionbar id="selection-bar"></globular-selectionbar>
             </div>
             <slot></slot>
-            <div id="progress-div">
-              <span id="progress-message">Loading...</span>
-              <paper-progress id="globular-dir-loading-progress-bar" indeterminate></paper-progress>
-            </div>
           </globular-split-pane>
         </globular-split-view>
       </div>
 
       <div class="card-actions footer">
+        <div id="progress-div">
+            <span id="progress-message">Loading...</span>
+            <paper-progress id="globular-dir-loading-progress-bar" indeterminate></paper-progress>
+        </div>
         <span id="active-directory" style="display:none;"></span>
         <globular-disk-space-manager account="sa@localhost" style="display: none;"></globular-disk-space-manager>
         <span style="flex-grow: 1;"></span>
@@ -1372,7 +1372,7 @@ export class FileExplorer extends HTMLElement {
 
   displayWaitMessage(message) {
     if (this._progressDiv) {
-      this._progressDiv.style.display = "block";
+      this._progressDiv.style.display = "flex";
       const messageDiv = this._progressDiv.querySelector("#progress-message");
       messageDiv.innerHTML = message;
     }
