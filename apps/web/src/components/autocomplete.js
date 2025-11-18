@@ -264,9 +264,7 @@ export class Autocomplete extends HTMLElement {
 
     async _fetchAndDisplaySuggestions(inputValue) {
         if (!this._getValues) {
-            console.warn("Autocomplete: 'getValues' function is not set.");
-            this.setValues([]); // Clear suggestions
-            return;
+            return; // allow manual integrations to drive suggestions
         }
 
         if (inputValue.length === 0) {
@@ -347,12 +345,18 @@ export class Autocomplete extends HTMLElement {
         return this._inputElement ? this._inputElement.value : '';
     }
 
-    /** Clears the input and suggestions. */
-    clear() {
-        if (this._inputElement) this._inputElement.value = '';
+    /** Clears the suggestions but keeps current input value. */
+    clearSuggestions() {
+        if (!this._valuesDiv) return;
         if (this._valuesDiv) this._valuesDiv.innerHTML = "";
         this._valuesDiv.style.display = 'none';
         this._highlightedIndex = -1;
+    }
+
+    /** Clears the input and suggestions. */
+    clear() {
+        if (this._inputElement) this._inputElement.value = '';
+        this.clearSuggestions();
     }
 }
 

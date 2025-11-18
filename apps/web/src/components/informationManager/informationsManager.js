@@ -78,18 +78,36 @@ export class InformationsManager extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
 
+        :host {
+          display: block;
+          width: 100%;
+          height: 100%;
+          overflow-y: auto;
+          background: var(--surface-color);
+          color: var(--primary-text-color);
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+                          var(--scroll-track, var(--surface-color));
+        }
+
+        /* Chrome/WebKit */
+        :host::-webkit-scrollbar {
+          width: 10px;
+        }
+        :host::-webkit-scrollbar-track {
+          background: var(--scroll-track, var(--surface-color));
+        }
+        :host::-webkit-scrollbar-thumb {
+          background: var(--scroll-thumb, var(--palette-divider));
+          border-radius: 6px;
+        }
 
         #container {
-          ::-webkit-scrollbar { width: 5px; height: 5px; }
-          ::-webkit-scrollbar-track { background: var(--surface-color); }
-          ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
           display: flex; flex-direction: column;
           padding: 8px; z-index: 100;
           background: var(--surface-elevated-color, var(--surface-color));
           color: var(--primary-text-color);
           font-size: 1rem; user-select: none;
-          max-height: calc(100vh - 100px);
-          overflow: hidden;
         }
         #header {
           display: flex; align-items: center;

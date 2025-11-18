@@ -259,6 +259,10 @@ export class FilesListView extends FilesView {
     t.addEventListener("dragover", this._handleTableDragOver.bind(this));
     t.addEventListener("mouseover", this._handleTableMouseOver.bind(this));
     t.addEventListener("mouseout", this._handleTableMouseOut.bind(this));
+
+    // host-level drag & drop so empty areas still accept drops
+    this.addEventListener("dragover", this._handleHostDragOver.bind(this));
+    this.addEventListener("drop", this._handleHostDrop.bind(this));
   }
 
   /** Render a directory */
@@ -520,14 +524,34 @@ export class FilesListView extends FilesView {
 
   // Background table drop → let FilesView decide (URL / OS files / internal)
   _handleTableDrop(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
     this.handleDropEvent(evt); // FilesView implementation
   }
 
   _handleTableDragOver(evt) {
     evt.preventDefault();
+    evt.stopPropagation();
     if (evt.dataTransfer) {
       evt.dataTransfer.dropEffect = (evt.ctrlKey || evt.metaKey) ? "copy" : "move";
     }
+  }
+  
+  _handleHostDragOver(evt) {
+    const path = evt.composedPath?.() || [];
+    if (path.includes(this._domRefs?.tableElement)) return;
+    evt.preventDefault();
+    if (evt.dataTransfer) {
+      evt.dataTransfer.dropEffect = (evt.ctrlKey || evt.metaKey) ? "copy" : "move";
+    }
+  }
+
+  _handleHostDrop(evt) {
+    const path = evt.composedPath?.() || [];
+    if (path.includes(this._domRefs?.tableElement)) return;
+    evt.preventDefault();
+    evt.stopPropagation();
+    this.handleDropEvent(evt);
   }
 
   // ---- Row-level drag helpers ----

@@ -221,7 +221,9 @@ export class SearchTitleCard extends HTMLElement {
         .back { transform: rotateY(180deg); }
         .series-info {
           display:flex; flex-direction:column; align-items:flex-start; position:absolute; bottom:0; left:0; right:0;
-          background-color: rgba(0,0,0,.7); color:#fff; padding:10px; user-select:none;
+          background: color-mix(in srgb, var(--surface-color-dark, #000) 85%, transparent);
+          color: var(--on-primary-color);
+          padding:10px; user-select:none;
         }
         .series-info span { width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
         #hit-div-mosaic-series-name { font-size:1.4em; font-weight:bold; }
@@ -361,9 +363,16 @@ export class SearchTitleDetail extends HTMLElement {
         .season-episodes-lst {
           display:flex; flex-direction:column; width:100%; flex-grow:1; overflow-y:auto;
         }
-        .season-episodes-lst::-webkit-scrollbar { width:5px; height:5px; }
-        .season-episodes-lst::-webkit-scrollbar-track { background: var(--surface-color); }
-        .season-episodes-lst::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+        .season-episodes-lst::-webkit-scrollbar {
+          width: 10px;
+        }
+        .season-episodes-lst::-webkit-scrollbar-track {
+          background: var(--scroll-track, var(--surface-color));
+        }
+        .season-episodes-lst::-webkit-scrollbar-thumb {
+          background: var(--scroll-thumb, var(--palette-divider));
+          border-radius: 6px;
+        }
         #loading-episodes-infos { display:flex; flex-direction:column; width:100%; padding:20px; align-items:center; text-align:center; gap:10px; }
         #loading-episodes-infos span { color: var(--secondary-text-color); }
         #episodes-select-div {

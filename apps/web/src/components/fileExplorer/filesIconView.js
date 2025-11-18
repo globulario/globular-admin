@@ -84,6 +84,10 @@ export class FilesIconView extends FilesView {
     this.container.addEventListener("dragover", this._handleContainerDragOver.bind(this));
     this.container.addEventListener("dragenter", (e) => { e.preventDefault(); });
     this.container.addEventListener("dragleave", (/*e*/) => { });
+
+    // fallback for empty-state: allow dropping anywhere inside host
+    this.addEventListener("dragover", this._handleHostDragOver.bind(this));
+    this.addEventListener("drop", this._handleHostDrop.bind(this));
   }
 
   /* ---------- Active state ---------- */
@@ -153,6 +157,23 @@ export class FilesIconView extends FilesView {
     if (this._fileExplorer?.setAtTop) {
       this._fileExplorer.setAtTop();
     }
+  }
+
+  _handleHostDragOver(evt) {
+    const path = evt.composedPath?.() || [];
+    if (path.includes(this.container)) return;
+    evt.preventDefault();
+    if (evt.dataTransfer) {
+      evt.dataTransfer.dropEffect = (evt.ctrlKey || evt.metaKey) ? "copy" : "move";
+    }
+  }
+
+  _handleHostDrop(evt) {
+    const path = evt.composedPath?.() || [];
+    if (path.includes(this.container)) return;
+    evt.preventDefault();
+    evt.stopPropagation();
+    this.handleDropEvent(evt);
   }
 
   /* ---------- Rendering ---------- */

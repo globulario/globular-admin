@@ -39,20 +39,31 @@ export class SplitView extends HTMLElement {
                     overflow: auto;
                 }
                 ::-webkit-scrollbar {
-                    width: 5px;
-                    height: 5px;
+                    width: 10px;
                 }
                 ::-webkit-scrollbar-track {
-                    background: var(--surface-color);
+                    background: var(--scroll-track, var(--surface-color));
                 }
                 ::-webkit-scrollbar-thumb {
-                    background: var(--palette-divider);
+                    background: var(--scroll-thumb, var(--palette-divider));
+                    border-radius: 6px;
                 }
             </style>
             <div class="splitter">
                 <slot></slot>
             </div>
         `;
+    }
+
+    #extractFixedBasis(pane) {
+        const prop = this.#isVertical ? "height" : "width";
+        const raw = pane?.style?.[prop];
+        if (!raw) return null;
+        const value = raw.trim();
+        if (/^-?\d+(\.\d+)?(px|rem|em|vh|vw|vmin|vmax|ch)$/.test(value)) {
+            return value;
+        }
+        return null;
     }
 
     /**
@@ -112,9 +123,8 @@ export class SplitView extends HTMLElement {
             } else {
                 slider.setHorizontal();
             }
-            const basisProp = this.#isVertical ? "height" : "width";
-            const pane1Basis = pane1.style[basisProp];
-            const pane2Basis = pane2.style[basisProp];
+            const pane1Basis = this.#extractFixedBasis(pane1);
+            const pane2Basis = this.#extractFixedBasis(pane2);
             if (!pane1.style.flex) pane1.style.flex = pane1Basis ? `0 0 ${pane1Basis}` : "1 1 0";
             if (!pane2.style.flex) pane2.style.flex = pane2Basis ? `0 0 ${pane2Basis}` : "1 1 0";
             this.#splitters.push(slider);
@@ -206,7 +216,7 @@ export class SplitSlider extends HTMLElement {
                 .collapse-btn {
                     position: absolute;
                     top: 50%;
-                    left: 50%;
+                    left: 0%;
                     transform: translate(-50%, -50%);
                     width: 20px;
                     height: 20px;
@@ -223,7 +233,7 @@ export class SplitSlider extends HTMLElement {
                 }
             </style>
             <div class="slider horizontal-slider">
-                <button class="collapse-btn" title="Toggle left pane"></button>
+                <button class="collapse-btn" title="Toggle left pane" style="z-index: 10000;"></button>
             </div>
         `;
 
@@ -355,8 +365,28 @@ export class SplitSlider extends HTMLElement {
         if (!pane) return;
         const sibling = this.#panes[1];
         const safeSize = Math.max(0, size);
-        pane.style.flex = `0 0 ${safeSize}px`;
-        if (sibling) sibling.style.flex = "1 1 0";
+
+        pane.style.transition = "flex-basis 200ms ease, width 200ms ease, height 200ms ease";
+        requestAnimationFrame(() => {
+            pane.style.flex = `0 0 ${safeSize}px`;
+            if (this.#isVertical) {
+                pane.style.height = `${safeSize}px`;
+                pane.style.width = "";
+            } else {
+                pane.style.width = `${safeSize}px`;
+                pane.style.height = "";
+            }
+        });
+        clearTimeout(pane._splitAnimationTimeout);
+        pane._splitAnimationTimeout = setTimeout(() => {
+            pane.style.transition = "";
+        }, 220);
+
+        if (sibling) {
+            sibling.style.flex = "1 1 0";
+            sibling.style.width = "";
+            sibling.style.height = "";
+        }
     }
 
     #toggleCollapse() {
@@ -367,11 +397,13 @@ export class SplitSlider extends HTMLElement {
             this.#lastSize = current > 0 ? current : (Number(pane.getAttribute("min-size")) || 240);
             this.#applyPaneSize(0);
             this.#isCollapsed = true;
+            if (this.#toggleBtn) this.#toggleBtn.style.left = "20px";
         } else {
             const minSize = Number(pane.getAttribute("min-size")) || 120;
             const restored = Math.max(minSize, this.#lastSize || minSize);
             this.#applyPaneSize(restored);
             this.#isCollapsed = false;
+            if (this.#toggleBtn) this.#toggleBtn.style.left = "50%";
         }
         this.#updateToggleIcon();
     }
@@ -409,28 +441,29 @@ export class SplitPane extends HTMLElement {
                 .splitter__pane {
                     flex: 1 1 auto;
                     position: relative;
-                    height: 100%;
-                    width: 100%;
-                    overflow: auto;
+                    min-width: 0;
+                    min-height: 0;
+                    display: flex;
+                    flex-direction: column;
                     color: var(--primary-text-color);
-                }
-                #content {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    bottom: 0;
-                    right: 0;
                     overflow: hidden;
                 }
+                #content {
+                    flex: 1 1 auto;
+                    position: relative;
+                    overflow: hidden;
+                    min-width: 0;
+                    min-height: 0;
+                }
                 ::-webkit-scrollbar {
-                    width: 5px;
-                    height: 5px;
+                    width: 10px;
                 }
                 ::-webkit-scrollbar-track {
-                    background: var(--surface-color);
+                    background: var(--scroll-track, var(--surface-color));
                 }
                 ::-webkit-scrollbar-thumb {
-                    background: var(--palette-divider); 
+                    background: var(--scroll-thumb, var(--palette-divider));
+                    border-radius: 6px;
                 }
                 /* Style for slotted content */
                 ::slotted(*) {

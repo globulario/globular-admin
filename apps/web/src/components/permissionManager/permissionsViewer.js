@@ -7,8 +7,9 @@ import { listOrganizations } from "../../backend/rbac/organizations"
 import { listApplications } from "../../backend/rbac/applications"; // NEW apps accessor (ApplicationVM[])
 import { listPeers } from "../../backend/rbac/peers"
 
-// VM persistence (no protos here)
+// VM persistence utilities
 import { setResourcePermissions } from "../../backend/rbac/permissions"
+import { permissionsProtoToVM, permissionsVMToProto } from "./permissionsUtils.js"
 
 // Optional UI feedback (adjust if your notify helpers live elsewhere)
 import { displayError, displayMessage } from "../../backend/ui/notify"
@@ -54,6 +55,15 @@ const caches = {
 let _accountsLoaded = false, _groupsLoaded = false, _orgsLoaded = false, _appsLoaded = false, _peersLoaded = false
 const keyId  = (id, domain) => domain ? `${id}@${domain}` : String(id || "")
 const keyMac = (mac, domain) => domain ? `${mac}@${domain}` : String(mac || "")
+
+const cloneVM = (vm) => JSON.parse(JSON.stringify(vm || {}))
+const emptyVM = () => ({
+  path: "",
+  resourceType: "",
+  owners: { accounts: [], groups: [], applications: [], organizations: [], peers: [] },
+  allowed: [],
+  denied: [],
+})
 
 // -------------------- resolvers (load once, then map lookup) ---------------
 async function ensureAccounts() {
@@ -149,13 +159,19 @@ export class PermissionsViewer extends HTMLElement {
     this._getDomReferences()
   }
 
-  /** Attach a PermissionsVM */
-  setPermissions(permissionsVM) {
-    if (this._permissions !== permissionsVM) {
-      this._permissions = permissionsVM
-      this._processPermissionsData()
-      this._renderPermissionsTable()
+  /** Attach a PermissionsVM or proto Permissions */
+  setPermissions(permissionsInput) {
+    let vm
+    if (permissionsInput && typeof permissionsInput.getPath === "function") {
+      vm = permissionsProtoToVM(permissionsInput)
+    } else if (permissionsInput) {
+      vm = cloneVM(permissionsInput)
+    } else {
+      vm = emptyVM()
     }
+    this._permissions = vm
+    this._processPermissionsData()
+    this._renderPermissionsTable()
   }
 
   // ---------------------------- render skeleton ---------------------------
@@ -462,13 +478,32 @@ export class PermissionsViewer extends HTMLElement {
   }
 
   async _persistPermissionsVM() {
+    const vm = cloneVM(this._permissions || {})
+
+    if (!vm.path && this.permissionManager?._path) {
+      vm.path = this.permissionManager._path
+    }
+    if (!vm.resourceType) {
+      vm.resourceType =
+        this.permissionManager?._permissions?.getResourceType?.() ||
+        this.permissionManager?._permissions?.getResourcetype?.() ||
+        this.permissionManager?.resourceType ||
+        vm.resourceType ||
+        "file"
+    }
+
+    if (this.permissionManager?.updatePermissionsFromViewer) {
+      await this.permissionManager.updatePermissionsFromViewer(vm)
+      return
+    }
+
     try {
-      const vm = this._permissions || {}
       if (!vm.path || !vm.resourceType) {
         displayError?.("Missing path or resourceType on PermissionsVM.", 3000)
         return
       }
-      await setResourcePermissions(vm) // backend handles auth/token/domain
+      const proto = permissionsVMToProto(vm)
+      await setResourcePermissions(proto)
       displayMessage?.("Permissions saved.", 2000)
     } catch (err) {
       console.error(err)

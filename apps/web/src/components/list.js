@@ -321,7 +321,8 @@ export class SearchableList extends HTMLElement {
     constructor(title, list, ondeleteitem, onadditem, onadd) {
         super();
         this.attachShadow({ mode: 'open' });
-        
+        this.width = 420; // legacy compatibility
+
         // Set initial properties from constructor args
         this._titleText = title || "";
         this._list = list || [];
@@ -380,6 +381,32 @@ export class SearchableList extends HTMLElement {
         }
     }
 
+    /** Back-compat getter/setter for legacy `list` property. */
+    get list() {
+        return this._list;
+    }
+    set list(value) {
+        this._list = Array.isArray(value) ? value : [];
+        this._updateTitleCount();
+        if (this._listDiv) {
+            this.displayItems();
+        }
+    }
+
+    /** Legacy alias for `_filterText`. */
+    get filter_() {
+        return this._filterText || "";
+    }
+    set filter_(value) {
+        this._filterText = value || "";
+        if (this._filterInput && this._filterInput.value !== this._filterText) {
+            this._filterInput.value = this._filterText;
+        }
+        if (this._listDiv) {
+            this.displayItems();
+        }
+    }
+
     // --- Private Helper Methods ---
 
     _renderHTML() {
@@ -409,17 +436,26 @@ export class SearchableList extends HTMLElement {
                 cursor: pointer;
             }
 
-            ::-webkit-scrollbar { width: 5px; height: 5px; }
-            ::-webkit-scrollbar-track { background: var(--surface-color); }
-            ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+            ::-webkit-scrollbar {
+              width: 10px;
+            }
+            ::-webkit-scrollbar-track {
+              background: var(--scroll-track, var(--surface-color));
+            }
+            ::-webkit-scrollbar-thumb {
+              background: var(--scroll-thumb, var(--palette-divider));
+              border-radius: 6px;
+            }
             
             #items-container {
                 width: 100%;
-                max-height: 200px;
-                overflow-y: auto;
+                max-height: none;
+                overflow-y: visible;
+                overflow-x: hidden;
                 margin-bottom: 5px;
                 border: 1px solid var(--divider-color);
                 border-radius: 5px;
+                box-sizing: border-box;
             }
             #shadow-div {
                 width: 100%;
@@ -429,8 +465,7 @@ export class SearchableList extends HTMLElement {
         </style>
         
         <div id="header-div" class="header">
-            <span class="title">${this._titleText} (${this._list.length})</span>
-            <div style="display:flex; flex-direction: row; align-items: center;">
+            <div style="display:flex; flex-direction: row; align-items: center; gap:8px;">
                 <div class="icon-button">
                     <iron-icon id="action-add-btn" icon="add"></iron-icon>
                     <paper-ripple class="circle"></paper-ripple>

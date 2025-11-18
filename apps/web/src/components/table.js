@@ -358,18 +358,16 @@ export class Table extends HTMLElement {
         /* Chromium/WebKit */
         #fake-scroll::-webkit-scrollbar {
           width: 10px;
-          height: 10px;
         }
         #fake-scroll::-webkit-scrollbar-track {
-          background: var(--scroll-track);
+          background: var(--scroll-track, var(--surface-color));
         }
         #fake-scroll::-webkit-scrollbar-thumb {
-          background-color: var(--scroll-thumb);
+          background: var(--scroll-thumb, var(--palette-divider));
           border-radius: 6px;
-          border: 2px solid var(--scroll-track);
         }
         #fake-scroll::-webkit-scrollbar-thumb:hover {
-          background-color: var(--scroll-thumb-hover);
+          background: var(--scroll-thumb-hover, var(--palette-divider));
         }
 
         table {

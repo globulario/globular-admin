@@ -126,10 +126,10 @@ export class FileNavigator extends HTMLElement {
         width: 10px;
       }
       #file-navigator-div::-webkit-scrollbar-track {
-        background: var(--scroll-track, rgba(0,0,0,0.05));
+        background: var(--scroll-track, var(--surface-color));
       }
       #file-navigator-div::-webkit-scrollbar-thumb {
-        background: var(--scroll-thumb, rgba(120,120,120,0.7));
+        background: var(--scroll-thumb, var(--palette-divider));
         border-radius: 6px;
       }
 

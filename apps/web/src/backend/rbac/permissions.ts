@@ -115,11 +115,11 @@ export type PermissionsVM = {
 export function toPermissionsVM(p: any): PermissionsVM {
   const owners = p?.getOwners?.()
   const mapSubjects = (perm: any): PermissionSubjectLists => ({
-    accounts:   getArr(perm, ['getAccountsList', 'accounts']),
-    groups:     getArr(perm, ['getGroupsList', 'groups']),
-    applications:getArr(perm, ['getApplicationsList', 'applications']),
-    organizations:getArr(perm, ['getOrganizationsList', 'organizations']),
-    peers:      getArr(perm, ['getPeersList', 'peers']),
+    accounts: getArr(perm, ['getAccountsList', 'accounts']),
+    groups: getArr(perm, ['getGroupsList', 'groups']),
+    applications: getArr(perm, ['getApplicationsList', 'applications']),
+    organizations: getArr(perm, ['getOrganizationsList', 'organizations']),
+    peers: getArr(perm, ['getPeersList', 'peers']),
   })
 
   const mapEntry = (perm: any): PermissionEntryVM => ({
@@ -128,11 +128,11 @@ export function toPermissionsVM(p: any): PermissionsVM {
   })
 
   return {
-    path:         getStr(p, ['getPath', 'path'], ''),
+    path: getStr(p, ['getPath', 'path'], ''),
     resourceType: getStr(p, ['getResourceType', 'resourceType'], ''),
-    owners: owners ? mapSubjects(owners) : { accounts:[], groups:[], applications:[], organizations:[], peers:[] },
+    owners: owners ? mapSubjects(owners) : { accounts: [], groups: [], applications: [], organizations: [], peers: [] },
     allowed: (p?.getAllowedList?.() ?? p?.allowed ?? []).map(mapEntry),
-    denied:  (p?.getDeniedList?.()  ?? p?.denied  ?? []).map(mapEntry),
+    denied: (p?.getDeniedList?.() ?? p?.denied ?? []).map(mapEntry),
   }
 }
 
@@ -143,7 +143,7 @@ export function toPermissionsVM(p: any): PermissionsVM {
  */
 export async function getResourcePermissions(path: string): Promise<rbac.Permissions> {
   const md = await meta()
-  const c  = clientFactory()
+  const c = clientFactory()
   const rq = newRq(rbac, METHODS.get.rq)
   rq.setPath?.(path)
   const rsp: any = await unary(() => c, pickMethod(c, METHODS.get.method), rq, undefined, md)
@@ -157,14 +157,20 @@ export async function getResourcePermissions(path: string): Promise<rbac.Permiss
  * Accepts a concrete rbac.Permissions (callers that build the message can pass it).
  */
 export async function setResourcePermissions(permissions: rbac.Permissions): Promise<void> {
+
   const md = await meta()
-  const c  = clientFactory()
+  const c = clientFactory()
   const rq = newRq(rbac, METHODS.set.rq)
+  rq.setPath?.(permissions.getPath?.() ?? '')
+
   rq.setPermissions?.(permissions)
   // Ensure resource type is present if your backend requires it
   if (!permissions.getResourceType?.() && permissions.setResourceType) {
     permissions.setResourceType('file')
   }
+
+  rq.setResourcetype?.(permissions.getResourceType?.() ?? '')
+
   await unary(() => c, pickMethod(c, METHODS.set.method), rq, undefined, md)
 }
 
@@ -173,7 +179,7 @@ export async function setResourcePermissions(permissions: rbac.Permissions): Pro
  */
 export async function deleteResourcePermissions(path: string, resourceType: string): Promise<void> {
   const md = await meta()
-  const c  = clientFactory()
+  const c = clientFactory()
   const rq = newRq(rbac, METHODS.del.rq)
   rq.setPath?.(path)
   rq.setResourcetype?.(resourceType)
@@ -186,7 +192,7 @@ export async function deleteResourcePermissions(path: string, resourceType: stri
  */
 export async function listResourcePermissionsByType(resourceType: string): Promise<rbac.Permissions[]> {
   const out: rbac.Permissions[] = []
-  const c  = clientFactory()
+  const c = clientFactory()
   const rq = newRq(rbac, METHODS.listByType.rq)
   rq.setResourcetype?.(resourceType)
 
@@ -217,7 +223,7 @@ export async function listResourcePermissionsByType(resourceType: string): Promi
  */
 export async function getSharedResources(ownerFqdn: string, subjectFqdn: string, type: number): Promise<any[]> {
   const md = await meta()
-  const c  = clientFactory()
+  const c = clientFactory()
   const rq = newRq(rbac, METHODS.shared.rq)
   rq.setOwner?.(ownerFqdn)
   rq.setSubject?.(subjectFqdn)
@@ -227,7 +233,7 @@ export async function getSharedResources(ownerFqdn: string, subjectFqdn: string,
 
   for (const g of METHODS.shared.rspListGetter) {
     const fn = rsp?.[g]
-    const v  = typeof fn === 'function' ? fn.call(rsp) : rsp?.[g]
+    const v = typeof fn === 'function' ? fn.call(rsp) : rsp?.[g]
     if (Array.isArray(v)) return v
   }
   return []
@@ -239,7 +245,7 @@ export async function getSharedResources(ownerFqdn: string, subjectFqdn: string,
  */
 export async function removeSubjectFromShare(domain: string, path: string, type: number, subjectFqdn: string): Promise<void> {
   const md = await meta()
-  const c  = clientFactory()
+  const c = clientFactory()
   const rq = newRq(rbac, METHODS.unshare.rq)
   rq.setDomain?.(domain)
   rq.setPath?.(path)
@@ -266,9 +272,9 @@ export function newPermission(name?: string): rbac.Permission {
 
 // Optional helpers to mutate a Permission entry (kept simple, callers can call the proto setters directly)
 export const setPermissionSubjects = (perm: rbac.Permission, lists: Partial<PermissionSubjectLists>) => {
-  if (lists.accounts)      perm.setAccountsList?.(lists.accounts)
-  if (lists.groups)        perm.setGroupsList?.(lists.groups)
-  if (lists.applications)  perm.setApplicationsList?.(lists.applications)
+  if (lists.accounts) perm.setAccountsList?.(lists.accounts)
+  if (lists.groups) perm.setGroupsList?.(lists.groups)
+  if (lists.applications) perm.setApplicationsList?.(lists.applications)
   if (lists.organizations) perm.setOrganizationsList?.(lists.organizations)
-  if (lists.peers)         perm.setPeersList?.(lists.peers)
+  if (lists.peers) perm.setPeersList?.(lists.peers)
 }

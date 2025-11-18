@@ -131,9 +131,16 @@ export class GlobularSubjectsView extends HTMLElement {
         .infos .text .name { font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .infos .text .sub { font-size:.9rem; color: var(--secondary-text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-        ::-webkit-scrollbar { width:5px; height:5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+        ::-webkit-scrollbar {
+          width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+          background: var(--scroll-track, var(--surface-color));
+        }
+        ::-webkit-scrollbar-thumb {
+          background: var(--scroll-thumb, var(--palette-divider));
+          border-radius: 6px;
+        }
 
         @media (max-width: 500px) {
           #subjects-div { margin-right:5px; }

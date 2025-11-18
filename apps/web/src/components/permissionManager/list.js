@@ -89,12 +89,17 @@ async function _setupAddPanelLogic(
   const html = `
     <style>
       #${panelId}{
-        position:absolute; left:0; z-index:1;
+        position:absolute;
+        left:0;
+        z-index:10;
         background: var(--surface-color);
-        border-radius: 8px;
+        border-radius: 10px;
         box-shadow: var(--shadow-elevation-6dp);
-        width: 420px; max-height: 450px; overflow: hidden;
-        display:flex; flex-direction:column;
+        width: min(520px, calc(100% - 24px));
+        max-height: calc(80vh);
+        overflow: visible;
+        display:flex;
+        flex-direction:column;
       }
       #${panelId} .panel-header {
         display:flex; align-items:center; gap:8px;
@@ -104,7 +109,11 @@ async function _setupAddPanelLogic(
         border-bottom: 1px solid var(--palette-divider);
       }
       #${panelId} .panel-header > div { flex:1; font-weight:500; }
-      #${panelId} .card-content { overflow-y:auto; flex:1; padding:10px; }
+      #${panelId} .card-content {
+        flex:1;
+        padding:12px;
+        overflow: visible;
+      }
       #${panelId} paper-card { background: var(--surface-color); color: var(--primary-text-color); }
       #${panelId} globular-autocomplete { --globular-autocomplete-input-width: 100%; }
     </style>
@@ -145,24 +154,32 @@ async function _setupAddPanelLogic(
       const filtered = filterAutocompleteFn(allAvailableItems, v);
       addInput.setValues?.(filtered);
     } else {
-      addInput.clear?.();
+      addInput.clearSuggestions?.();
     }
   };
 
   addInput.onkeyup = refreshAutocomplete;
 
+  const addItemToPanel = (item) => {
+    const key = getPeerKey(item) || getId(item);
+    allAvailableItems = allAvailableItems.filter(a => (getPeerKey(a) || getId(a)) !== key);
+    addInput.clear?.();
+    refreshAutocomplete();
+    parentComponent.onadditem?.(item);
+  };
+
   addInput.displayValue = (item) => {
     const itemDiv = createItemDivFn(item);
     const btn = itemDiv.querySelector("paper-icon-button");
+    const clickHandler = (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      addItemToPanel(item);
+    };
+    itemDiv.addEventListener('click', clickHandler);
     if (btn) {
       btn.icon = "icons:add";
-      btn.addEventListener('click', () => {
-        const key = getPeerKey(item) || getId(item);
-        allAvailableItems = allAvailableItems.filter(a => (getPeerKey(a) || getId(a)) !== key);
-        addInput.clear?.();
-        refreshAutocomplete();
-        parentComponent.onadditem?.(item);
-      });
+      btn.addEventListener('click', clickHandler);
     }
     return itemDiv;
   };

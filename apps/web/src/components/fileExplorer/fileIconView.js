@@ -149,7 +149,7 @@ export class FileIconView extends HTMLElement {
       .icon-display {
         display: flex;
         width: 100%;
-        height: var(--file-icon-thumb-size, 48px); /* thumbnail height */
+        height: auto;
         justify-content: center;
         align-items: center;
       }

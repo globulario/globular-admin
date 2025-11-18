@@ -116,12 +116,15 @@ _initializeLayout() {
       }
 
       /* Scrollbars on the host container if it ever scrolls */
-      :host::-webkit-scrollbar { width: 5px; height: 5px; }
+      :host::-webkit-scrollbar {
+        width: 10px;
+      }
       :host::-webkit-scrollbar-track {
         background: var(--scroll-track, var(--surface-color));
       }
       :host::-webkit-scrollbar-thumb {
         background: var(--scroll-thumb, var(--palette-divider));
+        border-radius: 6px;
       }
 
       #content {

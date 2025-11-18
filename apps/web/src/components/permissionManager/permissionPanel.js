@@ -88,6 +88,18 @@ export class PermissionPanel extends HTMLElement {
     this._getDomReferences()
   }
 
+  describeSummary() {
+    if (!this.shadowRoot) return ""
+    const sections = this.shadowRoot.querySelectorAll('.collapsible-section .collapsible-header span')
+    if (!sections.length) return ""
+    const name = this._permission?.getName?.() ?? this._permission?.name ?? ""
+    const counts = Array.from(sections)
+      .map(span => span.textContent || "")
+      .filter(text => !/\(\s*0\s*\)/.test(text))
+    if (!counts.length) return ""
+    return `${name} ${counts.join(', ')}`
+  }
+
   connectedCallback() {
     // population happens in setPermission()
   }
@@ -96,6 +108,10 @@ export class PermissionPanel extends HTMLElement {
   _renderInitialStructure() {
     this.shadowRoot.innerHTML = `
       <style>
+        :host {
+          display: block;
+          width: 100%;
+        }
         .title {
           flex-grow: 1;
           font-size: 1.2rem;
@@ -105,8 +121,14 @@ export class PermissionPanel extends HTMLElement {
           padding-bottom: 5px;
           margin-bottom: 5px;
         }
-        .members { display: flex; flex-direction: column; width: 100%; }
-        .collapsible-section { padding-left: 10px; width: 100%; box-sizing: border-box; }
+        .members { display: flex; flex-direction: column; width: 100%; gap: 6px; }
+        .collapsible-section {
+          padding-left: 24px;
+          width: 100%;
+          box-sizing: border-box;
+          border-left: 2px solid var(--palette-divider);
+          margin-left: 6px;
+        }
         .collapsible-header {
           display:flex; align-items:center; padding:5px 0; cursor:pointer;
         }
@@ -115,6 +137,7 @@ export class PermissionPanel extends HTMLElement {
         }
         .collapsible-header span { flex-grow: 1; font-weight: 400; font-size: 1rem; }
         iron-collapse { margin: 5px; }
+
       </style>
       <div>
         <div class="title"></div>
@@ -199,29 +222,32 @@ export class PermissionPanel extends HTMLElement {
   }
 
   // ----------------------------------------------------------- sections & data plumbing
-  _createCollapsibleSection(title) {
+  _createCollapsibleSection(title, count = 0) {
     const uuid = `_collapsible_${randomUUID()}`
     const html = `
       <div class="collapsible-section">
         <div class="collapsible-header">
           <paper-icon-button id="${uuid}-btn" icon="unfold-less"></paper-icon-button>
-          <span>${title}</span>
+          <span>${title} (${count})</span>
         </div>
-        <iron-collapse id="${uuid}-collapse-panel" opened></iron-collapse>
+        <iron-collapse id="${uuid}-collapse-panel"></iron-collapse>
       </div>
     `
     this._membersContainer.appendChild(document.createRange().createContextualFragment(html))
 
     const contentPanel = this.shadowRoot.querySelector(`#${uuid}-collapse-panel`)
     const toggleButton = this.shadowRoot.querySelector(`#${uuid}-btn`)
+    const headerLabel = toggleButton?.parentElement?.querySelector('span')
 
     if (toggleButton && contentPanel) {
+      contentPanel.opened = false
+      toggleButton.icon = "unfold-more"
       toggleButton.addEventListener('click', () => {
         contentPanel.toggle()
         toggleButton.icon = contentPanel.opened ? "unfold-less" : "unfold-more"
       })
     }
-    return contentPanel
+    return { panel: contentPanel, headerLabel }
   }
 
   /**
@@ -235,7 +261,8 @@ export class PermissionPanel extends HTMLElement {
    * @param {boolean} isPeers whether the type is peers (uses MAC-based key)
    */
   async _setEntitiesPermissions(title, entityIdsInPermission, permissionListSetter, SearchableListClass, idGetter, domainGetter, isPeers = false) {
-    const panel = this._createCollapsibleSection(title)
+    const initialCount = Array.isArray(entityIdsInPermission) ? entityIdsInPermission.length : 0
+    const { panel, headerLabel } = this._createCollapsibleSection(title, initialCount)
     const listContainer = document.createElement('div')
     panel.appendChild(listContainer)
 
@@ -272,8 +299,16 @@ export class PermissionPanel extends HTMLElement {
         return hasId(entityIdsInPermission, id, dom)
       })
 
+      let searchableList = null
+      const refreshHeaderCount = () => {
+        if (!headerLabel || !searchableList) return
+        const currentCount = Array.isArray(searchableList.list) ? searchableList.list.length : 0
+        headerLabel.textContent = `${title} (${currentCount})`
+        this._permissionManager?._refreshSectionSummaries?.()
+      }
+
       // Create the embedded searchable list
-      const searchableList = new SearchableListClass(
+      searchableList = new SearchableListClass(
         title,
         current,
         // ondelete
@@ -288,6 +323,7 @@ export class PermissionPanel extends HTMLElement {
           // Save via manager (support either public or “private” save)
           const mgr = this._permissionManager
           ;(mgr?._savePermissions || mgr?.savePermissions)?.call(mgr)
+          refreshHeaderCount()
         },
         // onadd
         (itemToAdd) => {
@@ -301,12 +337,14 @@ export class PermissionPanel extends HTMLElement {
 
           const mgr = this._permissionManager
           ;(mgr?._savePermissions || mgr?.savePermissions)?.call(mgr)
+          refreshHeaderCount()
         }
       )
 
       // Hide inner list’s own title to avoid redundancy
       searchableList.hideTitle?.()
       listContainer.appendChild(searchableList)
+      refreshHeaderCount()
     } catch (err) {
       console.error(err)
       displayError(`Failed to load ${title}: ${err?.message || err}`, 3000)

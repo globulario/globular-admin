@@ -56,9 +56,16 @@ export class FacetSearchFilter extends HTMLElement {
                     overflow-y: auto; /* Enable scrolling for many facets */
                 }
 
-                ::-webkit-scrollbar { width: 5px; height: 5px; }
-                ::-webkit-scrollbar-track { background: var(--surface-color); }
-                ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+                ::-webkit-scrollbar {
+                    width: 10px;
+                }
+                ::-webkit-scrollbar-track {
+                    background: var(--scroll-track, var(--surface-color));
+                }
+                ::-webkit-scrollbar-thumb {
+                    background: var(--scroll-thumb, var(--palette-divider));
+                    border-radius: 6px;
+                }
 
                 @media (max-width: 600px) {
                     #container {

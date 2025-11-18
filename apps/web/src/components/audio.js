@@ -239,7 +239,16 @@ export class AudioPlayer extends HTMLElement {
         .header{display:flex;align-items:center;color:var(--palette-text-accent);background-color:var(--palette-primary-accent);}
         .header paper-icon-button{min-width:40px;}
         .header span{flex-grow:1;text-align:center;font-size:1.1rem;font-weight:500;display:inline-block;white-space:nowrap;overflow:hidden !important;text-overflow:ellipsis;max-width:calc(100vw - 50px);}
-        ::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:var(--surface-color);}::-webkit-scrollbar-thumb{background:var(--palette-divider);}
+        ::-webkit-scrollbar {
+          width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+          background: var(--scroll-track, var(--surface-color));
+        }
+        ::-webkit-scrollbar-thumb {
+          background: var(--scroll-thumb, var(--palette-divider));
+          border-radius: 6px;
+        }
         #content{height:100%;width:100%;display:flex;background:#000;justify-content:center;overflow:hidden;background-color:var(--surface-color);color:var(--primary-text-color);}
         @media (max-width:600px){
           .header{width:100vw;}

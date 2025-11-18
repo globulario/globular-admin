@@ -151,10 +151,19 @@ export class Dialog extends HTMLElement {
           overflow-x: hidden;
         }
 
-        ::-webkit-scrollbar { width: 8.5px; height: 8.5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); border-radius: 20px; border: 6px solid transparent; background-clip: content-box; min-height: 30px; }
-        ::-webkit-scrollbar-thumb:hover { background-color: var(--palette-divider-hover, #a8bbbf); }
+        ::-webkit-scrollbar {
+          width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+          background: var(--scroll-track, var(--surface-color));
+        }
+        ::-webkit-scrollbar-thumb {
+          background: var(--scroll-thumb, var(--palette-divider));
+          border-radius: 6px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: var(--scroll-thumb-hover, var(--palette-divider));
+        }
 
         .dialog_title {
           width: 100%;

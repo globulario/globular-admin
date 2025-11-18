@@ -108,14 +108,14 @@ export class WebpageInfo extends HTMLElement {
 
                 /* Scrollbar styles (inherited from global styles often) */
                 ::-webkit-scrollbar {
-                    width: 5px;
-                    height: 5px;
+                    width: 10px;
                 }
                 ::-webkit-scrollbar-track {
-                    background: var(--surface-color);
+                    background: var(--scroll-track, var(--surface-color));
                 }
                 ::-webkit-scrollbar-thumb {
-                    background: var(--palette-divider);
+                    background: var(--scroll-thumb, var(--palette-divider));
+                    border-radius: 6px;
                 }
 
                 .info-table {

@@ -110,6 +110,54 @@ const getNum = (obj: any, names: string[], alt = 0) => {
   return Number.isFinite(n) ? n : alt
 }
 
+type BasicListOptions = string | {
+  query?: object | string
+  pageSize?: number
+  page?: number
+  limit?: number
+  offset?: number
+  options?: object | string
+}
+
+type ListResult<T> = T[] & { items: T[]; total: number }
+const LIST_OPTION_KEYS = new Set(["query","pageSize","page","limit","offset","options"])
+
+function normalizeListOptions(input?: BasicListOptions) {
+  if (input == null) return {}
+  if (typeof input === "string") return { query: input }
+  const keys = Object.keys(input)
+  const hasKnown = keys.some(k => LIST_OPTION_KEYS.has(k))
+  return {
+    query: hasKnown ? input.query : input,
+    pageSize: input.pageSize ?? input.limit,
+    page: input.page,
+    offset: input.offset,
+    options: input.options,
+  }
+}
+
+function toJsonString(value: any): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined
+  if (typeof value === "string") return value
+  try { return JSON.stringify(value) } catch { return undefined }
+}
+
+function withListResult<T>(items: T[], total = items.length): ListResult<T> {
+  const arr: any = items
+  arr.items = items
+  arr.total = total
+  return arr
+}
+
+function buildOptionsPayload(opts: { pageSize?: number; page?: number; offset?: number; options?: any }) {
+  if (opts.options !== undefined) return opts.options
+  const payload: any = {}
+  if (typeof opts.pageSize === "number" && opts.pageSize > 0) payload.pageSize = opts.pageSize
+  if (typeof opts.page === "number" && opts.page >= 0) payload.page = opts.page
+  if (typeof opts.offset === "number" && opts.offset >= 0) payload.offset = opts.offset
+  return Object.keys(payload).length ? payload : undefined
+}
+
 // ------------------------------ mapping ------------------------------
 export function toApplicationVM(a: any): ApplicationVM {
   if (!a) return { id: '', name: '' }
@@ -175,13 +223,19 @@ const SERVICE_METHODS = {
 } as const
 
 // ------------------------------ API (resource) ------------------------------
-export type ListAppsOptions = { query?: string; options?: string }
+export type ListAppsOptions = BasicListOptions
 
-export async function listApplications(opts: ListAppsOptions = {}): Promise<ApplicationVM[]> {
+export async function listApplications(opts: ListAppsOptions = {}): Promise<ListResult<ApplicationVM>> {
+  const normalized = normalizeListOptions(opts)
   const out: ApplicationVM[] = []
   const rq = newRq(SERVICE_METHODS.list.rq)
-  ;(rq.setQuery?.bind(rq) ?? ((_:string)=>{}))(opts.query ?? '{}')
-  ;(rq.setOptions?.bind(rq) ?? ((_:string)=>{}))(opts.options ?? '{}')
+  const queryString = toJsonString(normalized.query) ?? '{}'
+  ;(rq.setQuery?.bind(rq) ?? ((_:string)=>{}))(queryString)
+  const optPayload = buildOptionsPayload(normalized)
+  const optionsString = toJsonString(optPayload) ?? (typeof normalized.options === 'undefined' ? '{}' : undefined)
+  if (optionsString) {
+    ;(rq.setOptions?.bind(rq) ?? ((_:string)=>{}))(optionsString)
+  }
 
   await stream(
     clientFactory,
@@ -199,7 +253,15 @@ export async function listApplications(opts: ListAppsOptions = {}): Promise<Appl
     },
     SERVICE_NAME
   )
-  return out
+  const total = out.length
+  const limit = typeof normalized.pageSize === "number" && normalized.pageSize > 0 ? normalized.pageSize : undefined
+  let items = out
+  if (limit !== undefined) {
+    const start = typeof normalized.offset === "number" ? Math.max(0, normalized.offset)
+      : (typeof normalized.page === "number" && normalized.page >= 0 ? normalized.page * limit : 0)
+    items = out.slice(start, start + limit)
+  }
+  return withListResult(items, total)
 }
 
 export type CreateApplicationInput = Partial<Pick<ApplicationVM,

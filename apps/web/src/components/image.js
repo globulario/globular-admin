@@ -587,10 +587,19 @@ export class ImageViewer extends HTMLElement {
 
     shadowRoot.innerHTML = `
     <style>
-      ::-webkit-scrollbar { width:5px; height:5px; }
-      ::-webkit-scrollbar-track { background: var(--surface-color); }
-      ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); }
-      ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+      ::-webkit-scrollbar {
+        width: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--scroll-track, var(--surface-color));
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb, var(--palette-divider));
+        border-radius: 6px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--scroll-thumb-hover, var(--scroll-thumb, var(--palette-divider)));
+      }
 
       .modal {
         z-index:3000;

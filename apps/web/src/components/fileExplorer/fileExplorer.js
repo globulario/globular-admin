@@ -21,7 +21,7 @@ import { SharePanel } from "../share/sharePanel.js"
 import { Dialog } from '../dialog.js';
 import './paperTray.js';
 import './selectionBar.js';
-import '../slipView.js';
+import '../splitView.js';
 
 // Import sub-components
 import "./searchDocument.js";
@@ -157,17 +157,17 @@ export class FileExplorer extends HTMLElement {
     <style>
       /* -------- scrollbars: use theme vars (light & dark) -------- */
       ::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
+        width: 10px;
       }
       ::-webkit-scrollbar-track {
-        background: var(--scroll-track);
+        background: var(--scroll-track, var(--surface-color));
       }
       ::-webkit-scrollbar-thumb {
-        background: var(--scroll-thumb);
+        background: var(--scroll-thumb, var(--palette-divider));
+        border-radius: 6px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: var(--scroll-thumb-hover);
+        background: var(--scroll-thumb-hover, var(--palette-divider));
       }
 
       paper-icon-button:hover {
@@ -568,10 +568,10 @@ export class FileExplorer extends HTMLElement {
     Backend.eventHub.subscribe(`display_permission_manager_${explorerId}_event`,
       (uuid) => { this._listeners[`display_permission_manager_${explorerId}_event`] = uuid; },
       (file) => {
-        this._permissionManager.permissions = null;
+        this._permissionManager._permissions = null;
         const filePath = extractPath(file);
-        this._permissionManager.setPath(filePath);
-        this._permissionManager.setResourceType = "file";
+        this._permissionManager.path = filePath;
+        this._permissionManager._resourceType = "file";
         this._permissionManager.style.display = "";
         this._hideAllViewsExcept(this._permissionManager);
       }, false, this

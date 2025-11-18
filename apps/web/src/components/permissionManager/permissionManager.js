@@ -7,9 +7,10 @@ import { getResourcePermissions, setResourcePermissions } from "../../backend/rb
 
 // Still using proto shapes for UI panels
 import { Permission, Permissions } from "globular-web-client/rbac/rbac_pb"
+import { permissionsProtoToVM, permissionsVMToProto } from "./permissionsUtils.js"
 
-import { PermissionPanel } from "./permissionPanel.js"
-import { PermissionsViewer } from "./permissionsViewer.js"
+import  "./permissionPanel.js"
+import {PermissionsViewer} from "./permissionsViewer.js"
 
 // Polymer deps
 import '@polymer/paper-icon-button/paper-icon-button.js'
@@ -19,6 +20,7 @@ import '@polymer/paper-ripple/paper-ripple.js'
 import '@polymer/paper-radio-group/paper-radio-group.js'
 import '@polymer/paper-radio-button/paper-radio-button.js'
 import '@polymer/paper-card/paper-card.js'
+import { PermissionPanel } from "./permissionPanel.js"
 
 /**
  * Manages and displays resource permissions (owners, allowed, denied).
@@ -48,6 +50,21 @@ export class PermissionsManager extends HTMLElement {
     this._addDeniedBtn = null
     this._addAllowedBtn = null
     this._permissionsViewer = null
+    this._ownerSummary = null
+    this._allowedSummary = null
+    this._deniedSummary = null
+  }
+
+  _refreshSectionSummaries() {
+    const summarizeSlot = (slot) => {
+      if (!slot) return ""
+      const panels = slot.assignedElements({ flatten: true })
+      return panels.map(panel => panel.describeSummary?.() || "").filter(Boolean).join(" | ")
+    }
+
+    if (this._ownerSummary) this._ownerSummary.textContent = summarizeSlot(this._ownerSlot)
+    if (this._allowedSummary) this._allowedSummary.textContent = summarizeSlot(this._allowedSlot)
+    if (this._deniedSummary) this._deniedSummary.textContent = summarizeSlot(this._deniedSlot)
   }
 
   connectedCallback() {
@@ -68,6 +85,7 @@ export class PermissionsManager extends HTMLElement {
   set permissions(permissions) {
     this._permissions = permissions || new Permissions()
     this._renderPermissionsContent()
+    this._refreshSectionSummaries()
   }
 
   set resourceType(resourceType) {
@@ -104,8 +122,31 @@ export class PermissionsManager extends HTMLElement {
         .title { display:flex; align-items:center; flex-grow:1; font-weight:500; color:var(--primary-text-color); line-height:20px; }
         .title iron-icon { margin-right:8px; --iron-icon-fill-color: var(--primary-text-color); }
 
-        .permissions-section { padding-right: 40px; }
-        .permissions-section .title { margin-top: 15px; }
+        .permissions-section {
+          padding-right: 24px;
+          margin-bottom: 18px;
+          border: 1px solid var(--palette-divider);
+          border-radius: 10px;
+          background: var(--surface-raised-color, rgba(255,255,255,0.02));
+        }
+        .permissions-section .title {
+          margin-top: 0;
+          gap: 8px;
+          padding: 10px 14px;
+          border-bottom: 1px solid var(--palette-divider);
+          align-items: center;
+        }
+        .section-summary {
+          font-size: 0.9rem;
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+        }
+        .permissions-section iron-collapse {
+          padding-left: 20px;
+          border-left: 2px solid var(--palette-divider);
+          margin: 0 14px 14px;
+          border-bottom: none;
+        }
 
         iron-collapse {
           padding: 10px;
@@ -144,32 +185,35 @@ export class PermissionsManager extends HTMLElement {
 
         <div class="permissions-section">
           <div class="title">
-            <paper-icon-button id="owner-collapse-btn" icon="unfold-less"></paper-icon-button>
-            Owner(s)
+            <paper-icon-button id="owner-collapse-btn" icon="unfold-more"></paper-icon-button>
+            <span style="flex:1;">Owner(s)</span>
+            <span class="section-summary" id="owner-summary"></span>
           </div>
-          <iron-collapse id="owner" opened>
+          <iron-collapse id="owner">
             <slot name="owner"></slot>
           </iron-collapse>
         </div>
 
         <div class="permissions-section">
           <div class="title">
-            <paper-icon-button id="allowed-collapse-btn" icon="unfold-less"></paper-icon-button>
-            Allowed(s)
+            <paper-icon-button id="allowed-collapse-btn" icon="unfold-more"></paper-icon-button>
+            <span style="flex:1;">Allowed(s)</span>
+            <span class="section-summary" id="allowed-summary"></span>
+            <paper-icon-button id="add-allowed-btn" icon="icons:add"></paper-icon-button>
           </div>
-          <paper-icon-button id="add-allowed-btn" icon="icons:add"></paper-icon-button>
-          <iron-collapse id="allowed" opened>
+          <iron-collapse id="allowed">
             <slot name="allowed"></slot>
           </iron-collapse>
         </div>
 
         <div class="permissions-section">
           <div class="title">
-            <paper-icon-button id="denied-collapse-btn" icon="unfold-less"></paper-icon-button>
-            Denied(s)
+            <paper-icon-button id="denied-collapse-btn" icon="unfold-more"></paper-icon-button>
+            <span style="flex:1;">Denied(s)</span>
+            <span class="section-summary" id="denied-summary"></span>
+            <paper-icon-button id="add-denied-btn" icon="icons:add"></paper-icon-button>
           </div>
-          <paper-icon-button id="add-denied-btn" icon="icons:add"></paper-icon-button>
-          <iron-collapse id="denied" opened>
+          <iron-collapse id="denied">
             <slot name="denied"></slot>
           </iron-collapse>
         </div>
@@ -178,19 +222,23 @@ export class PermissionsManager extends HTMLElement {
   }
 
   _getDomReferences() {
-    const $ = (sel) => this.shadowRoot.querySelector(sel)
-
-    this._container = $("#container")
-    this._pathDiv = $("#path")
-    this._closeButton = $("#close-button")
-    this._ownersCollapsePanel = $("#owner")
-    this._ownersCollapseBtn = $("#owner-collapse-btn")
-    this._allowedCollapsePanel = $("#allowed")
-    this._allowedCollapseBtn = $("#allowed-collapse-btn")
-    this._addAllowedBtn = $("#add-allowed-btn")
-    this._deniedCollapsePanel = $("#denied")
-    this._deniedCollapseBtn = $("#denied-collapse-btn")
-    this._addDeniedBtn = $("#add-denied-btn")
+    this._container = this.shadowRoot.querySelector("#container")
+    this._pathDiv = this.shadowRoot.querySelector("#path")
+    this._closeButton = this.shadowRoot.querySelector("#close-button")
+    this._ownersCollapsePanel = this.shadowRoot.querySelector("#owner")
+    this._ownersCollapseBtn = this.shadowRoot.querySelector("#owner-collapse-btn")
+    this._allowedCollapsePanel = this.shadowRoot.querySelector("#allowed")
+    this._allowedCollapseBtn = this.shadowRoot.querySelector("#allowed-collapse-btn")
+    this._addAllowedBtn = this.shadowRoot.querySelector("#add-allowed-btn")
+    this._deniedCollapsePanel = this.shadowRoot.querySelector("#denied")
+    this._deniedCollapseBtn = this.shadowRoot.querySelector("#denied-collapse-btn")
+    this._addDeniedBtn = this.shadowRoot.querySelector("#add-denied-btn")
+    this._ownerSummary = this.shadowRoot.querySelector("#owner-summary")
+    this._allowedSummary = this.shadowRoot.querySelector("#allowed-summary")
+    this._deniedSummary = this.shadowRoot.querySelector("#denied-summary")
+    this._ownerSlot = this.shadowRoot.querySelector('slot[name="owner"]')
+    this._allowedSlot = this.shadowRoot.querySelector('slot[name="allowed"]')
+    this._deniedSlot = this.shadowRoot.querySelector('slot[name="denied"]')
   }
 
   _bindEventListeners() {
@@ -207,6 +255,10 @@ export class PermissionsManager extends HTMLElement {
       this._handleAddPermissionClick.bind(this, this._addAllowedBtn, "allowed"))
     this._addDeniedBtn?.addEventListener('click',
       this._handleAddPermissionClick.bind(this, this._addDeniedBtn, "denied"))
+
+    this._ownerSlot?.addEventListener('slotchange', () => this._refreshSectionSummaries())
+    this._allowedSlot?.addEventListener('slotchange', () => this._refreshSectionSummaries())
+    this._deniedSlot?.addEventListener('slotchange', () => this._refreshSectionSummaries())
   }
 
   _handleCloseClick() {
@@ -286,16 +338,15 @@ export class PermissionsManager extends HTMLElement {
     if (type === "allowed") {
       this._permissions.getAllowedList().push(permission)
       panel.slot = "allowed"
-      this._allowedCollapsePanel?.appendChild(panel)
+      this.appendChild(panel)
       if (!this._allowedCollapsePanel?.opened) this._allowedCollapsePanel?.toggle()
     } else {
       this._permissions.getDeniedList().push(permission)
       panel.slot = "denied"
-      this._deniedCollapsePanel?.appendChild(panel)
+      this.appendChild(panel)
       if (!this._deniedCollapsePanel?.opened) this._deniedCollapsePanel?.toggle()
     }
 
-    this._savePermissions()
   }
 
   // ---------------- Backend calls via new wrapper ----------------
@@ -306,13 +357,13 @@ export class PermissionsManager extends HTMLElement {
         if (callback) callback()
         return
       }
+
+      this._removeEmptyPermissions()
+
+      if (!this._permissions.getResourceType()) this._permissions.setResourceType("file")
       if (!this._permissions.getResourceType()) this._permissions.setResourceType("file")
 
-      await setResourcePermissions({
-        path: this._path,
-        resourceType: this._permissions.getResourceType(),
-        permissions: this._permissions,
-      })
+      await setResourcePermissions(this._permissions)
 
       displaySuccess("Permissions saved successfully!", 3000)
       await this._fetchAndSetPermissions(this._path)
@@ -345,9 +396,6 @@ export class PermissionsManager extends HTMLElement {
       console.warn(`Permissions fetch failed for ${path}:`, err)
     } finally {
       this._renderPermissionsContent()
-      if (this._permissions?.getResourceType()) {
-        this.setResourceType(this._permissions.getResourceType())
-      }
     }
   }
 
@@ -362,9 +410,10 @@ export class PermissionsManager extends HTMLElement {
     if (!this._permissionsViewer) {
       this._permissionsViewer = new PermissionsViewer(this._permissionsNames.concat("owner"))
     }
+    const permissionsVM = permissionsProtoToVM(this._permissions)
     this._permissionsViewer.slot = "permission-viewer"
-    this._permissionsViewer.setPermissions(this._permissions)
     this._permissionsViewer.permissionManager = this
+    this._permissionsViewer.setPermissions(permissionsVM)
     this.appendChild(this._permissionsViewer)
 
     // Owner
@@ -378,8 +427,8 @@ export class PermissionsManager extends HTMLElement {
     this._permissions.getAllowedList().forEach(p => {
       const panel = new PermissionPanel(this)
       panel.id = `permission_${p.getName()}_allowed_panel`
-      panel.slot = "allowed"
       panel.setPermission(p)
+      panel.slot = "allowed"
       this.appendChild(panel)
     })
 
@@ -387,10 +436,12 @@ export class PermissionsManager extends HTMLElement {
     this._permissions.getDeniedList().forEach(p => {
       const panel = new PermissionPanel(this)
       panel.id = `permission_${p.getName()}_denied_panel`
-      panel.slot = "denied"
       panel.setPermission(p)
+      panel.slot = "denied"
       this.appendChild(panel)
     })
+
+    this._refreshSectionSummaries()
   }
 
   // ---------------- Helpers ----------------
@@ -401,6 +452,47 @@ export class PermissionsManager extends HTMLElement {
       owner.setName("owner")
       this._permissions.setOwners?.(owner) || this._permissions.setOwner?.(owner)
     }
+  }
+
+  _permissionHasSubjects(permission) {
+    if (!permission) return false
+    const total =
+      (permission.getAccountsList?.().length || 0) +
+      (permission.getGroupsList?.().length || 0) +
+      (permission.getApplicationsList?.().length || 0) +
+      (permission.getOrganizationsList?.().length || 0) +
+      (permission.getPeersList?.().length || 0)
+    return total > 0
+  }
+
+  _removeEmptyPermissions() {
+    const allowed = this._permissions.getAllowedList?.() || []
+    const cleanedAllowed = allowed.filter((perm) => this._permissionHasSubjects(perm))
+    if (this._permissions.setAllowedList) {
+      this._permissions.setAllowedList(cleanedAllowed)
+    }
+
+    const denied = this._permissions.getDeniedList?.() || []
+    const cleanedDenied = denied.filter((perm) => this._permissionHasSubjects(perm))
+    if (this._permissions.setDeniedList) {
+      this._permissions.setDeniedList(cleanedDenied)
+    }
+  }
+
+  async updatePermissionsFromViewer(vm) {
+    if (!vm) return
+    const proto = permissionsVMToProto(vm)
+    if (!proto.getPath?.()) proto.setPath?.(this._path || "")
+    const existingType =
+      proto.getResourcetype?.() ||
+      proto.getResourceType?.() ||
+      this._permissions?.getResourcetype?.() ||
+      this._permissions?.getResourceType?.() ||
+      vm.resourceType ||
+      "file"
+    proto.setResourcetype?.(existingType)
+    this._permissions = proto
+    await this._savePermissions()
   }
 }
 

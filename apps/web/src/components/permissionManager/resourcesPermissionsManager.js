@@ -1,26 +1,23 @@
 // src/widgets/resources_permissions.js — new-backend (JS)
 
 import getUuidByString from "uuid-by-string"
-import { Backend, displayError, displayMessage } from "../../backend/backend"
+import { Backend } from "../../backend/backend"
+import { displayError, displayMessage } from "../../backend/ui/notify"
 
 // Only used to publish tiny payloads on eventHub
 import { Permissions } from "globular-web-client/rbac/rbac_pb"
 
 // ---- New backend wrappers ----
 import {
-  streamPermissionsByResourceType, // (resourceType) => Promise<Permissions[]>
-  deleteResourcePermissions,       // (path, resourceType) => Promise<void>
+  listResourcePermissionsByType,
+  deleteResourcePermissions,
 } from "../../backend/rbac/permissions"
 
 // ---- Resource getters (update paths if yours differ) ----
-import { getApplication } from "../../backend/rbac/applications"
-import { getConversation } from "../conversation/conversation"
-import { getDomain } from "../domain/domain"
-// import { getFile } from "../../backend/file"  // intentionally left commented like original
-import { getGroup } from "../../backend/rbac/groups"
-import { getOrganization } from "../../backend/rbac/organizations"
-import { getPackage } from "../package/package"
-import { getRole } from "../../backend/rbac/roles"
+import { listApplications } from "../../backend/rbac/applications"
+import { listGroups } from "../../backend/rbac/groups"
+import { listOrganizations } from "../../backend/rbac/organizations"
+import { listRoles } from "../../backend/rbac/roles"
 
 // Polymer deps
 import '@polymer/paper-card/paper-card.js'
@@ -105,14 +102,15 @@ export class ResourcesPermissionsManager extends HTMLElement {
 
   _appendAllTypes() {
     const resourceTypes = [
-      { name: "application",   getter: getApplication },
-      { name: "conversation",  getter: getConversation },
-      { name: "domain",        getter: getDomain },
-      // { name: "file",        getter: getFile }, // left commented as in original
-      { name: "group",         getter: getGroup },
-      { name: "organization",  getter: getOrganization },
-      { name: "package",       getter: getPackage },
-      { name: "role",          getter: getRole },
+      { name: "application", getter: (path) => fetchApplicationResource(path) },
+      { name: "group", getter: (path) => fetchGroupResource(path) },
+      { name: "organization", getter: (path) => fetchOrganizationResource(path) },
+      { name: "role", getter: (path) => fetchRoleResource(path) },
+      { name: "package", getter: (path) => basicResourceFactory(path, "package") },
+      { name: "conversation", getter: (path) => basicResourceFactory(path, "conversation") },
+      { name: "domain", getter: (path) => basicResourceFactory(path, "domain") },
+      { name: "blog", getter: (path) => basicResourceFactory(path, "blog") },
+      { name: "webpage", getter: (path) => basicResourceFactory(path, "webpage") },
     ]
 
     resourceTypes.forEach(t => {
@@ -230,6 +228,7 @@ export class ResourcesPermissionsType extends HTMLElement {
           const res = await this._getResourceFn(p.getPath())
           const cmp = new ResourcePermissions(res)
           cmp.id = `_${getUuidByString(p.getPath())}`
+          cmp.dataset.resourceType = this._resourceType
           this.appendChild(cmp)
           count++
         } catch (e) {
@@ -246,7 +245,7 @@ export class ResourcesPermissionsType extends HTMLElement {
   }
 
   async _getPermissionsByType(resourceType) {
-    return await streamPermissionsByResourceType(resourceType)
+    return await listResourcePermissionsByType(resourceType)
   }
 
   _setCount(n) {
@@ -280,6 +279,7 @@ export class ResourcesPermissionsType extends HTMLElement {
       if (el) el.parentNode.removeChild(el)
       el = new ResourcePermissions(res)
       el.id = id
+      el.dataset.resourceType = this._resourceType
       this.appendChild(el)
       this._setCount(this.childElementCount)
     } catch (e) {
@@ -405,7 +405,7 @@ export class ResourcePermissions extends HTMLElement {
   }
 
   _appendEditor() {
-    if (!this._resource?.getPath || !this._resource?.getResourceType) return
+    if (!this._resource?.getPath) return
     const pm = new PermissionsManager()
     pm.hideHeader()
     pm.slot = "resource-permissions-editor"
@@ -413,7 +413,11 @@ export class ResourcePermissions extends HTMLElement {
 
     // Provide path & type (no globule)
     pm.path = this._resource.getPath()
-    pm.setResourceType?.(this._resource.getResourceType())
+    const resourceType =
+      this._resource.getResourceType?.() ||
+      this.dataset.resourceType ||
+      "file"
+    if (resourceType) pm.setResourceType?.(resourceType)
   }
 
   async _onDelete() {
@@ -463,3 +467,148 @@ export class ResourcePermissions extends HTMLElement {
   }
 }
 customElements.define('globular-resource-permissions', ResourcePermissions)
+
+const RESOURCE_QUERY_LIMIT = 200
+
+const extractItems = (result) => {
+  if (Array.isArray(result)) return result
+  if (result?.items) return result.items
+  return []
+}
+
+const splitFqid = (value = "") => {
+  const str = String(value || "")
+  const at = str.lastIndexOf("@")
+  if (at > 0) return { id: str.slice(0, at), domain: str.slice(at + 1) }
+  return { id: str, domain: "" }
+}
+
+const buildResource = ({ path, resourceType, header, lines = [] }) => {
+  return {
+    getPath: () => path,
+    getResourceType: () => resourceType,
+    getHeaderText: () => header || path,
+    getInfo: () => {
+      const wrapper = document.createElement("div")
+      wrapper.style.padding = "10px"
+      wrapper.style.display = "flex"
+      wrapper.style.flexDirection = "column"
+      const title = document.createElement("div")
+      title.style.fontWeight = "500"
+      title.textContent = header || path
+      wrapper.appendChild(title)
+      const renderedLines = lines.filter(Boolean)
+      if (renderedLines.length === 0) {
+        const line = document.createElement("div")
+        line.textContent = path
+        wrapper.appendChild(line)
+      } else {
+        renderedLines.forEach((text) => {
+          const line = document.createElement("div")
+          line.textContent = text
+          wrapper.appendChild(line)
+        })
+      }
+      return wrapper
+    },
+  }
+}
+
+const basicResourceFactory = (path, type) =>
+  Promise.resolve(buildResource({ path, resourceType: type, header: path, lines: [`Path: ${path}`] }))
+
+async function fetchApplicationResource(path) {
+  const { id, domain } = splitFqid(path)
+  const query = domain
+    ? { $and: [{ $or: [{ _id: id }, { id }, { alias: id }] }, { domain }] }
+    : { $or: [{ _id: id }, { id }, { alias: id }, { name: id }] }
+
+  const result = await listApplications({ query, pageSize: RESOURCE_QUERY_LIMIT })
+  const items = extractItems(result)
+  const match = items.find((app) => {
+    const appId = app.id || app.name || ""
+    const fq = app.domain ? `${appId}@${app.domain}` : appId
+    return fq === path || appId === id || (app.alias && app.alias === id)
+  })
+  if (!match) throw new Error(`Application ${path} not found`)
+
+  const header = `${match.alias || match.name || match.id || path} ${match.version || ""}`.trim()
+  const lines = [
+    match.description,
+    match.domain ? `Domain: ${match.domain}` : "",
+    match.path ? `Path: ${match.path}` : "",
+  ]
+  return buildResource({ path, resourceType: "application", header, lines })
+}
+
+async function fetchGroupResource(path) {
+  const { id, domain } = splitFqid(path)
+  const query = domain
+    ? { $and: [{ $or: [{ _id: id }, { id }, { name: id }] }, { domain }] }
+    : { $or: [{ _id: id }, { id }, { name: id }] }
+
+  const result = await listGroups({ query, pageSize: RESOURCE_QUERY_LIMIT })
+  const items = extractItems(result)
+  const match = items.find((group) => {
+    const gid = group.id || group.name || ""
+    const fq = group.domain ? `${gid}@${group.domain}` : gid
+    return fq === path || gid === id
+  })
+  if (!match) throw new Error(`Group ${path} not found`)
+
+  const header = match.name || match.id || path
+  const lines = [
+    match.description,
+    match.domain ? `Domain: ${match.domain}` : "",
+    match.members ? `Members: ${match.members.length}` : "",
+  ]
+  return buildResource({ path, resourceType: "group", header, lines })
+}
+
+async function fetchOrganizationResource(path) {
+  const { id, domain } = splitFqid(path)
+  const query = domain
+    ? { $and: [{ $or: [{ _id: id }, { id }, { name: id }] }, { domain }] }
+    : { $or: [{ _id: id }, { id }, { name: id }] }
+
+  const result = await listOrganizations({ query, pageSize: RESOURCE_QUERY_LIMIT })
+  const items = extractItems(result)
+  const match = items.find((org) => {
+    const oid = org.id || org.name || ""
+    const fq = org.domain ? `${oid}@${org.domain}` : oid
+    return fq === path || oid === id
+  })
+  if (!match) throw new Error(`Organization ${path} not found`)
+
+  const header = match.name || match.id || path
+  const lines = [
+    match.description,
+    match.domain ? `Domain: ${match.domain}` : "",
+    match.email ? `Email: ${match.email}` : "",
+  ]
+  return buildResource({ path, resourceType: "organization", header, lines })
+}
+
+async function fetchRoleResource(path) {
+  const { id, domain } = splitFqid(path)
+  const query = domain
+    ? { $and: [{ $or: [{ _id: id }, { id }, { name: id }] }, { domain }] }
+    : { $or: [{ _id: id }, { id }, { name: id }] }
+
+  const result = await listRoles({ query, pageSize: RESOURCE_QUERY_LIMIT })
+  const items = extractItems(result)
+  const match = items.find((role) => {
+    const rid = role.id || role.name || ""
+    const fq = role.domain ? `${rid}@${role.domain}` : rid
+    return fq === path || rid === id
+  })
+  if (!match) throw new Error(`Role ${path} not found`)
+
+  const header = match.name || match.id || path
+  const lines = [
+    match.description,
+    match.domain ? `Domain: ${match.domain}` : "",
+    match.actions ? `Actions: ${match.actions.length}` : "",
+  ]
+  return buildResource({ path, resourceType: "role", header, lines })
+}

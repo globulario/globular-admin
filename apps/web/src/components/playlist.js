@@ -246,9 +246,16 @@ export class PlayList extends HTMLElement {
   _renderHTML() {
     this.shadowRoot.innerHTML = `
       <style>
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: var(--surface-color); }
-        ::-webkit-scrollbar-thumb { background: var(--palette-divider); }
+        ::-webkit-scrollbar {
+          width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+          background: var(--scroll-track, var(--surface-color));
+        }
+        ::-webkit-scrollbar-thumb {
+          background: var(--scroll-thumb, var(--palette-divider));
+          border-radius: 6px;
+        }
 
         #container {
           display:flex; overflow-y:auto; overflow-x:hidden;

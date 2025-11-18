@@ -157,18 +157,16 @@ export class AppLayout extends HTMLElement {
           /* Chromium/WebKit */
           ::slotted([slot="app-content"])::-webkit-scrollbar {
             width: 10px;
-            height: 10px;
           }
           ::slotted([slot="app-content"])::-webkit-scrollbar-track {
-            background: var(--scroll-track);
+            background: var(--scroll-track, var(--surface-color));
           }
           ::slotted([slot="app-content"])::-webkit-scrollbar-thumb {
-            background-color: var(--scroll-thumb);
+            background: var(--scroll-thumb, var(--palette-divider));
             border-radius: 6px;
-            border: 2px solid var(--scroll-track);
           }
           ::slotted([slot="app-content"])::-webkit-scrollbar-thumb:hover {
-            background-color: var(--scroll-thumb-hover);
+            background: var(--scroll-thumb-hover, var(--palette-divider));
           }
 
           app-drawer-layout[narrow] app-header {
