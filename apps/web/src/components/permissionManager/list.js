@@ -93,8 +93,9 @@ async function _setupAddPanelLogic(
         left:0;
         z-index:10;
         background: var(--surface-color);
-        border-radius: 10px;
-        box-shadow: var(--shadow-elevation-6dp);
+        border-radius: 12px;
+        border: 1px solid var(--palette-divider);
+        box-shadow: 0 12px 30px rgba(0,0,0,0.2);
         width: min(520px, calc(100% - 24px));
         max-height: calc(80vh);
         overflow: visible;
@@ -103,16 +104,17 @@ async function _setupAddPanelLogic(
       }
       #${panelId} .panel-header {
         display:flex; align-items:center; gap:8px;
-        padding:8px;
-        background: var(--palette-primary-accent);
-        color: var(--on-primary-color);
+        padding:4px 8px;
+        background-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+        color: var(--primary-text-color);
         border-bottom: 1px solid var(--palette-divider);
       }
       #${panelId} .panel-header > div { flex:1; font-weight:500; }
       #${panelId} .card-content {
         flex:1;
-        padding:12px;
+        padding:8px 12px;
         overflow: visible;
+        background: var(--surface-color);
       }
       #${panelId} paper-card { background: var(--surface-color); color: var(--primary-text-color); }
       #${panelId} globular-autocomplete { --globular-autocomplete-input-width: 100%; }
@@ -195,7 +197,7 @@ function _createGenericItemDiv(uuid, mainText, subText = "", iconUrl = "", iconN
   div.innerHTML = `
     <style>
       .item-div {
-        display:flex; align-items:center; padding:8px; width:100%;
+        display:flex; align-items:center;
         border-bottom:1px solid var(--palette-divider);
       }
       .item-div:last-child { border-bottom:none; }

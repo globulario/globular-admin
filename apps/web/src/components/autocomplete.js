@@ -90,31 +90,39 @@ export class Autocomplete extends HTMLElement {
                 width: var(--autocomplete-width, 100%); /* Use CSS variable for width */
             }
             paper-card {
-                background-color: var(--surface-color, white); /* Use CSS variables for theme */
-                color: var(--on-surface-color, black); /* Use CSS variables for theme */
-                max-height: 350px;
-                overflow-y: auto;
-                width: 100%; /* Take 100% of host width */
+                background-color: var(--surface-elevated-color, #fff);
+                color: var(--primary-text-color, #1d2025);
+                border: 1px solid var(--border-subtle-color, var(--divider-color));
+                border-radius: 8px;
+                max-height: 320px;
+                overflow-y: hidden;
+                width: 100%;
                 z-index: 10;
-                position: absolute; /* Position relative to body or a positioned parent */
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2); /* Add shadow */
-                display: none; /* Hidden by default */
+                position: absolute;
+                box-shadow: 0 16px 32px rgba(15, 23, 42, 0.2);
+                display: none;
             }
             paper-input {
-                width: 100%; /* Take 100% of host width */
-                --paper-input-container-focus-color: var(--primary-color, blue); /* Use theme color */
+                width: 100%;
+                --paper-input-container-input-color: var(--primary-text-color);
+                --paper-input-container-focus-color: var(--primary-color);
+                --paper-input-container-color: var(--secondary-text-color);
             }
             #autocomplete-div {
                 position: relative; /* Needed for absolute positioning of paper-card */
                 width: 100%;
             }
             .suggestion-item {
-                padding: 10px;
+                padding: 10px 12px;
                 cursor: pointer;
-                transition: background-color 0.2s ease;
+                transition: background-color 0.2s ease, color 0.2s ease;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
             .suggestion-item:hover, .suggestion-item.highlighted {
-                background-color: var(--paper-grey-200, #eee); /* Highlight on hover/keyboard nav */
+                background-color: color-mix(in srgb, var(--primary-color) 12%, transparent);
+                color: var(--primary-text-color);
             }
         </style>
 

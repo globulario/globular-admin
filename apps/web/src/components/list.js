@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import getUuidByString from "uuid-by-string";
 import { fireResize } from "./utility"; // Assuming this utility is available
+import '@polymer/paper-button/paper-button.js';
 
 /**
  * `globular-editable-string-list` Web Component.
@@ -410,16 +411,19 @@ export class SearchableList extends HTMLElement {
     // --- Private Helper Methods ---
 
     _renderHTML() {
+        const baseTitle = (this._titleText || "").replace(/\s*\(.*\)/, "").trim() || "Item";
+        const addButtonLabel = `Add ${baseTitle}`;
         this.shadowRoot.innerHTML = `
         <style>
             .header{
                 position: relative;
                 transition: background 0.2s ease,padding 0.8s linear;
-                padding-left: 10px;
-                background-color: var(--surface-color); /* Use CSS variable */
+                padding: 8px 12px;
+                background-color: var(--surface-elevated-color, var(--surface-color));
                 color: var(--on-surface-color); /* Use CSS variable */
+                border: 1px solid var(--border-subtle-color, var(--palette-divider));
+                border-radius: 8px;
             }
-
             .item-div:hover{
                 filter: invert(10%);
             }
@@ -432,8 +436,30 @@ export class SearchableList extends HTMLElement {
                 cursor: pointer; /* Make items clickable */
             }
 
-            .icon-button{
-                cursor: pointer;
+            .header-row{
+                display:flex;
+                align-items:center;
+                gap:12px;
+            }
+            .header-row paper-input{
+                flex:1;
+                --paper-input-container-color: var(--secondary-text-color);
+                --paper-input-container-focus-color: var(--primary-color);
+                --paper-input-container-input-color: var(--primary-text-color);
+            }
+            .add-action-btn{
+                display:inline-flex;
+                align-items:center;
+                gap:4px;
+                white-space:nowrap;
+                background: var(--primary-color);
+                color: var(--on-primary-color);
+                --paper-button-raised-keyboard-focus: var(--primary-dark-color);
+                border-radius: 8px;
+            }
+            .add-action-btn iron-icon{
+                --iron-icon-width:20px;
+                --iron-icon-height:20px;
             }
 
             ::-webkit-scrollbar {
@@ -465,14 +491,12 @@ export class SearchableList extends HTMLElement {
         </style>
         
         <div id="header-div" class="header">
-            <div style="display:flex; flex-direction: row; align-items: center; gap:8px;">
-                <div class="icon-button">
-                    <iron-icon id="action-add-btn" icon="add"></iron-icon>
-                    <paper-ripple class="circle"></paper-ripple>
-                </div>
-                <div style="flex-grow: 1;">
-                    <paper-input style="padding-left: 15px; max-width: 300px;" type="text" label="Filter ${this._titleText}"></paper-input>
-                </div>
+            <div class="header-row">
+                <paper-input style="padding-left: 15px;" type="text" label="Filter ${this._titleText}"></paper-input>
+                <paper-button id="action-add-btn" class="add-action-btn" raised aria-label="${addButtonLabel}" title="${addButtonLabel}">
+                    <iron-icon icon="add"></iron-icon>
+                    <span>${addButtonLabel}</span>
+                </paper-button>
             </div>
         </div>
         <div id="shadow-div"></div>
@@ -496,8 +520,13 @@ export class SearchableList extends HTMLElement {
         if (this._filterInput) {
             this._filterInput.addEventListener("keyup", this._handleFilterKeyup);
         }
-        if (this._addBtn && this.onadd) {
-            this._addBtn.addEventListener("click", this._handleAddClick);
+        if (this._addBtn) {
+            if (this.onadd) {
+                this._addBtn.addEventListener("click", this._handleAddClick);
+                this._addBtn.removeAttribute("disabled");
+            } else {
+                this._addBtn.setAttribute("disabled", "disabled");
+            }
         }
     }
 

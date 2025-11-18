@@ -262,8 +262,16 @@ export class PermissionsManager extends HTMLElement {
   }
 
   _handleCloseClick() {
-    if (this._onclose) this._onclose()
-    this.parentNode?.removeChild(this)
+    let shouldRemove = true
+    if (this._onclose) {
+      try {
+        const result = this._onclose()
+        if (result === false) shouldRemove = false
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    if (shouldRemove) this.parentNode?.removeChild(this)
   }
 
   _handleCollapseToggle(panel, button) {

@@ -459,6 +459,11 @@ export class FileExplorer extends HTMLElement {
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
 
+    this._permissionManager.onclose = () => {
+      this._permissionManager.style.display = "none";
+      this._displayView(this._currentDir);
+      return false;
+    };
     // ensure closing the info manager restores the file view
     this._informationManager.onclose = () => this._displayView(this._currentDir);
 
@@ -568,6 +573,9 @@ export class FileExplorer extends HTMLElement {
     Backend.eventHub.subscribe(`display_permission_manager_${explorerId}_event`,
       (uuid) => { this._listeners[`display_permission_manager_${explorerId}_event`] = uuid; },
       (file) => {
+        if (!this._permissionManager.parentElement) {
+          this._fileSelectionPanel.appendChild(this._permissionManager);
+        }
         this._permissionManager._permissions = null;
         const filePath = extractPath(file);
         this._permissionManager.path = filePath;
