@@ -295,18 +295,20 @@ export class FileNavigator extends HTMLElement {
 
   async setDir(dirVM, callback) {
     this._path = pathOf(dirVM);
+    const isPublicDir = isSyntheticPublic(dirVM);
 
     // Seed "My Files" root once; don't flush sections on navigation.
-    if (!this._domRefs.userFilesDiv.__vmRoots) this._domRefs.userFilesDiv.__vmRoots = [];
-    if (!this._domRefs.userFilesDiv.__vmRoots.find(v => pathOf(v) === pathOf(dirVM))) {
-      this._domRefs.userFilesDiv.__vmRoots.push(dirVM);
-      this._initTreeView(dirVM, this._domRefs.userFilesDiv, 0);
+    if (!isPublicDir) {
+      if (!this._domRefs.userFilesDiv.__vmRoots) this._domRefs.userFilesDiv.__vmRoots = [];
+      if (!this._domRefs.userFilesDiv.__vmRoots.find(v => pathOf(v) === pathOf(dirVM))) {
+        this._domRefs.userFilesDiv.__vmRoots.push(dirVM);
+        this._initTreeView(dirVM, this._domRefs.userFilesDiv, 0);
+      }
     }
 
     // Public once
     if (!this._domRefs.publicFilesDiv.__initialized) {
       await this._initPublic();
-      this._domRefs.publicFilesDiv.__initialized = true;
     }
 
     // Shared once
@@ -326,27 +328,15 @@ export class FileNavigator extends HTMLElement {
     const isPublicRoot = key === "/public";
     const isSharedPath = key === "/shared" || key.startsWith("/shared/");
 
-    // Helper: purge cache entries under a prefix (including the prefix itself)
-    const purgeCacheUnder = (prefix) => {
-      const prefixWithSlash = prefix.endsWith("/") ? prefix : prefix + "/";
-      const keys = Array.from(this._dirsCache.keys());
-      for (const k of keys) {
-        if (k === prefix || k.startsWith(prefixWithSlash)) {
-          this._dirsCache.delete(k);
-        }
-      }
-    };
-
     // ---------------- PUBLIC SECTION ----------------
     if (isPublicRoot) {
       // We rebuild the entire Public section, so clear its cache & DOM.
-      purgeCacheUnder("/public");
+      this._purgeCachedPaths("/public");
 
       this._domRefs.publicFilesDiv.innerHTML = "";
       this._domRefs.publicFilesDiv.__initialized = false;
 
       await this._initPublic();
-      this._domRefs.publicFilesDiv.__initialized = true;
 
       callback && callback();
       return;
@@ -355,7 +345,7 @@ export class FileNavigator extends HTMLElement {
     // ---------------- SHARED SECTION ----------------
     if (isSharedPath) {
       // Shared is grouped under a synthetic /shared root, rebuild whole section.
-      purgeCacheUnder("/shared");
+      this._purgeCachedPaths("/shared");
 
       this._domRefs.sharedFilesDiv.innerHTML = "";
       this._domRefs.sharedFilesDiv.__initialized = false;
@@ -387,7 +377,7 @@ export class FileNavigator extends HTMLElement {
     }
 
     // 2) Purge this directory AND all its descendants from the cache
-    purgeCacheUnder(key);
+    this._purgeCachedPaths(key);
 
     // 3) Re-append it under the same parent container at the same level
     const parentDiv =
@@ -443,6 +433,8 @@ export class FileNavigator extends HTMLElement {
     const dirIco = this.shadowRoot.getElementById(`${id}_directory_icon`);
     const filesDiv = this.shadowRoot.getElementById(`${id}_files_div`);
     const rowDiv = this.shadowRoot.getElementById(id);
+    const syntheticPublic = isSyntheticPublic(dirVM);
+    const allowDrops = !syntheticPublic;
 
     // mark build status on the container so we don't wipe it accidentally
     filesDiv.__built = false;
@@ -509,65 +501,69 @@ export class FileNavigator extends HTMLElement {
 
     // Drag & drop onto folder
     if (dirLnk) {
-      dirLnk.addEventListener("dragover", (evt) => {
-        evt.preventDefault();
-        if (dirIco) dirIco.icon = "icons:folder-open";
-        dirLnk.closest(".directory-item")?.classList.add("drag-over");
-      });
+      if (allowDrops) {
+        dirLnk.addEventListener("dragover", (evt) => {
+          evt.preventDefault();
+          if (dirIco) dirIco.icon = "icons:folder-open";
+          dirLnk.closest(".directory-item")?.classList.add("drag-over");
+        });
 
-      dirLnk.addEventListener("dragleave", () => {
-        if (!this._expanded.has(path) && dirIco) dirIco.icon = "icons:folder";
-        dirLnk.closest(".directory-item")?.classList.remove("drag-over");
-      });
+        dirLnk.addEventListener("dragleave", () => {
+          if (!this._expanded.has(path) && dirIco) dirIco.icon = "icons:folder";
+          dirLnk.closest(".directory-item")?.classList.remove("drag-over");
+        });
 
-      dirLnk.addEventListener("drop", async (evt) => {
-        evt.stopPropagation();
-        evt.preventDefault();
-        if (!this._expanded.has(path) && dirIco) dirIco.icon = "icons:folder";
-        dirLnk.closest(".directory-item")?.classList.remove("drag-over");
+        dirLnk.addEventListener("drop", async (evt) => {
+          evt.stopPropagation();
+          evt.preventDefault();
+          if (!this._expanded.has(path) && dirIco) dirIco.icon = "icons:folder";
+          dirLnk.closest(".directory-item")?.classList.remove("drag-over");
 
-        const filesDataTransfer = evt.dataTransfer?.getData("files");
-        const domainDataTransfer = evt.dataTransfer?.getData("domain");
-        const urlDataTransfer = evt.dataTransfer?.getData("Url");
-        const fileListTransfer = evt.dataTransfer?.files || [];
+          const filesDataTransfer = evt.dataTransfer?.getData("files");
+          const domainDataTransfer = evt.dataTransfer?.getData("domain");
+          const urlDataTransfer = evt.dataTransfer?.getData("Url");
+          const fileListTransfer = evt.dataTransfer?.files || [];
 
-        try {
-          if (urlDataTransfer && urlDataTransfer.startsWith("https://www.imdb.com/title")) {
-            displayMessage("IMDb title drop not implemented here.", 2500);
-          } else if (fileListTransfer.length > 0) {
-            Backend.eventHub.publish(
-              "__upload_files_event__",
-              { dir: dirVM, files: Array.from(fileListTransfer), lnk: null },
-              true
-            );
-          } else if (filesDataTransfer && domainDataTransfer) {
-            const files = JSON.parse(filesDataTransfer);
-            const sourceId = evt.dataTransfer?.getData("id");
-            if (files.length > 0) {
-              files.forEach((f) => {
-                Backend.eventHub.publish(
-                  `drop_file_${this._fileExplorer?.id}_event`,
-                  { file: f, dir: path, id: sourceId, domain: domainDataTransfer },
-                  true
-                );
-              });
+          try {
+            if (urlDataTransfer && urlDataTransfer.startsWith("https://www.imdb.com/title")) {
+              displayMessage("IMDb title drop not implemented here.", 2500);
+            } else if (fileListTransfer.length > 0) {
+              Backend.eventHub.publish(
+                "__upload_files_event__",
+                { dir: dirVM, files: Array.from(fileListTransfer), lnk: null },
+                true
+              );
+            } else if (filesDataTransfer && domainDataTransfer) {
+              const files = JSON.parse(filesDataTransfer);
+              const sourceId = evt.dataTransfer?.getData("id");
+              if (files.length > 0) {
+                files.forEach((f) => {
+                  Backend.eventHub.publish(
+                    `drop_file_${this._fileExplorer?.id}_event`,
+                    { file: f, dir: path, id: sourceId, domain: domainDataTransfer },
+                    true
+                  );
+                });
+              }
             }
+          } catch (e) {
+            console.error("Error processing drop:", e);
+            displayError("Failed to process dropped item.", 3000);
           }
-        } catch (e) {
-          console.error("Error processing drop:", e);
-          displayError("Failed to process dropped item.", 3000);
-        }
-      });
+        });
+      }
 
       // Click to open folder in explorer
-      dirLnk.addEventListener("click", (evt) => {
+      dirLnk.addEventListener("click", async (evt) => {
         evt.stopPropagation();
 
-        // Synthetic Public: toggle expand instead of navigating
-        if (isSyntheticPublic(dirVM)) {
-          const isCollapsed = expandBtn && expandBtn.style.display !== "none";
-          toggleSubdirs(isCollapsed);
+        if (syntheticPublic) {
+          await toggleSubdirs(true);
+          this._fileExplorer?.publishSetDirEvent?.("/public");
           this._selectRow(path);
+          if (this._fileExplorer?._informationsManager?.parentNode) {
+            this._fileExplorer._informationsManager.style.display = "none";
+          }
           return;
         }
 
@@ -642,52 +638,91 @@ export class FileNavigator extends HTMLElement {
 
   async _initPublic() {
     if (this._domRefs.publicFilesDiv.__initialized) return;
-
-    this._domRefs.publicFilesDiv.innerHTML = "";
+    if (this._domRefs.publicFilesDiv.__initializingPromise) {
+      try {
+        await this._domRefs.publicFilesDiv.__initializingPromise;
+      } catch {
+        // ignore, a retry will happen below
+      }
+      if (this._domRefs.publicFilesDiv.__initialized) return;
+    }
 
     // Subscribe to permission changes once
     const topic = "public_change_permission_event";
     subscribeOnce.call(this, this._listeners, topic, topic, async () => {
-      // rebuild Public only
       this._domRefs.publicFilesDiv.__initialized = false;
       await this._initPublic();
     });
 
+    const initPromise = (async () => {
+      this._domRefs.publicFilesDiv.innerHTML = "";
+      this._purgeCachedPaths("/public");
+
+      try {
+        const paths = await listPublicDirs();
+        const children = await Promise.all(
+          paths.map(async (p) => {
+            try {
+              const dir = await readDir(p, { refresh: true });
+              markAsPublic(dir);
+              dir.name = nameOf(dir) || (p.split("/").pop() || p);
+              return dir;
+            } catch (err) {
+              const fallback = {
+                name: p.split("/").pop() || p,
+                path: p,
+                isDir: true,
+                mime: "inode/directory",
+                files: [],
+              };
+              markAsPublic(fallback);
+              return fallback;
+            }
+          })
+        );
+
+        const publicRoot = {
+          name: "Public",
+          path: "/public",
+          isDir: true,
+          mime: "synthetic/public-root",
+          files: children,
+        };
+        markAsPublic(publicRoot);
+
+        this._initTreeView(publicRoot, this._domRefs.publicFilesDiv, 0);
+        this._domRefs.publicFilesDiv.__initialized = true;
+      } catch (e) {
+        console.error("Failed to initialize public dirs:", e);
+        displayError(`Failed to load public directories: ${e?.message || e}`, 3000);
+        this._domRefs.publicFilesDiv.__initialized = false;
+        throw e;
+      }
+    })();
+
+    this._domRefs.publicFilesDiv.__initializingPromise = initPromise;
     try {
-      const paths = await listPublicDirs(); // list of real backend directories
-
-      // Build a synthetic root "/public" that only exists client-side
-      const publicRoot = {
-        name: "Public",
-        path: "/public",
-        isDir: true,
-        mime: "synthetic/public-root",
-        files: [],
-      };
-      markAsPublic(publicRoot);
-
-      // Each child is a *real* backend directory (presented under /public)
-      publicRoot.files = await Promise.all(
-        paths.map(async (p) => {
-          try {
-            const d = await readDir(p, { refresh: true });
-            markAsPublic(d);
-            d.name = nameOf(d) || (p.split("/").pop() || p);
-            return d;
-          } catch {
-            const stub = { name: p.split("/").pop() || p, path: p, isDir: true, mime: "inode/directory", files: [] };
-            markAsPublic(stub);
-            return stub;
-          }
-        })
-      );
-
-      this._initTreeView(publicRoot, this._domRefs.publicFilesDiv, 0);
-      this._domRefs.publicFilesDiv.__initialized = true;
-    } catch (e) {
-      console.error("Failed to initialize public dirs:", e);
-      displayError(`Failed to load public directories: ${e?.message || e}`, 3000);
+      await initPromise;
+    } finally {
+      this._domRefs.publicFilesDiv.__initializingPromise = null;
     }
+  }
+
+  _purgeCachedPaths(prefix) {
+    if (!prefix) return;
+    const normalized =
+      prefix === "/"
+        ? "/"
+        : prefix.replace(/\/+$/, "");
+    const shouldDelete =
+      normalized === "/"
+        ? () => true
+        : (k) => k === normalized || k.startsWith(`${normalized}/`);
+    Array.from(this._dirsCache.keys()).forEach((k) => {
+      if (shouldDelete(k)) {
+        this._dirsCache.delete(k);
+      }
+    });
   }
 
   /* ------------------------------ Shared ------------------------------ */

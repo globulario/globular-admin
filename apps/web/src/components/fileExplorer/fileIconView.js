@@ -166,22 +166,23 @@ export class FileIconView extends HTMLElement {
 
       /* Name text — allow full wrap without clipping */
       .file-name-span {
-        display: block;
+        display: -webkit-box;
         max-width: 100%;
         margin: 6px auto 0 auto;
         text-align: center;
         font-size: .75rem;
         line-height: 1.1em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--on-surface-color, black);
 
-        /* wrapping rules to handle hashes/long tokens */
+        /* limit to 3 lines while allowing breaks */
+        max-height: calc(1.1em * 3);
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        white-space: normal;
         overflow-wrap: anywhere;
         word-break: break-word;
-        white-space: normal;
-
-        /* no clipping: let container grow */
-        overflow: visible;
-
-        color: var(--on-surface-color, black);
       }
 
       /* Shortcut badge (reply icon) */
@@ -340,7 +341,7 @@ export class FileIconView extends HTMLElement {
   /* ---------- Private: Rendering ---------- */
   async _render() {
     const f = this._file;
-    this._dom.fileName.textContent = nameOf(f);
+    this._setDisplayName(nameOf(f));
     this._clear(this._dom.iconDisplay);
 
     this._setShortcutBadge(hasLinkFlag(f));
@@ -395,7 +396,7 @@ export class FileIconView extends HTMLElement {
           } else {
             folderIconEl?.setAttribute?.("icon", FOLDER_ICON);
           }
-          if (titleName) this._dom.fileName.textContent = titleName;
+          if (titleName) this._setDisplayName(titleName);
         }
       } else {
         const titles = await getTitleInfoFlex(f);
@@ -408,12 +409,21 @@ export class FileIconView extends HTMLElement {
             this._appendImg(posterUrl);
           }
           const titleName = t.getName?.() || t.name || null;
-          if (titleName) this._dom.fileName.textContent = titleName;
+          if (titleName) this._setDisplayName(titleName);
         }
       }
     } catch {
       /* keep default folder icon */
     }
+  }
+
+  _setDisplayName(name) {
+    const text = name || "";
+    if (this._dom.fileName) {
+      this._dom.fileName.textContent = text;
+      this._dom.fileName.setAttribute("title", text);
+    }
+    this._dom.content?.setAttribute("title", text);
   }
 
   /* ---------- Private: Actions ---------- */

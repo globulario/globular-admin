@@ -747,7 +747,28 @@ export async function listPublicDirs(): Promise<string[]> {
     rsp?.dirsList ??
     rsp?.dirs ??
     [];
-  return Array.isArray(list) ? list : [];
+  if (!Array.isArray(list)) return [];
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "string") continue;
+    let path = entry.trim();
+    if (!path) continue;
+    if (!path.startsWith("/")) path = "/" + path;
+    path = path.replace(/\/+/g, "/");
+    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+    if (!seen.has(path)) {
+      seen.add(path);
+      normalized.push(path);
+    }
+  }
+  return normalized;
+}
+
+/** Backward-compatible alias (older code imported getPublicDirs) */
+export async function getPublicDirs(): Promise<string[]> {
+  return listPublicDirs();
 }
 
 /* ------------------------------ NEW RPCs (per proto/Service) ------------------------------ */

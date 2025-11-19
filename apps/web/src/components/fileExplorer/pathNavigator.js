@@ -5,7 +5,7 @@
 // - Labels replace current account id@domain with displayName when segment matches
 
 import { Backend } from "../../backend/backend";
-import { readDir } from "../../backend/cms/files";
+import { readDir, getPublicDirs, markAsPublic } from "../../backend/cms/files";
 import { getCurrentAccount } from "../../backend/rbac/accounts";
 import { displayError } from "../../backend/ui/notify";
 
@@ -244,8 +244,27 @@ export class PathNavigator extends HTMLElement {
       iconEl.parentElement.appendChild(card);
 
       try {
-        const dir = await readDir(parentPath, { refresh: true });
-        const files = (dir && dir.files) || [];
+        let files = [];
+        if (parentPath === "/public") {
+          const paths = await getPublicDirs();
+          files = await Promise.all(
+            paths.map(async (p) => {
+              try {
+                const dir = await readDir(p, true);
+                markAsPublic(dir);
+                dir.name = dir.name || (p.split("/").pop() || p);
+                return dir;
+              } catch (err) {
+                const stub = { path: p, name: p.split("/").pop() || p, isDir: true, files: [] };
+                markAsPublic(stub);
+                return stub;
+              }
+            })
+          );
+        } else {
+          const dir = await readDir(parentPath, true);
+          files = (dir && dir.files) || [];
+        }
 
         files
           .filter(isDir)

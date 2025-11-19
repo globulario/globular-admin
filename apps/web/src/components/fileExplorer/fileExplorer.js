@@ -35,11 +35,13 @@ import {
   createDir,
   createLink,
   getFilesCache,
+  getPublicDirs,
+  markAsPublic,
   readDir,
+  readDirFresh,
   upload,
   getFile as getFileInfo,
   getImages, // HTMLImageElement[] loader for FileVM[]
-  readDirFresh
 } from "../../backend/cms/files";
 
 import { displayError, displayMessage } from "../../backend/ui/notify";
@@ -608,7 +610,12 @@ export class FileExplorer extends HTMLElement {
           this._filesIconView.setSelected({});
           this._filesListView.setSelected({});
           try {
-            const dirVM = await readDirFresh(path, true);
+            let dirVM;
+            if (path === "/public") {
+              dirVM = await this._buildPublicDirVM();
+            } else {
+              dirVM = await readDirFresh(path, true);
+            }
             if (this._fileNavigator?.reload) this._fileNavigator.reload(adaptDirVM(dirVM));
             if (dirVM.path === this._path) {
               const adapted = adaptDirVM(dirVM);
@@ -947,9 +954,20 @@ export class FileExplorer extends HTMLElement {
     Backend.eventHub.publish("__clear_selection_evt__", { file_explorer_id: this._id }, true);
   }
 
-  _handleRefreshClick() { Backend.eventHub.publish("reload_dir_event", this._path, true); }
+  _handleRefreshClick() {
+    if (this._path === "/public") {
+      this.publishSetDirEvent("/public");
+      Backend.eventHub.publish("public_change_permission_event", null, false);
+      return;
+    }
+    Backend.eventHub.publish("reload_dir_event", this._path, true);
+  }
 
   _handleCreateDirectoryClick() {
+    const isPublicContext = this._path === "/public";
+    const inputLabel = isPublicContext ? "Directory path to make public" : "New folder name";
+    const defaultValue = isPublicContext ? "" : "Untitled Folder";
+
     const dialogId = "new-dir-dialog";
     let dialog = this._fileExplorerContent.querySelector(`#${dialogId}`);
 
@@ -981,6 +999,11 @@ export class FileExplorer extends HTMLElement {
             border-top: 1px solid var(--palette-divider);
           }
           .card-content { padding: 16px; }
+          .helper-text {
+            font-size: 0.8rem;
+            color: var(--palette-text-secondary);
+            margin-top: 8px;
+          }
           paper-input {
             --paper-input-container-color: var(--on-surface-color);
             --paper-input-container-focus-color: var(--on-surface-color);
@@ -990,7 +1013,10 @@ export class FileExplorer extends HTMLElement {
         </style>
         <paper-card id="${dialogId}">
           <div class="card-content">
-            <paper-input id="new-dir-input" label="New folder name" value="Untitled Folder"></paper-input>
+            <paper-input id="new-dir-input" label="${inputLabel}" value="${defaultValue}"></paper-input>
+            <div class="helper-text" data-public-helper style="display:${isPublicContext ? "block" : "none"};">
+              Enter an existing directory path (e.g., /users/john@domain/media).
+            </div>
           </div>
           <div class="new-dir-dialog-actions">
             <paper-button id="new-dir-cancel-btn">Cancel</paper-button>
@@ -1004,9 +1030,19 @@ export class FileExplorer extends HTMLElement {
     }
 
     const input = dialog.querySelector("#new-dir-input");
+    const helper = dialog.querySelector("[data-public-helper]");
+    if (input) {
+      input.label = inputLabel;
+      input.value = defaultValue;
+    }
+    if (helper) {
+      helper.style.display = isPublicContext ? "block" : "none";
+    }
     setTimeout(() => {
       input.focus();
-      input.inputElement._inputElement.select();
+      if (!isPublicContext) {
+        input.inputElement._inputElement.select();
+      }
     }, 50);
 
     const cancelBtn = dialog.querySelector("#new-dir-cancel-btn");
@@ -1021,21 +1057,41 @@ export class FileExplorer extends HTMLElement {
       evt.stopPropagation();
       removeDialog();
 
-      const newFolderName = input.value;
-      if (!newFolderName) return displayMessage("Folder name cannot be empty.", 3000);
+      const rawValue = (input.value || "").trim();
+      if (!rawValue) {
+        const msg = isPublicContext ? "Directory path cannot be empty." : "Folder name cannot be empty.";
+        return displayMessage(msg, 3000);
+      }
+
+      if (!isPublicContext && /[\\/]/.test(rawValue)) {
+        return displayMessage("Folder name cannot contain slashes.", 3000);
+      }
 
       try {
-        if (this._path === "/public") await addPublicDir(newFolderName);
-        else await createDir(this._path, newFolderName);
-        displayMessage(`Folder "${newFolderName}" created!`, 3000);
-        Backend.eventHub.publish("reload_dir_event", this._path, false);
+        if (isPublicContext) {
+          let publicPath = rawValue;
+          if (!publicPath.startsWith("/")) publicPath = `/${publicPath}`;
+          await addPublicDir(publicPath);
+          displayMessage(`Directory "${publicPath}" added to public list.`, 3000);
+          Backend.eventHub.publish("public_change_permission_event", null, false);
+          this.publishSetDirEvent("/public");
+        } else {
+          await createDir(this._path, rawValue);
+          displayMessage(`Folder "${rawValue}" created!`, 3000);
+          Backend.eventHub.publish("reload_dir_event", this._path, false);
+        }
       } catch (err) {
-        displayError(`Failed to create folder: ${err.message}`, 3000);
+        const prefix = isPublicContext ? "Failed to add public directory" : "Failed to create folder";
+        displayError(`${prefix}: ${err.message}`, 3000);
       }
     };
   }
 
   _handleUploadClick() {
+    if (this._path === "/public") {
+      displayError("Select a specific public directory before uploading.", 4000);
+      return;
+    }
     let fileInput = document.querySelector("input#file-input");
     if (!fileInput) {
       fileInput = document.createElement("input");
@@ -1049,9 +1105,13 @@ export class FileExplorer extends HTMLElement {
     fileInput.click();
     fileInput.onchange = async () => {
       if (fileInput.files.length > 0) {
-        await upload(this._path, fileInput.files);
-        displayMessage("Files uploaded successfully!", 3000);
-        Backend.eventHub.publish("reload_dir_event", this._path, false);
+        try {
+          await upload(this._path, fileInput.files);
+          displayMessage("Files uploaded successfully!", 3000);
+          Backend.eventHub.publish("reload_dir_event", this._path, false);
+        } catch (err) {
+          displayError(`Upload failed: ${err?.message || err}`, 4000);
+        }
       }
       fileInput.value = '';
     };
@@ -1167,7 +1227,12 @@ export class FileExplorer extends HTMLElement {
   async publishSetDirEvent(path) {
     this.displayWaitMessage(`Loading ${path}...`);
     try {
-      const dirVM = await readDir(path);
+      let dirVM;
+      if (path === "/public") {
+        dirVM = await this._buildPublicDirVM();
+      } else {
+        dirVM = await readDir(path);
+      }
       const adapted = adaptDirVM(dirVM);
       this._currentDirVM = dirVM;
       Backend.eventHub.publish("__set_dir_event__", { dir: adapted, file_explorer_id: this._id }, true);
@@ -1243,6 +1308,36 @@ export class FileExplorer extends HTMLElement {
  
     this._updateNavigationButtonStates();
     this._updateNavigationListMenu(dir);
+  }
+
+  async _buildPublicDirVM() {
+    const paths = await getPublicDirs();
+    const children = await Promise.all(
+      paths.map(async (p) => {
+        try {
+          const dir = await readDir(p, true);
+          markAsPublic(dir);
+          dir.name = dir.name || p.split("/").pop() || p;
+          return dir;
+        } catch (err) {
+          const stub = {
+            path: p,
+            name: p.split("/").pop() || p,
+            isDir: true,
+            files: [],
+          };
+          markAsPublic(stub);
+          return stub;
+        }
+      })
+    );
+    return {
+      path: "/public",
+      name: "Public",
+      isDir: true,
+      mime: "synthetic/public-root",
+      files: children,
+    };
   }
   _updateNavigationButtonStates() {
     const idx = this._navigationIndex;

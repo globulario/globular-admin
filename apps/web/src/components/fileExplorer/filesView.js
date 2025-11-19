@@ -11,6 +11,7 @@ import {
   download as downloadHttp,
   removeDir,
   removeFile,
+  removePublicDir,
   renameFile,
   createArchive,
   copyFiles,
@@ -798,6 +799,12 @@ export class FilesView extends HTMLElement {
       return;
     }
 
+    const explorerPath =
+      this._fileExplorer?.getCurrentPath?.() ??
+      this._fileExplorer?._path ??
+      "/";
+    const removingFromPublicRoot = explorerPath === "/public";
+
     const listHtml = filesToDelete.map((f) => `<div>${pathOf(f)}</div>`).join("");
 
     this._showConfirmationDialog(
@@ -808,21 +815,42 @@ export class FilesView extends HTMLElement {
       `,
       async () => {
         try {
+          const reloadTargets = new Set();
+          let removedPublicEntries = false;
+          let deletedRegularItems = false;
+
           for (const f of filesToDelete) {
             const p = pathOf(f);
+            if (!p) continue;
+
+            if (removingFromPublicRoot && isDirOf(f)) {
+              await removePublicDir(p);
+              removedPublicEntries = true;
+              reloadTargets.add("/public");
+              continue;
+            }
+
             if (isDirOf(f)) {
               await removeDir(p);
             } else {
               await removeFile(p);
             }
+            deletedRegularItems = true;
+            const parent = p.substring(0, p.lastIndexOf("/")) || "/";
+            reloadTargets.add(parent);
           }
 
-          displayMessage("Delete complete.", 2500);
-          filesToDelete.forEach((f) => {
-            const full = pathOf(f);
-            const parent = full.substring(0, full.lastIndexOf("/")) || "/";
-            Backend.eventHub.publish("reload_dir_event", parent, false);
-          });
+          if (removedPublicEntries) {
+            Backend.eventHub.publish("public_change_permission_event", null, true);
+          }
+
+          reloadTargets.forEach((path) => Backend.eventHub.publish("reload_dir_event", path, false));
+
+          const message =
+            removedPublicEntries && !deletedRegularItems
+              ? "Removed from public directories."
+              : "Delete complete.";
+          displayMessage(message, 2500);
 
           // Clear selection in the explorer so the bar hides too
           this._selected = {};
