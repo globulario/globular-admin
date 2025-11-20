@@ -184,15 +184,18 @@ export class FileExplorer extends HTMLElement {
     return alias.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/public";
   }
 
-  _syntheticPathForRealPath(path) {
+  _syntheticAliasInfoForRealPath(path) {
     if (!path || !this._publicAliasMap?.size) return null;
-    const norm = (() => {
-      let out = String(path).trim();
+    const normalize = (p) => {
+      if (!p) return "/";
+      let out = String(p).trim();
+      if (!out) return "/";
       if (!out.startsWith("/")) out = `/${out}`;
       out = out.replace(/\/{2,}/g, "/");
       if (out.length > 1 && out.endsWith("/")) out = out.slice(0, -1);
       return out || "/";
-    })();
+    };
+    const norm = normalize(path);
     let best = null;
     for (const [real, alias] of this._publicAliasMap.entries()) {
       if (norm === real || norm.startsWith(real === "/" ? "/" : `${real}/`)) {
@@ -202,10 +205,22 @@ export class FileExplorer extends HTMLElement {
       }
     }
     if (!best) return null;
-    const remainder = norm.slice(best.real.length);
-    const suffix = remainder ? (remainder.startsWith("/") ? remainder : `/${remainder}`) : "";
-    const synthetic = `${best.alias}${suffix}`.replace(/\/{2,}/g, "/");
-    return synthetic && synthetic !== "" ? synthetic : "/public";
+    const remainderRaw = norm.slice(best.real.length);
+    const remainder = remainderRaw
+      ? (remainderRaw.startsWith("/") ? remainderRaw : `/${remainderRaw}`)
+      : "";
+    const aliasWithSuffix = `${best.alias}${remainder}`.replace(/\/{2,}/g, "/") || best.alias;
+    return {
+      alias: aliasWithSuffix,
+      aliasBase: best.alias,
+      realBase: best.real,
+      remainder,
+    };
+  }
+
+  _syntheticPathForRealPath(path) {
+    const info = this._syntheticAliasInfoForRealPath(path);
+    return info?.alias || null;
   }
 
   connectedCallback() {

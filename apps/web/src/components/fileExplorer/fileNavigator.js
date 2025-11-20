@@ -912,12 +912,20 @@ export class FileNavigator extends HTMLElement {
           return perOwner[ownerKey];
         };
 
-        const buildSyntheticPath = (ownerEntry, realPath) => {
+        const buildSyntheticPath = (ownerEntry, realPath, resourceName) => {
           if (!ownerEntry || !realPath) return ownerEntry?.__syntheticPublicPath || "/Shared";
-          const friendly =
-            this._fileExplorer?._syntheticPathForRealPath?.(realPath) ||
-            realPath;
-          const suffix = friendly.startsWith("/") ? friendly : `/${friendly}`;
+          const aliasInfo = this._fileExplorer?._syntheticAliasInfoForRealPath?.(realPath);
+          let suffix = aliasInfo?.remainder || "";
+          if (!suffix) {
+            let fallback = resourceName;
+            if (!fallback) {
+              const parts = realPath.split("/").filter((s) => s.length);
+              fallback = parts[parts.length - 1] || "shared-item";
+            }
+            fallback = normalizeSegment(fallback, "shared-item");
+            suffix = `/${fallback}`;
+          }
+          if (!suffix.startsWith("/")) suffix = `/${suffix}`;
           const synthetic = `${ownerEntry.__syntheticPublicPath}${suffix}`.replace(/\/{2,}/g, "/");
           this._fileExplorer?.registerPublicAlias?.(realPath, synthetic);
           this._sharedDirPaths.add(realPath);
@@ -998,7 +1006,7 @@ export class FileNavigator extends HTMLElement {
           const node = await loadSharedNode(realPath);
           if (!node) continue;
 
-          const syntheticPath = buildSyntheticPath(ownerEntry, realPath);
+          const syntheticPath = buildSyntheticPath(ownerEntry, realPath, node?.name);
           node.__syntheticPublicPath = syntheticPath;
 
           if (!ownerEntry.files.find((f) => f.path === realPath)) {
