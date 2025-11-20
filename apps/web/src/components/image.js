@@ -427,6 +427,8 @@ export class PanZoomCanvas extends HTMLElement {
     this.ctx = this.canvas.getContext("2d");
     this.image = new Image();
     this._panZoomSetup = false;
+    this.expectedWidth = null;
+    this.expectedHeight = null;
   }
 
   connectedCallback() {
@@ -469,6 +471,16 @@ export class PanZoomCanvas extends HTMLElement {
   static get observedAttributes() { return ["src"]; }
   attributeChangedCallback(name, _old, value) {
     if (name === "src") this.image.src = value;
+  }
+
+  setExpectedDimensions(width, height) {
+    const w = Number(width);
+    const h = Number(height);
+    this.expectedWidth = Number.isFinite(w) && w > 0 ? w : null;
+    this.expectedHeight = Number.isFinite(h) && h > 0 ? h : null;
+    if (this.image && this.image.complete) {
+      this._fitToView();
+    }
   }
 
   _resizeToHost() {
@@ -533,11 +545,23 @@ export class PanZoomCanvas extends HTMLElement {
     const ch = this.canvas.height;
     const iw = this.image.width;
     const ih = this.image.height;
+    if (!iw || !ih) return;
 
-    // 1x if it fits, else downscale; never upscale.
-    const naturalZoom = 1;
-    const fitZoom = Math.min(cw / iw, ch / ih);
-    const zoom = Math.min(naturalZoom, fitZoom);
+    const virtualWidth = this.expectedWidth || iw;
+    const virtualHeight = this.expectedHeight || ih;
+
+    const fit = Math.min(
+      cw / (virtualWidth || iw),
+      ch / (virtualHeight || ih),
+      1
+    );
+
+    const desiredWidth = (virtualWidth || iw) * fit;
+    const desiredHeight = (virtualHeight || ih) * fit;
+
+    const scaleX = desiredWidth / iw;
+    const scaleY = desiredHeight / ih;
+    const zoom = Math.min(scaleX, scaleY);
 
     const tx = (cw - iw * zoom) / 2;
     const ty = (ch - ih * zoom) / 2;
@@ -583,6 +607,7 @@ export class ImageViewer extends HTMLElement {
     super();
     this.onclose = null;
     this.index = -1;
+    this._batchMode = false;
     const shadowRoot = this.attachShadow({ mode: 'open' });
 
     shadowRoot.innerHTML = `
@@ -910,6 +935,50 @@ export class ImageViewer extends HTMLElement {
 
   get noinfo() { return this.hasAttribute('noinfo'); }
 
+  _prepareImageElement(img) {
+    if (!img || img.dataset.viewerPrepared === "true") return;
+    const fullSrc =
+      img.getAttribute("data-fullsrc") ||
+      img.dataset.fullSrc ||
+      img.getAttribute("fullsrc") ||
+      "";
+    if (fullSrc) {
+      img.dataset.fullSrc = fullSrc;
+    }
+    const thumbSrc =
+      img.getAttribute("data-thumb") ||
+      img.dataset.thumbSrc ||
+      img.getAttribute("data-preview") ||
+      "";
+    if (thumbSrc && img.getAttribute("src") !== thumbSrc) {
+      img.setAttribute("src", thumbSrc);
+    }
+    if (!img.dataset.fullLoaded) {
+      if (!fullSrc || img.getAttribute("src") === fullSrc) {
+        img.dataset.fullLoaded = "true";
+      } else {
+        img.dataset.fullLoaded = "false";
+      }
+    }
+    const origWidth = img.getAttribute("width") || img.dataset.origWidth;
+    const origHeight = img.getAttribute("height") || img.dataset.origHeight;
+    if (origWidth && origHeight) {
+      img.dataset.origWidth = origWidth;
+      img.dataset.origHeight = origHeight;
+      img.style.aspectRatio = `${origWidth}/${origHeight}`;
+    }
+    img.dataset.viewerPrepared = "true";
+  }
+
+  beginBatch() {
+    this._batchMode = true;
+  }
+
+  endBatch() {
+    this._batchMode = false;
+    this.populateChildren();
+  }
+
   populateChildren() {
     if (this.children.length !== 0) {
       const cant = this.children.length;
@@ -947,16 +1016,23 @@ export class ImageViewer extends HTMLElement {
     this.index = index;
 
     const src = img.getAttribute("src");
-    this.shadowRoot.querySelector("globular-pan-zoom-canvas")
-      .setAttribute("src", src);
+    const panZoom = this.shadowRoot.querySelector("globular-pan-zoom-canvas");
+    if (panZoom) {
+      this._applyPanZoomDimensions(img);
+      panZoom.setAttribute("src", src || "");
+    }
 
     this._updateMeta(img);
+    this._ensureFullResolution(img, index);
   }
 
   addImage(e) {
     e.slot = "images";
+    this._prepareImageElement(e);
     this.appendChild(e);
-    this.populateChildren();
+    if (!this._batchMode) {
+      this.populateChildren();
+    }
     this.shadowRoot.querySelector('#leftA').style.display = 'block';
     this.shadowRoot.querySelector('#rightA').style.display = 'block';
   }
@@ -1042,8 +1118,16 @@ export class ImageViewer extends HTMLElement {
     }
 
     const applySize = () => {
-      const w = imgEl.naturalWidth || imgEl.width || 0;
-      const h = imgEl.naturalHeight || imgEl.height || 0;
+      const w =
+        imgEl.naturalWidth ||
+        parseInt(imgEl.dataset.origWidth || "", 10) ||
+        imgEl.width ||
+        0;
+      const h =
+        imgEl.naturalHeight ||
+        parseInt(imgEl.dataset.origHeight || "", 10) ||
+        imgEl.height ||
+        0;
 
       nameSpan.textContent = fileName || '';
       sizeSpan.textContent = (w && h) ? `${w} × ${h}` : '';
@@ -1062,6 +1146,66 @@ export class ImageViewer extends HTMLElement {
     } else {
       metaBar.style.display = 'none';
       imgEl.addEventListener('load', applySize, { once: true });
+    }
+  }
+
+  _applyPanZoomDimensions(imgEl) {
+    if (!imgEl) return;
+    const panZoom = this.shadowRoot.querySelector("globular-pan-zoom-canvas");
+    if (!panZoom || typeof panZoom.setExpectedDimensions !== "function") return;
+    const width = parseInt(imgEl.dataset.origWidth || imgEl.getAttribute("width") || "", 10);
+    const height = parseInt(imgEl.dataset.origHeight || imgEl.getAttribute("height") || "", 10);
+    panZoom.setExpectedDimensions(
+      Number.isFinite(width) ? width : null,
+      Number.isFinite(height) ? height : null
+    );
+  }
+
+  _ensureFullResolution(imgEl, idx) {
+    if (!imgEl) return;
+    const fullSrc = imgEl.dataset.fullSrc || imgEl.getAttribute("data-fullsrc");
+    if (!fullSrc) {
+      imgEl.dataset.fullLoaded = "true";
+      return;
+    }
+    if (imgEl.dataset.fullLoaded === "true") return;
+
+    if (imgEl.getAttribute("src") === fullSrc && imgEl.complete && imgEl.naturalWidth) {
+      imgEl.dataset.fullLoaded = "true";
+      imgEl.dataset.origWidth = String(imgEl.naturalWidth || imgEl.dataset.origWidth || "");
+      imgEl.dataset.origHeight = String(imgEl.naturalHeight || imgEl.dataset.origHeight || "");
+      if (this.index === idx) {
+        const panZoom = this.shadowRoot.querySelector("globular-pan-zoom-canvas");
+        if (panZoom) panZoom.setAttribute("src", fullSrc);
+        this._applyPanZoomDimensions(imgEl);
+        this._updateMeta(imgEl);
+      }
+      return;
+    }
+
+    if (imgEl.dataset.fullLoaded === "loading") return;
+    imgEl.dataset.fullLoaded = "loading";
+
+    const applyFull = () => {
+      imgEl.dataset.fullLoaded = "true";
+      if (imgEl.naturalWidth) imgEl.dataset.origWidth = String(imgEl.naturalWidth);
+      if (imgEl.naturalHeight) imgEl.dataset.origHeight = String(imgEl.naturalHeight);
+      if (this.index === idx) {
+        const panZoom = this.shadowRoot.querySelector("globular-pan-zoom-canvas");
+        if (panZoom) panZoom.setAttribute("src", fullSrc);
+        this._applyPanZoomDimensions(imgEl);
+        this._updateMeta(imgEl);
+      }
+    };
+    const failFull = () => {
+      imgEl.dataset.fullLoaded = "error";
+    };
+
+    imgEl.addEventListener("load", applyFull, { once: true });
+    imgEl.addEventListener("error", failFull, { once: true });
+
+    if (imgEl.getAttribute("src") !== fullSrc) {
+      imgEl.setAttribute("src", fullSrc);
     }
   }
 }

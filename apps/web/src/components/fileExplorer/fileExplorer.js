@@ -32,6 +32,7 @@ import "../menu.js";
 
 import {
   addPublicDir,
+  buildFileUrl,
   createDir,
   createLink,
   getFilesCache,
@@ -41,7 +42,6 @@ import {
   readDirFresh,
   upload,
   getFile as getFileInfo,
-  getImages, // HTMLImageElement[] loader for FileVM[]
 } from "../../backend/cms/files";
 
 import { displayError, displayMessage } from "../../backend/ui/notify";
@@ -52,7 +52,7 @@ import { getFileAudiosInfo } from '../../backend/media/title';
 import { FilesUploader } from './fileUploader';
 
 // ✅ helpers centralize VM/proto normalization
-import { adaptFileVM, adaptDirVM, extractPath, mimeOf, pathOf, nameOf } from "./filevm-helpers.js";
+import { adaptFileVM, adaptDirVM, extractPath, mimeOf, pathOf, nameOf, thumbOf } from "./filevm-helpers.js";
 
 function getElementIndex(element) {
   return Array.from(element.parentNode.children).indexOf(element);
@@ -1795,6 +1795,23 @@ export class FileExplorer extends HTMLElement {
     document.querySelectorAll("#rename-file-dialog").forEach(dialog => { if (dialog.parentNode) dialog.parentNode.removeChild(dialog); });
   }
 
+  _buildImageSrc(path) {
+    if (!path) return "";
+    try {
+      const { url, headers } = buildFileUrl(path);
+      const token = headers?.token;
+      if (token) {
+        const glue = url.includes("?") ? "&" : "?";
+        return `${url}${glue}token=${encodeURIComponent(token)}`;
+      }
+      return url;
+    } catch (err) {
+      console.warn("Failed to build image URL:", err);
+      return path || "";
+    }
+  }
+
+
   async _loadImages(dir, callback) {
     try {
       const vm = dir;
@@ -1811,17 +1828,95 @@ export class FileExplorer extends HTMLElement {
         if (callback) callback();
         return;
       }
-      const loadedImages = await getImages(imageVMs.map((entry) => entry.target));
       this._imageViewer.innerHTML = "";
-      loadedImages.forEach((img, i) => {
-        const entry = imageVMs[i];
+      if (typeof this._imageViewer.beginBatch === "function") {
+        this._imageViewer.beginBatch();
+      }
+
+      const parseDimension = (val) => {
+        if (val == null) return undefined;
+        if (typeof val === "number" && Number.isFinite(val)) return Math.round(val);
+        if (typeof val === "string") {
+          const match = val.match(/([0-9]+(?:\.[0-9]+)?)/);
+          if (match) return Math.round(parseFloat(match[1]));
+        }
+        return undefined;
+      };
+
+      const extractDimsFromMeta = (meta) => {
+        if (!meta || typeof meta !== "object") return { width: undefined, height: undefined };
+        const pick = (...keys) => {
+          for (const key of keys) {
+            if (meta[key] != null) return meta[key];
+          }
+          return undefined;
+        };
+        const width =
+          parseDimension(pick("OriginalWidth", "ImageWidth", "Image Width")) ||
+          parseDimension(pick("ThumbnailWidth", "Thumbnail Width"));
+        const height =
+          parseDimension(pick("OriginalHeight", "ImageHeight", "Image Height")) ||
+          parseDimension(pick("ThumbnailHeight", "Thumbnail Height"));
+        return { width, height };
+      };
+
+      imageVMs.forEach((entry) => {
         const sourceFile = entry.target || entry.file;
-        img.name = pathOf(sourceFile) || pathOf(entry.file);
+        const realPath = pathOf(sourceFile) || pathOf(entry.file);
+        if (!realPath) return;
+
+ 
+        const img = document.createElement("img");
+        img.name = realPath;
         img.slot = "images";
         img.draggable = false;
+        img.setAttribute("data-name", nameOf(sourceFile) || nameOf(entry.file) || "");
+
+        const fullSrc = this._buildImageSrc(realPath);
+        if (fullSrc) {
+          img.setAttribute("data-fullsrc", fullSrc);
+        }
+        const thumbSrc = thumbOf(sourceFile) || thumbOf(entry.file) || "";
+        if (thumbSrc) {
+          img.setAttribute("data-thumb", thumbSrc);
+          img.setAttribute("src", thumbSrc);
+        } else if (fullSrc) {
+          img.setAttribute("src", fullSrc);
+        }
+
+        let width = sourceFile?.width || sourceFile?.getWidth?.();
+        let height = sourceFile?.height || sourceFile?.getHeight?.();
+
+        if (!width || !height) {
+          const dims = extractDimsFromMeta(sourceFile?.metadata || entry.file?.metadata);
+          if (dims.width && !width) width = dims.width;
+          if (dims.height && !height) height = dims.height;
+        }
+
+        if (width) {
+          img.setAttribute("width", `${width}`);
+          img.dataset.origWidth = `${width}`;
+          img.style.width = `${width}px`;
+        }
+        if (height) {
+          img.setAttribute("height", `${height}`);
+          img.dataset.origHeight = `${height}`;
+          img.style.height = `${height}px`;
+        }
+        if (width && height) {
+          img.style.aspectRatio = `${width}/${height}`;
+        }
+
+        img.dataset.fullLoaded =
+          thumbSrc && fullSrc && thumbSrc !== fullSrc ? "false" : "true";
+
         this._imageViewer.addImage(img);
       });
-      this._imageViewer.populateChildren();
+      if (typeof this._imageViewer.endBatch === "function") {
+        this._imageViewer.endBatch();
+      } else {
+        this._imageViewer.populateChildren();
+      }
     } catch (err) {
       displayError(`Failed to load images: ${err.message}`, 3000);
       console.error("Image loading error:", err);

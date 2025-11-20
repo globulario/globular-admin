@@ -550,6 +550,8 @@ export async function readDirFresh(path: string, recursive = false): Promise<Dir
   });
   if (linkPromises.length) await Promise.allSettled(linkPromises);
 
+
+
   return root as DirVM;
 }
 

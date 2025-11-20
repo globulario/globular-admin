@@ -28,13 +28,14 @@ import "../menu.js";
 
 import {
   addPublicDir,
+  buildFileUrl,
   createDir,
   createLink,
   getFilesCache,
   readDir,
   upload,
   getFile as getFileInfo,
-  getImages // HTMLImageElement[] loader for FileVM[]
+  getFileMetadata,
 } from "../../backend/cms/files";
 
 import { displayError, displayMessage } from "../../backend/ui/notify";
@@ -43,7 +44,7 @@ import { displayError, displayMessage } from "../../backend/ui/notify";
 import { getCurrentAccount } from "../../backend/rbac/accounts";
 import { getFileAudiosInfo } from '../../backend/media/title';
 import { FilesUploader } from './fileUploader';
-import { pathOf } from './filevm-helpers';
+import { pathOf, thumbOf } from './filevm-helpers';
 
 /** Helper to extract a path from a DirVM/FileVM/String */
 function extractPath(v) {
@@ -1182,15 +1183,78 @@ export class FileExplorer extends HTMLElement {
         return;
       }
 
-      const loadedImages = await getImages(imageVMs); // HTMLImageElement[]
       this._imageViewer.innerHTML = "";
-      loadedImages.forEach((img, i) => {
-        img.name = imageVMs[i].path;
+      this._imageViewer.beginBatch?.();
+      const parseDimension = (val: any) => {
+        if (val == null) return undefined;
+        if (typeof val === "number" && Number.isFinite(val)) return Math.round(val);
+        if (typeof val === "string") {
+          const match = val.match(/([0-9]+(?:\.[0-9]+)?)/);
+          if (match) return Math.round(parseFloat(match[1]));
+        }
+        return undefined;
+      };
+      const extractDims = (meta: any) => {
+        if (!meta || typeof meta !== "object") return { width: undefined, height: undefined };
+        const pick = (...keys: string[]) => {
+          for (const key of keys) {
+            if (meta[key] != null) return meta[key];
+          }
+          return undefined;
+        };
+        const width =
+          parseDimension(pick("OriginalWidth", "ImageWidth", "Image Width")) ||
+          parseDimension(pick("ThumbnailWidth", "Thumbnail Width"));
+        const height =
+          parseDimension(pick("OriginalHeight", "ImageHeight", "Image Height")) ||
+          parseDimension(pick("ThumbnailHeight", "Thumbnail Height"));
+        return { width, height };
+      };
+
+      for (const vm of imageVMs) {
+        if (!vm.path) continue;
+        const img = document.createElement("img");
+        const { url, headers } = buildFileUrl(vm.path);
+        const token = headers?.token;
+        const fullSrc = token ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : url;
+        const thumb = thumbOf(vm) || "";
+        img.name = vm.path;
         img.slot = "images";
         img.draggable = false;
+        img.setAttribute("data-name", vm.name || "");
+        if (fullSrc) img.setAttribute("data-fullsrc", fullSrc);
+        if (thumb) {
+          img.setAttribute("data-thumb", thumb);
+          img.src = thumb;
+          img.dataset.fullLoaded = thumb === fullSrc ? "true" : "false";
+        } else if (fullSrc) {
+          img.src = fullSrc;
+          img.dataset.fullLoaded = "true";
+        }
+        let width = vm.width || vm.getWidth?.();
+        let height = vm.height || vm.getHeight?.();
+        if (!width || !height) {
+          const dims = extractDims(vm.metadata);
+          if (!width && dims.width) width = dims.width;
+          if (!height && dims.height) height = dims.height;
+        }
+        if (width) {
+          img.setAttribute("width", String(width));
+          img.dataset.origWidth = String(width);
+          img.style.width = `${width}px`;
+        }
+        if (height) {
+          img.setAttribute("height", String(height));
+          img.dataset.origHeight = String(height);
+          img.style.height = `${height}px`;
+        }
+        if (width && height) {
+          img.style.aspectRatio = `${width}/${height}`;
+        }
+        img.dataset.fullLoaded = thumb && fullSrc && thumb !== fullSrc ? "false" : "true";
         this._imageViewer.addImage(img);
-      });
-      this._imageViewer.populateChildren();
+      }
+      this._imageViewer.endBatch?.();
     } catch (err) {
       displayError(`Failed to load images: ${err.message}`, 3000);
       console.error("Image loading error:", err);

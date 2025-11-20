@@ -1,6 +1,8 @@
 // filevm-helpers.js
 // Generic helpers for File VM / proto-like objects (FileInfo-compatible)
 
+import { metadata } from "../../backend/core/auth";
+
 export function pathOf(v) {
   if (!v) return "";
   if (typeof v === "string") return v;
@@ -160,7 +162,8 @@ export function adaptFileVM(vm) {
     titles: f.titles,
     videos: f.videos,
     audios: f.audios,
-    modeTime: f.modeTime || 0
+    modeTime: f.modeTime || 0,
+    metadata: f.metadata || {},
   };
 
   // mirror common fields directly as well
@@ -172,6 +175,7 @@ export function adaptFileVM(vm) {
   obj.thumbnail = obj.getThumbnail();
   obj.linkTarget = f.linkTarget || null;
   obj.isLink = !!f.isLink;
+
 
   return obj;
 }
