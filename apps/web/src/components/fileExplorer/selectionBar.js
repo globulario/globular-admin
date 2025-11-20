@@ -18,6 +18,7 @@ export class SelectionBar extends HTMLElement {
   _deleteBtn = null;
   _downloadBtn = null;
   _clearBtn = null;
+  _linkBtn = null;
 
   constructor() {
     super();
@@ -76,6 +77,7 @@ export class SelectionBar extends HTMLElement {
         <div id="actions">
           <paper-button id="cut-btn" class="small" title="Cut selected">Cut</paper-button>
           <paper-button id="copy-btn" class="small" title="Copy selected">Copy</paper-button>
+          <paper-button id="link-btn" class="small" title="Save selection as shortcuts">Link</paper-button>
           <paper-button id="download-btn" class="small" title="Download selected">Download</paper-button>
           <paper-button id="delete-btn" class="small" title="Delete selected">Delete</paper-button>
           <paper-button id="clear-btn" class="small" title="Clear selection">Clear</paper-button>
@@ -87,12 +89,14 @@ export class SelectionBar extends HTMLElement {
     this._label = shadow.querySelector('#label');
     this._cutBtn = shadow.querySelector('#cut-btn');
     this._copyBtn = shadow.querySelector('#copy-btn');
+    this._linkBtn = shadow.querySelector('#link-btn');
     this._deleteBtn = shadow.querySelector('#delete-btn');
     this._downloadBtn = shadow.querySelector('#download-btn');
     this._clearBtn = shadow.querySelector('#clear-btn');
 
     this._cutBtn?.addEventListener('click', () => this._emitAction('cut'));
     this._copyBtn?.addEventListener('click', () => this._emitAction('copy'));
+    this._linkBtn?.addEventListener('click', () => this._emitAction('link'));
     this._deleteBtn?.addEventListener('click', () => this._emitAction('delete'));
     this._downloadBtn?.addEventListener('click', () => this._emitAction('download'));
     this._clearBtn?.addEventListener('click', () => this._emitAction('clear-selection'));

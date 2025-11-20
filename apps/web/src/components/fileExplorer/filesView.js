@@ -306,9 +306,32 @@ export class FilesView extends HTMLElement {
 
           // 2) Destination directory (from the drop payload, or current dir as fallback)
           const destDir = (infos && infos.dir) || this._path || "/";
+          const mode = this._editMode || "cut";
+
+          if (mode === "lnks") {
+            if (!this._fileExplorer?.createLink) {
+              displayError("Link creation is not available in this view.", 3000);
+            } else {
+              for (const srcPath of srcPaths) {
+                try {
+                  await this._fileExplorer.createLink(srcPath, destDir);
+                } catch (err) {
+                  displayError(`Failed to create link for ${srcPath}: ${err?.message || err}`, 4000);
+                }
+              }
+            }
+
+            this._selected = {};
+            this._fileExplorer?.clearSelections?.();
+            this._fileExplorer?.clearClipboard?.();
+            this._editMode = "";
+            Backend.eventHub.publish("reload_dir_event", destDir, true);
+            this._closeContextMenu();
+            return;
+          }
 
           // 3) Execute backend operation
-          const isCopy = this._editMode === "copy";
+          const isCopy = mode === "copy";
 
           if (isCopy) {
             await copyFiles(destDir, srcPaths);
@@ -570,6 +593,22 @@ export class FilesView extends HTMLElement {
     const paths = files.map((f) => pathOf(f));
     this._editMode = "copy";
     this._fileExplorer?.setClipboard?.("copy", paths);
+
+    this._selected = {};
+    this._fileExplorer?.clearSelections?.();
+    this._closeContextMenu();
+  }
+
+  _handleLinkAction() {
+    const files = this._getFilesForAction();
+    if (!files || files.length === 0) {
+      this._closeContextMenu();
+      return;
+    }
+
+    const paths = files.map((f) => pathOf(f));
+    this._editMode = "lnks";
+    this._fileExplorer?.setClipboard?.("link", paths);
 
     this._selected = {};
     this._fileExplorer?.clearSelections?.();

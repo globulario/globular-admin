@@ -52,7 +52,7 @@ import { getFileAudiosInfo } from '../../backend/media/title';
 import { FilesUploader } from './fileUploader';
 
 // ✅ helpers centralize VM/proto normalization
-import { adaptFileVM, adaptDirVM, extractPath } from "./filevm-helpers.js";
+import { adaptFileVM, adaptDirVM, extractPath, mimeOf, pathOf } from "./filevm-helpers.js";
 
 function getElementIndex(element) {
   return Array.from(element.parentNode.children).indexOf(element);
@@ -102,6 +102,7 @@ export class FileExplorer extends HTMLElement {
   _imageViewer = undefined;
 
   _currentDirVM = undefined;
+  _publicAliasMap = new Map();
   _account = null;
 
   // 🔧 NEW: track current delete-sub for info panel to avoid stacking
@@ -124,6 +125,58 @@ export class FileExplorer extends HTMLElement {
       FileExplorer.fileUploader.id = "globular-files-uploader";
       FileExplorer.fileUploader.setAttribute("style", "position:absolute; z-index:1000; right:15px; bottom:2px;");
     }
+  }
+
+  resetPublicAliasMap() {
+    this._publicAliasMap?.clear();
+  }
+
+  registerPublicAlias(realPath, aliasPath) {
+    if (!realPath || !aliasPath) return;
+    const normalize = (p) => {
+      if (!p) return "/";
+      let out = String(p).trim();
+      if (!out) return "/";
+      if (!out.startsWith("/")) out = `/${out}`;
+      out = out.replace(/\/{2,}/g, "/");
+      if (out.length > 1 && out.endsWith("/")) out = out.slice(0, -1);
+      return out || "/";
+    };
+    const normReal = normalize(realPath);
+    const normAlias = normalize(aliasPath);
+    this._publicAliasMap.set(normReal, normAlias);
+  }
+
+  _computePublicAliasPath(name) {
+    let segment = String(name ?? "").trim();
+    if (!segment) segment = "public-dir";
+    segment = segment.replace(/^\/+/, "");
+    const alias = `/public/${segment}`;
+    return alias.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/public";
+  }
+
+  _syntheticPathForRealPath(path) {
+    if (!path || !this._publicAliasMap?.size) return null;
+    const norm = (() => {
+      let out = String(path).trim();
+      if (!out.startsWith("/")) out = `/${out}`;
+      out = out.replace(/\/{2,}/g, "/");
+      if (out.length > 1 && out.endsWith("/")) out = out.slice(0, -1);
+      return out || "/";
+    })();
+    let best = null;
+    for (const [real, alias] of this._publicAliasMap.entries()) {
+      if (norm === real || norm.startsWith(real === "/" ? "/" : `${real}/`)) {
+        if (!best || real.length > best.real.length) {
+          best = { real, alias };
+        }
+      }
+    }
+    if (!best) return null;
+    const remainder = norm.slice(best.real.length);
+    const suffix = remainder ? (remainder.startsWith("/") ? remainder : `/${remainder}`) : "";
+    const synthetic = `${best.alias}${suffix}`.replace(/\/{2,}/g, "/");
+    return synthetic && synthetic !== "" ? synthetic : "/public";
   }
 
   connectedCallback() {
@@ -397,7 +450,7 @@ export class FileExplorer extends HTMLElement {
             (this._filesIconView?.isActive?.()) ? this._filesIconView :
               null;
 
-        const selectionClearingActions = ['cut', 'copy', 'delete', 'download', 'clear-selection'];
+        const selectionClearingActions = ['cut', 'copy', 'link', 'delete', 'download', 'clear-selection'];
 
         if (!view && action === 'clear-selection') {
           this.clearSelections();
@@ -411,6 +464,9 @@ export class FileExplorer extends HTMLElement {
             break;
           case 'copy':
             view?._handleCopyAction?.();
+            break;
+          case 'link':
+            view?._handleLinkAction?.();
             break;
           case 'delete':
             view?._handleDeleteAction?.();
@@ -1228,14 +1284,25 @@ export class FileExplorer extends HTMLElement {
     this.displayWaitMessage(`Loading ${path}...`);
     try {
       let dirVM;
-      if (path === "/public") {
+      let displayPath = path;
+      if (path === "/public" || path?.startsWith("/public/")) {
         dirVM = await this._buildPublicDirVM();
+        displayPath = path;
       } else {
         dirVM = await readDir(path);
+        const synthetic = this._syntheticPathForRealPath(path) || dirVM.__syntheticPublicPath;
+        if (synthetic) {
+          dirVM.__syntheticPublicPath = synthetic;
+          displayPath = synthetic;
+        }
       }
       const adapted = adaptDirVM(dirVM);
       this._currentDirVM = dirVM;
-      Backend.eventHub.publish("__set_dir_event__", { dir: adapted, file_explorer_id: this._id }, true);
+      Backend.eventHub.publish(
+        "__set_dir_event__",
+        { dir: adapted, file_explorer_id: this._id, displayPath },
+        true
+      );
     } catch (err) {
       displayError(`Failed to load directory ${path}: ${err.message}`, 3000);
       this._onerror(err);
@@ -1288,7 +1355,11 @@ export class FileExplorer extends HTMLElement {
 
     // --- existing UI updates ---
 
-    this._pathNavigator.setDir(dir);
+    const syntheticPathOverride =
+      dir?.__syntheticPublicPath ||
+      this._syntheticPathForRealPath(this._path);
+
+    this._pathNavigator.setDir(dir, syntheticPathOverride);
     this._fileNavigator.setDir(dir);
     this._filesListView.setDir(dir);
     this._filesIconView.setDir(dir);
@@ -1311,6 +1382,7 @@ export class FileExplorer extends HTMLElement {
   }
 
   async _buildPublicDirVM() {
+    this.resetPublicAliasMap();
     const paths = await getPublicDirs();
     const children = await Promise.all(
       paths.map(async (p) => {
@@ -1318,6 +1390,9 @@ export class FileExplorer extends HTMLElement {
           const dir = await readDir(p, true);
           markAsPublic(dir);
           dir.name = dir.name || p.split("/").pop() || p;
+          const aliasBase = this._computePublicAliasPath(dir.name || p);
+          dir.__syntheticPublicPath = aliasBase;
+          this.registerPublicAlias(p, aliasBase);
           return dir;
         } catch (err) {
           const stub = {
@@ -1327,6 +1402,9 @@ export class FileExplorer extends HTMLElement {
             files: [],
           };
           markAsPublic(stub);
+          const aliasBase = this._computePublicAliasPath(stub.name);
+          stub.__syntheticPublicPath = aliasBase;
+          this.registerPublicAlias(p, aliasBase);
           return stub;
         }
       })
@@ -1620,17 +1698,24 @@ export class FileExplorer extends HTMLElement {
     try {
       const vm = dir;
       const list = Array.isArray(vm?.files) ? vm.files : [];
-      const imageVMs = list.filter(f => (f.mime || "").startsWith("image"));
+      const imageVMs = list
+        .map((file) => {
+          const target = file?.linkTarget || file;
+          return { file, target, mime: mimeOf(target) || "" };
+        })
+        .filter((entry) => entry.mime.startsWith("image"));
       if (imageVMs.length === 0) {
         this._imageViewer.innerHTML = "";
         this._imageViewer.populateChildren();
         if (callback) callback();
         return;
       }
-      const loadedImages = await getImages(imageVMs);
+      const loadedImages = await getImages(imageVMs.map((entry) => entry.target));
       this._imageViewer.innerHTML = "";
       loadedImages.forEach((img, i) => {
-        img.name = imageVMs[i].path;
+        const entry = imageVMs[i];
+        const sourceFile = entry.target || entry.file;
+        img.name = pathOf(sourceFile) || pathOf(entry.file);
         img.slot = "images";
         img.draggable = false;
         this._imageViewer.addImage(img);

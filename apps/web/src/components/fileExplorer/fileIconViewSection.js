@@ -15,6 +15,7 @@ import "@polymer/paper-checkbox/paper-checkbox.js";
 import "@polymer/iron-icons/image-icons";
 import "@polymer/iron-icons/av-icons";
 import "@polymer/iron-icons/image-icons";
+import "@polymer/iron-icons/editor-icons";
 import { playVideos } from "../video";
 import { playAudios } from "../audio";
 import "./fileIconView";
@@ -24,6 +25,8 @@ const ICON_FOR_SECTION = {
   audio: "image:music-note",
   video: "av:movie",
   image: "image:collections",
+  text: "editor:insert-drive-file",
+  pdf: "icons:picture-as-pdf",
   default: "icons:folder",
 };
 

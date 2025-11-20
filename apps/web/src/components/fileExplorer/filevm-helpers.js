@@ -18,11 +18,63 @@ export function nameOf(v) {
   return i >= 0 ? p.substring(i + 1) : p;
 }
 
+const EXT_MIME_MAP = {
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mkv: "video/x-matroska",
+  avi: "video/x-msvideo",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  mpg: "video/mpeg",
+  mpeg: "video/mpeg",
+  m2ts: "video/MP2T",
+  ts: "video/MP2T",
+  flv: "video/x-flv",
+  wmv: "video/x-ms-wmv",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  opus: "audio/opus",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  md: "text/markdown",
+};
+
+function extensionOf(v) {
+  const name = nameOf(v);
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.substring(i + 1).toLowerCase() : "";
+}
+
 export function mimeOf(v) {
   if (!v) return "";
-  if (typeof v.getMime === "function") return v.getMime() || "";
-  if (typeof v.getMimeType === "function") return v.getMimeType() || "";
-  return v.mime || "";
+  try {
+    const target =
+      (typeof v.getLinkTarget === "function" && v.getLinkTarget()) ||
+      v.linkTarget;
+    if (target && target !== v) {
+      const targetMime = mimeOf(target);
+      if (targetMime) return targetMime;
+    }
+  } catch { /* ignore */ }
+  let mime = "";
+  if (typeof v.getMime === "function") mime = v.getMime() || "";
+  else if (typeof v.getMimeType === "function") mime = v.getMimeType() || "";
+  else if (typeof v.mime === "string") mime = v.mime || "";
+  if (mime) return mime;
+  const ext = extensionOf(v);
+  return EXT_MIME_MAP[ext] || "";
 }
 
 export function mimeRootOf(v) {
@@ -102,6 +154,7 @@ export function adaptFileVM(vm) {
     getMime: () => f.mime || "",
     getSize: () => (typeof f.size === "number" ? f.size : 0),
     getThumbnail: () => f.thumbnail || "",
+    getLinkTarget: () => f.linkTarget || null,
     modeTime: f.mode_time || 0,
     // direct fields sometimes accessed by views
     titles: f.titles,
@@ -117,6 +170,8 @@ export function adaptFileVM(vm) {
   obj.mime = obj.getMime();
   obj.size = obj.getSize();
   obj.thumbnail = obj.getThumbnail();
+  obj.linkTarget = f.linkTarget || null;
+  obj.isLink = !!f.isLink;
 
   return obj;
 }

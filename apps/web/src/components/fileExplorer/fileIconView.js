@@ -4,7 +4,7 @@ import { getCoords } from "../utility.js";
 import { displayError, displayMessage } from "../../backend/ui/notify";
 
 // Proper backend wrappers
-import { getFile, readText } from "../../backend/cms/files";
+import { getFile, readText, getDisplayFileForLink, isLinkFile } from "../../backend/cms/files";
 import { getTitleInfo } from "../../backend/media/title";
 
 // FileVM helpers (DRY)
@@ -12,6 +12,7 @@ import {
   pathOf,
   nameOf,
   mimeRootOf,
+  mimeOf,
   isDir as isDirVM,
   thumbOf,
 } from "./filevm-helpers";
@@ -36,27 +37,13 @@ const ICON_FOR_KIND = {
   default: "icons:insert-drive-file",
 };
 
-// Back-compat helper
-function getTitleInfoFlex(arg) {
-  return new Promise((resolve, reject) => {
-    try {
-      getTitleInfo(arg, resolve, reject);
-    } catch {
-      try {
-        getTitleInfo(arg, (titles) => resolve(titles), (e) => reject(e));
-      } catch (e) {
-        reject(e);
-      }
-    }
-  });
-}
-
 export class FileIconView extends HTMLElement {
   _file = null;
   _preview = null;
   _viewContext = null;
   _fileExplorer = null;
   _dom = {};
+  _displayFile = null;
 
   constructor() {
     super();
@@ -340,39 +327,83 @@ export class FileIconView extends HTMLElement {
 
   /* ---------- Private: Rendering ---------- */
   async _render() {
-    const f = this._file;
-    this._setDisplayName(nameOf(f));
+    const baseFile = this._file;
+    let displayFile = baseFile;
+
+    if (isLinkFile(baseFile)) {
+      try {
+        const target = await getDisplayFileForLink(baseFile);
+        if (target) displayFile = target;
+      } catch (err) {
+        console.warn("Failed to resolve link target", err);
+      }
+    }
+
+    this._displayFile = displayFile;
+    this._setDisplayName(nameOf(displayFile));
     this._clear(this._dom.iconDisplay);
 
-    this._setShortcutBadge(hasLinkFlag(f));
+    const isShortcut = hasLinkFlag(baseFile);
+    this._setShortcutBadge(isShortcut);
 
-    const kind = mimeRootOf(f);
+    const kind = mimeRootOf(displayFile);
     if (kind === "video") {
-      await this._renderVideo(f);
+      await this._renderVideo(displayFile);
       return;
     }
 
-    if (isDirVM(f)) {
-      await this._renderFolder(f);
+    if (isDirVM(displayFile)) {
+      await this._renderFolder(displayFile);
       return;
     }
 
-    const t = thumbOf(f);
+    const t = thumbOf(displayFile);
     if (t) this._appendImg(t);
     else this._appendIcon(ICON_FOR_KIND[kind] || ICON_FOR_KIND.default);
+
+    if (isShortcut && displayFile && displayFile !== baseFile) {
+      const targetType = sectionNameForFile(displayFile);
+      queueMicrotask(() => {
+        this.dispatchEvent(
+          new CustomEvent("link-type-ready", {
+            detail: { type: targetType, icon: this },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+    }
   }
 
   async _renderVideo(f) {
-    try {
-      this._preview = new VideoPreview();
-      await this._preview.setFile(f, 72);
-      if (!this._preview.hasPreviewImages()) {
-        throw new Error("No preview images available");
-      }
-      this._preview.name = nameOf(f);
-      this._dom.iconDisplay.appendChild(this._preview);
-    } catch {
+    const preview = new VideoPreview();
+    this._preview = preview;
+    const cleanup = () => {
+      preview.removeEventListener("timeline-loaded", onTimeline);
+    };
+    const fallback = () => {
+      cleanup();
+      if (preview.parentElement) preview.parentElement.removeChild(preview);
       this._appendIcon(ICON_FOR_KIND.video);
+    };
+    const onTimeline = (evt) => {
+      const hasTimeline = evt?.detail?.hasTimeline;
+      if (!hasTimeline && !preview.hasPreviewImages()) {
+        fallback();
+      } else {
+        cleanup();
+      }
+    };
+    preview.addEventListener("timeline-loaded", onTimeline);
+    try {
+      preview.setFile(f, 72);
+      preview.name = nameOf(f);
+      this._dom.iconDisplay.appendChild(preview);
+      if (preview.hasPreviewImages()) {
+        cleanup();
+      }
+    } catch {
+      fallback();
     }
   }
 
@@ -383,8 +414,7 @@ export class FileIconView extends HTMLElement {
       const text = await readText(infosFile);
       const titleInfos = JSON.parse(text || "{}");
       if (titleInfos?.ID) {
-        const titles = await getTitleInfoFlex(titleInfos.ID);
-        const title = Array.isArray(titles) ? titles[0] : titles;
+        const title = await getTitleInfo(titleInfos.ID);
         if (title) {
           const poster = title.getPoster?.() || title.poster || null;
           const posterUrl = poster?.getContenturl?.() || poster?.contenturl || null;
@@ -399,18 +429,7 @@ export class FileIconView extends HTMLElement {
           if (titleName) this._setDisplayName(titleName);
         }
       } else {
-        const titles = await getTitleInfoFlex(f);
-        if (Array.isArray(titles) && titles.length) {
-          const t = titles[0];
-          const poster = t.getPoster?.() || t.poster || null;
-          const posterUrl = poster?.getContenturl?.() || poster?.contenturl || null;
-          if (posterUrl) {
-            this._clear(this._dom.iconDisplay);
-            this._appendImg(posterUrl);
-          }
-          const titleName = t.getName?.() || t.name || null;
-          if (titleName) this._setDisplayName(titleName);
-        }
+        // no infos.json; keep default folder appearance
       }
     } catch {
       /* keep default folder icon */
@@ -428,26 +447,26 @@ export class FileIconView extends HTMLElement {
 
   /* ---------- Private: Actions ---------- */
   _handleOpen() {
-    const f = this._file;
-    if (isDirVM(f)) {
+    const effective = this._file?.linkTarget || this._displayFile || this._file;
+    if (isDirVM(effective)) {
       if (this._fileExplorer?.publishSetDirEvent) {
-        this._fileExplorer.publishSetDirEvent(pathOf(f));
+        this._fileExplorer.publishSetDirEvent(pathOf(effective));
       } else {
         const feId = this._fileExplorer?._id || this._fileExplorer?.id;
         Backend.eventHub.publish(
           "__set_dir_event__",
-          { dir: f, file_explorer_id: feId },
+          { dir: effective, file_explorer_id: feId },
           true
         );
       }
       return;
     }
 
-    const kind = mimeRootOf(f);
-    if (kind === "video") this._fileExplorer?.playVideo?.(f);
-    else if (kind === "audio") this._fileExplorer?.playAudio?.(f);
-    else if (kind === "image") this._fileExplorer?.showImage?.(f);
-    else this._fileExplorer?.readFile?.(f);
+    const kind = mimeRootOf(effective);
+    if (kind === "video") this._fileExplorer?.playVideo?.(effective);
+    else if (kind === "audio") this._fileExplorer?.playAudio?.(effective);
+    else if (kind === "image") this._fileExplorer?.showImage?.(effective);
+    else this._fileExplorer?.readFile?.(effective);
 
     const menu = this._activeMenu();
     menu?.close?.();
@@ -574,6 +593,20 @@ export class FileIconView extends HTMLElement {
   _activeMenu() { return this._viewContext?.menu || this._viewContext?._contextMenu || null; }
 }
 
-function hasLinkFlag(v) { return !!(v?.lnk || v?.isLink || v?.link); }
+function hasLinkFlag(v) { return isLinkFile(v); }
+
+function sectionNameForFile(file) {
+  if (!file) return "other";
+  if (isDirVM(file)) return "folder";
+  const root = (mimeRootOf(file) || "").toLowerCase();
+  if (root === "video") return "video";
+  if (root === "audio") return "audio";
+  if (root === "image") return "image";
+  if (root === "text") return "text";
+  const mime = (mimeOf(file) || "").toLowerCase();
+  const [, sub = ""] = mime.split("/");
+  if (sub === "pdf") return "pdf";
+  return "other";
+}
 
 customElements.define("globular-file-icon-view", FileIconView);

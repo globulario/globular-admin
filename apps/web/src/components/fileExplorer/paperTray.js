@@ -4,7 +4,7 @@
 
 import { Backend } from '../../backend/backend';
 import { displayError, displayMessage } from '../../backend/ui/notify';
-import { copyFiles, moveFiles } from '../../backend/cms/files';
+import { copyFiles, moveFiles, createLink } from '../../backend/cms/files';
 
 import '@polymer/paper-button/paper-button.js';
 
@@ -12,7 +12,7 @@ export class PaperTray extends HTMLElement {
   /** @type {any} */
   _fileExplorer = null;
 
-  /** @type {'cut'|'copy'|''} */
+  /** @type {'cut'|'copy'|'link'|''} */
   _mode = '';
 
   /** @type {string[]} */
@@ -148,7 +148,7 @@ export class PaperTray extends HTMLElement {
    * @param {string[]} paths
    */
   setClipboard(mode, paths) {
-    const m = (mode === 'copy') ? 'copy' : 'cut';
+    const m = mode === 'copy' ? 'copy' : mode === 'link' ? 'link' : 'cut';
     const clean = Array.isArray(paths) ? paths.filter(Boolean) : [];
     const seen = new Set();
 
@@ -169,7 +169,7 @@ export class PaperTray extends HTMLElement {
    * @param {string[]} paths
    */
   appendToClipboard(mode, paths) {
-    const m = (mode === 'copy') ? 'copy' : 'cut';
+    const m = mode === 'copy' ? 'copy' : mode === 'link' ? 'link' : 'cut';
     const clean = Array.isArray(paths) ? paths.filter(Boolean) : [];
 
     if (!this._mode) {
@@ -216,10 +216,25 @@ export class PaperTray extends HTMLElement {
 
     this._container.style.display = 'flex';
 
-    const modeLabel = (this._mode === 'copy') ? 'Copy' : 'Move';
+    const modeLabel =
+      this._mode === 'copy'
+        ? 'Copy'
+        : this._mode === 'link'
+          ? 'Link'
+          : 'Move';
     if (this._label) {
       this._label.textContent =
         `${modeLabel} ${this._items.length} item${this._items.length > 1 ? 's' : ''} ready`;
+    }
+
+    if (this._pasteBtn) {
+      if (this._mode === 'link') {
+        this._pasteBtn.textContent = 'Create links here';
+        this._pasteBtn.title = 'Create shortcuts in the current folder';
+      } else {
+        this._pasteBtn.textContent = 'Paste here';
+        this._pasteBtn.title = 'Paste into this folder';
+      }
     }
 
     if (this._itemsEl) {
@@ -266,6 +281,12 @@ export class PaperTray extends HTMLElement {
     }
 
     const destDir = (this._fileExplorer && this._fileExplorer._path) || '/';
+
+    if (this._mode === 'link') {
+      await this._handleLinkHere(destDir);
+      return;
+    }
+
     const isCopy = (this._mode === 'copy');
 
     try {
@@ -284,6 +305,39 @@ export class PaperTray extends HTMLElement {
     } catch (err) {
       console.error('Paste failed', err);
       displayError(err?.message || 'Paste failed.', 4000);
+    }
+  }
+
+  async _handleLinkHere(destDir) {
+    if (!this._items || this._items.length === 0) {
+      displayMessage('Nothing to link.', 2500);
+      return;
+    }
+    const targetDir = destDir || (this._fileExplorer && this._fileExplorer._path) || '/';
+    let successCount = 0;
+
+    for (const sourcePath of this._items) {
+      if (!sourcePath) continue;
+      const fileName = sourcePath.substring(sourcePath.lastIndexOf('/') + 1);
+      const linkName = fileName.includes('.')
+        ? `${fileName.substring(0, fileName.indexOf('.'))}.lnk`
+        : `${fileName}.lnk`;
+
+      try {
+        await createLink(targetDir, linkName, sourcePath);
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to create link for ${sourcePath}`, err);
+        displayError(`Failed to create link for ${fileName}: ${err?.message || err}`, 3500);
+      }
+    }
+
+    if (successCount > 0) {
+      displayMessage(
+        `Created ${successCount} link${successCount > 1 ? 's' : ''} in ${targetDir}.`,
+        2500
+      );
+      Backend.eventHub.publish('reload_dir_event', targetDir, true);
     }
   }
 }

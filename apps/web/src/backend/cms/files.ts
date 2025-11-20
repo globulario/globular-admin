@@ -10,6 +10,8 @@ import { FileServiceClient } from "globular-web-client/file/file_grpc_web_pb";
 import * as filepb from "globular-web-client/file/file_pb";
 import { FilesCache, type ReadDirFetcher } from "./files_cache";
 
+declare const Buffer: any;
+
 /* ------------------------------------------------------------------
  * Constants (kept for callers)
  * ------------------------------------------------------------------ */
@@ -206,6 +208,82 @@ export class FileVM {
   getFilesList(): FileVM[] {
     return this.files || [];
   }
+}
+
+/* ------------------------------------------------------------------
+ * Link helpers (shared between backend + views)
+ * ------------------------------------------------------------------ */
+
+function getPathString(file: any): string {
+  if (!file) return "";
+  if (typeof file.getPath === "function") return file.getPath() || "";
+  if (typeof file.path === "string") return file.path;
+  return "";
+}
+
+function getNameString(file: any): string {
+  if (!file) return "";
+  if (typeof file.getName === "function") return file.getName() || "";
+  if (typeof file.name === "string" && file.name.length) return file.name;
+  const p = getPathString(file);
+  if (!p) return "";
+  const idx = p.lastIndexOf("/");
+  return idx >= 0 ? p.substring(idx + 1) : p;
+}
+
+function isMaybeDir(file: any): boolean {
+  if (!file) return false;
+  if (typeof file.getIsDir === "function") return !!file.getIsDir();
+  if (typeof file.isDir === "boolean") return file.isDir;
+  return false;
+}
+
+export function isLinkFile(file: any): boolean {
+  if (!file || isMaybeDir(file)) return false;
+  const name = getNameString(file).toLowerCase();
+  return name.endsWith(".lnk") || !!file?.isLink || !!file?.linkTarget;
+}
+
+export async function loadLinkTarget(file: any): Promise<any> {
+  if (!file || !isLinkFile(file)) return null;
+  if (file.linkTarget) return file.linkTarget;
+  if (file.__linkTargetPromise) return file.__linkTargetPromise;
+
+  const promise = (async () => {
+    const path = getPathString(file);
+    if (!path) throw new Error("Invalid link path.");
+    const raw = await readText(path);
+    if (!raw || raw.trim().length === 0) throw new Error("Link file is empty.");
+    const bytes = base64ToBytes(raw);
+    let info: any = filepb.FileInfo.deserializeBinary(bytes);
+    const targetPath =
+      (typeof info.getPath === "function" && info.getPath()) ||
+      info.path ||
+      "";
+    if (targetPath) {
+      try {
+        const fresh = await getFile(targetPath);
+        if (fresh) info = fresh;
+      } catch (err) {
+        console.warn("Failed to fetch linked file info", err);
+      }
+    }
+    file.linkTarget = info;
+    file.isLink = true;
+    return info;
+  })();
+
+  file.__linkTargetPromise = promise;
+  return promise;
+}
+
+export async function getDisplayFileForLink(file: any): Promise<any> {
+  const target = await loadLinkTarget(file);
+  return target || file;
+}
+
+export function getActionFile(file: any): any {
+  return (file && file.linkTarget) || file;
 }
 
 // Backward compatibility: DirVM is just a FileVM
@@ -459,6 +537,19 @@ export async function readDirFresh(path: string, recursive = false): Promise<Dir
   // Ensure root.files is at least an array
   if (!Array.isArray(root.files)) root.files = [];
 
+  const linkPromises: Promise<any>[] = [];
+  nodes.forEach((node) => {
+    if (!node || node.isDir) return;
+    if (!isLinkFile(node)) return;
+    linkPromises.push(
+      loadLinkTarget(node).catch((err) => {
+        console.warn("Failed to resolve link target", err);
+        return null;
+      })
+    );
+  });
+  if (linkPromises.length) await Promise.allSettled(linkPromises);
+
   return root as DirVM;
 }
 
@@ -478,14 +569,37 @@ export async function getFile(path: string): Promise<FileVM | null> {
 }
 
 /** Stream a file’s bytes. onChunk receives raw Uint8Array chunks */
+function extractChunkBytes(msg: any): Uint8Array | null {
+  if (!msg) return null;
+  try {
+    if (typeof msg.getData_asU8 === "function") {
+      const data = msg.getData_asU8();
+      return data instanceof Uint8Array ? data : new Uint8Array(data);
+    }
+    if (typeof msg.getData === "function") {
+      const data = msg.getData();
+      if (data instanceof Uint8Array) return data;
+      if (typeof data === "string") return base64ToBytes(data);
+    }
+    const direct = msg.data;
+    if (direct instanceof Uint8Array) return direct;
+    if (typeof direct === "string") return base64ToBytes(direct);
+  } catch (err) {
+    console.warn("Failed to decode stream chunk", err);
+  }
+  return null;
+}
+
 export async function readFile(path: string, onChunk: (b: Uint8Array) => void): Promise<void> {
-  const md = await meta();
   const rq = newRq(SERVICE_METHODS.read.rq);
   if (typeof rq.setPath === 'function') rq.setPath(path);
   else rq.path = path;
 
   const method = pickMethod(clientFactory(), SERVICE_METHODS.read.method);
-  await stream(clientFactory, method, rq, onChunk, "file.FileService", md as any);
+  await stream(clientFactory, method, rq, (msg) => {
+    const data = extractChunkBytes(msg);
+    if (data) onChunk(data);
+  }, "file.FileService");
 }
 
 /** Save a complete file (overwrite) */
@@ -527,8 +641,120 @@ export async function addPublicDir(path: string): Promise<void> {
   if (CACHE_ENABLED && _cache) _cache.invalidate(path);
 }
 
+function extractPathFromTarget(target: any): string | undefined {
+  if (!target && target !== "") return undefined;
+  if (typeof target === "string") return target;
+  if (typeof target.getPath === "function") {
+    const p = target.getPath();
+    if (typeof p === "string" && p.length > 0) return p;
+  }
+  if (typeof target.path === "string" && target.path.length > 0) return target.path;
+  if (target.__vm && typeof target.__vm.path === "string") return target.__vm.path;
+  return undefined;
+}
+
+async function fetchFileInfoProto(path: string): Promise<any | null> {
+  if (!path) return null;
+  const md = await meta();
+  const rq = newRq(SERVICE_METHODS.getInfo.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path);
+  else rq.path = path;
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.getInfo.method);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
+  const info = rsp && (rsp.getInfo?.() ?? rsp.getFileinfo?.() ?? rsp.info);
+  return info || null;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  const globalBtoa = typeof btoa === "function" ? btoa : null;
+  if (!globalBtoa) {
+    throw new Error("No base64 encoder available in this environment.");
+  }
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const sub = bytes.subarray(i, i + chunk);
+    binary += String.fromCharCode.apply(null, Array.from(sub));
+  }
+  return globalBtoa(binary);
+}
+
+function base64ToBytes(str: string): Uint8Array {
+  if (typeof str !== "string" || str.length === 0) return new Uint8Array(0);
+  const sanitized = str.replace(/\s+/g, "");
+  if (typeof Buffer !== "undefined") {
+    return Uint8Array.from(Buffer.from(sanitized, "base64"));
+  }
+  if (typeof atob === "function") {
+    const binary = atob(sanitized);
+    const len = binary.length;
+    const out = new Uint8Array(len);
+    for (let i = 0; i < len; i++) out[i] = binary.charCodeAt(i);
+    return out;
+  }
+  throw new Error("No base64 decoder available.");
+}
+
+function looksLikeFsPath(str: string): boolean {
+  return str.startsWith("/") || str.startsWith("\\");
+}
+
+function looksLikeBase64(str: string): boolean {
+  return /^[A-Za-z0-9+/=]+$/.test(str);
+}
+
+async function resolveLinkPayload(targetInfo: any): Promise<string> {
+  if (typeof targetInfo === "string") {
+    if (!looksLikeFsPath(targetInfo) && looksLikeBase64(targetInfo)) {
+      return targetInfo;
+    }
+    const proto = await fetchFileInfoProto(targetInfo);
+    if (proto && typeof proto.serializeBinary === "function") {
+      const bytes = proto.serializeBinary();
+      const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      return bytesToBase64(arr);
+    }
+    throw new Error(`Unable to fetch file info for path ${targetInfo}`);
+  }
+
+  if (targetInfo instanceof Uint8Array) {
+    return bytesToBase64(targetInfo);
+  }
+
+  if (typeof targetInfo?.serializeBinary === "function") {
+    const bytes = targetInfo.serializeBinary();
+    const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    return bytesToBase64(arr);
+  }
+
+  if (ArrayBuffer.isView(targetInfo) && targetInfo.byteLength !== undefined) {
+    const view = targetInfo as ArrayBufferView;
+    return bytesToBase64(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+  }
+
+  if (targetInfo instanceof ArrayBuffer) {
+    return bytesToBase64(new Uint8Array(targetInfo));
+  }
+
+  const path = extractPathFromTarget(targetInfo);
+  if (path) {
+    const proto = await fetchFileInfoProto(path);
+    if (proto && typeof proto.serializeBinary === "function") {
+      const bytes = proto.serializeBinary();
+      const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      return bytesToBase64(arr);
+    }
+  }
+
+  throw new Error("Unable to resolve file information for link target.");
+}
+
 /** Create a .lnk pointing to a serialized FileInfo */
 export async function createLink(destDir: string, linkName: string, targetInfo: any): Promise<void> {
+  const lnkBytes = await resolveLinkPayload(targetInfo);
   const md = await meta();
   const rq = newRq(SERVICE_METHODS.createLnk.rq);
   if (typeof rq.setPath === 'function') rq.setPath(destDir);
@@ -536,7 +762,6 @@ export async function createLink(destDir: string, linkName: string, targetInfo: 
   if (typeof rq.setName === 'function') rq.setName(linkName);
   else rq.name = linkName;
 
-  const lnkBytes = typeof targetInfo?.serializeBinary === 'function' ? targetInfo.serializeBinary() : targetInfo;
   if (typeof rq.setLnk === 'function') rq.setLnk(lnkBytes);
   else rq.lnk = lnkBytes;
 

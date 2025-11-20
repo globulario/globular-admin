@@ -6,6 +6,7 @@ import { displayError } from "../../backend/ui/notify";
 // Use specific helpers instead of wildcard import
 // Expectation: these are thin wrappers over readDir + image loading in your new files.ts
 import { getHiddenFiles, getImages } from "../../backend/cms/files";
+import { pathOf } from "./filevm-helpers";
 
 import "@polymer/paper-ripple/paper-ripple.js";
 
@@ -227,9 +228,14 @@ export class VideoPreview extends HTMLElement {
 
   _getPath() {
     if (!this._file) return "";
-    return typeof this._file.getPath === "function"
-      ? this._file.getPath()
-      : (this._file.path || "");
+    const target =
+      (typeof this._file.getLinkTarget === "function" && this._file.getLinkTarget()) ||
+      this._file.linkTarget;
+    if (target) {
+      const targetPath = pathOf(target);
+      if (targetPath) return targetPath;
+    }
+    return pathOf(this._file);
   }
 
   _getPrimaryThumbnail() {

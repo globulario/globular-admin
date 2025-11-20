@@ -450,6 +450,7 @@ export class SearchableList extends HTMLElement {
             .add-action-btn{
                 display:inline-flex;
                 align-items:center;
+                font-size:.75rem;
                 gap:4px;
                 white-space:nowrap;
                 background: var(--primary-color);

@@ -513,6 +513,7 @@ export class UsersManager extends HTMLElement {
     this.shadow.innerHTML = `
       <style>
         :host { display:block; }
+        paper-icon-button { --paper-icon-button-ink-color: var(--primary-color); font-size: 24px; }
         .page {
           padding: 12px;
           color: var(--on-surface-color);

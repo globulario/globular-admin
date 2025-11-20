@@ -15,6 +15,7 @@ import {
   isDir as isDirOf,
 } from "./filevm-helpers.js";
 
+
 // --- Constants ---
 const DEFAULT_IMAGE_HEIGHT = 80;
 const DEFAULT_IMAGE_WIDTH = 80;
@@ -23,7 +24,9 @@ export class FilesIconView extends FilesView {
   _imageHeight = DEFAULT_IMAGE_HEIGHT;
   _imageWidth = DEFAULT_IMAGE_WIDTH;
   _isActive = false;
-  _active = false; // <- add this
+  _active = false;
+  _sectionsByType = {};
+  _linkTypeListener = null;
 
   constructor() {
     super();
@@ -179,6 +182,10 @@ export class FilesIconView extends FilesView {
   /* ---------- Rendering ---------- */
 
   setDir(dir) {
+    if (this._linkTypeListener) {
+      this.removeEventListener("link-type-ready", this._linkTypeListener);
+      this._linkTypeListener = null;
+    }
     if (!dir) return;
 
     this._currentDir = dir;
@@ -197,20 +204,23 @@ export class FilesIconView extends FilesView {
       return (nameOf(a) || "").localeCompare(nameOf(b) || "");
     });
 
-    const byType = { folder: [], video: [], audio: [], image: [], document: [], other: [] };
+    const byType = { folder: [], video: [], audio: [], image: [], text: [], pdf: [], document: [], other: [] };
 
     for (const f of sorted) {
       const nm = nameOf(f) || "";
       if (nm.startsWith(".") && !nm.startsWith(".hidden")) continue;
 
-      const mime = mimeOf(f) || "";
+      const targetFile = (f && typeof f.linkTarget === "object" && f.linkTarget) ? f.linkTarget : f;
+      const mime = mimeOf(targetFile) || "";
+
       const [type, sub] = mime.split("/");
 
-      if (isDirOf(f)) byType.folder.push(f);
+      if (isDirOf(targetFile)) byType.folder.push(f);
       else if (type === "video") byType.video.push(f);
       else if (type === "audio") byType.audio.push(f);
       else if (type === "image") byType.image.push(f);
-      else if (type === "text" || sub === "pdf") byType.document.push(f);
+      else if (type === "text") byType.text.push(f);
+      else if (sub === "pdf") byType.pdf.push(f);
       else byType.other.push(f);
     }
 
@@ -218,18 +228,68 @@ export class FilesIconView extends FilesView {
     dir.__audioPlaylist__ = findByName("audio.m3u");
     dir.__videoPlaylist__ = findByName("video.m3u");
 
-    const order = ["folder", "video", "audio", "image", "document", "other"];
+    const order = ["folder", "video", "audio", "image", "text", "pdf", "document", "other"];
+    const sectionMap = {};
+    this._sectionsByType = sectionMap;
+
+    const insertSectionInOrder = (section, fileType) => {
+      const desiredIndex = order.indexOf(fileType);
+      if (desiredIndex === -1) {
+        this.appendChild(section);
+        return;
+      }
+      const existing = Array.from(this.querySelectorAll("globular-file-icon-view-section"));
+      for (const node of existing) {
+        const existingType = node.getAttribute("filetype") || "";
+        const existingIndex = order.indexOf(existingType);
+        if (existingIndex === -1) continue;
+        if (existingIndex > desiredIndex) {
+          this.insertBefore(section, node);
+          return;
+        }
+      }
+      this.appendChild(section);
+    };
+
+    const ensureSection = (fileType) => {
+      if (sectionMap[fileType]) return sectionMap[fileType];
+      const section = document.createElement("globular-file-icon-view-section");
+      section.id = `${fileType}_section`;
+      section.setAttribute("filetype", fileType);
+      insertSectionInOrder(section, fileType);
+      section.init(this._currentDir, fileType, this);
+      sectionMap[fileType] = section;
+      return section;
+    };
+
+    this._linkTypeListener = (evt) => {
+      const detail = evt.detail || {};
+      const iconEl = detail.icon;
+      const targetType = detail.type;
+      if (!iconEl || !targetType) return;
+
+      const destSection = ensureSection(targetType);
+      if (!destSection) return;
+
+      const currentSection = iconEl.closest("globular-file-icon-view-section");
+      if (currentSection === destSection) return;
+
+      if (currentSection?.contains(iconEl)) {
+        currentSection.removeChild(iconEl);
+        currentSection.updateCount?.();
+      }
+
+      destSection.appendChild(iconEl);
+      destSection.updateCount?.();
+    };
+
+    this.addEventListener("link-type-ready", this._linkTypeListener);
 
     order.forEach((fileType) => {
       const files = byType[fileType];
       if (!files || files.length === 0) return;
 
-      const section = document.createElement("globular-file-icon-view-section");
-      section.id = `${fileType}_section`;
-      section.setAttribute("filetype", fileType);
-      this.appendChild(section);
-
-      section.init(dir, fileType, this);
+      const section = ensureSection(fileType);
 
       files.forEach((file) => {
         const icon = document.createElement("globular-file-icon-view");
@@ -243,17 +303,16 @@ export class FilesIconView extends FilesView {
         icon.addEventListener("dragstart", (evt) => this._handleFileDragStart(evt, icon, file));
         icon.addEventListener("dragend", (evt) => this._handleFileDragEnd(evt));
 
-        // Let the icon render itself
-        icon.setFile(file, this);
-
         // Context menu helper
         icon.openContextMenu = (anchorEl) => this.showContextMenu?.(anchorEl, file);
 
         section.appendChild(icon);
+        icon.setFile(file, this);
       });
 
       section.updateCount?.();
     });
+
   }
 
   /* ---------- Drag helpers ---------- */

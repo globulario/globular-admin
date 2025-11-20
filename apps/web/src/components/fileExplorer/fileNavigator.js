@@ -70,6 +70,7 @@ export class FileNavigator extends HTMLElement {
   _domRefs = {};
   _shared = {}; // grouped by "/shared/<userId@domain>"
   _sharedRootVM = null;
+  _publicDirPaths = new Set();
 
   constructor() {
     super();
@@ -656,7 +657,15 @@ export class FileNavigator extends HTMLElement {
 
     const initPromise = (async () => {
       this._domRefs.publicFilesDiv.innerHTML = "";
+      // Purge synthetic /public root and every previously rendered public directory subtree
       this._purgeCachedPaths("/public");
+      if (this._publicDirPaths && this._publicDirPaths.size) {
+        for (const p of this._publicDirPaths) {
+          this._purgeCachedPaths(p);
+        }
+        this._publicDirPaths.clear();
+      }
+      this._fileExplorer?.resetPublicAliasMap?.();
 
       try {
         const paths = await listPublicDirs();
@@ -666,6 +675,9 @@ export class FileNavigator extends HTMLElement {
               const dir = await readDir(p, { refresh: true });
               markAsPublic(dir);
               dir.name = nameOf(dir) || (p.split("/").pop() || p);
+              const aliasBase = `/public/${dir.name}`.replace(/\/{2,}/g, "/").replace(/\/$/, "");
+              dir.__syntheticPublicPath = aliasBase;
+              this._fileExplorer?.registerPublicAlias?.(p, aliasBase);
               return dir;
             } catch (err) {
               const fallback = {
@@ -676,6 +688,9 @@ export class FileNavigator extends HTMLElement {
                 files: [],
               };
               markAsPublic(fallback);
+              const aliasBase = `/public/${fallback.name}`.replace(/\/{2,}/g, "/").replace(/\/$/, "");
+              fallback.__syntheticPublicPath = aliasBase;
+              this._fileExplorer?.registerPublicAlias?.(p, aliasBase);
               return fallback;
             }
           })
@@ -689,6 +704,10 @@ export class FileNavigator extends HTMLElement {
           files: children,
         };
         markAsPublic(publicRoot);
+        children.forEach((dir) => {
+          const p = pathOf(dir);
+          if (p) this._publicDirPaths.add(p);
+        });
 
         this._initTreeView(publicRoot, this._domRefs.publicFilesDiv, 0);
         this._domRefs.publicFilesDiv.__initialized = true;

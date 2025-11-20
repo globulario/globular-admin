@@ -119,7 +119,7 @@ export class PathNavigator extends HTMLElement {
       () => {},
       (evt) => {
         if (this._fileExplorer && this._fileExplorer.id === evt.file_explorer_id) {
-          this.setDir(evt.dir);
+          this.setDir(evt.dir, evt.displayPath);
         }
       },
       true,
@@ -142,12 +142,15 @@ export class PathNavigator extends HTMLElement {
   }
 
   /** Accepts either proto-like dir or DirVM { path, files } */
-  setDir(dir) {
-    let dirPath = pathOf(dir);
+  setDir(dir, syntheticPathOverride) {
+    let dirPath =
+      syntheticPathOverride ||
+      (dir && dir.__syntheticPublicPath) ||
+      pathOf(dir);
     if (!dirPath) return;
 
     // ------- Normalize any breadcrumb/presentation artifacts -------
-    dirPath = String(dirPath)
+    dirPath = String(syntheticPathOverride || dirPath)
       .replace(/>\s*/g, "/")      // turn any " >" breadcrumb leftovers into "/"
       .replace(/\s*\/\s*/g, "/")  // collapse " / " into "/"
       .replace(/\/{2,}/g, "/")    // collapse multiple slashes

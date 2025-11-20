@@ -16,7 +16,7 @@ import { displayError } from "../../backend/ui/notify";
 import { Backend } from "../../backend/backend";
 
 // New backend wrappers
-import { readText } from "../../backend/cms/files";
+import { readText, isLinkFile, loadLinkTarget } from "../../backend/cms/files";
 import { getFileAudiosInfo, getFileVideosInfo, getTitleInfo } from "../../backend/media/title";
 
 // DRY helpers
@@ -209,6 +209,14 @@ export class FilesListView extends FilesView {
         display: none;
       }
 
+      .link-indicator {
+        height: 16px;
+        width: 16px;
+        margin-right: 4px;
+        color: var(--palette-action-active, var(--primary-color));
+        display: none;
+      }
+
       tbody tr:hover .first-cell paper-checkbox,
       tbody tr.active .first-cell paper-checkbox {
         visibility: visible;
@@ -343,6 +351,8 @@ export class FilesListView extends FilesView {
     const name = nameOf(file);
     const mime = (mimeOf(file) || "").toLowerCase();
     const isDir = isDirOf(file);
+    const mimeRoot = (mime || "").split("/")[0];
+    const isLink = isLinkFile(file);
 
     const rowId = `row-${getUuidByString(path)}`;
     const row = document.createElement("tr");
@@ -363,7 +373,7 @@ export class FilesListView extends FilesView {
       icon = "icons:folder";
     } else {
       sizeDisplay = getFileSizeString(sizeOf(file) || 0);
-      mimeDisplay = (mime.split(";")[0] || "").toUpperCase();
+      mimeDisplay = (mimeRoot || "").toUpperCase();
       icon = iconForMime(mime);
 
       // Use thumb if given, regardless of type; otherwise we'll show icon
@@ -387,24 +397,57 @@ export class FilesListView extends FilesView {
         <paper-checkbox id="checkbox-${rowId}"></paper-checkbox>
         <iron-icon id="icon-${rowId}" class="file-icon" icon="${icon}" style="display:none;"></iron-icon>
         <img id="thumbnail-${rowId}" class="file-thumbnail" style="display:none;"/>
-        <span title="${path}">${displayName}</span>
+        <iron-icon class="link-indicator" icon="icons:reply" style="display:${isLink ? "inline-flex" : "none"};"></iron-icon>
+        <span class="file-name" title="${path}">${displayName}</span>
         <paper-icon-button id="menu-btn-${rowId}" icon="icons:more-vert" class="control-button"></paper-icon-button>
         <paper-ripple recenters></paper-ripple>
       </td>
-      <td>${modDateStr}</td>
-      <td>${mimeDisplay || (isDir ? "FOLDER" : "FILE")}</td>
-      <td>${sizeDisplay}</td>
+      <td class="modified-cell">${modDateStr}</td>
+      <td class="type-cell">${mimeDisplay || (isDir ? "FOLDER" : "FILE")}</td>
+      <td class="size-cell">${sizeDisplay}</td>
     `;
 
     // Apply thumbnail or icon immediately (with load/error fallback)
     this._applyThumbOrIcon(row, icon, thumbnailSrc);
 
-    // async enrichment (videos/audios/titles or folder infos)
-    this._getFileDisplayInfo(row, (mime || "").split("/")[0], file)
-      .then((info) => {
-        if (info) this._updateRowDisplayInfo?.(row, (mime || "").split("/")[0], info);
-      })
-      .catch(() => { /* non-fatal */ });
+    const primeDisplayInfo = (source, mimeHint) => {
+      this._getFileDisplayInfo(row, mimeHint, source)
+        .then((info) => {
+          if (info) this._updateRowDisplayInfo?.(row, mimeHint, info);
+        })
+        .catch(() => { /* non-fatal */ });
+    };
+
+    if (isLink) {
+      const indicator = row.querySelector(".link-indicator");
+      loadLinkTarget(file)
+        .then((target) => {
+          if (!target) return;
+          const linkName = nameOf(target);
+          const span = row.querySelector(".file-name");
+          if (span) {
+            span.textContent = linkName;
+            span.title = `${linkName} (${pathOf(target)})`;
+          }
+          const targetIsDir = isDirOf(target);
+          const targetMime = (mimeOf(target) || "").toLowerCase();
+          const typeCell = row.querySelector(".type-cell");
+          if (typeCell) {
+            typeCell.textContent = targetIsDir ? "FOLDER" : (targetMime.split(";")[0] || "").toUpperCase() || "FILE";
+          }
+          const sizeCell = row.querySelector(".size-cell");
+          if (sizeCell) sizeCell.textContent = getFileSizeString(sizeOf(target) || 0);
+          if (indicator) indicator.style.display = "inline-flex";
+          const updatedIcon = targetIsDir ? "icons:folder" : iconForMime(targetMime);
+          this._applyThumbOrIcon(row, updatedIcon, thumbOf(target));
+          primeDisplayInfo(target, (mimeOf(target) || "").split("/")[0]);
+        })
+        .catch((err) => {
+          console.warn("Failed to decode link target", err);
+        });
+    } else {
+      primeDisplayInfo(file, mimeRoot);
+    }
 
     // sync checkbox with global selection pub/sub
     Backend.eventHub.subscribe(
@@ -456,7 +499,7 @@ export class FilesListView extends FilesView {
 
     try {
       if (mimeType === "video") {
-        const videos = await new Promise((resolve, reject) => getFileVideosInfo(file.path, resolve, reject));
+        const videos = await getFileVideosInfo(pathOf(file));
         if (Array.isArray(videos) && videos.length > 0) {
           file.videos = videos;
           displayTitle = videos[0]?.getDescription?.() || displayTitle;
@@ -464,7 +507,7 @@ export class FilesListView extends FilesView {
           if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
         }
       } else if (mimeType === "audio") {
-        const audios = await new Promise((resolve, reject) => getFileAudiosInfo(file.path, resolve, reject));
+        const audios = await getFileAudiosInfo(pathOf(file));
         if (Array.isArray(audios) && audios.length > 0) {
           file.audios = audios;
           displayTitle = audios[0]?.getTitle?.() || displayTitle;
@@ -478,7 +521,7 @@ export class FilesListView extends FilesView {
           if (text) {
             const titleInfos = JSON.parse(text);
             if (titleInfos?.ID) {
-              const title = await new Promise((resolve, reject) => getTitleInfo(titleInfos.ID, resolve, reject));
+              const title = await getTitleInfo(titleInfos.ID);
               if (title) {
                 file.titles = [title];
                 displayTitle = title.getName?.() || displayTitle;
@@ -495,7 +538,7 @@ export class FilesListView extends FilesView {
       console.warn(`Extended info failed for ${nameOf(file)}:`, err);
     } finally {
       // Update name
-      const nameSpan = row.querySelector(".first-cell span");
+      const nameSpan = row.querySelector(".file-name");
       if (nameSpan) nameSpan.textContent = displayTitle;
 
       // Re-apply thumb or icon with final info (handles load/error fallback)
@@ -687,20 +730,21 @@ export class FilesListView extends FilesView {
     const explorer = this._fileExplorer || this._fileExplorer;
     if (!explorer) return;
 
-    const dir = isDirOf(file);
-    const kind = (mimeOf(file) || "").split("/")[0]?.toLowerCase();
+    const effective = file?.linkTarget || file;
+    const dir = isDirOf(effective);
+    const kind = (mimeOf(effective) || "").split("/")[0]?.toLowerCase();
 
     if (dir) {
-      explorer.publishSetDirEvent?.(pathOf(file));
+      explorer.publishSetDirEvent?.(pathOf(effective));
     } else {
       if (kind === "video") {
-        (explorer.playVideo || explorer._playMedia)?.call(explorer, file, "video");
+        (explorer.playVideo || explorer._playMedia)?.call(explorer, effective, "video");
       } else if (kind === "audio") {
-        (explorer.playAudio || explorer._playMedia)?.call(explorer, file, "audio");
+        (explorer.playAudio || explorer._playMedia)?.call(explorer, effective, "audio");
       } else if (kind === "image") {
-        (explorer.showImage || explorer._showImage)?.call(explorer, file);
+        (explorer.showImage || explorer._showImage)?.call(explorer, effective);
       } else {
-        (explorer.readFile || explorer._readFile)?.call(explorer, file);
+        (explorer.readFile || explorer._readFile)?.call(explorer, effective);
       }
     }
     // close shared menu if any
