@@ -52,7 +52,7 @@ import { getFileAudiosInfo } from '../../backend/media/title';
 import { FilesUploader } from './fileUploader';
 
 // ✅ helpers centralize VM/proto normalization
-import { adaptFileVM, adaptDirVM, extractPath, mimeOf, pathOf } from "./filevm-helpers.js";
+import { adaptFileVM, adaptDirVM, extractPath, mimeOf, pathOf, nameOf } from "./filevm-helpers.js";
 
 function getElementIndex(element) {
   return Array.from(element.parentNode.children).indexOf(element);
@@ -103,6 +103,8 @@ export class FileExplorer extends HTMLElement {
 
   _currentDirVM = undefined;
   _publicAliasMap = new Map();
+  _aliasToRealMap = new Map();
+  _publicAliasMap = new Map();
   _account = null;
 
   // 🔧 NEW: track current delete-sub for info panel to avoid stacking
@@ -127,8 +129,34 @@ export class FileExplorer extends HTMLElement {
     }
   }
 
-  resetPublicAliasMap() {
-    this._publicAliasMap?.clear();
+  resetPublicAliasMap(prefix) {
+    if (!this._publicAliasMap) this._publicAliasMap = new Map();
+    if (!this._aliasToRealMap) this._aliasToRealMap = new Map();
+    if (!prefix) {
+      this._publicAliasMap.clear();
+      this._aliasToRealMap.clear();
+      return;
+    }
+    const normalize = (p) => {
+      if (!p) return "/";
+      let out = String(p).trim();
+      if (!out) return "/";
+      if (!out.startsWith("/")) out = `/${out}`;
+      out = out.replace(/\/{2,}/g, "/");
+      if (out.length > 1 && out.endsWith("/")) out = out.slice(0, -1);
+      return out || "/";
+    };
+    const normPrefix = normalize(prefix);
+    const entries = Array.from(this._publicAliasMap.entries());
+    entries.forEach(([real, alias]) => {
+      if (
+        alias === normPrefix ||
+        alias.startsWith(normPrefix === "/" ? "/" : `${normPrefix}/`)
+      ) {
+        this._publicAliasMap.delete(real);
+        this._aliasToRealMap.delete(alias);
+      }
+    });
   }
 
   registerPublicAlias(realPath, aliasPath) {
@@ -145,6 +173,7 @@ export class FileExplorer extends HTMLElement {
     const normReal = normalize(realPath);
     const normAlias = normalize(aliasPath);
     this._publicAliasMap.set(normReal, normAlias);
+    this._aliasToRealMap.set(normAlias, normReal);
   }
 
   _computePublicAliasPath(name) {
@@ -1283,14 +1312,24 @@ export class FileExplorer extends HTMLElement {
   async publishSetDirEvent(path) {
     this.displayWaitMessage(`Loading ${path}...`);
     try {
+      if (path === "/shared" || path === "/Shared") {
+        if (this.openSharedRoot()) return;
+      }
+      if (path?.startsWith("/Shared/")) {
+        if (this.openSharedOwner(path)) return;
+      }
+
+      const fetchPath = this._resolveRealPath(path) || path;
       let dirVM;
       let displayPath = path;
-      if (path === "/public" || path?.startsWith("/public/")) {
+      if (fetchPath === "/public" || fetchPath?.startsWith("/public/")) {
         dirVM = await this._buildPublicDirVM();
         displayPath = path;
       } else {
-        dirVM = await readDir(path);
-        const synthetic = this._syntheticPathForRealPath(path) || dirVM.__syntheticPublicPath;
+        dirVM = await readDir(fetchPath);
+        const synthetic =
+          this._syntheticPathForRealPath(path) ||
+          dirVM.__syntheticPublicPath;
         if (synthetic) {
           dirVM.__syntheticPublicPath = synthetic;
           displayPath = synthetic;
@@ -1312,6 +1351,53 @@ export class FileExplorer extends HTMLElement {
   }
 
   _handleSetDirEvent(dir) { this.setDir(dir); }
+
+  _resolveRealPath(path) {
+    if (!path || !this._aliasToRealMap?.size) return "";
+    const normalize = (p) => {
+      if (!p) return "/";
+      let out = String(p).trim();
+      if (!out.startsWith("/")) out = `/${out}`;
+      out = out.replace(/\/{2,}/g, "/");
+      if (out.length > 1 && out.endsWith("/")) out = out.slice(0, -1);
+      return out || "/";
+    };
+    const norm = normalize(path);
+    return this._aliasToRealMap.get(norm) || "";
+  }
+
+  openSharedRoot() {
+    const root = this._fileNavigator?._sharedRootVM;
+    if (!root) return false;
+    const adapted = adaptDirVM(root);
+    this._currentDirVM = root;
+    Backend.eventHub.publish(
+      "__set_dir_event__",
+      { dir: adapted, file_explorer_id: this._id, displayPath: "/Shared" },
+      true
+    );
+    return true;
+  }
+
+  openSharedOwner(aliasPath) {
+    if (!aliasPath || !aliasPath.startsWith("/Shared/")) return false;
+    const sharedRoot = this._fileNavigator?._sharedRootVM;
+    if (!sharedRoot || !Array.isArray(sharedRoot.files)) return false;
+    const target = sharedRoot.files.find(
+      (f) =>
+        f.__syntheticPublicPath === aliasPath ||
+        `/Shared/${nameOf(f)}` === aliasPath
+    );
+    if (!target) return false;
+    const adapted = adaptDirVM(target);
+    this._currentDirVM = target;
+    Backend.eventHub.publish(
+      "__set_dir_event__",
+      { dir: adapted, file_explorer_id: this._id, displayPath: aliasPath },
+      true
+    );
+    return true;
+  }
 
   setDir(dir, callback) {
     this._currentDir = dir;

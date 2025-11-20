@@ -248,6 +248,7 @@ export class PathNavigator extends HTMLElement {
 
       try {
         let files = [];
+        let synthetic = false;
         if (parentPath === "/public") {
           const paths = await getPublicDirs();
           files = await Promise.all(
@@ -264,8 +265,29 @@ export class PathNavigator extends HTMLElement {
               }
             })
           );
+        } else if (parentPath === "/shared" || parentPath === "/Shared") {
+          const sharedRoot = this._fileExplorer?._fileNavigator?._sharedRootVM;
+          if (sharedRoot) {
+            files = sharedRoot.files || [];
+            synthetic = true;
+          }
+        } else if (parentPath.startsWith("/Shared/")) {
+          const sharedRoot = this._fileExplorer?._fileNavigator?._sharedRootVM;
+          if (sharedRoot?.files?.length) {
+            const owner = sharedRoot.files.find((entry) => {
+              const alias =
+                entry.__syntheticPublicPath || `/Shared/${nameOf(entry)}`;
+              return alias === parentPath;
+            });
+            if (owner) {
+              files = owner.files || [];
+              synthetic = true;
+            }
+          }
         } else {
-          const dir = await readDir(parentPath, true);
+          const resolved =
+            this._fileExplorer?._resolveRealPath?.(parentPath) || parentPath;
+          const dir = await readDir(resolved, true);
           files = (dir && dir.files) || [];
         }
 
@@ -278,7 +300,11 @@ export class PathNavigator extends HTMLElement {
             item.textContent = nameOf(sub);
             item.addEventListener("click", (evt) => {
               evt.stopPropagation();
-              this._navigateToPath(pathOf(sub));
+              const targetPath =
+                sub.__syntheticPublicPath && synthetic
+                  ? sub.__syntheticPublicPath
+                  : pathOf(sub);
+              this._navigateToPath(targetPath);
               hide(card);
               detachReposition(card);
               setIcon(iconEl, ICON_CHEVRON_RIGHT);
@@ -315,8 +341,21 @@ export class PathNavigator extends HTMLElement {
   }
 
   _navigateToPath(path) {
-    if (!this._fileExplorer?.publishSetDirEvent) return;
-    this._fileExplorer.publishSetDirEvent(path);
+    if (!this._fileExplorer) return;
+    if (
+      (path === "/shared" || path === "/Shared") &&
+      this._fileExplorer.openSharedRoot?.()
+    ) {
+      return;
+    }
+    if (path?.startsWith("/Shared/")) {
+      if (this._fileExplorer.openSharedOwner?.(path)) {
+        return;
+      }
+    }
+    const realPath =
+      this._fileExplorer._resolveRealPath?.(path) || path;
+    this._fileExplorer.publishSetDirEvent?.(realPath);
   }
 }
 

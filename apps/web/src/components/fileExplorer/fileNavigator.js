@@ -25,6 +25,7 @@ import {
   mimeOf,
   isDir,
   filesOf as getFiles,
+  adaptDirVM,
 } from "./filevm-helpers";
 
 // UI deps
@@ -55,7 +56,12 @@ function makeRoot(name, path) {
 }
 
 // Synthetic 'Public' root checker
-const isSyntheticPublic = (vm) => pathOf(vm) === "/public";
+const isSyntheticPublic = (vm) => {
+  if (!vm) return false;
+  if (vm.__syntheticRoot) return true;
+  const p = pathOf(vm);
+  return p === "/public" || p === "/shared";
+};
 
 /* ----------------------------- component ----------------------------- */
 
@@ -71,6 +77,7 @@ export class FileNavigator extends HTMLElement {
   _shared = {}; // grouped by "/shared/<userId@domain>"
   _sharedRootVM = null;
   _publicDirPaths = new Set();
+  _sharedDirPaths = new Set();
 
   constructor() {
     super();
@@ -560,7 +567,33 @@ export class FileNavigator extends HTMLElement {
 
         if (syntheticPublic) {
           await toggleSubdirs(true);
-          this._fileExplorer?.publishSetDirEvent?.("/public");
+          if (path === "/public") {
+            this._fileExplorer?.publishSetDirEvent?.("/public");
+          } else if (path === "/shared" || dirVM?.__syntheticRoot === "shared-root") {
+            if (this._sharedRootVM) {
+              const adapted = adaptDirVM(this._sharedRootVM);
+              const explorerId = this._fileExplorer?._id || this._fileExplorer?.id;
+              Backend.eventHub.publish(
+                "__set_dir_event__",
+            { dir: adapted, file_explorer_id: explorerId, displayPath: "/Shared" },
+                true
+              );
+            } else {
+              this._fileExplorer?.publishSetDirEvent?.("/shared");
+            }
+          } else if (dirVM?.__syntheticRoot === "shared-owner") {
+            const adapted = adaptDirVM(dirVM);
+            const explorerId = this._fileExplorer?._id || this._fileExplorer?.id;
+            Backend.eventHub.publish(
+              "__set_dir_event__",
+              {
+                dir: adapted,
+                file_explorer_id: explorerId,
+                displayPath: dirVM.__syntheticPublicPath || path,
+              },
+              true
+            );
+          }
           this._selectRow(path);
           if (this._fileExplorer?._informationsManager?.parentNode) {
             this._fileExplorer._informationsManager.style.display = "none";
@@ -703,6 +736,7 @@ export class FileNavigator extends HTMLElement {
           mime: "synthetic/public-root",
           files: children,
         };
+        publicRoot.__syntheticRoot = "public";
         markAsPublic(publicRoot);
         children.forEach((dir) => {
           const p = pathOf(dir);
@@ -748,103 +782,251 @@ export class FileNavigator extends HTMLElement {
 
   async _initShared() {
     if (this._domRefs.sharedFilesDiv.__populated) return;
-    this._domRefs.sharedFilesDiv.innerHTML = "";
-
-    // Root (rendered as a group of owners)
-    this._sharedRootVM = makeRoot("Shared", "/shared");
+    if (this._domRefs.sharedFilesDiv.__initializingPromise) {
+      try {
+        await this._domRefs.sharedFilesDiv.__initializingPromise;
+      } catch {
+        // ignore and retry
+      }
+      if (this._domRefs.sharedFilesDiv.__populated) return;
+    }
 
     const acc = getCurrentAccount();
+    this._sharedRootVM = makeRoot("Shared", "/shared");
+    this._sharedRootVM.__syntheticPublicPath = "/shared";
+    this._sharedRootVM.__syntheticRoot = "shared-root";
+
     if (!acc || acc.id === "guest") {
       this._initTreeView(this._sharedRootVM, this._domRefs.sharedFilesDiv, 0);
       this._domRefs.sharedFilesDiv.__populated = true;
       return;
     }
     const subject = `${acc.id}@${acc.domain}`;
+    const normalizeId = (val) =>
+      (val || "")
+        .toString()
+        .trim()
+        .replace(/\s+/g, "")
+        .toLowerCase();
+    const normalizedSubject = normalizeId(subject);
 
     const topic = `${subject}_change_permission_event`;
     subscribeOnce.call(this, this._listeners, topic, topic, async () => {
-      // Refresh only Shared section
       this._domRefs.sharedFilesDiv.__populated = false;
       this._domRefs.sharedFilesDiv.__initialized = false;
       await this._initShared();
     });
 
-    try {
-      const rsp = await getSharedResources({ subject, type: SubjectType.ACCOUNT });
-      const items =
-        typeof rsp?.getSharedresourceList === "function"
-          ? rsp.getSharedresourceList()
-          : Array.isArray(rsp?.sharedResources)
-            ? rsp.sharedResources
-            : [];
-
-      const perUser = {}; // ownerKey => VM
-
-      const enqueue = async (sr) => {
-        const srPath = sr?.path || (typeof sr?.getPath === "function" ? sr.getPath() : "") || "";
-        if (!srPath) return;
-
-        // owner id like "<id>@<domain>" from /users/<id>@<domain>/...
-        const segs = srPath.split("/");
-        const ownerId = segs[2];
-
-        if (!ownerId || ownerId === acc.id || ownerId === subject) return;
-
-        let ownerAcc = null;
-        try { ownerAcc = await getAccount(ownerId); } catch (_) { }
-        const ownerAccId =
-          ownerAcc?.id || (typeof ownerAcc?.getId === "function" ? ownerAcc.getId() : ownerId);
-        const ownerAccDomain =
-          ownerAcc?.domain || (typeof ownerAcc?.getDomain === "function" ? ownerAcc.getDomain() : (ownerId.split("@")[1] || ""));
-        const ownerAccName =
-          ownerAcc?.displayName ||
-          (typeof ownerAcc?.getDisplayName === "function" ? ownerAcc.getDisplayName() : "") ||
-          ownerAcc?.name ||
-          (typeof ownerAcc?.getName === "function" ? ownerAcc.getName() : "") ||
-          ownerId;
-
-        const ownerKey = `/shared/${ownerAccId}@${ownerAccDomain}`;
-        if (!perUser[ownerKey]) {
-          perUser[ownerKey] = { name: ownerAccName, path: ownerKey, isDir: true, files: [] };
+    const normalizeSegment = (val, fallback) => {
+      let out = String(val ?? "").trim();
+      if (!out) out = fallback || "shared";
+      out = out.replace(/[^0-9a-zA-Z@._-]+/g, "_");
+      return out || "shared";
+    };
+    const getShareList = (share, getterName, fallbackProp) => {
+      try {
+        const getter = share?.[getterName];
+        if (typeof getter === "function") {
+          const list = getter.call(share);
+          if (Array.isArray(list)) return list.slice();
         }
+      } catch {}
+      const fallback = share?.[fallbackProp];
+      return Array.isArray(fallback) ? fallback.slice() : [];
+    };
+    const extractOwnerFromPath = (realPath) => {
+      if (!realPath) return null;
+      const normalizedPath = realPath.replace(/\/{2,}/g, "/");
+      if (!normalizedPath.startsWith("/users/")) return null;
+      const parts = normalizedPath.split("/");
+      return parts.length > 2 ? parts[2] : null;
+    };
 
-        try {
-          const d = await readDir(srPath, { refresh: true });
-          markAsShare(d);
-          if (!perUser[ownerKey].files.find((f) => f.path === d.path)) perUser[ownerKey].files.push(d);
-        } catch (e) {
-          const msg = String(e?.message || e);
-          if (msg.includes("is not a directory")) {
+    const initPromise = (async () => {
+      this._domRefs.sharedFilesDiv.innerHTML = "";
+      this._purgeCachedPaths("/shared");
+      if (this._sharedDirPaths?.size) {
+        for (const p of this._sharedDirPaths) this._purgeCachedPaths(p);
+        this._sharedDirPaths.clear();
+      }
+      this._fileExplorer?.resetPublicAliasMap?.("/shared");
+
+      let items = [];
+      try {
+        items = await getSharedResources("", subject, SubjectType.ACCOUNT);
+      } catch (err) {
+        const msg = String(err?.message || err);
+        if (!msg.includes("no account exist with id")) {
+          throw err;
+        }
+        items = [];
+      }
+
+      try {
+        const perOwner = {};
+
+        const ensureOwnerTopic = (ownerKey) => {
+          const topicName = `${ownerKey}_change_permission_event`;
+          subscribeOnce.call(this, this._listeners, topicName, topicName, async () => {
+            this._domRefs.sharedFilesDiv.__populated = false;
+            this._domRefs.sharedFilesDiv.__initialized = false;
+            await this._initShared();
+          });
+        };
+
+        const ensureOwnerEntry = async (candidate) => {
+          if (!candidate?.id) return null;
+          const ownerKey = `${candidate.type || "account"}:${candidate.id}`;
+          if (perOwner[ownerKey]) return perOwner[ownerKey];
+
+          let ownerDisplay = candidate.id;
+          if (candidate.type === "account") {
             try {
-              const f = await getFile(srPath, 100, 64);
-              if (f.path.includes("/.hidden/")) {
-                let hiddenDir = perUser[ownerKey].files.find((x) => x.name === ".hidden");
-                if (!hiddenDir) {
-                  hiddenDir = { name: ".hidden", path: `${ownerKey}/.hidden`, isDir: true, mime: "", files: [] };
-                  perUser[ownerKey].files.push(hiddenDir);
-                }
-                if (!hiddenDir.files.find((x) => x.path === f.path)) hiddenDir.files.push(f);
-              } else {
-                if (!perUser[ownerKey].files.find((x) => x.path === f.path)) perUser[ownerKey].files.push(f);
+              const ownerAcc = await getAccount(candidate.id);
+              ownerDisplay =
+                ownerAcc?.displayName ||
+                (typeof ownerAcc?.getDisplayName === "function" ? ownerAcc.getDisplayName() : "") ||
+                ownerAcc?.name ||
+                (typeof ownerAcc?.getName === "function" ? ownerAcc.getName() : "") ||
+                ownerDisplay;
+            } catch (_) { /* fallback to raw id */ }
+          }
+
+          const safeDisplay = ownerDisplay.replace(/\//g, "-");
+          const ownerAliasBase = `/Shared/${safeDisplay}`.replace(/\/{2,}/g, "/");
+
+          perOwner[ownerKey] = {
+            name: ownerDisplay,
+            path: ownerAliasBase,
+            isDir: true,
+            files: [],
+            __syntheticPublicPath: ownerAliasBase,
+            __syntheticRoot: "shared-owner",
+            __aliasBase: ownerAliasBase,
+            __ownerKey: ownerKey,
+            __ownerType: candidate.type || "account",
+            __ownerId: candidate.id,
+          };
+
+          ensureOwnerTopic(ownerKey);
+          return perOwner[ownerKey];
+        };
+
+        const buildSyntheticPath = (ownerEntry, realPath) => {
+          if (!ownerEntry || !realPath) return ownerEntry?.__syntheticPublicPath || "/Shared";
+          const friendly =
+            this._fileExplorer?._syntheticPathForRealPath?.(realPath) ||
+            realPath;
+          const suffix = friendly.startsWith("/") ? friendly : `/${friendly}`;
+          const synthetic = `${ownerEntry.__syntheticPublicPath}${suffix}`.replace(/\/{2,}/g, "/");
+          this._fileExplorer?.registerPublicAlias?.(realPath, synthetic);
+          this._sharedDirPaths.add(realPath);
+          return synthetic;
+        };
+
+        const loadSharedNode = async (realPath) => {
+          if (!realPath) return null;
+          try {
+            const dir = await readDir(realPath, { refresh: true });
+            markAsShare(dir);
+            return dir;
+          } catch (err) {
+            const msg = String(err?.message || err);
+            if (msg.includes("is not a directory")) {
+              try {
+                return await getFile(realPath, 100, 64);
+              } catch (e2) {
+                console.warn("Shared file fallback failed:", e2);
               }
-            } catch (e2) {
-              console.warn("Shared file fallback failed:", e2);
+            } else {
+              console.warn("Shared resource read failed:", err);
             }
+          }
+          return null;
+        };
+
+        const pickOwnerCandidate = (share) => {
+          const sequences = [
+            { list: share?.getAccountsList?.(), type: "account" },
+            { list: share?.getGroupsList?.(), type: "group" },
+            { list: share?.getApplicationsList?.(), type: "application" },
+            { list: share?.getOrganizationsList?.(), type: "organization" },
+            { list: share?.getPeersList?.(), type: "peer" },
+          ];
+          for (const seq of sequences) {
+            if (!Array.isArray(seq.list)) continue;
+            const found = seq.list.find(
+              (val) => val && normalizeId(val) !== normalizedSubject
+            );
+            if (found) return { id: found, type: seq.type };
+          }
+          return null;
+        };
+
+        for (const sr of items) {
+          const realPath =
+            sr?.path || (typeof sr?.getPath === "function" ? sr.getPath() : "") || "";
+          if (!realPath) continue;
+
+          const ownerFromPath = extractOwnerFromPath(realPath);
+          if (ownerFromPath && normalizeId(ownerFromPath) === normalizedSubject) {
+            continue;
+          }
+
+          let candidate = null;
+          if (ownerFromPath) {
+            candidate = { id: ownerFromPath, type: "account" };
           } else {
-            console.warn("Shared resource read failed:", e);
+            candidate = pickOwnerCandidate(sr);
+          }
+          if (!candidate?.id || normalizeId(candidate.id) === normalizedSubject) {
+            continue;
+          }
+
+          const accounts = getShareList(sr, "getAccountsList", "accounts");
+          if (
+            accounts.length &&
+            ownerFromPath &&
+            !accounts.some((acct) => normalizeId(acct) === normalizeId(ownerFromPath))
+          ) {
+            continue;
+          }
+
+          const ownerEntry = await ensureOwnerEntry(candidate);
+          if (!ownerEntry) continue;
+
+          const node = await loadSharedNode(realPath);
+          if (!node) continue;
+
+          const syntheticPath = buildSyntheticPath(ownerEntry, realPath);
+          node.__syntheticPublicPath = syntheticPath;
+
+          if (!ownerEntry.files.find((f) => f.path === realPath)) {
+            ownerEntry.files.push(node);
           }
         }
-      };
 
-      for (const sr of items) await enqueue(sr);
+        const ownerList = Object.values(perOwner).sort((a, b) =>
+          (a.name || "").localeCompare(b.name || "")
+        );
+        this._sharedRootVM.files = ownerList;
+        markAsShare(this._sharedRootVM);
+        this._initTreeView(this._sharedRootVM, this._domRefs.sharedFilesDiv, 0);
+        this._domRefs.sharedFilesDiv.__populated = true;
+        this._domRefs.sharedFilesDiv.__initialized = true;
+      } catch (e) {
+        console.error("Failed to initialize shared resources:", e);
+        displayError(`Failed to load shared resources: ${e?.message || e}`, 3000);
+        this._domRefs.sharedFilesDiv.__populated = false;
+        throw e;
+      }
+    })();
 
-      this._sharedRootVM.files = Object.values(perUser);
-      markAsShare(this._sharedRootVM);
-      this._initTreeView(this._sharedRootVM, this._domRefs.sharedFilesDiv, 0);
-      this._domRefs.sharedFilesDiv.__populated = true;
-    } catch (e) {
-      console.error("Failed to initialize shared resources:", e);
-      displayError(`Failed to load shared resources: ${e?.message || e}`, 3000);
+    this._domRefs.sharedFilesDiv.__initializingPromise = initPromise;
+    try {
+      await initPromise;
+    } finally {
+      this._domRefs.sharedFilesDiv.__initializingPromise = null;
     }
   }
 }
