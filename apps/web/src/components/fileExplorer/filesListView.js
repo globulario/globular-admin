@@ -8,9 +8,9 @@ import "@polymer/paper-ripple/paper-ripple.js";
 import "@polymer/paper-icon-button/paper-icon-button.js"; // menu button
 
 // Icon packs so iron-icon can resolve "icons:*", "av:*", "editor:*"
-import "@polymer/iron-icons/iron-icons.js";   // icons:folder, icons:insert-drive-file
+import "@polymer/iron-icons/iron-icons.js";   // icons:folder, icons:folder
 import "@polymer/iron-icons/av-icons.js";     // av:movie, av:music-note
-import "@polymer/iron-icons/editor-icons.js"; // editor:insert-drive-file
+import "@polymer/iron-icons/editor-icons.js"; // editor:folder
 
 import { displayError } from "../../backend/ui/notify";
 import { Backend } from "../../backend/backend";
@@ -47,11 +47,11 @@ function getCurrentExplorerPath(explorer) {
 
 /** Map a (lowercased) MIME string to an iron-icon name */
 function iconForMime(m) {
-  if (!m) return "icons:insert-drive-file";
+  if (!m) return "icons:folder";
   if (m.startsWith("video/")) return "av:movie";
   if (m.startsWith("audio/")) return "av:music-note";
-  if (m.startsWith("text/")) return "editor:insert-drive-file";
-  return "icons:insert-drive-file";
+  if (m.startsWith("text/")) return "editor:folder";
+  return "icons:folder";
 }
 
 export class FilesListView extends FilesView {
@@ -335,13 +335,13 @@ export class FilesListView extends FilesView {
       };
       imgEl.onerror = () => {
         imgEl.style.display = "none";
-        iconEl.setAttribute("icon", iconName || "icons:insert-drive-file");
+        iconEl.setAttribute("icon", iconName || "icons:folder");
         iconEl.style.display = "inline-block";
       };
     } else {
       // No thumb: show icon immediately.
       imgEl.style.display = "none";
-      iconEl.setAttribute("icon", iconName || "icons:insert-drive-file");
+      iconEl.setAttribute("icon", iconName || "icons:folder");
       iconEl.style.display = "inline-block";
     }
   }
@@ -362,7 +362,7 @@ export class FilesListView extends FilesView {
 
     let sizeDisplay = "";
     let mimeDisplay = "Folder";
-    let icon = "icons:insert-drive-file";
+    let icon = "icons:folder";
     // Prefer any provided thumbnail (for images or other files that have one)
     let thumbnailSrc = "";
 

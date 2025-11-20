@@ -33,8 +33,8 @@ const FOLDER_OPEN_ICON = "icons:folder-open";
 const ICON_FOR_KIND = {
   video: "av:movie",
   audio: "av:music-note",
-  text: "editor:insert-drive-file",
-  default: "icons:insert-drive-file",
+  text: "editor:folder",
+  default: "icons:folder",
 };
 
 export class FileIconView extends HTMLElement {

@@ -292,7 +292,7 @@ export class InformationsManager extends HTMLElement {
 
     const title = (blogPost.getTitle && blogPost.getTitle()) || "Blog Post";
     const sub = (blogPost.getAuthor && blogPost.getAuthor()) || "";
-    this._setHeader(title, sub, "editor:insert-drive-file");
+    this._setHeader(title, sub, "editor:folder");
 
     const cmp = new BlogPostInfo();
     cmp.blogPost = blogPost;

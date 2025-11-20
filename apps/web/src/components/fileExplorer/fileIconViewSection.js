@@ -25,7 +25,7 @@ const ICON_FOR_SECTION = {
   audio: "image:music-note",
   video: "av:movie",
   image: "image:collections",
-  text: "editor:insert-drive-file",
+  text: "editor:folder",
   pdf: "icons:picture-as-pdf",
   default: "icons:folder",
 };
