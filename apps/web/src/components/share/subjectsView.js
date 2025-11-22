@@ -42,6 +42,7 @@ export class GlobularSubjectsView extends HTMLElement {
   on_group_click = null
   on_application_click = null
   on_organization_click = null
+  on_subjects_ready = null
 
   // DOM refs
   _subjectsDiv = null
@@ -89,43 +90,96 @@ export class GlobularSubjectsView extends HTMLElement {
   _render() {
     this.shadowRoot.innerHTML = `
       <style>
+        :host {
+          display:block;
+          height:100%;
+        }
+
         #subjects-div {
-          display:flex; flex-direction:column; margin-right:25px;
-          width:100%; box-sizing:border-box;
+          display:flex;
+          flex-direction:column;
+          width:100%;
+          height:100%;
+          box-sizing:border-box;
+          overflow:hidden;
         }
 
-        .vertical-tabs { display:flex; flex-direction:column; height:100%; }
-        .vertical-tab { display:flex; flex-direction:column; position:relative; }
-
-        .selector {
-          display:flex; align-items:center; justify-content:space-between;
-          text-decoration:underline; padding:8px 10px; margin-right:5px;
-          color: var(--primary-text-color);
-          background: var(--palette-background-dark);
-          border-radius:4px; cursor:pointer; position:relative;
-          transition: background .2s ease;
+        .vertical-tabs {
+          display:flex;
+          flex-direction:column;
+          flex:1;
+          min-height:0;
+          gap:10px;
+          padding:10px;
+          border-radius:10px;
+          background: var(--surface-color);
+          box-shadow: inset 0 0 0 1px var(--palette-divider);
         }
-        .selector:hover { background: var(--palette-action-hover); }
-        .counter { font-size:.9em; color: var(--secondary-text-color); }
 
-        .subject-div {
-          padding-left:10px; width:100%;
-          display:flex; flex-direction:column;
-          padding-bottom:10px; margin-bottom:10px;
+        .vertical-tab {
+          display:flex;
+          flex-direction:column;
+          flex:0 0 auto;
+          min-height:0;
+          border-radius:8px;
+          border:1px solid var(--palette-divider);
+          background: var(--palette-background-paper);
+          overflow:hidden;
+        }
+
+        .selectors {
+          display:flex;
+          flex-direction:column;
+          gap:4px;
+          padding:4px 6px 10px;
           border-bottom:1px solid var(--palette-divider);
         }
 
+        .selector {
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:8px;
+          padding:8px 12px;
+          color: var(--primary-text-color);
+          background: color-mix(in srgb, var(--palette-primary-accent) 8%, transparent);
+          border-radius:4px;
+          cursor:pointer;
+          position:relative;
+          transition: background .2s ease, color .2s ease;
+        }
+        .selector:hover {
+          background: color-mix(in srgb, var(--palette-primary-accent) 18%, transparent);
+        }
+        .counter { font-size:.85rem; color: var(--secondary-text-color); }
+
+        .subject-div {
+          padding:4px 0 8px 0;
+          width:100%;
+          display:flex;
+          flex-direction:column;
+          gap:6px;
+          overflow-y:auto;
+          min-height:0;
+        }
+
         .infos {
-          margin:4px; padding:8px; display:flex; align-items:center; gap:10px;
-          border-radius:4px; background: var(--surface-color); color: var(--primary-text-color);
-          box-shadow: var(--shadow-elevation-2dp);
+          margin:0 12px;
+          padding:8px;
+          display:flex;
+          align-items:center;
+          gap:10px;
+          border-radius:6px;
+          background: var(--surface-color);
+          color: var(--primary-text-color);
+          box-shadow: var(--shadow-elevation-1dp);
           transition: background .2s ease, box-shadow .2s ease;
         }
         .infos:hover { box-shadow: var(--shadow-elevation-4dp); background: var(--palette-action-hover); }
         .infos.active { border:1px solid var(--primary-color); box-shadow: var(--shadow-elevation-6dp); }
 
-        .infos img { width:48px; height:48px; border-radius:50%; object-fit:cover; }
-        .infos iron-icon { width:48px; height:48px; --iron-icon-fill-color: var(--palette-action-disabled); }
+        .infos img { width:44px; height:44px; border-radius:50%; object-fit:cover; }
+        .infos iron-icon { width:44px; height:44px; --iron-icon-fill-color: var(--palette-action-disabled); }
 
         .infos .text { display:flex; flex-direction:column; min-width:0; }
         .infos .text .name { font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -142,21 +196,32 @@ export class GlobularSubjectsView extends HTMLElement {
           border-radius: 6px;
         }
 
-        @media (max-width: 500px) {
-          #subjects-div { margin-right:5px; }
+        @media (max-width: 600px) {
+          #subjects-div { margin-right:0; }
           .subject-div {
-            padding-left:0; flex-direction:row; overflow-x:auto; flex-wrap:nowrap;
-            padding-bottom:0; margin-bottom:0; border-bottom:none;
+            flex-direction:row;
+            overflow-x:auto;
+            gap:8px;
+            padding:8px;
           }
           .infos {
-            flex-direction:column; border:1px solid var(--palette-divider);
-            margin-right:5px; flex-shrink:0; width:100px;
+            flex-direction:column;
+            border:1px solid var(--palette-divider);
+            margin:0;
+            flex:0 0 120px;
           }
           .selectors {
-            display:flex; flex-direction:row; justify-content:center; gap:5px; padding:5px;
-            border-bottom:1px solid var(--palette-divider); flex-shrink:0;
+            display:grid;
+            grid-template-columns:repeat(2, minmax(0,1fr));
+            gap:6px;
+            padding:8px;
+            border-bottom:1px solid var(--palette-divider);
           }
-          .selectors .selector { flex-grow:1; padding:5px; text-align:center; justify-content:center; }
+          .selectors .selector {
+            margin-right:0;
+            padding:6px;
+            justify-content:center;
+          }
           .selectors .counter { display:none; }
         }
       </style>
@@ -281,7 +346,6 @@ export class GlobularSubjectsView extends HTMLElement {
         if (el.parentNode !== tab) tab.insertBefore(el, tab.firstChild)
       }
     })
-    try { fireResize() } catch {}
   }
 
   // -------------------------------------------------------------------
@@ -352,9 +416,8 @@ export class GlobularSubjectsView extends HTMLElement {
       this._applicationsSelector.style.display = "none"
     }
 
-    // Open first non-empty panel
-    const openIf = (panel, counterEl) => {
-      if (!panel || !counterEl) return false
+    // Helper to open panel if it has items
+    function openIf(panel, counterEl) {
       const t = counterEl.textContent || ""
       if (t !== "(0)" && t !== "" && t !== "(Error)") { panel.toggle?.(); return true }
       return false
@@ -366,6 +429,9 @@ export class GlobularSubjectsView extends HTMLElement {
       openIf(this._organizationsCollapsePanel, this._organizationsCounter) ||
       openIf(this._applicationsCollapsePanel, this._applicationsCounter)
     }
+
+    fireResize()
+    this._notifySubjectsReady()
   }
 
   _clearAll() {
@@ -408,6 +474,25 @@ export class GlobularSubjectsView extends HTMLElement {
     else if (type === "group" && this.on_group_click) this.on_group_click(div, subject)
     else if (type === "organization" && this.on_organization_click) this.on_organization_click(div, subject)
     else if (type === "application" && this.on_application_click) this.on_application_click(div, subject)
+  }
+
+  _notifySubjectsReady() {
+    if (typeof this.on_subjects_ready !== "function") return
+    const collect = (container, prop) => {
+      const out = []
+      if (!container?.children) return out
+      Array.from(container.children).forEach((child) => {
+        if (child.subject) out.push(child.subject)
+        else if (child[prop]) out.push(child[prop])
+      })
+      return out
+    }
+    this.on_subjects_ready({
+      accounts: collect(this._accountsDiv, "account"),
+      groups: collect(this._groupsDiv, "group"),
+      organizations: collect(this._organizationsDiv, "organization"),
+      applications: collect(this._applicationsDiv, "application")
+    })
   }
 }
 

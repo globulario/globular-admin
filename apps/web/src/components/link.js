@@ -8,13 +8,8 @@ import { randomUUID } from "./utility.js"
 import { Backend } from "../backend/backend"
 import { displayError, displayMessage } from "../backend/ui/notify"
 
-import { FileExplorer } from "./fileExplorer/fileExplorer.js"
-import { playVideo } from "./video.js"
-import { playAudio } from "./audio.js"
-
-// New backend helpers (promise-based, no globule)
-import { getFile } from "../backend/cms/files"
 import { getFileTitlesInfo, getFileVideosInfo, getFileAudiosInfo } from "../backend/media/title"
+import { getFile } from "../backend/cms/files"
 
 /**
  * Custom element for a filesystem link/shortcut.
@@ -28,6 +23,9 @@ export class Link extends HTMLElement {
 
     this._fileExplorer = null
     this.uuid = "_" + randomUUID()
+    this._imgEl = null
+    this._nameEl = null
+    this._contentDiv = null
 
     // Attributes bootstrap
     path = path ?? this.getAttribute("path") ?? ""
@@ -134,6 +132,7 @@ export class Link extends HTMLElement {
           </div>
         </div>
         <div id="content">
+          <div class="badge" id="${this.uuid}-badge"></div>
           <img src="${thumbnail}">
           <div class="shortcut-icon">
             <iron-icon icon="icons:reply"></iron-icon>
@@ -144,49 +143,30 @@ export class Link extends HTMLElement {
       </div>
     `
 
-    const lnk = this.shadowRoot.querySelector("#content")
-    lnk.onclick = async () => {
-      if (this._fileExplorer) {
-        Backend.eventHub.publish(
-          "follow_link_event_",
-          { path, domain, _fileExplorer: this._fileExplorer },
-          true
-        )
-        return
-      }
+    this._imgEl = this.shadowRoot.querySelector("img")
+    this._nameEl = this.shadowRoot.querySelector("#link-name")
+    this._contentDiv = this.shadowRoot.querySelector("#content")
+    this._applyAttributes()
 
-      try {
-        const file = await getFile(path, 64, 64)
-        if (file.isDir) {
-          const fileExplorer = new FileExplorer()
-          document.body.appendChild(fileExplorer)
-          this._fileExplorer = fileExplorer
-
-          fileExplorer.onclose = () => (this._fileExplorer = null)
-          fileExplorer.onloaded = () => fileExplorer.publishSetDirEvent(path)
-        } else {
-          const mime = file.mime || ""
-          if (mime.startsWith("video")) {
-            playVideo(file.path)
-          } else if (mime.startsWith("audio")) {
-            playAudio(file.path)
-          } else {
-            const fileExplorer = new FileExplorer()
-            document.body.appendChild(fileExplorer)
-            this._fileExplorer = fileExplorer
-            fileExplorer.onclose = () => (this._fileExplorer = null)
-            fileExplorer.onloaded = () => fileExplorer.readFile(file)
-          }
-        }
-      } catch (e) {
-        displayError((e && e.message) || String(e), 3000)
-      }
+    const lnk = this._contentDiv
+    lnk.onclick = () => {
+      const path = this.getAttribute("path") || ""
+      const domain = this.getAttribute("domain") || ""
+      if (!path) return
+      Backend.eventHub.publish(
+        "follow_link_event_",
+        { path, domain, file_explorer_id: this._fileExplorer?._id || null },
+        true
+      )
     }
 
     // Drag & drop metadata
     lnk.draggable = true
-    this.shadowRoot.querySelector("img").draggable = false
+    this._imgEl.draggable = false
     lnk.ondragstart = (evt) => {
+      const path = this.getAttribute("path") || ""
+      if (!path) return
+      const domain = this.getAttribute("domain") || ""
       const files = [path]
       if (evt.dataTransfer) {
         evt.dataTransfer.setData("files", JSON.stringify(files))
@@ -265,6 +245,52 @@ export class Link extends HTMLElement {
     // Enrich label from media metadata (titles/videos/audios)
     // (best-effort; non-blocking)
     this._hydrateDisplayName(path).catch(() => {})
+
+    this._applyAttributes()
+  }
+
+  setFileExplorer(fileExplorer) {
+    this._fileExplorer = fileExplorer
+  }
+
+  static get observedAttributes() {
+    return ["path", "thumbnail", "domain", "alias", "mime", "deleteable"]
+  }
+
+  attributeChangedCallback(name, oldVal, newVal) {
+    if (oldVal === newVal) return
+    if (name === "deleteable") {
+      if (this.hasAttribute("deleteable")) this.setDeleteable()
+      else this.resetDeleteable()
+      return
+    }
+    this._applyAttributes()
+    if (name === "path" && newVal) {
+      this._hydrateDisplayName(newVal).catch(() => {})
+    }
+  }
+
+  _applyAttributes() {
+    const path = this.getAttribute("path") || ""
+    const aliasAttr = this.getAttribute("alias")
+    const alias = aliasAttr && aliasAttr.length > 0 ? aliasAttr : (path.split("/").pop() || path)
+    if (this._nameEl) this._nameEl.textContent = alias
+
+    const thumbnail = this.getAttribute("thumbnail") || ""
+    if (this._imgEl) this._imgEl.src = thumbnail || ""
+
+    const badge = this.shadowRoot.querySelector(`#${this.uuid}-badge`)
+    const badgeLabel = this.getAttribute("permission-badge") || ""
+    console.log("Setting badge:", badgeLabel)
+    if (badge) {
+      if (badgeLabel) {
+        badge.textContent = badgeLabel
+        badge.style.display = "inline-flex"
+      } else {
+        badge.textContent = ""
+        badge.style.display = "none"
+      }
+    }
   }
 
   connectedCallback() {

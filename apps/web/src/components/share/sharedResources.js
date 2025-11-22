@@ -13,6 +13,8 @@ import { SubjectType } from "globular-web-client/rbac/rbac_pb"
 import {
   getSharedResources,
   removeSubjectFromShare,
+  getResourcePermissions,
+  toPermissionsVM,
 } from "../../backend/rbac/permissions"
 
 // Current account helper (or keep your AccountController.account if you prefer)
@@ -131,11 +133,19 @@ export class SharedResources extends HTMLElement {
           color: var(--primary-text-color);
           --paper-tab-ink: var(--palette-action-disabled);
           width: 100%;
-          background: var(--surface-color);
+          background: var(--palette-background-paper);
           border-bottom: 1px solid var(--palette-divider);
+          box-shadow: 0 1px 2px rgba(0,0,0,.35);
           flex-shrink: 0;
         }
-        paper-tab { padding-right: 25px; }
+        paper-tab {
+          padding-right: 25px;
+          color: var(--secondary-text-color);
+        }
+        paper-tab.iron-selected {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
         paper-tab paper-badge {
           --paper-badge-background: var(--palette-warning-main);
           --paper-badge-width: 16px;
@@ -276,14 +286,19 @@ export class SharedResources extends HTMLElement {
         else if (t?.getName) alias = t.getName()
         else if (a?.getTitle) alias = a.getTitle()
 
-        const link = document.createElement('globular-link')
-        link.alias = alias
-        link.mime = file?.getMime?.() ?? file?.mime ?? ""
+        const link = new Link()
         link.id = id
-        link.path = path
-        link.thumbnail = file?.getThumbnail?.() ?? file?.thumbnail ?? ""
-        link.domain = file?.getDomain?.() ?? file?.domain ?? ""
-        link.deleteable = !!showDelete
+        link.setAttribute("path", path)
+        const thumb = file?.getThumbnail?.() ?? file?.thumbnail ?? ""
+        if (thumb) link.setAttribute("thumbnail", thumb)
+        const domain = file?.getDomain?.() ?? file?.domain ?? ""
+        if (domain) link.setAttribute("domain", domain)
+        if (alias) link.setAttribute("alias", alias)
+        const mime = file?.getMime?.() ?? file?.mime ?? ""
+        if (mime) link.setAttribute("mime", mime)
+        if (showDelete) link.setAttribute("deleteable", "true")
+        const badgeLabel = await computePermissionBadge(r, isDeletableByYou)
+        if (badgeLabel) link.setAttribute("permission-badge", badgeLabel)
         link.setFileExplorer?.(this._fileExplorer)
 
         link.ondelete = async () => {
@@ -309,3 +324,95 @@ export class SharedResources extends HTMLElement {
 }
 
 customElements.define('globular-shared-resources', SharedResources)
+
+const permissionsCache = new Map()
+
+async function computePermissionBadge(sharedResource, subjectContext) {
+  const path = sharedResource?.getPath?.() ?? sharedResource?.path
+  const subjectKey = normalizeSubjectKey(subjectContext)
+  if (!path || !subjectKey) {
+    return "R"
+  }
+  try {
+    const vm = await permissionsForPath(path)
+    if (!vm) return "R"
+    const subjectType = inferSubjectType(subjectContext)
+    if (entryHasSubject(vm.owners, subjectType, subjectKey)) {
+      return "Owner"
+    }
+    if (hasPermission(vm, "delete", subjectType, subjectKey)) {
+      return "Manage"
+    }
+    if (hasPermission(vm, "write", subjectType, subjectKey)) {
+      return "RW"
+    }
+    if (vm.allowed?.some((entry) => entryHasSubject(entry, subjectType, subjectKey))) {
+      return "R"
+    }
+  } catch (err) {
+    console.warn("computePermissionBadge failed", err)
+  }
+  return "R"
+}
+
+async function permissionsForPath(path) {
+  if (!path) return null
+  if (!permissionsCache.has(path)) {
+    const prom = getResourcePermissions(path)
+      .then((perms) => (perms ? toPermissionsVM(perms) : null))
+      .catch((err) => {
+        console.warn("getResourcePermissions failed", err)
+        permissionsCache.delete(path)
+        return null
+      })
+    permissionsCache.set(path, prom)
+  }
+  return permissionsCache.get(path)
+}
+
+function normalizeSubjectKey(subject) {
+  if (!subject) return ""
+  if (typeof subject === "string") {
+    return subject.toLowerCase()
+  }
+  if (typeof subject === "object") {
+    if (subject.fqid) return String(subject.fqid).toLowerCase()
+    const id = (subject.getId?.() ?? subject.id ?? "").trim()
+    const domain = (subject.getDomain?.() ?? subject.domain ?? "").trim()
+    if (!id) return ""
+    return (domain ? `${id}@${domain}` : id).toLowerCase()
+  }
+  return ""
+}
+
+function entryHasSubject(entry, subjectType, subjectKey) {
+  if (!entry || !subjectKey) return false
+  const check = (arr = []) => arr.some((val) => String(val || "").toLowerCase() === subjectKey)
+  switch (subjectType) {
+    case SubjectType.ACCOUNT:
+      return check(entry.accounts)
+    case SubjectType.GROUP:
+      return check(entry.groups)
+    case SubjectType.ORGANIZATION:
+      return check(entry.organizations)
+    case SubjectType.APPLICATION:
+      return check(entry.applications)
+    case SubjectType.PEER:
+      return check(entry.peers)
+    default:
+      return (
+        check(entry.accounts) ||
+        check(entry.groups) ||
+        check(entry.organizations) ||
+        check(entry.applications) ||
+        check(entry.peers)
+      )
+  }
+}
+
+function hasPermission(vm, permName, subjectType, subjectKey) {
+  if (!vm?.allowed || !permName) return false
+  const target = vm.allowed.find((entry) => (entry.name || "").toLowerCase() === permName.toLowerCase())
+  if (!target) return false
+  return entryHasSubject(target, subjectType, subjectKey)
+}

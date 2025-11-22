@@ -643,12 +643,12 @@ export class FileExplorer extends HTMLElement {
     Backend.eventHub.subscribe("follow_link_event_",
       (uuid) => { this._listeners["follow_link_event_"] = uuid; },
       async (evt) => {
-        if (evt.file_explorer_id !== explorerId) return;
+        if (evt.file_explorer_id && evt.file_explorer_id !== explorerId) return;
         try {
           const file = await getFileInfo(evt.path);
           if (!file) throw new Error("File not found.");
           const f = adaptFileVM(file);
-          if (this._sharePanel?.parentElement) this._sharePanel.parentElement.removeChild(this._sharePanel);
+          this._closeSharePanel();
           const isDir = f.getIsDir();
           const mime = f.getMime();
           const p = f.getPath();
@@ -1226,16 +1226,27 @@ export class FileExplorer extends HTMLElement {
       this._sharePanel = new SharePanel(this._account || undefined);
       this._sharePanel.setFileExplorer(this);
       this._sharePanel.id = "share-panel";
-      this._sharePanel.style.position = "absolute";
-      this._sharePanel.style.zIndex = 1000;
-      this._sharePanel.style.top = "0px";
-      this._sharePanel.style.left = "0px";
-      this._sharePanel.style.right = "0px";
-      this._sharePanel.style.bottom = "0px";
-      this._sharePanel.onclose = () => { };
+      this._sharePanel.onclose = () => {
+        this._sharePanel = null;
+        this._displayView(this._currentDir);
+      };
+      this._fileSelectionPanel.appendChild(this._sharePanel);
     }
     this._hideAllViewsExcept(this._sharePanel);
     this._sharePanel.style.display = "";
+  }
+
+  _closeSharePanel() {
+    if (!this._sharePanel) return;
+    const panel = this._sharePanel;
+    if (panel.parentNode) panel.parentNode.removeChild(panel);
+    const onclose = panel.onclose;
+    this._sharePanel = null;
+    if (typeof onclose === "function") {
+      onclose();
+    } else {
+      this._displayView(this._currentDir);
+    }
   }
 
   _handleNavigationClick(type, evt) {
@@ -1297,7 +1308,7 @@ export class FileExplorer extends HTMLElement {
     this._fileReader.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
+    this._closeSharePanel();
 
     this._filesListBtn.classList.remove("active");
     this._fileIconBtn.classList.remove("active");
@@ -1471,9 +1482,7 @@ export class FileExplorer extends HTMLElement {
     this._imageViewer.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) {
-      this._sharePanel.parentNode.removeChild(this._sharePanel);
-    }
+    this._closeSharePanel();
 
     this._imageViewer.onclose = () => this._displayView(this._currentDir);
     this._fileReader.onclose = () => this._displayView(this._currentDir);
@@ -1764,7 +1773,7 @@ export class FileExplorer extends HTMLElement {
     this._imageViewer.style.display = "none";
     this._permissionManager.style.display = "none";
     this._informationManager.style.display = "none";
-    if (this._sharePanel?.parentNode) this._sharePanel.parentNode.removeChild(this._sharePanel);
+    this._closeSharePanel();
 
     if (this._filesListBtn.classList.contains("active")) this._filesListView.show();
     else this._filesIconView.show();
@@ -1896,12 +1905,10 @@ export class FileExplorer extends HTMLElement {
         if (width) {
           img.setAttribute("width", `${width}`);
           img.dataset.origWidth = `${width}`;
-          img.style.width = `${width}px`;
         }
         if (height) {
           img.setAttribute("height", `${height}`);
           img.dataset.origHeight = `${height}`;
-          img.style.height = `${height}px`;
         }
         if (width && height) {
           img.style.aspectRatio = `${width}/${height}`;

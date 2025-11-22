@@ -49,7 +49,7 @@ export class SharePanel extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         #container {
-          background-color: var(--surface-color);
+          background: var(--palette-background-default);
           font-size: 1rem;
           display: flex;
           height: 100%;
@@ -65,38 +65,57 @@ export class SharePanel extends HTMLElement {
           font-size: 1rem;
         }
         .header-bar {
-          display: flex; justify-content: center; align-items: center;
-          padding: 10px; border-bottom: 1px solid var(--palette-divider);
-          background-color: var(--palette-primary-accent);
-          color: var(--on-primary-color);
+          display: flex;
+          align-items: center;
+          padding: 4px 8px;
+          border-bottom: 1px solid var(--palette-divider);
+          background:  var(--palette-background-paper);
+          color: var(--primary-text-color);
           flex-shrink: 0;
+          box-shadow: 0 2px 6px rgba(0,0,0,.35);
         }
         .header-bar h1 {
-          margin: 0 0 0 10px; font-size: 1.25rem; flex: 1; font-weight: 500; color: var(--on-primary-color);
+          margin: 0;
+          font-size: 1.1rem;
+          font-weight: 500;
+          flex: 1;
         }
-        .header-bar paper-icon-button { color: var(--on-primary-color); }
-
+        .header-bar paper-icon-button {
+          color: var(--secondary-text-color);
+          --iron-icon-fill-color: var(--secondary-text-color);
+        }
         #share_div {
-          display: flex; padding: 0; height: calc(100% - 60px); flex: 1;
+          display: flex;
+          flex: 1;
+          overflow: hidden;
         }
         globular-subjects-view {
           border-right: 1px solid var(--palette-divider);
-          flex-shrink: 0; min-width: 250px; max-width: 40%; overflow-y: auto;
+          flex: 0 0 260px;
+          min-width: 0;
+          height: 100%;
+          overflow: hidden;
+          background: var(--surface-color);
         }
         #share_content_div {
-          display: flex; flex: 1; min-width: 0; padding: 10px; overflow-y: auto;
+          display: flex;
+          flex: 1;
+          min-width: 0;
+          padding: 0;
+          overflow: hidden;
+          background: var(--surface-color);
+          color: var(--primary-text-color);
         }
-        slot { display: flex; flex: 1; }
-
-        @media (max-width: 500px) {
-          .card-content { width: calc(100vw - 10px); }
-          #share_div { padding: 0; flex-direction: column; flex: 1; }
-          globular-subjects-view {
-            border-right: none; border-bottom: 1px solid var(--palette-divider);
-            max-width: 100%; height: 200px; flex-shrink: 0;
-          }
-          #share_content_div { width: 100%; height: 100%; padding: 5px; }
+        #share_content_div globular-shared-resources,
+        #share_content_div ::slotted(*) {
+          background: var(--surface-color);
+          color: var(--primary-text-color);
         }
+        #share_content_div .shared-content {
+          width: 100%;
+          height: 100%;
+        }
+      </style>
       </style>
       <div id="container">
         <paper-card class="card-content">
@@ -132,6 +151,12 @@ export class SharePanel extends HTMLElement {
     this._subjectsView.on_group_click = (_div, group) => {
       this.displaySharedResources(group)
     }
+    this._subjectsView.on_subjects_ready = (subjects) => {
+      const { accounts = [], groups = [], organizations = [] } = subjects || {}
+      if (accounts.length > 0) this.displaySharedResources(accounts[0])
+      else if (groups.length > 0) this.displaySharedResources(groups[0])
+      else if (organizations.length > 0) this.displaySharedResources(organizations[0])
+    }
     // Hook more subject types here if your subjectsView supports them:
     // this._subjectsView.on_application_click = (_d, app) => this.displaySharedResources(app)
     // this._subjectsView.on_organization_click = (_d, org) => this.displaySharedResources(org)
@@ -151,7 +176,10 @@ export class SharePanel extends HTMLElement {
   displaySharedResources(subject) {
     this._shareContentDiv.innerHTML = ''
     const el = new SharedResources()
-    el.setFileExplorer?.(this._fileExplorer)
+    el.style.width = '100%'
+    el.style.height = '100%'
+    if (this._fileExplorer)
+      el.setFileExplorer?.(this._fileExplorer)
     el.subject = subject
     this._shareContentDiv.appendChild(el)
   }
