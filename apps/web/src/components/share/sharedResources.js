@@ -25,6 +25,7 @@ import { getFile } from "../../backend/cms/files"
 
 // UI
 import { Link } from "../link"
+import { Backend } from "../../backend/backend"
 import '@polymer/paper-tabs/paper-tabs.js'
 import '@polymer/paper-tabs/paper-tab.js'
 import '@polymer/paper-ripple/paper-ripple.js'
@@ -122,9 +123,9 @@ export class SharedResources extends HTMLElement {
           position: absolute; overflow-y: auto; top:0; left:0; right:0; bottom:0; padding:10px;
         }
         #share-with-you-list, #you-share-with-list {
-          display:flex; flex-wrap:wrap; margin-top:10px; gap:15px; justify-content:flex-start;
+          display:none; flex-wrap:wrap; margin-top:10px; gap:15px; justify-content:flex-start;
         }
-        #you-share-with-list { display:none; }
+        #you-share-with-list { display:flex; }
 
         globular-link { margin-left: 15px; }
 
@@ -161,15 +162,15 @@ export class SharedResources extends HTMLElement {
         }
       </style>
       <div id="container">
-        <paper-tabs selected="0">
-          <paper-tab id="tab-share-with-you">Share with you</paper-tab>
+        <paper-tabs id="share-tabs" selected="0">
           <paper-tab id="tab-you-share-with">You share with</paper-tab>
+          <paper-tab id="tab-share-with-you">Share with you</paper-tab>
         </paper-tabs>
 
         <div class="resource-share-panel">
           <div id="scroll-container">
-            <div id="share-with-you-list"></div>
             <div id="you-share-with-list"></div>
+            <div id="share-with-you-list"></div>
           </div>
         </div>
       </div>
@@ -182,6 +183,7 @@ export class SharedResources extends HTMLElement {
     this._youShareWithDiv = this.shadowRoot.querySelector("#you-share-with-list")
     this._shareWithYouTab = this.shadowRoot.querySelector("#tab-share-with-you")
     this._youShareWithTab = this.shadowRoot.querySelector("#tab-you-share-with")
+    this._tabs = this.shadowRoot.querySelector("#share-tabs")
   }
 
   _bind() {
@@ -199,13 +201,10 @@ export class SharedResources extends HTMLElement {
   }
 
   _switchTab(which) {
-    if (which === 'shareWithYou') {
-      this._youShareWithDiv.style.display = "none"
-      this._shareWithYouDiv.style.display = "flex"
-    } else {
-      this._youShareWithDiv.style.display = "flex"
-      this._shareWithYouDiv.style.display = "none"
-    }
+    const showShareWithYou = which === 'shareWithYou'
+    this._shareWithYouDiv.style.display = showShareWithYou ? "flex" : "none"
+    this._youShareWithDiv.style.display = showShareWithYou ? "none" : "flex"
+    if (this._tabs) this._tabs.selected = showShareWithYou ? 1 : 0
   }
 
   // -------------------------- data load ----------------------------------
@@ -231,6 +230,7 @@ export class SharedResources extends HTMLElement {
       // Shared with you (owner = subject, shared with me)
       const sharedWithYou = await getSharedResources(subjFqid, meFqid, SubjectType.ACCOUNT)
       this._renderList(this._shareWithYouDiv, sharedWithYou, me, false)
+
     } catch (e) {
       displayError(`Failed to load shared resources: ${e?.message || e}`, 3000)
       console.error(e)
@@ -243,7 +243,7 @@ export class SharedResources extends HTMLElement {
   }
 
   // -------------------------- list render --------------------------------
-  _renderList(containerDiv, resources, subjectContext, isDeletableByYou) {
+  async _renderList(containerDiv, resources, subjectContext, isDeletableByYou) {
     if (!containerDiv) return
     if (!resources || resources.length === 0) {
       containerDiv.innerHTML = '<p style="padding: 10px; color: var(--secondary-text-color);">No shared resources found.</p>'
@@ -251,25 +251,20 @@ export class SharedResources extends HTMLElement {
     }
 
     containerDiv.innerHTML = ""
-    resources.forEach(async (r) => {
+    for (const r of resources) {
       try {
-        // r is a SharedResource proto/VM with at least getPath(), maybe getDomain()
         const path = r.getPath?.() ?? r.path
-        if (!path) return
+        if (!path) continue
 
-        // Fetch file details (thumbnail, mime, etc.)
         const file = await getFile(path, { width: 100, height: 64 })
-
         const id = `_link_${getUuidByString(path)}`
         const subjectType = inferSubjectType(subjectContext)
         const subjectFqid = fqid(subjectContext)
 
-        // decide if current user can delete this share (only in "You share with" list)
         let showDelete = false
         if (isDeletableByYou) {
-          // SharedResource usually carries lists: accounts, groups, applications...
           const accounts = r.getAccountsList?.() ?? r.accounts ?? []
-          const groups   = r.getGroupsList?.() ?? r.groups ?? []
+          const groups = r.getGroupsList?.() ?? r.groups ?? []
           if (subjectType === SubjectType.ACCOUNT) {
             showDelete = accounts.includes(subjectFqid)
           } else if (subjectType === SubjectType.GROUP) {
@@ -277,7 +272,6 @@ export class SharedResources extends HTMLElement {
           }
         }
 
-        // alias: use media metadata if present, else filename
         let alias = path.substring(path.lastIndexOf("/") + 1)
         const v = file?.videos?.[0]
         const t = file?.titles?.[0]
@@ -297,7 +291,7 @@ export class SharedResources extends HTMLElement {
         const mime = file?.getMime?.() ?? file?.mime ?? ""
         if (mime) link.setAttribute("mime", mime)
         if (showDelete) link.setAttribute("deleteable", "true")
-        const badgeLabel = await computePermissionBadge(r, isDeletableByYou)
+        const badgeLabel = await computePermissionBadge(r, subjectContext)
         if (badgeLabel) link.setAttribute("permission-badge", badgeLabel)
         link.setFileExplorer?.(this._fileExplorer)
 
@@ -305,9 +299,22 @@ export class SharedResources extends HTMLElement {
           try {
             await removeSubjectFromShare(path, subjectFqid, subjectType)
             displayMessage(`Unshared "${alias}" from "${getId(subjectContext)}".`, 2500)
-            this._load() // refresh lists
+            this._load()
           } catch (e) {
             displayError(`Failed to unshare: ${e?.message || e}`, 3000)
+          }
+        }
+
+        link.onedit = async () => {
+          try {
+            const fileInfo = await getFile(path, { width: 64, height: 64 })
+            Backend.eventHub.publish(
+              `display_permission_manager_${this._fileExplorer?._id || ""}_event`,
+              fileInfo,
+              true
+            )
+          } catch (e) {
+            displayError(`Failed to edit permissions: ${e?.message || e}`, 3000)
           }
         }
 
@@ -319,13 +326,19 @@ export class SharedResources extends HTMLElement {
         broken.innerHTML = `<span style="color: var(--palette-error-main);">[Broken Link] ${path.substring(path.lastIndexOf("/") + 1)}</span>`
         containerDiv.appendChild(broken)
       }
-    })
+    }
   }
 }
 
 customElements.define('globular-shared-resources', SharedResources)
 
 const permissionsCache = new Map()
+
+export function clearPermissionsCache(paths) {
+  if (!paths) return
+  const list = Array.isArray(paths) ? paths : [paths]
+  list.forEach((p) => permissionsCache.delete(p))
+}
 
 async function computePermissionBadge(sharedResource, subjectContext) {
   const path = sharedResource?.getPath?.() ?? sharedResource?.path

@@ -44,8 +44,8 @@ export class Wizard extends HTMLElement {
     summaryPageElement = null; // Reference to the summary page content
 
     // Callbacks for wizard events
-    onDone = null;
-    onClose = null;
+    ondone = null;
+    onclose = null;
 
     // --- Constructor ---
     constructor(initialWidth = 700) { // Default width if none provided
@@ -274,16 +274,16 @@ export class Wizard extends HTMLElement {
     /** Handles clicks on the "Done" button. */
     _handleDoneClick = () => {
         this._showSummaryPage();
-        if (this.onDone) {
-            this.onDone(this.summaryPageElement);
+        if (this.ondone) {
+            this.ondone(this.summaryPageElement);
         }
     };
 
     /** Handles clicks on the "Close" button. */
     _handleCloseClick = () => {
         this.parentNode?.removeChild(this); // Safely remove component
-        if (this.onClose) {
-            this.onClose();
+        if (this.onclose) {
+            this.onclose();
         }
     };
 

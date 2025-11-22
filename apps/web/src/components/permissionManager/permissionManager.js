@@ -412,9 +412,14 @@ export class PermissionsManager extends HTMLElement {
     try {
       const rsp = await getResourcePermissions(path)
       const perms = rsp?.getPermissions?.() ?? rsp
-      this._permissions = perms instanceof Permissions ? perms : new Permissions()
-      if (!(perms instanceof Permissions)) {
-        this._permissions.setPath(path)
+      if (perms instanceof Permissions) {
+        this._permissions = perms
+      } else {
+        this._permissions = permissionsVMToProto(perms || { path })
+      }
+      if (!this._permissions.getPath?.()) {
+        this._permissions.setPath?.(path)
+        this._permissions.path = path
       }
     } catch (err) {
       this._permissions = new Permissions()
@@ -449,12 +454,25 @@ export class PermissionsManager extends HTMLElement {
     // Owner
     const ownersPanel = new PermissionPanel(this)
     ownersPanel.id = "permission_owners_panel"
-    ownersPanel.setPermission(this._permissions.getOwners(), true)
+    let ownerPermission = this._permissions.getOwners?.() ?? this._permissions.getOwner?.()
+    if (!ownerPermission) {
+      ownerPermission = new Permission()
+      ownerPermission.setName("owner")
+      if (this._permissions.setOwners) {
+        this._permissions.setOwners(ownerPermission)
+      } else if (this._permissions.setOwner) {
+        this._permissions.setOwner(ownerPermission)
+      } else {
+        this._permissions.owners = ownerPermission
+      }
+    }
+    ownersPanel.setPermission(ownerPermission, true)
     ownersPanel.slot = "owner"
     this.appendChild(ownersPanel)
 
     // Allowed
-    this._permissions.getAllowedList().forEach(p => {
+    const allowedList = this._permissions.getAllowedList?.() || []
+    allowedList.filter(Boolean).forEach(p => {
       const panel = new PermissionPanel(this)
       panel.id = `permission_${p.getName()}_allowed_panel`
       panel.setPermission(p)
@@ -463,7 +481,8 @@ export class PermissionsManager extends HTMLElement {
     })
 
     // Denied
-    this._permissions.getDeniedList().forEach(p => {
+    const deniedList = this._permissions.getDeniedList?.() || []
+    deniedList.filter(Boolean).forEach(p => {
       const panel = new PermissionPanel(this)
       panel.id = `permission_${p.getName()}_denied_panel`
       panel.setPermission(p)

@@ -8,6 +8,7 @@ import {
   // PermissionVM shape (doc only): { path, resourceType, owners?, allowed: [{name, accounts, groups, applications, organizations, peers}], denied: [...] }
   getResourcePermissions,
   setResourcePermissions,
+  toPermissionsVM,
 } from "../../backend/rbac/permissions";
 import { getCurrentAccount } from "../../backend/rbac/accounts"; // used only for sender id in notifications
 import { getGroupById, listGroupMembers } from "../../backend/rbac/groups"; // resolve members for notifications
@@ -16,6 +17,8 @@ import { getGroupById, listGroupMembers } from "../../backend/rbac/groups"; // r
 import { GlobularSubjectsSelected } from "./subjectsSelected.js";
 import { GlobularSubjectsView } from "./subjectsView.js";
 import { SharedSubjectsPermissions } from "./sharedSubjectPermissions.js";
+import { permissionsVMToProto } from "../permissionManager/permissionsUtils.js";
+import { clearPermissionsCache } from "./sharedResources.js";
 
 // Optional global “info” helpers (kept as-is)
 import { showGlobalTitleInfo } from "../search/searchTitleCard.js";
@@ -48,6 +51,7 @@ export class ShareResourceWizard extends HTMLElement {
   _subjectsView = null;
   _selectedSubjects = null;
   _sharedSubjectsPermission = null;
+  _existingPermissionsVM = null;
 
   /**
    * @param {any[]} files
@@ -65,6 +69,7 @@ export class ShareResourceWizard extends HTMLElement {
     this._refs();
     this._bind();
     this._buildWizard();
+    this._initializePermissionsState();
   }
 
   // ------------------------------------------------------------------------
@@ -73,18 +78,65 @@ export class ShareResourceWizard extends HTMLElement {
   _render() {
     this.shadowRoot.innerHTML = `
       <style>
-        #container { display:flex; flex-direction:column; height:100%;
-          background: var(--surface-color); color: var(--primary-text-color);
-          border-radius: 8px; box-shadow: var(--shadow-elevation-8dp); overflow:hidden; }
-        .header { display:flex; align-items:center; padding:8px 12px;
-          background: var(--palette-primary-accent); color: var(--on-primary-color); }
-        .header .title { flex:1; text-align:center; font-size:1.1rem; font-weight:500; }
-        .content { display:flex; flex-direction:column; height:100%; }
+        #container {
+          display:flex;
+          flex-direction:column;
+          width:100%;
+          height:100%;
+          background: var(--surface-color);
+          color: var(--primary-text-color);
+          box-sizing:border-box;
+        }
+        .header {
+          display:flex;
+          align-items:center;
+          padding:8px 14px;
+          border-bottom:1px solid var(--palette-divider);
+          background: color-mix(in srgb, var(--palette-primary-accent) 12%, transparent);
+          color: var(--primary-text-color);
+          min-height:42px;
+        }
+        .header .title {
+          flex:1;
+          text-align:center;
+          font-size:1.05rem;
+          font-weight:500;
+        }
+        .header paper-icon-button {
+          color: var(--secondary-text-color);
+          --iron-icon-fill-color: var(--secondary-text-color);
+        }
+        .content {
+          display:flex;
+          flex-direction:column;
+          flex:1;
+          min-height:0;
+        }
+        #content-host {
+          flex:1;
+          min-height:0;
+          display:flex;
+        }
 
-        .globular-wizard-page { display:flex; flex-direction:column; padding:12px; box-sizing:border-box; gap:10px; overflow:auto; }
+        .globular-wizard-page {
+          display:flex;
+          flex-direction:column;
+          padding:12px;
+          box-sizing:border-box;
+          gap:10px;
+          overflow:auto;
+          flex:1;
+          min-height:0;
+        }
 
         /* Files grid */
-        .files-page { flex-wrap:wrap; flex-direction:row; align-items:flex-start; justify-content:center; }
+        .files-page {
+          flex-wrap:wrap;
+          flex-direction:row;
+          align-items:flex-start;
+          justify-content:flex-start;
+          gap:12px;
+        }
         .file-card { width: 160px; border:1px solid var(--palette-divider); border-radius:6px; padding:6px;
           background:var(--surface-color); box-shadow:var(--shadow-elevation-2dp); }
         .file-top { display:flex; align-items:center; gap:8px; }
@@ -97,7 +149,7 @@ export class ShareResourceWizard extends HTMLElement {
         globular-subjects-selected { flex:2; min-width:280px; }
 
         /* Summary page */
-        .summary-page { display:flex; gap:16px; }
+        .summary-page { display:flex; gap:16px; flex-wrap:wrap; }
         .summary-icon { width:64px; height:64px; flex-shrink:0; }
         .summary-col { flex:1; display:flex; flex-direction:column; gap:10px; }
         .pill-list { display:flex; flex-wrap:wrap; gap:8px; }
@@ -126,7 +178,11 @@ export class ShareResourceWizard extends HTMLElement {
   }
 
   _bind() {
-    this._closeButton?.addEventListener("click", () => this.remove());
+    this._closeButton?.addEventListener("click", () => {
+      this._flushFileSelection();
+      this.onclose?.();
+      this.remove();
+    });
   }
 
   // ------------------------------------------------------------------------
@@ -162,7 +218,20 @@ export class ShareResourceWizard extends HTMLElement {
 
     // Callbacks
     this._wizard.ondone = (sumEl) => this._onDone(sumEl);
-    this._wizard.onclose = () => this.remove();
+    this._wizard.onclose = () => {
+      this._flushFileSelection();
+      this.onclose?.();
+      this.remove();
+    };
+  }
+
+  _flushFileSelection() {
+    for (const file of this._files) {
+      if (file && typeof file === "object") {
+        delete file.selected;
+      }
+    }
+    this._files = [];
   }
 
   // -------- Page 1: files grid ----------
@@ -236,10 +305,12 @@ export class ShareResourceWizard extends HTMLElement {
     this._subjectsView.on_account_click = (_div, account) => {
       this._selectedSubjects.appendAccount(_div, account);
       this._sharedSubjectsPermission?.setAccounts(this._selectedSubjects.getAccounts());
+      this._applyPermissionsToSubject(account);
     };
     this._subjectsView.on_group_click = (_div, group) => {
       this._selectedSubjects.appendGroup(_div, group);
       this._sharedSubjectsPermission?.setGroups(this._selectedSubjects.getGroups());
+      this._applyPermissionsToSubject(group);
     };
 
     // Removers
@@ -261,6 +332,26 @@ export class ShareResourceWizard extends HTMLElement {
     this._sharedSubjectsPermission.setGroups(this._selectedSubjects.getGroups());
   }
 
+  _applyPermissionsToSubject(subject) {
+    if (!subject || !this._existingPermissionsVM) return;
+    this._sharedSubjectsPermission?.applyPermissionsForSubject(subject, this._existingPermissionsVM);
+  }
+
+  async _initializePermissionsState() {
+    if (!this._files?.length) return;
+    const file = this._files[0];
+    const path = file?.getPath?.() ?? file?.path;
+    if (!path) return;
+    try {
+      const vm = await safeGetPermissions(path, "file");
+      this._existingPermissionsVM = vm;
+      (this._selectedSubjects?.getAccounts?.() || []).forEach((acc) => this._applyPermissionsToSubject(acc));
+      (this._selectedSubjects?.getGroups?.() || []).forEach((grp) => this._applyPermissionsToSubject(grp));
+    } catch (err) {
+      console.warn("Failed to load permissions for wizard preview:", err);
+    }
+  }
+
   // ------------------------------------------------------------------------
   // Done: gather VM, persist with new backend, then show summary + notify
   // ------------------------------------------------------------------------
@@ -278,7 +369,11 @@ export class ShareResourceWizard extends HTMLElement {
       try {
         const existing = await safeGetPermissions(path, "file");
         const merged = mergePermissionVM(existing, vm);
-        await setResourcePermissions(path, "file", merged);
+        merged.path = path || merged.path;
+        merged.resourceType = merged.resourceType || "file";
+        const proto = permissionsVMToProto(merged);
+        await setResourcePermissions(proto);
+        clearPermissionsCache(path);
       } catch (e) {
         errors[path] = e;
       }
@@ -416,7 +511,13 @@ customElements.define("globular-share-resource-wizard", ShareResourceWizard);
 
 async function safeGetPermissions(path, resourceType) {
   try {
-    return await getResourcePermissions(path, resourceType);
+    const perms = await getResourcePermissions(path, resourceType);
+    const vm = perms ? toPermissionsVM(perms) : null;
+    if (vm && typeof vm === "object") {
+      vm.path = vm.path || path;
+      vm.resourceType = vm.resourceType || resourceType;
+    }
+    return vm;
   } catch {
     // Create an empty VM if none exists
     return { owners: undefined, allowed: [], denied: [], path, resourceType };

@@ -1208,6 +1208,17 @@ export class ImageViewer extends HTMLElement {
       imgEl.setAttribute("src", fullSrc);
     }
   }
+
+
+  // clear all images
+  clear() {
+    this.innerHTML = '';
+    this.index = -1;
+    this.shadowRoot.querySelector('#counter').innerHTML = '';
+    this.shadowRoot.querySelector('#metaBar').style.display = 'none';
+    this.shadowRoot.querySelector('globular-pan-zoom-canvas').setAttribute("src", "");
+  }
+
 }
 
 window.customElements.define('globular-image-viewer', ImageViewer);

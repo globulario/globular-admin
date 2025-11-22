@@ -230,15 +230,15 @@ export class GlobularSubjectsView extends HTMLElement {
         <div class="vertical-tabs">
           <div class="selectors">
             <span class="selector" id="accounts-selector">
-              Account's <span class="counter" id="accounts-counter"></span>
+              Accounts <span class="counter" id="accounts-counter"></span>
               <paper-ripple recenters></paper-ripple>
             </span>
             <span class="selector" id="groups-selector">
-              Group's <span class="counter" id="groups-counter"></span>
+              Groups <span class="counter" id="groups-counter"></span>
               <paper-ripple recenters></paper-ripple>
             </span>
             <span class="selector" id="organizations-selector">
-              Organization's <span class="counter" id="organizations-counter"></span>
+              Organizations <span class="counter" id="organizations-counter"></span>
               <paper-ripple recenters></paper-ripple>
             </span>
             <span class="selector" id="applications-selector">

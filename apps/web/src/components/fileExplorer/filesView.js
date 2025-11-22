@@ -541,10 +541,31 @@ export class FilesView extends HTMLElement {
   // ---------- Actions (restored) ----------
   _handleShareAction() {
     const files = this._getFilesForAction();
-    if (files.length > 0) {
-      this._shareResourceMenu.setFiles(files);
-      this._shareResourceMenu.share();
+    const paths = Array.isArray(files)
+      ? [...new Set(
+          files
+            .map((f) => pathOf(f) || f?.path)
+            .filter((p) => typeof p === "string" && p.length > 0)
+        )]
+      : [];
+
+    if (!paths.length) {
+      displayError("No files selected to share.", 2500);
+      this._closeContextMenu();
+      return;
     }
+
+    Backend.eventHub.publish(
+      "share_resources_event_",
+      {
+        paths,
+        file_explorer_id: this._fileExplorer?._id || null,
+      },
+      true
+    );
+
+    this._selected = {};
+    this._fileExplorer?.clearSelections?.();
     this._closeContextMenu();
   }
 

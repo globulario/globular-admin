@@ -23,6 +23,7 @@ export class Link extends HTMLElement {
 
     this._fileExplorer = null
     this.uuid = "_" + randomUUID()
+    this.onedit = null
     this._imgEl = null
     this._nameEl = null
     this._contentDiv = null
@@ -106,11 +107,16 @@ export class Link extends HTMLElement {
           word-break: break-all;
           max-width: 128px;
         }
-        #delete-lnk-btn {
+        #delete-lnk-btn,
+        #edit-lnk-btn {
           height: 16px;
           width: 16px;
           flex-grow: 1;
           --iron-icon-fill-color:var(--palette-text-primary);
+        }
+        .action-buttons {
+          display:flex;
+          gap:6px;
         }
         .btn-div{
           position: relative;
@@ -126,9 +132,15 @@ export class Link extends HTMLElement {
 
       <div id="${this.uuid}-link-div" style="margin: ${deleteable ? "25px" : "5px"} 10px 5px 10px; display: flex; flex-direction: column; align-items: center; width: fit-content; height: fit-content; position: relative;">
         <div style="position: absolute; top: -25px; left: -10px;">
-          <div class="btn-div" style="visibility: hidden;">
+          <div class="action-buttons">
+          <div class="btn-div delete-btn-div" style="visibility: hidden;">
             <iron-icon  id="delete-lnk-btn"  icon="close"></iron-icon>
             <paper-ripple class="circle"></paper-ripple>
+          </div>
+          <div class="btn-div edit-btn-div" style="visibility: hidden;">
+            <iron-icon id="edit-lnk-btn" icon="icons:create"></iron-icon>
+            <paper-ripple class="circle"></paper-ripple>
+          </div>
           </div>
         </div>
         <div id="content">
@@ -146,6 +158,9 @@ export class Link extends HTMLElement {
     this._imgEl = this.shadowRoot.querySelector("img")
     this._nameEl = this.shadowRoot.querySelector("#link-name")
     this._contentDiv = this.shadowRoot.querySelector("#content")
+    this._badgeEl = this.shadowRoot.querySelector(`#${this.uuid}-badge`)
+    this._deleteBtnDiv = this.shadowRoot.querySelector(".delete-btn-div")
+    this._editBtnDiv = this.shadowRoot.querySelector(".edit-btn-div")
     this._applyAttributes()
 
     const lnk = this._contentDiv
@@ -192,7 +207,7 @@ export class Link extends HTMLElement {
     }
 
     // delete confirmation
-    this.shadowRoot.querySelector(".btn-div").addEventListener("click", (evt) => {
+    this._deleteBtnDiv?.addEventListener("click", (evt) => {
       evt.stopPropagation()
       if (document.getElementById(`${this.uuid}-yes-no-link-delete-box`)) return
 
@@ -242,6 +257,17 @@ export class Link extends HTMLElement {
       toast.id = this.uuid
     })
 
+    this.shadowRoot.querySelector("#edit-lnk-btn").addEventListener("click", (evt) => {
+      evt.stopPropagation()
+      if (typeof this.onedit === "function") {
+        this.onedit({
+          path: this.getAttribute("path") || "",
+          alias: this.getAttribute("alias") || "",
+          domain: this.getAttribute("domain") || ""
+        })
+      }
+    })
+
     // Enrich label from media metadata (titles/videos/audios)
     // (best-effort; non-blocking)
     this._hydrateDisplayName(path).catch(() => {})
@@ -254,7 +280,7 @@ export class Link extends HTMLElement {
   }
 
   static get observedAttributes() {
-    return ["path", "thumbnail", "domain", "alias", "mime", "deleteable"]
+    return ["path", "thumbnail", "domain", "alias", "mime", "deleteable", "permission-badge"]
   }
 
   attributeChangedCallback(name, oldVal, newVal) {
@@ -279,16 +305,34 @@ export class Link extends HTMLElement {
     const thumbnail = this.getAttribute("thumbnail") || ""
     if (this._imgEl) this._imgEl.src = thumbnail || ""
 
-    const badge = this.shadowRoot.querySelector(`#${this.uuid}-badge`)
     const badgeLabel = this.getAttribute("permission-badge") || ""
-    console.log("Setting badge:", badgeLabel)
-    if (badge) {
+    if (this._badgeEl) {
       if (badgeLabel) {
-        badge.textContent = badgeLabel
-        badge.style.display = "inline-flex"
+        this._badgeEl.textContent = badgeLabel
+        this._badgeEl.style.display = "inline-flex"
       } else {
-        badge.textContent = ""
-        badge.style.display = "none"
+        this._badgeEl.textContent = ""
+        this._badgeEl.style.display = "none"
+      }
+      this._badgeEl.style.fontSize = "0.75rem"
+      this._badgeEl.style.position = "absolute"
+      this._badgeEl.style.top = "-5px"
+      this._badgeEl.style.right = "-5px"
+      this._badgeEl.style.backgroundColor = "var(--palette-primary-main)"
+      this._badgeEl.style.color = "white"
+      this._badgeEl.style.padding = "2px 4px"
+      this._badgeEl.style.borderRadius = "8px"
+      this._badgeEl.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.2)"
+
+      // I will set the title attribute for tooltip
+      if (badgeLabel === "R") {
+        this._badgeEl.title = "Read-only access"
+      } else if (badgeLabel === "RW") {
+        this._badgeEl.title = "Read and write access"
+      } else if (badgeLabel === "RWX") {
+        this._badgeEl.title = "Read, write and delete access"
+      } else {
+        this._badgeEl.title = ""
       }
     }
   }
@@ -298,13 +342,15 @@ export class Link extends HTMLElement {
   }
 
   setDeleteable() {
-    this.shadowRoot.querySelector(`#${this.uuid}-link-div`).style.marginTop = "25px"
-    this.shadowRoot.querySelector(".btn-div").style.visibility = "visible"
+    this.shadowRoot.querySelector(`#${this.uuid}-link-div`).style.marginTop = "30px"
+    if (this._deleteBtnDiv) this._deleteBtnDiv.style.visibility = "visible"
+    if (this._editBtnDiv) this._editBtnDiv.style.visibility = "visible"
   }
 
   resetDeleteable() {
     this.shadowRoot.querySelector(`#${this.uuid}-link-div`).style.marginTop = "5px"
-    this.shadowRoot.querySelector(".btn-div").style.visibility = "hidden"
+    if (this._deleteBtnDiv) this._deleteBtnDiv.style.visibility = "hidden"
+    if (this._editBtnDiv) this._editBtnDiv.style.visibility = "hidden"
   }
 
   /** Try to name the link using title/video/audio metadata (first match wins). */

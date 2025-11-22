@@ -18,6 +18,7 @@ import '@polymer/paper-radio-button/paper-radio-button.js';
 import '@polymer/iron-icon/iron-icon.js';
 import '@polymer/paper-progress/paper-progress.js';
 import { SharePanel } from "../share/sharePanel.js"
+import { ShareResourceWizard } from "../share/shareResourceWizard.js"
 import { Dialog } from '../dialog.js';
 import './paperTray.js';
 import './selectionBar.js';
@@ -93,6 +94,7 @@ export class FileExplorer extends HTMLElement {
   _uploadBtn = undefined;
   _sharePanelBtn = undefined;
   _sharePanel = undefined;
+  _shareWizard = null;
   _progressDiv = undefined;
   _documentSearchBar = undefined;
   _diskSpaceManager = undefined;
@@ -568,10 +570,10 @@ export class FileExplorer extends HTMLElement {
       return false;
     };
     // ensure closing the info manager restores the file view
-    this._informationManager.onclose = () =>{ 
+    this._informationManager.onclose = () => {
       this._informationManager.path = null;
-        this._displayView(this._currentDir)
-      };
+      this._displayView(this._currentDir)
+    };
 
     this._sharePanel = null;
   }
@@ -653,15 +655,42 @@ export class FileExplorer extends HTMLElement {
           const mime = f.getMime();
           const p = f.getPath();
           if (isDir) this.publishSetDirEvent(p);
-          else if ((mime || "").startsWith("video")) this.playVideo(f);
-          else if ((mime || "").startsWith("audio")) this.playAudio(f);
-          else this.readFile(f);
+          else if ((mime || "").startsWith("video")) { this.playVideo(f); }
+          else if ((mime || "").startsWith("audio")) { this.playAudio(f); }
+          else if ((mime || "").startsWith("image")) {
+            // first I will set the dir to the image parent dir
+            const parentPath = p.substring(0, p.lastIndexOf("/")) || "/";
+            let parentDir = await readDir(parentPath);
+            if (!parentDir) {
+              parentDir = await readDirFresh(parentPath, true);
+            }
+            this.setDir(adaptDirVM(parentDir));
+
+            this.showImage(f);
+          }
+          else { this.readFile(f); }
         } catch (err) {
           displayError(`Failed to follow link: ${err.message}`, 3000);
         }
       }, true, this
     );
 
+    Backend.eventHub.subscribe(
+      "share_resources_event_",
+      (uuid) => { this._listeners["share_resources_event_"] = uuid; },
+      async (evt) => {
+        if (evt.file_explorer_id && evt.file_explorer_id !== explorerId) return;
+        const paths = Array.isArray(evt.paths) ? [...new Set(evt.paths.filter(Boolean))] : [];
+        if (!paths.length) {
+          displayError("No files selected to share.", 2500);
+          return;
+        }
+        await this._showShareWizard(paths);
+      },
+      true,
+      this
+    );
+    
     Backend.eventHub.subscribe(`update_globular_service_configuration_evt`,
       (uuid) => { this._listeners[`update_globular_service_configuration_evt`] = uuid; },
       () => { }, false, this
@@ -1236,6 +1265,43 @@ export class FileExplorer extends HTMLElement {
     this._sharePanel.style.display = "";
   }
 
+  async _showShareWizard(paths) {
+    const fileList = paths || [];
+    if (!fileList.length) return;
+    const files = [];
+    for (const p of fileList) {
+      if (!p) continue;
+      try {
+        const fileInfo = await getFileInfo(p);
+        if (fileInfo) files.push(fileInfo);
+      } catch (err) {
+        console.warn("Failed to load file for sharing:", err);
+      }
+    }
+    if (!files.length) {
+      displayError("No valid files selected for sharing.", 3000);
+      return;
+    }
+
+    if (this._shareWizard && this._shareWizard.parentNode) {
+      this._shareWizard.parentNode.removeChild(this._shareWizard);
+      this._shareWizard = null;
+    }
+
+    this._shareWizard = new ShareResourceWizard(files, this);
+    this._shareWizard.setFileExplorer?.(this);
+    this._shareWizard.id = "share-resource-wizard";
+    this._shareWizard.onclose = () => {
+      this._shareWizard?.remove();
+      this._shareWizard = null;
+      this._displayView(this._currentDir);
+    };
+    this._fileSelectionPanel.appendChild(this._shareWizard);
+    this._hideAllViewsExcept(this._shareWizard);
+    this._shareWizard.style.display = "";
+    this._selectionBar?.setSelection([]);
+  }
+
   _closeSharePanel() {
     if (!this._sharePanel) return;
     const panel = this._sharePanel;
@@ -1486,7 +1552,7 @@ export class FileExplorer extends HTMLElement {
 
     this._imageViewer.onclose = () => this._displayView(this._currentDir);
     this._fileReader.onclose = () => this._displayView(this._currentDir);
- 
+
     this._updateNavigationButtonStates();
     this._updateNavigationListMenu(dir);
   }
@@ -1784,7 +1850,7 @@ export class FileExplorer extends HTMLElement {
       this._filesListView, this._filesIconView,
       this._fileReader, this._imageViewer,
       this._permissionManager, this._informationManager,
-      this._sharePanel
+      this._sharePanel, this._shareWizard
     ];
 
     views.forEach(view => {
@@ -1874,7 +1940,7 @@ export class FileExplorer extends HTMLElement {
         const realPath = pathOf(sourceFile) || pathOf(entry.file);
         if (!realPath) return;
 
- 
+
         const img = document.createElement("img");
         img.name = realPath;
         img.slot = "images";

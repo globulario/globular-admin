@@ -364,6 +364,8 @@ export class FileExplorer extends HTMLElement {
               this.playVideo(file);
             } else if (mime.startsWith("audio")) {
               this.playAudio(file);
+            } else if (mime.startsWith("image")) {
+              this.showImage(file);
             } else {
               this.readFile(file);
             }

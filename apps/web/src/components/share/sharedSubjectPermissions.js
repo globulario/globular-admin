@@ -304,6 +304,59 @@ export class SharedSubjectsPermissions extends HTMLElement {
     applyList(permissionsVM?.denied,  "denied")
   }
 
+  applyPermissionsForSubject(subject, permissionsVM) {
+    if (!subject || !permissionsVM) return
+    const fq = fqid(subject)
+    const row = this._rowByFqid(fq)
+    if (!row) return
+
+    const kind = subjectKind(subject)
+    ;["read","write","delete"].forEach((permName) => {
+      const icon = row.querySelector(`#${row.id}_${permName}`)
+      if (!icon) return
+      const status = this._permissionStatusForSubject(permissionsVM, kind, fq, permName)
+      icon.icon =
+        status === "allowed" ? "icons:check" :
+        status === "denied" ? "av:not-interested" :
+        "icons:remove"
+    })
+  }
+
+  _permissionStatusForSubject(permissionsVM, kind, fq, permName) {
+    if (!permissionsVM) return "none"
+    if (this._hasOwner(permissionsVM, kind, fq)) return "allowed"
+    const deniedEntry = (permissionsVM.denied || []).find((entry) =>
+      entry.name === permName && this._entryHasSubject(entry, fq, kind)
+    )
+    if (deniedEntry) return "denied"
+    const allowedEntry = (permissionsVM.allowed || []).find((entry) =>
+      entry.name === permName && this._entryHasSubject(entry, fq, kind)
+    )
+    if (allowedEntry) return "allowed"
+    return "none"
+  }
+
+  _hasOwner(permissionsVM, kind, fq) {
+    const owners = permissionsVM?.owners || {}
+    if (kind === "group") {
+      return (owners.groups || []).includes(fq)
+    }
+    return (owners.accounts || []).includes(fq)
+  }
+
+  _entryHasSubject(entry, fq, kind) {
+    if (!entry) return false
+    if (kind === "group") {
+      if ((entry.groups || []).includes(fq)) return true
+      if ((entry.organizations || []).includes(fq)) return true
+      if ((entry.peers || []).includes(fq)) return true
+    } else {
+      if ((entry.accounts || []).includes(fq)) return true
+      if ((entry.applications || []).includes(fq)) return true
+      if ((entry.peers || []).includes(fq)) return true
+    }
+    return false
+  }
   _rowByFqid(fq) {
     const uuid = `_subject_row_${getUuidByString(fq)}`
     return this.shadowRoot.querySelector(`#${uuid}`)

@@ -1,8 +1,10 @@
 // components/selectionBar.js
 // Selection action bar: appears when there are selected items in the active view
-// and exposes Cut / Copy / Delete / Download actions.
+// and exposes Cut / Copy / Delete / Download / Share actions.
 
 import '@polymer/paper-button/paper-button.js';
+import { Backend } from '../../backend/backend';
+import { displayError } from '../../backend/ui/notify';
 
 export class SelectionBar extends HTMLElement {
   /** @type {any} */
@@ -19,6 +21,7 @@ export class SelectionBar extends HTMLElement {
   _downloadBtn = null;
   _clearBtn = null;
   _linkBtn = null;
+  _shareBtn = null;
 
   constructor() {
     super();
@@ -80,6 +83,7 @@ export class SelectionBar extends HTMLElement {
           <paper-button id="link-btn" class="small" title="Save selection as shortcuts">Link</paper-button>
           <paper-button id="download-btn" class="small" title="Download selected">Download</paper-button>
           <paper-button id="delete-btn" class="small" title="Delete selected">Delete</paper-button>
+          <paper-button id="share-btn" class="small" title="Share selected">Share</paper-button>
           <paper-button id="clear-btn" class="small" title="Clear selection">Clear</paper-button>
         </div>
       </div>
@@ -92,6 +96,7 @@ export class SelectionBar extends HTMLElement {
     this._linkBtn = shadow.querySelector('#link-btn');
     this._deleteBtn = shadow.querySelector('#delete-btn');
     this._downloadBtn = shadow.querySelector('#download-btn');
+    this._shareBtn = shadow.querySelector('#share-btn');
     this._clearBtn = shadow.querySelector('#clear-btn');
 
     this._cutBtn?.addEventListener('click', () => this._emitAction('cut'));
@@ -100,6 +105,7 @@ export class SelectionBar extends HTMLElement {
     this._deleteBtn?.addEventListener('click', () => this._emitAction('delete'));
     this._downloadBtn?.addEventListener('click', () => this._emitAction('download'));
     this._clearBtn?.addEventListener('click', () => this._emitAction('clear-selection'));
+    this._shareBtn?.addEventListener('click', () => this._handleShare());
   }
 
   connectedCallback() {
@@ -147,6 +153,37 @@ export class SelectionBar extends HTMLElement {
         composed: true,
       })
     );
+  }
+
+  /**
+   * Publish share_resources_event_ so FileExplorer can open the share wizard.
+   */
+  _handleShare() {
+    const paths = Array.isArray(this._files)
+      ? this._files
+          // adjust "path" if your file object uses another property name
+          .map((f) => f?.path)
+          .filter((p) => typeof p === 'string' && p.length > 0)
+      : [];
+
+    if (!paths.length) {
+      displayError('No files selected to share.', 2500);
+      return;
+    }
+
+    Backend.eventHub.publish(
+      'share_resources_event_',
+      {
+        paths,
+        file_explorer_id: this._fileExplorer?._id || null,
+      },
+      true
+    );
+
+    // Clear selection immediately so UI and explorer are reset while wizard loads
+    this._files = [];
+    this._render();
+    this._fileExplorer?.clearSelections?.();
   }
 }
 

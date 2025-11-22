@@ -308,6 +308,7 @@ export class PaperTray extends HTMLElement {
     }
   }
 
+
   async _handleLinkHere(destDir) {
     if (!this._items || this._items.length === 0) {
       displayMessage('Nothing to link.', 2500);
