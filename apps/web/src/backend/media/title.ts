@@ -248,7 +248,7 @@ export async function getFileVideosInfo(
   const safeFilePath = normalize(filePath, "filePath");
   const safeIndexPath = normalize(indexPath, "indexPath");
 
-  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
+ //  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
 
   const md = await meta();
 
@@ -342,7 +342,7 @@ export async function getImdbInfo(id: string): Promise<any> {
 
   const pending = (async () => {
     const base = getBaseUrl() ?? "";
-    const url = `${base.replace(/\/$/, "")}/imdb_title?id=${encodeURIComponent(id)}`;
+    const url = `${base.replace(/\/$/, "")}//api/get-imdb-titles?q=${encodeURIComponent(id)}`;
     const headers = await meta();
 
     const res = await fetch(url, {
@@ -355,7 +355,13 @@ export async function getImdbInfo(id: string): Promise<any> {
     if (!res.ok) {
       throw new Error(`IMDb HTTP ${res.status} fetching ${url}`);
     }
-    return res.json();
+
+    let data = await res.json();
+    let results = data.results;
+    if (results && results.length > 0) {
+      return results[0];
+    }
+    return null;
   })()
     .finally(() => {
       // Ensure we drop the pending entry regardless of success/failure

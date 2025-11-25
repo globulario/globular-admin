@@ -141,6 +141,7 @@ export class FilesIconView extends FilesView {
    * same Copy/Move/Create Link menu logic as the old version.
    */
   _handleContainerDrop(evt) {
+    if (evt?._handledByFileIcon) return;
     this.handleDropEvent(evt); // method from FilesView
   }
 
@@ -176,6 +177,7 @@ export class FilesIconView extends FilesView {
     if (path.includes(this.container)) return;
     evt.preventDefault();
     evt.stopPropagation();
+    if (evt._handledByFileIcon) return;
     this.handleDropEvent(evt);
   }
 

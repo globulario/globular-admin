@@ -26,39 +26,6 @@ class PageClusterPeers extends HTMLElement {
         <div id="docs" class="docs" hidden></div>
       </section>
 
-      <style>
-        .wrap {
-          padding: 16px;
-          color: var(--on-surface-color);
-          background: var(--background-color);
-        }
-        .header {
-          display: flex;
-          align-items: center;
-          gap: .5rem;
-          margin-bottom: .5rem;
-        }
-        .header h2 {
-          margin: 0;
-          font-weight: 800;
-        }
-        .subtitle {
-          margin: .25rem 0 1rem;
-          opacity: .85;
-        }
-        .spacer { flex: 1; }
-
-        .docs {
-          margin-top: 12px;
-          border-radius: 12px;
-          background: var(--surface-color);
-          color: var(--on-surface-color);
-          box-shadow: 0 0 0 1px color-mix(in srgb, var(--on-surface-color) 12%, transparent);
-          padding: 0; /* <globular-markdown> has its own padding */
-        }
-
-        .docs[hidden] { display: none; }
-      </style>
     `
 
     this.infoBtn = this.querySelector('#infoBtn') as HTMLElement

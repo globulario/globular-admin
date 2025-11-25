@@ -29,6 +29,11 @@ import {
 import { randomUUID } from "../utility";
 
 export class TitleInfoEditor extends HTMLElement {
+  static FALLBACK_INDEX_PATHS = {
+    titles: "/search/titles",
+    videos: "/search/videos",
+    persons: "/search/titles",
+  };
   constructor(title, titleInfosDisplay) {
     super();
     this.attachShadow({ mode: "open" });
@@ -59,6 +64,20 @@ export class TitleInfoEditor extends HTMLElement {
 
     this._editPermissionsBtn = null;
     this._collapsePanel = null;
+    this._castCollapse = null;
+    this._toggleCastBtn = null;
+    this._directorsCollapse = null;
+    this._writersCollapse = null;
+    this._actorsCollapse = null;
+    this._toggleDirectorsBtn = null;
+    this._toggleWritersBtn = null;
+    this._toggleActorsBtn = null;
+    this._castCollapse = null;
+    this._toggleCastBtn = null;
+    this._castSummary = null;
+    this._directorsSummary = null;
+    this._writersSummary = null;
+    this._actorsSummary = null;
     this._saveButton = null;
     this._cancelButton = null;
 
@@ -93,40 +112,112 @@ export class TitleInfoEditor extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        #container{display:flex;flex-wrap:wrap;margin:15px 0;padding:15px;box-sizing:border-box;}
-        .image-column{display:flex;flex-direction:column;align-items:center;margin-right:20px;min-width:150px;flex-shrink:0;}
+        #container{display:flex;flex-direction:column;flex-wrap:wrap;margin:15px 0;padding:0 15px 0;box-sizing:border-box; height: 100%;min-height:0;}
+        .content-scroll{
+          flex:1 1 auto;overflow:auto;min-height:0;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+          var(--scroll-track, var(--surface-color));
+        }
+        .image-column{display:flex;flex-direction:column;align-items:flex-start;margin-right:20px;min-width:150px;flex-shrink:0;}
         .info-column{display:flex;flex-direction:column;flex-grow:1;min-width:300px;}
 
         .info-table{display:table;width:100%;border-collapse:collapse;margin:20px 0 10px;}
         .info-row{display:table-row;border-bottom:1px solid var(--palette-divider);}
         .info-row:last-child{border-bottom:none;}
         .label{display:table-cell;font-weight:500;padding-right:15px;min-width:120px;vertical-align:middle;padding:8px 15px 8px 0;}
-        .value-display,.input-field{display:table-cell;width:100%;vertical-align:middle;padding:8px 0;}
+        .value-display{display:table-cell;width:100%;vertical-align:middle;padding:8px 0;}
+        .input-field{display:none;width:100%;vertical-align:middle;padding:8px 0;}
         .input-field paper-input,.input-field iron-autogrow-textarea{width:100%;}
         .button-cell{display:table-cell;width:48px;vertical-align:middle;}
         .button-cell iron-icon{color:var(--primary-text-color);}
         .button-cell iron-icon:hover{color:var(--primary-color);cursor:pointer;}
 
-        .action-div{display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--palette-divider);padding-top:15px;margin-top:20px;}
+        .action-div{
+          display:flex;
+          justify-content:flex-end;
+          gap:10px;
+          border-top:1px solid var(--palette-divider);
+          padding:15px;
+          margin-top:20px;
+          position:sticky;
+          bottom:0;
+          z-index:2;
+          background:var(--surface-elevated-color, var(--surface-color));
+        }
         paper-button{background:var(--primary-color);color:var(--on-primary-color);padding:8px 16px;border-radius:4px;}
         paper-button:hover{background:var(--primary-dark-color);}
         select{background:var(--surface-color);color:var(--primary-text-color);border:1px solid var(--palette-divider);outline:0;padding:8px;border-radius:4px;box-sizing:border-box;}
         select option{background:var(--surface-color);color:var(--primary-text-color);}
 
-        .person-section-header{display:table-row;border-bottom:1px solid var(--palette-divider);}
-        .person-section-header .label{font-weight:500;font-size:1.1rem;padding-bottom:8px;}
-        .person-list-table{display:table;width:100%;border-collapse:collapse;margin-left:20px;margin-bottom:10px;}
+        .person-section-header{display:flex;align-items:center;border-bottom:1px solid var(--palette-divider);padding-bottom:8px;margin-bottom:8px;}
+        .person-section-header .label{font-weight:500;font-size:1.1rem;padding:0;margin-right:0.5rem;flex:1;}
+        .person-list-table{display:flex;width:100%;flex-direction:column;border-bottom:1px solid var(--palette-divider);padding-bottom:10px;margin-left:20px;margin-bottom:10px;}
+        .person-section-header .value-display{flex:1;}
+        .person-section-header .button-cell{display:flex;gap:8px;align-items:center;min-width:0;}
+        .person-section-header .button-cell paper-icon-button{
+          height:32px;
+          width:32px;
+          padding:0;
+          --paper-icon-button-ink-color:var(--palette-action-active);
+        }
+        .section-collapse{display:flex;flex-direction:column;}
+        .section-collapse-content{display:flex;flex-direction:column;gap:12px;}
 
         #header{display:flex;align-items:center;gap:.5rem;margin-bottom:6px;}
         #header-text{font-size:1.2rem;font-weight:600;}
+        .permissions-panel{
+          width:100%;
+          margin:5px 0;
+          display:flex;
+          flex-direction:column;
+        }
+        .permissions-panel.iron-collapse-closed{
+          display:none;
+        }
+        .cast-collapse-container{
+          width:100%;
+          height: 100%;
+        }
+        .cast-row{
+          display:flex;
+          align-items:center;
+          gap:0.5rem;
+          margin-top:10px;
+        }
+        .cast-label{
+          font-weight:600;
+          font-size:1rem;
+          line-height:1;
+        }
+        .cast-summary{
+          font-size:0.95rem;
+          color:var(--secondary-text-color);
+          margin-left:auto;
+        }
+        .section-summary{
+          font-size:0.9rem;
+          color:var(--secondary-text-color);
+          margin-left:0.5rem;
+        }
+        .cast-collapse{
+          width:100%;
+          margin-top:10px;
+          display:flex;
+          flex-direction:column;
+        }
+        .cast-collapse .person-list-table{
+          margin-left:0;
+        }
       </style>
 
       <div id="header"><div id="header-text"></div></div>
 
       <div id="container">
-        <div class="image-column">
-          <globular-image-selector label="Cover" url="${imageUrl}"></globular-image-selector>
-        </div>
+        <div class="content-scroll">
+          <div class="image-column">
+            <globular-image-selector label="Cover" url="${imageUrl}"></globular-image-selector>
+          </div>
 
         <div class="info-column">
           <div class="info-table">
@@ -205,52 +296,97 @@ export class TitleInfoEditor extends HTMLElement {
               <div class="button-cell"></div>
             </div>
           </div>
-
-          <div class="person-list-table">
-            <div class="person-section-header">
-              <div class="label">Directors</div>
-              <div class="value-display"></div>
-              <div class="button-cell">
-                <paper-icon-button id="add-directors-btn" icon="social:person-add" title="Add Director"></paper-icon-button>
-              </div>
-            </div>
-            <div id="directors-table"><slot name="directors"></slot></div>
+        
+          <div class="cast-row">
+            <paper-icon-button id="toggle-cast-btn" icon="icons:expand-more" title="Toggle cast list"></paper-icon-button>
+            <span class="cast-label">Cast</span>
+            <span class="cast-summary" id="cast-summary"></span>
           </div>
-
-          <div class="person-list-table">
-            <div class="person-section-header">
-              <div class="label">Writers</div>
-              <div class="value-display"></div>
-              <div class="button-cell">
-                <paper-icon-button id="add-writers-btn" icon="social:person-add" title="Add Writer"></paper-icon-button>
+          <div class="cast-collapse-container">
+            <iron-collapse id="cast-collapse" class="cast-collapse">
+              <div class="person-list-table">
+                <div class="person-section-header">
+                  <div class="label">
+                    Directors
+                    <span class="section-summary" id="directors-summary"></span>
+                  </div>
+                  <div class="value-display"></div>
+                  <div class="button-cell">
+                    <paper-icon-button id="toggle-directors-btn" icon="icons:expand-more" title="Toggle directors list"></paper-icon-button>
+                    <paper-icon-button id="add-directors-btn" icon="social:person-add" title="Add Director"></paper-icon-button>
+                  </div>
+                </div>
+                <iron-collapse id="directors-collapse" class="section-collapse">
+                  <div class="section-collapse-content">
+                    <div id="directors-table"><slot name="directors"></slot></div>
+                  </div>
+                </iron-collapse>
               </div>
-            </div>
-            <div id="writers-table"><slot name="writers"></slot></div>
-          </div>
 
-          <div class="person-list-table">
-            <div class="person-section-header">
-              <div class="label">Actors</div>
-              <div class="value-display"></div>
-              <div class="button-cell">
-                <paper-icon-button id="add-actors-btn" icon="social:person-add" title="Add Actor"></paper-icon-button>
+              <div class="person-list-table">
+                <div class="person-section-header">
+                  <div class="label">
+                    Writers
+                    <span class="section-summary" id="writers-summary"></span>
+                  </div>
+                  <div class="value-display"></div>
+                  <div class="button-cell">
+                    <paper-icon-button id="toggle-writers-btn" icon="icons:expand-more" title="Toggle writers list"></paper-icon-button>
+                    <paper-icon-button id="add-writers-btn" icon="social:person-add" title="Add Writer"></paper-icon-button>
+                  </div>
+                </div>
+                <iron-collapse id="writers-collapse" class="section-collapse">
+                  <div class="section-collapse-content">
+                    <div id="writers-table"><slot name="writers"></slot></div>
+                  </div>
+                </iron-collapse>
               </div>
-            </div>
-            <div id="actors-table"><slot name="actors"></slot></div>
-          </div>
 
+              <div class="person-list-table">
+                <div class="person-section-header">
+                  <div class="label">
+                    Actors
+                    <span class="section-summary" id="actors-summary"></span>
+                  </div>
+                  <div class="value-display"></div>
+                  <div class="button-cell">
+                    <paper-icon-button id="toggle-actors-btn" icon="icons:expand-more" title="Toggle actors list"></paper-icon-button>
+                    <paper-icon-button id="add-actors-btn" icon="social:person-add" title="Add Actor"></paper-icon-button>
+                  </div>
+                </div>
+                <iron-collapse id="actors-collapse" class="section-collapse">
+                  <div class="section-collapse-content">
+                    <div id="actors-table"><slot name="actors"></slot></div>
+                  </div>
+                </iron-collapse>
+              </div>
+            </iron-collapse>
+          </div>
         </div>
-      </div>
 
-      <iron-collapse id="collapse-panel" class="permissions" style="display:flex;flex-direction:column;margin:5px;"></iron-collapse>
+        <iron-collapse id="collapse-panel" class="permissions-panel"></iron-collapse>
 
-      <div class="action-div">
+        <div class="action-div">
         <paper-button id="edit-permissions-btn" title="Set who can edit this title information">Permissions</paper-button>
         <span style="flex-grow:1;"></span>
         <paper-button id="save-indexation-btn">Save</paper-button>
         <paper-button id="cancel-indexation-btn">Cancel</paper-button>
       </div>
+      </div>
     `;
+  }
+
+  _getIndexPath(kind = "titles") {
+    const dataPath = this._title?.globule?.config?.DataPath;
+    if (typeof dataPath === "string" && dataPath.trim().length > 0) {
+      const trimmed = dataPath.replace(/\/+$/, "");
+      return `${trimmed}/search/${kind}`;
+    }
+    return TitleInfoEditor.FALLBACK_INDEX_PATHS[kind] || TitleInfoEditor.FALLBACK_INDEX_PATHS.titles;
+  }
+
+  _getPersonIndexPath() {
+    return this._getIndexPath("titles");
   }
 
   _getDomReferences() {
@@ -308,6 +444,18 @@ export class TitleInfoEditor extends HTMLElement {
 
     this._editPermissionsBtn = $("#edit-permissions-btn");
     this._collapsePanel = $("#collapse-panel");
+    this._castCollapse = $("#cast-collapse");
+    this._toggleCastBtn = $("#toggle-cast-btn");
+    this._directorsCollapse = $("#directors-collapse");
+    this._writersCollapse = $("#writers-collapse");
+    this._actorsCollapse = $("#actors-collapse");
+    this._toggleDirectorsBtn = $("#toggle-directors-btn");
+    this._toggleWritersBtn = $("#toggle-writers-btn");
+    this._toggleActorsBtn = $("#toggle-actors-btn");
+    this._castSummary = this.shadowRoot.querySelector("#cast-summary");
+    this._directorsSummary = this.shadowRoot.querySelector("#directors-summary");
+    this._writersSummary = this.shadowRoot.querySelector("#writers-summary");
+    this._actorsSummary = this.shadowRoot.querySelector("#actors-summary");
 
     this._saveButton = $("#save-indexation-btn");
     this._cancelButton = $("#cancel-indexation-btn");
@@ -334,6 +482,15 @@ export class TitleInfoEditor extends HTMLElement {
     this._addActorsBtn?.addEventListener("click", (e) => this._handleAddPersonClick("actors", e));
     this._addWritersBtn?.addEventListener("click", (e) => this._handleAddPersonClick("writers", e));
     this._addDirectorsBtn?.addEventListener("click", (e) => this._handleAddPersonClick("directors", e));
+
+    this._toggleCastBtn?.addEventListener("click", () => {
+      this._castCollapse?.toggle?.();
+      setTimeout(() => this._updateCastToggleIcon(), 0);
+    });
+    this._updateCastToggleIcon();
+    this._setupSectionToggle(this._directorsCollapse, this._toggleDirectorsBtn);
+    this._setupSectionToggle(this._writersCollapse, this._toggleWritersBtn);
+    this._setupSectionToggle(this._actorsCollapse, this._toggleActorsBtn);
 
     this._setupEditableField(this._titleIdDiv, this._titleIdInput, this._editTitleIdBtn, "setId", "text", this._updateHeaderName.bind(this));
     this._setupEditableField(this._titleNameDiv, this._titleNameInput, this._editTitleNameBtn, "setName", "text", this._updateHeaderName.bind(this));
@@ -404,6 +561,45 @@ export class TitleInfoEditor extends HTMLElement {
     this._title.getDirectorsList().forEach((p) => this._appendPersonEditor(p, this._title, "directors"));
     this._title.getWritersList().forEach((p) => this._appendPersonEditor(p, this._title, "writers"));
     this._title.getActorsList().forEach((p) => this._appendPersonEditor(p, this._title, "actors"));
+
+    this._refreshSummaryTexts();
+  }
+
+  _refreshSummaryTexts() {
+    const directors = this._title?.getDirectorsList?.() ?? [];
+    const writers = this._title?.getWritersList?.() ?? [];
+    const actors = this._title?.getActorsList?.() ?? [];
+    const castTotal = [...new Set([...directors, ...writers, ...actors])];
+
+    this._setSummaryText(this._castSummary, castTotal);
+    this._setSummaryText(this._directorsSummary, directors);
+    this._setSummaryText(this._writersSummary, writers);
+    this._setSummaryText(this._actorsSummary, actors);
+  }
+
+  _setSummaryText(el, list) {
+    if (!el) return;
+    el.textContent = this._summaryTextForList(list);
+  }
+
+  _summaryTextForList(list) {
+    const length = list?.length || 0;
+    if (!length) return "None yet";
+    const typeLabel = length === 1 ? "person" : "people";
+    const names = this._summaryNames(list);
+    if (names) {
+      return `${length} ${typeLabel} · ${names}`;
+    }
+    return `${length} ${typeLabel}`;
+  }
+
+  _summaryNames(list) {
+    const names = (list || [])
+      .map((person) => person?.getFullname?.() || person?.getName?.())
+      .filter((name) => typeof name === "string" && name.trim().length > 0);
+    if (!names.length) return "";
+    const preview = names.slice(0, 3).join(", ");
+    return names.length > 3 ? `${preview}…` : preview;
   }
 
   _setupEditableField(displayEl, inputEl, editBtn, setterName, inputType = "text", onSave) {
@@ -475,11 +671,12 @@ export class TitleInfoEditor extends HTMLElement {
   }
 
   _initPermissionsManager() {
-    if (!this._title || !this._title.globule) return;
+    const globule = this._title?.globule;
+    if (!this._title || !globule) return;
 
     this._permissionManager = new PermissionsManager();
     this._permissionManager.permissions = null;
-    this._permissionManager.globule = this._title.globule;
+    this._permissionManager.globule = globule;
     this._permissionManager.setPath(this._title.getId());
     this._permissionManager.setResourceType = "title_info";
 
@@ -495,6 +692,27 @@ export class TitleInfoEditor extends HTMLElement {
 
   _handlePermissionsClick() {
     this._collapsePanel?.toggle?.();
+  }
+
+  _updateCastToggleIcon() {
+    if (!this._toggleCastBtn || !this._castCollapse) return;
+    this._toggleCastBtn.icon = this._castCollapse.opened ? "icons:expand-less" : "icons:expand-more";
+  }
+
+  _setupSectionToggle(collapseEl, buttonEl) {
+    if (!collapseEl || !buttonEl) return;
+    const update = () => this._updateSectionToggleIcon(collapseEl, buttonEl);
+    buttonEl.addEventListener("click", () => {
+      collapseEl.toggle();
+      setTimeout(update, 0);
+    });
+    collapseEl.addEventListener("transitionend", update);
+    update();
+  }
+
+  _updateSectionToggleIcon(collapseEl, buttonEl) {
+    if (!collapseEl || !buttonEl) return;
+    buttonEl.icon = collapseEl.opened ? "icons:expand-less" : "icons:expand-more";
   }
 
   _handleCancelClick() {
@@ -532,8 +750,8 @@ export class TitleInfoEditor extends HTMLElement {
 
   // ---------- Persistence via ../../backend/media/title
   async _handleSaveClick() {
-    if (!this._title || !this._title.globule) {
-      displayError("Title object or globule not set for saving.", 3000);
+    if (!this._title) {
+      displayError("Title object not set for saving.", 3000);
       return;
     }
 
@@ -546,10 +764,11 @@ export class TitleInfoEditor extends HTMLElement {
       await this._savePersonsByRole(this._title.getActorsList(), "actors");
 
       // 2) Persist title
-      await createOrUpdateTitle(this._title.globule, this._title);
+      const indexPath = this._getIndexPath("titles");
+      await createOrUpdateTitle(this._title, indexPath);
 
       // 3) Extra metadata (if your backend helper wants it separately)
-      await updateTitleMetadata(this._title.globule, this._title);
+      await updateTitleMetadata(this._title, indexPath);
 
       displaySuccess("Title Information updated successfully!", 3000);
 
@@ -566,12 +785,10 @@ export class TitleInfoEditor extends HTMLElement {
   }
 
   async _savePersonsByRole(personList, roleSlot) {
-    const globule = this._title.globule;
-    if (!globule) throw new Error("Globule not available for saving persons.");
-
+    if (!this._title) throw new Error("Title not set for saving persons.");
     for (const person of personList) {
       try {
-        await createOrUpdatePerson(globule, person);
+        await createOrUpdatePerson(person, this._getPersonIndexPath());
       } catch (err) {
         console.error(`Failed to save person ${person.getFullname?.() || person.getId?.()} (${roleSlot})`, err);
       }
@@ -580,12 +797,17 @@ export class TitleInfoEditor extends HTMLElement {
 
   // ---------- People UI
   _appendPersonEditor(person, title, slotName) {
-    person.globule = title.globule;
+    if (!person || typeof person.getId !== "function") {
+      console.warn("TitleInfoEditor: skipping invalid person entry in", slotName, person);
+      return null;
+    }
+    if (title?.globule) person.globule = title.globule;
+    else delete person.globule;
     const editorId = `_person_editor_${getUuidByString(person.getId() + slotName)}`;
     let personEditor = this.shadowRoot.querySelector(`#${editorId}`);
 
     if (!personEditor) {
-      personEditor = document.createElement("globular-person-editor");
+      personEditor = new PersonEditor(person, title);
       personEditor.id = editorId;
       personEditor.slot = slotName;
 
@@ -613,6 +835,7 @@ export class TitleInfoEditor extends HTMLElement {
     let addCastingPanel = buttonCell.querySelector(`#${panelId}`);
     if (addCastingPanel) return;
 
+    const personIndexPath = this._getPersonIndexPath();
     const html = `
       <style>
         #${panelId}{
@@ -623,7 +846,7 @@ export class TitleInfoEditor extends HTMLElement {
         #${panelId} .panel-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:10px;border-top:1px solid var(--palette-divider);}
       </style>
       <paper-card id="${panelId}">
-        <globular-search-person-input indexpath="${this._title.globule.config.DataPath}/search/titles"></globular-search-person-input>
+        <globular-search-person-input indexpath="${personIndexPath}"></globular-search-person-input>
         <div class="panel-actions">
           <paper-button id="new-person-btn" title="Create a new person">New</paper-button>
           <paper-button id="cancel-btn">Cancel</paper-button>
@@ -640,7 +863,8 @@ export class TitleInfoEditor extends HTMLElement {
 
     // Open full editor for an existing person
     searchPersonInput.oneditperson = (person) => {
-      person.globule = this._title.globule;
+      if (this._title?.globule) person.globule = this._title.globule;
+      else delete person.globule;
       const editor = new PersonEditor(person, this._title);
       editor.slot = roleSlotName;
 
@@ -677,7 +901,8 @@ export class TitleInfoEditor extends HTMLElement {
 
     // Quick-add existing person to cast
     searchPersonInput.onaddcasting = async (personToAdd) => {
-      personToAdd.globule = this._title.globule;
+      if (this._title?.globule) personToAdd.globule = this._title.globule;
+      else delete personToAdd.globule;
       try {
         const titleId = this._title.getId();
         const person = personToAdd;
@@ -692,7 +917,7 @@ export class TitleInfoEditor extends HTMLElement {
         else updatePersonList(person.getDirectingList, person.setDirectingList);
 
         // Persist person via helper
-        await createOrUpdatePerson(this._title.globule, person);
+        await createOrUpdatePerson(person, personIndexPath);
 
         // Update title lists locally
         const addToTitle = (listGetter, listSetter) => {
@@ -706,7 +931,7 @@ export class TitleInfoEditor extends HTMLElement {
         else addToTitle(this._title.getDirectorsList, this._title.setDirectorsList);
 
         // Persist title via helper
-        await createOrUpdateTitle(this._title.globule, this._title);
+        await createOrUpdateTitle(this._title, this._getIndexPath("titles"));
 
         displaySuccess(`${person.getFullname()} added to ${roleSlotName}.`, 3000);
         this._populatePersonEditors();
@@ -722,7 +947,8 @@ export class TitleInfoEditor extends HTMLElement {
       const newPerson = new Person();
       newPerson.setId(`New Person_${randomUUID().substring(0, 8)}`);
       newPerson.setFullname("New Person");
-      newPerson.globule = this._title.globule;
+      if (this._title?.globule) newPerson.globule = this._title.globule;
+      else delete newPerson.globule;
 
       const editor = this._appendPersonEditor(newPerson, this._title, roleSlotName);
       editor?.focus && editor.focus();

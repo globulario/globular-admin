@@ -758,7 +758,7 @@ export class AudioPlayer extends HTMLElement {
 
     if (this._audioData) {
       const poster = this._audioData.getPoster && this._audioData.getPoster()
-      const posterUrl = poster && poster.getContenturl ? poster.getContenturl() : DEFAULT_AUDIO_COVER
+      const posterUrl = poster && poster.URL ? poster.URL : DEFAULT_AUDIO_COVER
       this._previewElement.style.backgroundImage = `url('${posterUrl || DEFAULT_AUDIO_COVER}')`
       this._previewElement._title.innerHTML = (this._audioData.getTitle && this._audioData.getTitle()) || ""
       this._previewElement.artist.innerHTML = (this._audioData.getArtist && this._audioData.getArtist()) || ""
@@ -958,8 +958,8 @@ export class AudioPlayer extends HTMLElement {
       this._albumNameElement.innerHTML = album || ""
       this._albumYearElement.innerHTML = year || ""
       const poster = info.getPoster && info.getPoster()
-      const posterUrl = poster && poster.getContenturl && poster.getContenturl()
-      this._albumCoverElement.src = posterUrl || DEFAULT_AUDIO_COVER
+      const posterUrl = poster && poster.URL ? poster.URL : DEFAULT_AUDIO_COVER
+      this._albumCoverElement.src = posterUrl
 
       // continue listening position (localStorage + optional watching title)
       if (info.getId) {

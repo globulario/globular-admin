@@ -16,7 +16,7 @@ import { displayError } from "../../backend/ui/notify";
 import { Backend } from "../../backend/backend";
 
 // New backend wrappers
-import { readText, isLinkFile, loadLinkTarget } from "../../backend/cms/files";
+import { getHiddenFiles, readText, isLinkFile, loadLinkTarget } from "../../backend/cms/files";
 import { getFileAudiosInfo, getFileVideosInfo, getTitleInfo } from "../../backend/media/title";
 
 // DRY helpers
@@ -504,7 +504,7 @@ export class FilesListView extends FilesView {
           file.videos = videos;
           displayTitle = videos[0]?.getDescription?.() || displayTitle;
           const poster = videos[0]?.getPoster?.();
-          if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
+          if (poster?.URL) thumbnailUrl = poster.URL;
         }
       } else if (mimeType === "audio") {
         const audios = await getFileAudiosInfo(pathOf(file));
@@ -512,26 +512,33 @@ export class FilesListView extends FilesView {
           file.audios = audios;
           displayTitle = audios[0]?.getTitle?.() || displayTitle;
           const poster = audios[0]?.getPoster?.();
-          if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
+          if (poster?.URL) thumbnailUrl = poster.URL;
         }
       } else if (isDirOf(file)) {
-        // Try to read infos.json directly via the new readText helper
-        try {
-          const text = await readText(`${pathOf(file)}/infos.json`);
-          if (text) {
-            const titleInfos = JSON.parse(text);
-            if (titleInfos?.ID) {
-              const title = await getTitleInfo(titleInfos.ID);
-              if (title) {
-                file.titles = [title];
-                displayTitle = title.getName?.() || displayTitle;
-                const poster = title.getPoster?.();
-                if (poster?.getContenturl) thumbnailUrl = poster.getContenturl();
+        // Try to read metadata.json within the hidden dir
+        let path = pathOf(file);
+        if (path) {
+          try {
+            const hiddenDir = await getHiddenFiles(path, "");
+            if (hiddenDir) {
+              const metadataPath = `${hiddenDir.path}/metadata.json`;
+              const text = await readText(metadataPath);
+              if (text) {
+                const titleInfos = JSON.parse(text);
+                if (titleInfos?.ID) {
+                  const title = await getTitleInfo(titleInfos.ID);
+                  if (title) {
+                    file.titles = [title];
+                    displayTitle = title.getName?.() || displayTitle;
+                    const poster = title.getPoster?.();
+                    if (poster.URL) thumbnailUrl = poster.URL;
+                  }
+                }
               }
             }
+          } catch (err) {
+            console.debug("hidden metadata lookup failed", err);
           }
-        } catch {
-          /* silently ignore if infos.json not present/invalid */
         }
       }
     } catch (err) {

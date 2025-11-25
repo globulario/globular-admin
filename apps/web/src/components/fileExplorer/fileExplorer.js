@@ -23,6 +23,7 @@ import { Dialog } from '../dialog.js';
 import './paperTray.js';
 import './selectionBar.js';
 import '../splitView.js';
+import { startProcessVideo, startProcessAudio, uploadVideoByUrl } from "../../backend/media/media";
 
 // Import sub-components
 import "./searchDocument.js";
@@ -322,13 +323,21 @@ export class FileExplorer extends HTMLElement {
       globular-informations-manager {
         background-color: var(--surface-color);
         color: var(--on-surface-color);
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        overflow: auto;
+        position: relative;
+        display: flex;
+        flex: 1 1 auto;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
         z-index: 100;
+      }
+
+      globular-permissions-manager > *,
+      globular-informations-manager > * {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
       }
 
       #progress-div {
@@ -810,6 +819,42 @@ export class FileExplorer extends HTMLElement {
           evt.wizard.style.right = "0px";
           evt.wizard.style.bottom = "0px";
           this.showShareWizard(evt.wizard);
+        }
+      }, true, this
+    );
+
+    Backend.eventHub.subscribe("__refresh_media_request__",
+      (uuid) => { this._listeners["__refresh_media_request__"] = uuid; },
+      async (evt) => {
+        const path = evt?.path;
+        if (!path) return;
+        try {
+          if (evt.type === "audio") {
+            await startProcessAudio(path);
+          } else {
+            await startProcessVideo(path);
+          }
+          displayMessage("Media refresh requested.", 2500);
+        } catch (err) {
+          displayError(`Failed to refresh media: ${err?.message || err}`, 3000);
+          console.error(err);
+        }
+      }, true, this
+    );
+
+    Backend.eventHub.subscribe("__download_media_from_channel__",
+      (uuid) => { this._listeners["__download_media_from_channel__"] = uuid; },
+      async (evt) => {
+        const path = evt?.path;
+        const url = evt?.url;
+        const format = evt?.format || "mp4";
+        if (!path || !url) return;
+        try {
+          await uploadVideoByUrl(path, url, format === "mp3" ? "mp3" : "mp4", () => {});
+          displayMessage("Channel download request submitted.", 3000);
+        } catch (err) {
+          displayError(`Failed to download media from channel: ${err?.message || err}`, 3000);
+          console.error(err);
         }
       }, true, this
     );
@@ -2029,6 +2074,39 @@ export class FileExplorer extends HTMLElement {
     this._currentInfoDeleteSub = { event: null, uuid: null };
   }
 
+  _pruneDeletedInfoFromFile(file, infoId, arrKey) {
+    if (!file || !infoId || !arrKey || !Array.isArray(file[arrKey])) return;
+    const filtered = file[arrKey].filter((item) => {
+      const itemId = typeof item?.getId === "function" ? item.getId() : item?.id || item?.ID || "";
+      return itemId !== infoId;
+    });
+    if (filtered.length === file[arrKey].length) return;
+    if (filtered.length === 0) {
+      delete file[arrKey];
+    } else {
+      file[arrKey] = filtered;
+    }
+  }
+
+  _pruneDirInfo(dir, infoId, arrKey, filePaths = []) {
+    if (!dir) return;
+    const files = typeof dir.getFilesList === "function" ? dir.getFilesList() : (dir.files || []);
+    if (!Array.isArray(files)) return;
+    files.forEach((file) => {
+      const filePath = pathOf(file) || file?.path || "";
+      if (!filePath || filePaths.length === 0 || filePaths.includes(filePath)) {
+        this._pruneDeletedInfoFromFile(file, infoId, arrKey);
+      }
+    });
+  }
+
+  _removeInfoFromFiles(infoId, infoType = "title", filePaths = []) {
+    if (!infoId) return;
+    const arrKey = infoType === "audio" ? "audios" : infoType === "video" ? "videos" : "titles";
+    this._pruneDirInfo(this._currentDir, infoId, arrKey, filePaths);
+    this._pruneDirInfo(this._currentDirVM, infoId, arrKey, filePaths);
+  }
+
   _showInformation(file) {
     // Always clear before repopulating to avoid stale UI
     this._informationManager.clear?.();
@@ -2065,7 +2143,8 @@ export class FileExplorer extends HTMLElement {
       Backend.eventHub.subscribe(
         delEvt,
         (uuid2) => { this._currentInfoDeleteSub = { event: delEvt, uuid: uuid2 }; },
-        () => {
+        (evtData) => {
+          this._removeInfoFromFiles(infoId, evtData?.infoType, evtData?.filePaths);
           this._informationManager.clear?.();
           this._informationManager.style.display = "none";
           this._displayView(this._currentDir);

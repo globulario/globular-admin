@@ -74,6 +74,13 @@ export async function startProcessVideo(absPath: string): Promise<void> {
   await unary(clientFactory, "startProcessVideo", rq, undefined, md);
 }
 
+export async function startProcessAudio(absPath: string): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.StartProcessAudioRequest();
+  rq.setPath(absPath);
+  await unary(clientFactory, "startProcessAudio", rq, undefined, md);
+}
+
 /** Server-side fetch-then-upload by URL (progress over stream). */
 export async function uploadVideoByUrl(
   destDir: string,

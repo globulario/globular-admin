@@ -2,7 +2,7 @@ class PageClusterApps extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this.innerHTML = `
-      <section style="padding:16px">
+      <section class="wrap">
         <h2>Cluster Applications</h2>
         <p>Installed apps and packages.</p>
       </section>

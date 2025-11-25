@@ -74,17 +74,34 @@ export class PersonEditor extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        #container { display:flex; flex-grow:1; margin-left:20px; flex-direction:column; color:var(--primary-text-color);
-          padding:15px; border:1px solid var(--palette-divider); border-radius:8px; margin-bottom:15px; }
+        :host {
+          display: flex;
+          width: 100%;
+          min-width: 0;
+          min-height: 0;
+        }
+        #container {
+          display:flex;
+          flex-grow:1;
+          flex-direction:column;
+          color:var(--primary-text-color);
+          padding:15px;
+          border:1px solid var(--palette-divider);
+          border-radius:8px;
+          margin:0 0 15px 0;
+          width:100%;
+          box-sizing:border-box;
+        }
         .header-row { display:flex; align-items:center; border-bottom:1px solid var(--palette-divider); padding-bottom:10px; margin-bottom:10px; }
         .header-text { flex-grow:1; font-size:1.2rem; font-weight:bold; margin-left:8px; }
-        .content-area { display:flex; flex-wrap:wrap; }
+        .content-area { display:flex; flex-wrap:wrap; min-width:0; gap:20px; }
         .image-column { display:flex; flex-direction:column; justify-content:flex-start; margin-right:20px; flex-shrink:0; align-items:center; min-width:150px; }
-        .info-table { display:table; width:100%; border-collapse:collapse; flex-grow:1; }
+        .info-table { display:table; width:100%; border-collapse:collapse; flex-grow:1; min-width:0; }
         .info-row { display:table-row; border-bottom:1px solid var(--palette-divider); }
         .info-row:last-child { border-bottom:none; }
         .label { display:table-cell; font-weight:500; padding-right:15px; min-width:120px; vertical-align:middle; padding:8px 0; white-space:nowrap; }
-        .value-display, .input-field { display:table-cell; width:100%; padding:8px 0; vertical-align:middle; }
+        .value-display { display:table-cell; width:100%; padding:8px 0; vertical-align:middle; }
+        .input-field { display:none; width:100%; padding:8px 0; vertical-align:middle; }
         .value-display a { color:var(--primary-text-color); }
         .value-display a:hover { text-decoration:underline; }
         .input-field paper-input, .input-field iron-autogrow-textarea {
@@ -104,11 +121,11 @@ export class PersonEditor extends HTMLElement {
 
       <div id="container">
         <div class="header-row">
-          <paper-icon-button id="collapse-btn" icon="unfold-less"></paper-icon-button>
+          <paper-icon-button id="collapse-btn" icon="unfold-more"></paper-icon-button>
           <div id="header-text" class="header-text">${this._person.getFullname()}</div>
           <paper-icon-button id="edit-${this._uuid}-person-remove-btn" icon="icons:close" title="Remove from list"></paper-icon-button>
         </div>
-        <iron-collapse id="collapse-panel" opened>
+        <iron-collapse id="collapse-panel">
           <div class="content-area">
             <div class="image-column">
               <globular-image-selector label="Profile Picture" url="${imageUrl}"></globular-image-selector>

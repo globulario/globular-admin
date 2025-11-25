@@ -513,7 +513,7 @@ export class OrganizationsManager extends HTMLElement {
               display-index="true"
               visible-data-count="10"
               row-height="50px"
-              header-background-color="var(--primary-light-color)"
+              header-background-color="var(--surface-color)"
               header-text-color="var(--on-primary-light-color)"
             >
               <span id="table-title" slot="title">Organizations</span>

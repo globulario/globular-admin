@@ -42,13 +42,39 @@ if (!Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playing')) {
 }
 
 /** Build a signed file URL with the current token (no globule dependency). */
-function buildFileUrl(rawPath, token = getAuthToken(), application) {
+function buildFileUrl(rawPath, tokenOrOptions, application) {
+  let includeToken = true
+  let token = getAuthToken()
+
+  if (
+    typeof tokenOrOptions === 'object' &&
+    tokenOrOptions !== null &&
+    !Array.isArray(tokenOrOptions)
+  ) {
+    const opts = tokenOrOptions
+    if (Object.prototype.hasOwnProperty.call(opts, 'includeToken')) {
+      includeToken = opts.includeToken !== false
+    }
+    if (typeof opts.token === 'string') {
+      token = opts.token
+    }
+    if (opts.application) {
+      application = opts.application
+    }
+  } else if (typeof tokenOrOptions === 'string') {
+    token = tokenOrOptions
+  } else if (tokenOrOptions === false) {
+    includeToken = false
+  } else if (tokenOrOptions !== undefined && tokenOrOptions !== null) {
+    token = tokenOrOptions
+  }
+
   let url = getBaseUrl()
   const parts = (rawPath || '').split('/').map(p => p.trim()).filter(Boolean)
   parts.forEach(p => (url += '/' + encodeURIComponent(p)))
 
   const qs = new URLSearchParams()
-  if (token) qs.append('token', token)
+  if (includeToken && token) qs.append('token', token)
   if (application) qs.append('application', application)
   if (qs.toString()) url += '?' + qs.toString()
   return url
@@ -79,7 +105,8 @@ export function playVideos(videos, name) {
       if (files.length > 0) {
         let filePath = files[0]
         if (!/\.(mp4|m3u8|mkv)$/i.test(filePath)) filePath += '/playlist.m3u8'
-        const url = buildFileUrl(filePath)
+        const isHls = /\.m3u8$/i.test(filePath)
+        const url = isHls ? buildFileUrl(filePath, { includeToken: false }) : buildFileUrl(filePath)
         m3u += `#EXTINF:${v.getDuration()}, ${v.getDescription()}, tvg-id="${v.getId()}"\n`
         m3u += `${url}\n\n`
       }
@@ -729,10 +756,14 @@ export class VideoPlayer extends HTMLElement {
 
     let urlToPlay = path
     const token = getAuthToken()
+    const isHttpSource = /^https?:\/\//i.test(urlToPlay)
+    const isHlsSource = /\.m3u8($|\?)/i.test(urlToPlay)
 
-    if (!/^https?:\/\//i.test(urlToPlay)) {
-      urlToPlay = buildFileUrl(path, token)
-    } else {
+    if (!isHttpSource) {
+      urlToPlay = isHlsSource
+        ? buildFileUrl(path, { includeToken: false })
+        : buildFileUrl(path, token)
+    } else if (!isHlsSource) {
       const u = new URL(urlToPlay)
       const p = new URLSearchParams(u.search)
       if (token && p.get('token') !== token) {
@@ -756,7 +787,12 @@ export class VideoPlayer extends HTMLElement {
     }
 
     try {
-      const head = await fetch(urlToPlay, { method: 'HEAD' })
+      const headHeaders = {}
+      if (token && (!urlToPlay.includes('token=') || isHlsSource)) {
+        headHeaders['Authorization'] = `Bearer ${token}`
+        headHeaders['token'] = token
+      }
+      const head = await fetch(urlToPlay, { method: 'HEAD', headers: headHeaders })
       if (head.status === 401) {
         displayError(`Unable to read the file ${path}. Check your access privilege.`)
         this.close()
@@ -855,9 +891,10 @@ export class VideoPlayer extends HTMLElement {
       if (Hls.isSupported()) {
         this.hls = new Hls({
           xhrSetup: (xhr) => {
-            if (token) {
-              xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-              xhr.setRequestHeader('token', token) // backward-compat if needed
+            const freshToken = getAuthToken()
+            if (freshToken) {
+              xhr.setRequestHeader('Authorization', `Bearer ${freshToken}`)
+              xhr.setRequestHeader('token', freshToken) // backward-compat if needed
             }
           }
         })

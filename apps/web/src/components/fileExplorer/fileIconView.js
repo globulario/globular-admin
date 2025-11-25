@@ -4,7 +4,7 @@ import { getCoords } from "../utility.js";
 import { displayError, displayMessage } from "../../backend/ui/notify";
 
 // Proper backend wrappers
-import { getFile, readText, getDisplayFileForLink, isLinkFile } from "../../backend/cms/files";
+import { getHiddenFiles, readText, getDisplayFileForLink, isLinkFile } from "../../backend/cms/files";
 import { getTitleInfo } from "../../backend/media/title";
 
 // FileVM helpers (DRY)
@@ -300,11 +300,14 @@ export class FileIconView extends HTMLElement {
       this._openMenu();
     });
 
-    // DnD only for folders
+    // DnD for folders
     if (isDirVM(this._file)) {
       this.addEventListener("dragover", (e) => this._dragOverFolder(e));
       this.addEventListener("dragleave", () => this._dragLeaveFolder());
       this.addEventListener("drop", (e) => this._dropOnFolder(e));
+    } else {
+      this.addEventListener("dragover", (e) => this._handleFileDragOver(e));
+      this.addEventListener("drop", (e) => this._dropOnFile(e));
     }
 
     // hover show/hide
@@ -410,27 +413,28 @@ export class FileIconView extends HTMLElement {
   async _renderFolder(f) {
     const folderIconEl = this._appendIcon(FOLDER_ICON);
     try {
-      const infosFile = await getFile(`${pathOf(f)}/infos.json`);
-      const text = await readText(infosFile);
+      const path = pathOf(f);
+      const hiddenDir = path ? await getHiddenFiles(path, "") : null;
+      if (!hiddenDir) return;
+      const metadataPath = `${hiddenDir.path}/metadata.json`;
+      const text = await readText(metadataPath);
       const titleInfos = JSON.parse(text || "{}");
-      if (titleInfos?.ID) {
-        const title = await getTitleInfo(titleInfos.ID);
-        if (title) {
-          const poster = title.getPoster?.() || title.poster || null;
-          const posterUrl = poster?.getContenturl?.() || poster?.contenturl || null;
-          const titleName = title.getName?.() || title?.name || null;
+      if (!titleInfos?.ID) return;
 
-          if (posterUrl) {
-            this._clear(this._dom.iconDisplay);
-            this._appendImg(posterUrl);
-          } else {
-            folderIconEl?.setAttribute?.("icon", FOLDER_ICON);
-          }
-          if (titleName) this._setDisplayName(titleName);
-        }
+      const title = await getTitleInfo(titleInfos.ID);
+      if (!title) return;
+
+      const poster = title.getPoster?.() || title.poster || null;
+      const posterUrl = poster?.getContenturl?.() || poster?.contenturl || poster?.URL || null;
+      const titleName = title.getName?.() || title?.name || null;
+
+      if (posterUrl) {
+        this._clear(this._dom.iconDisplay);
+        this._appendImg(posterUrl);
       } else {
-        // no infos.json; keep default folder appearance
+        folderIconEl?.setAttribute?.("icon", FOLDER_ICON);
       }
+      if (titleName) this._setDisplayName(titleName);
     } catch {
       /* keep default folder icon */
     }
@@ -511,6 +515,8 @@ export class FileIconView extends HTMLElement {
   _dropOnFolder(evt) {
     evt.stopPropagation();
     evt.preventDefault();
+    if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
+    evt._handledByFileIcon = true;
     this._setFolderIcon(FOLDER_ICON);
     this.classList.remove("drag-over");
 
@@ -547,6 +553,25 @@ export class FileIconView extends HTMLElement {
         console.error("Error parsing dropped files data:", e);
         displayError("Failed to process dropped files.", 3000);
       }
+    }
+  }
+
+  _handleFileDragOver(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+    if (evt.dataTransfer) {
+      evt.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  _dropOnFile(evt) {
+    evt.stopPropagation();
+    evt.preventDefault();
+    if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
+    evt._handledByFileIcon = true;
+    const url = evt.dataTransfer.getData("Url");
+    if (url && url.startsWith("https://www.imdb.com/title")) {
+      this._viewContext?.setImdbTitleInfo?.(url, this._file);
     }
   }
 

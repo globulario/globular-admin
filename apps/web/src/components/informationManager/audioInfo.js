@@ -4,7 +4,8 @@ import { Backend } from "../../backend/backend"; // Assuming displaySuccess is a
 import { displayError, displaySuccess, displayMessage} from "../../backend/ui/notify";
 import '@polymer/paper-button/paper-button.js'; // Needed for paper-button
 import '@polymer/iron-icon/iron-icon.js'; // Often needed implicitly for paper-button, but good to ensure
-import { deleteAudio } from "../../backend/media/title";
+import { deleteAudio, invalidateFileCaches } from "../../backend/media/title";
+import { getTitleFilePaths } from "./titleInfo.js";
 
 
 // --- Utility Function (kept as global as in original) ---
@@ -386,11 +387,20 @@ export class AudioInfo extends HTMLElement {
             if (!this._audio) return; // Double-check audio exists
 
             try {
-
-                await deleteAudio( this._audio.getId());
+                const associatedFiles = [];
+                try {
+                    associatedFiles.push(...await getTitleFilePaths(this._audio, "/search/audios"));
+                } catch (err) {
+                    console.warn("AudioInfo: failed to enumerate associated files before delete", err);
+                }
+                await deleteAudio(this._audio.getId());
 
                 displaySuccess(`"${this._audio.getTitle()}" was deleted successfully!`, 3000);
-                Backend.eventHub.publish(`_delete_infos_${ this._audio.getId()}_evt`, {}, true); // Publish deletion event
+                associatedFiles.forEach((p) => invalidateFileCaches(p));
+                Backend.eventHub.publish(`_delete_infos_${ this._audio.getId()}_evt`, {
+                    filePaths: associatedFiles,
+                    infoType: "audio",
+                }, true); // Publish deletion event
 
                 if (this.parentNode) {
                     this.parentNode.removeChild(this); // Remove component from DOM

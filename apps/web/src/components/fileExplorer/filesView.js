@@ -30,7 +30,10 @@ import {
 import {
   createTitleAndAssociate,
   createVideoAndAssociate,
+  getImdbInfo,
 } from "../../backend/media/title";
+
+import { Title, Poster } from "globular-web-client/title/title_pb";
 
 import { getBaseUrl } from "../../backend/core/endpoints";
 import { getCoords, copyToClipboard } from "../utility.js";
@@ -43,6 +46,7 @@ import {
   isDir as isDirOf,
   thumbOf,
 } from "./filevm-helpers.js";
+import { getFileVideosInfo, getFileTitlesInfo, getFileAudiosInfo } from "../../backend/media/title";
 
 // UI deps
 import "@polymer/paper-input/paper-input.js";
@@ -953,28 +957,86 @@ export class FilesView extends HTMLElement {
     const file = this._contextMenu.file;
     if (!file) return;
 
-    if (file.videos || file.titles || file.audios) {
+    await this._hydrateMediaInfos(file);
+
+    const mime = (mimeOf(file) || "").toLowerCase();
+    const isVideo = mime.startsWith("video") || isDirOf(file);
+    const isAudio = mime.startsWith("audio");
+
+    const hasInfos = () =>
+      (file.videos && file.videos.length) ||
+      (file.titles && file.titles.length) ||
+      (file.audios && file.audios.length);
+
+    if (!hasInfos() && isVideo && !file.titles?.length) {
+      // Legacy behaviour: try fetching titles explicitly when videos aren't present.
+      try {
+        const titles = await getFileTitlesInfo(pathOf(file));
+        if (Array.isArray(titles) && titles.length) {
+          file.titles = titles;
+        }
+      } catch (err) {
+        console.warn("Failed to fetch titles info fallback", err);
+      }
+    }
+
+    if (hasInfos()) {
       Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
       this._closeContextMenu();
       return;
     }
 
-    const mime = (mimeOf(file) || "").toLowerCase();
-
     try {
-      if (mime.startsWith("video") || isDirOf(file)) {
+      if (isVideo) {
         await this._promptCreateVideoInfo(file);
-      } else if (mime.startsWith("audio")) {
+      } else if (isAudio) {
         displayMessage("No audio metadata found. (Add audio getters to title.ts to auto-fetch.)", 3500);
       }
     } catch (err) {
       displayError(`Failed to retrieve media info: ${err?.message || err}`, 3000);
-      if (mime.startsWith("video") || isDirOf(file)) {
+      if (isVideo) {
         await this._promptCreateVideoInfo(file);
       }
     } finally {
       this._closeContextMenu();
     }
+  }
+
+  async _hydrateMediaInfos(file) {
+    if (!file) return file;
+    if ((file.videos?.length || file.titles?.length || file.audios?.length)) {
+      return file;
+    }
+    const path = pathOf(file);
+    if (!path) return file;
+    const mime = (mimeOf(file) || "").toLowerCase();
+    const isVideo = mime.startsWith("video") || isDirOf(file);
+    const isAudio = mime.startsWith("audio");
+    const fetches = [];
+    if (isVideo && !file.videos?.length) {
+      fetches.push(
+        getFileVideosInfo(path)
+          .then((list) => { if (Array.isArray(list) && list.length) file.videos = list; })
+          .catch(() => { })
+      );
+    }
+    const needTitles = (isVideo || isAudio) && !file.titles?.length;
+    if (needTitles) {
+      fetches.push(
+        getFileTitlesInfo(path)
+          .then((list) => { if (Array.isArray(list) && list.length) file.titles = list; })
+          .catch(() => { })
+      );
+    }
+    if (isAudio && !file.audios?.length) {
+      fetches.push(
+        getFileAudiosInfo(path)
+          .then((list) => { if (Array.isArray(list) && list.length) file.audios = list; })
+          .catch(() => { })
+      );
+    }
+    if (fetches.length) await Promise.all(fetches);
+    return file;
   }
 
   async _promptCreateVideoInfo(file) {
@@ -1267,6 +1329,7 @@ export class FilesView extends HTMLElement {
 
   // ---------- Drag & drop ----------
   async handleDropEvent(evt) {
+    if (evt?._handledByFileIcon) return;
     evt.stopPropagation();
     evt.preventDefault();
 
@@ -1308,6 +1371,150 @@ export class FilesView extends HTMLElement {
     } catch (err) {
       displayError(`Failed to process link: ${err?.message || err}`, 3000);
     }
+  }
+
+  async _handleImdbDrop(url, file) {
+    if (!file) {
+      displayError("Drag the IMDb link onto a file to associate it.", 3000);
+      return;
+    }
+
+    const match = url.match(/tt\d{5,8}/);
+    if (!match) {
+      displayError("IMDb URL does not contain a title ID.", 3000);
+      return;
+    }
+
+    try {
+     
+      const info = await getImdbInfo(match[0]);
+      if (!info) {
+        displayError("No information found for the given IMDb ID.", 3000);
+        return;
+      }
+
+
+      const toast = displayMessage(
+      `
+      <style>
+        #select-media-dialog {
+          display:flex;
+          flex-direction:column;
+          gap:10px;
+          min-width:280px;
+        }
+        #select-media-dialog h4 {
+          margin:0;
+          font-size:1rem;
+          font-weight:600;
+        }
+        #select-media-dialog .file-name {
+          font-style:italic;
+          font-size:.9rem;
+          color:var(--secondary-text-color);
+          margin:0;
+        }
+        #poster-wrapper {
+          display:flex;
+          justify-content:center;
+        }
+        #poster-wrapper img {
+          max-width:180px;
+          max-height:210px;
+          object-fit:contain;
+          border-radius:6px;
+          box-shadow:0 6px 18px rgba(0,0,0,.25);
+        }
+        #select-media-dialog .actions {
+          display:flex;
+          justify-content:flex-end;
+          gap:10px;
+          margin-top:4px;
+        }
+      </style>
+      <div id="select-media-dialog">
+        <h4>
+          Associate
+          <strong>${info.Type || "Title"}</strong>
+          <span style="font-weight:500;">${info.Name || "Untitled"}</span>
+          with this file?
+        </h4>
+        <p class="file-name">${file.name || pathOf(file)}</p>
+        <div id="poster-wrapper">
+          <img src="${info?.Poster?.ContentURL || info?.Poster?.ContentUrl || info?.Poster?.URL || ""}" alt="Poster">
+        </div>
+        <p style="margin:0;font-size:.95rem;">Use IMDb data to create a title record?</p>
+        <div class="actions">
+          <paper-button id="imdb-lnk-cancel-button">Cancel</paper-button>
+          <paper-button id="imdb-lnk-ok-button" raised>Ok</paper-button>
+        </div>
+      </div>
+      `,
+        60 * 1000
+      );
+
+      toast.toastElement.querySelector("#imdb-lnk-ok-button").onclick = async () => {
+        toast.hideToast();
+        await this._createTitleFromImdb(file, info, url);
+      };
+      toast.toastElement.querySelector("#imdb-lnk-cancel-button").onclick = () => toast.hideToast();
+    } catch (err) {
+      displayError(`Failed to fetch IMDb info: ${err?.message || err}`, 3000);
+    }
+  }
+
+  async _createTitleFromImdb(file, info, url) {
+    const filePath = pathOf(file);
+    if (!filePath) {
+      displayError("Unable to determine path for the dropped file.", 3000);
+      return;
+    }
+
+    const title = new Title();
+    title.setId(info.ID || `${filePath}-${Date.now()}`);
+    title.setName(info.Name || nameOf(file));
+    title.setDescription(info.Description || "");
+
+    const year = parseInt(info.Year, 10);
+    if (!Number.isNaN(year)) title.setYear(year);
+
+    const duration = parseInt(info.Duration, 10);
+    if (!Number.isNaN(duration)) title.setDuration(duration);
+
+    if (Array.isArray(info.Genres)) title.setGenresList(info.Genres);
+    if (Array.isArray(info.Tags)) title.setTagsList(info.Tags);
+
+    const posterData = info.Poster || {};
+    if (posterData.ContentURL || posterData.ContentUrl || posterData.URL || posterData.Url) {
+      const poster = new Poster();
+      poster.setId(posterData.ID || `${title.getId()}-poster`);
+      poster.setUrl(posterData.URL || posterData.Url || "");
+      poster.setContenturl(posterData.ContentURL || posterData.ContentUrl || "");
+      title.setPoster(poster);
+    }
+
+    title.setUrl(info.URL || info.url || url || "");
+    const type = info.Type;
+    if (type === "TVEpisode" || type === "TVSeries") {
+      title.setType(type);
+    } else {
+      title.setType("Movie");
+    }
+
+    try {
+      this._fileExplorer?.displayWaitMessage?.(`Saving ${title.getName()} title information...`);
+      await createTitleAndAssociate(filePath, title, '/search/titles');
+      displayMessage(`${title.getName()} title information saved.`, 3000);
+      // Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
+      this._fileExplorer?.resume?.();
+    } catch (err) {
+      displayError(`Failed to save IMDb title: ${err?.message || err}`, 3000);
+      this._fileExplorer?.resume?.();
+    }
+  }
+
+  async setImdbTitleInfo(url, file) {
+    await this._handleImdbDrop(url, file);
   }
 
   async _fetchBlobAsFile(url) {

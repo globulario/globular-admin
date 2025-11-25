@@ -23,6 +23,7 @@ export class EditableStringList extends HTMLElement {
         super();
         this.attachShadow({ mode: 'open' });
         this._renderHTML(); // Render HTML
+        this._cacheElements();
         this.setItems(list || []); // Set initial items
     }
 

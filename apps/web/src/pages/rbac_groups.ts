@@ -6,44 +6,13 @@ import "@polymer/paper-icon-button/paper-icon-button.js";
 import "@polymer/iron-collapse/iron-collapse.js";
 
 class PageRbacGroups extends HTMLElement {
-  private shadow!: ShadowRoot;
   private infoBtn!: HTMLElement;
   private infoPanel!: any;
   private content!: HTMLElement;
 
-  constructor() {
-    super();
-    this.shadow = this.attachShadow({ mode: "open" });
-  }
-
   connectedCallback() {
-    this.shadow.innerHTML = `
-      <style>
-        :host { display:block; }
-        .page {
-          color: var(--on-surface-color);
-          background: var(--background-color);
-        }
-        .header {
-          display: flex;
-          align-items: center;
-          gap: .5rem;
-          margin-bottom: .5rem;
-        }
-        h2 {
-          margin: 0;
-          font-size: 1.25rem;
-          font-weight: 800;
-          color: var(--on-surface-color);
-        }
-        .spacer { flex: 1; }
-        .card {
-          background: var(--surface-color);
-          color: var(--on-surface-color);
-        }
-        .info { margin-top: 10px; margin-bottom: 10px; }
-      </style>
-
+    this.style.display = 'block';
+    this.innerHTML = `
       <section class="page">
         <div class="header">
           <h2>Groups management</h2>
@@ -82,9 +51,9 @@ Use this page to **create**, **update**, and **delete** groups, and manage **mem
       </section>
     `;
 
-    this.infoBtn = this.shadow.getElementById("infoBtn") as HTMLElement;
-    this.infoPanel = this.shadow.getElementById("infoPanel") as any;
-    this.content = this.shadow.getElementById("content") as HTMLElement;
+    this.infoBtn = this.querySelector("#infoBtn") as HTMLElement;
+    this.infoPanel = this.querySelector("#infoPanel") as any;
+    this.content = this.querySelector("#content") as HTMLElement;
 
     this.infoBtn.addEventListener("click", () => this.infoPanel.toggle());
 

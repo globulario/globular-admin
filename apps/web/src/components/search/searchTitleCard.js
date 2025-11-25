@@ -283,8 +283,8 @@ export class SearchTitleCard extends HTMLElement {
           if (serie) {
             this._seriesNameSpan.textContent = serie.getName();
             const poster = serie.getPoster?.();
-            if (poster && poster.getContenturl()) {
-              this._frontDiv.style.backgroundImage = `url(${poster.getContenturl()})`;
+            if (poster && poster.URL) {
+              this._frontDiv.style.backgroundImage = `url(${poster.URL})`;
             }
           }
         } catch (err) {
@@ -306,8 +306,8 @@ export class SearchTitleCard extends HTMLElement {
       this._seriesNameSpan.textContent = this._title.getName();
       this._episodeNameSpan.textContent = this._title.getYear() ? `(${this._title.getYear()})` : "";
       const poster = this._title.getPoster?.();
-      if (poster && poster.getContenturl()) {
-        this._frontDiv.style.backgroundImage = `url(${poster.getContenturl()})`;
+      if (poster && poster.URL) {
+        this._frontDiv.style.backgroundImage = `url(${poster.URL})`;
       }
     }
   }

@@ -1,5 +1,5 @@
 import getUuidByString from "uuid-by-string";
-import { displayError, displaySuccess, displayMessage} from "../../backend/ui/notify";
+import { displayError, displaySuccess, displayMessage } from "../../backend/ui/notify";
 
 import '@polymer/iron-icons/editor-icons.js';
 import '@polymer/iron-icon/iron-icon.js';
@@ -20,8 +20,11 @@ import {
   deleteTitle,
   dissociateFileWithTitle,
   getTitleFiles,
+  invalidateFileCaches,
   searchTitles
 } from "../../backend/media/title";
+import { Backend } from "../../backend/backend";
+import { getToken } from "../../backend/core/session";
 
 /* =========================================================
  * Utilities
@@ -31,77 +34,70 @@ import {
  * Promisified wrapper for file metadata/thumbnail lookup.
  * Uses new backend/files.getFile wrapper (signature-tolerant).
  */
-async function promisifiedGetFile(globule, path, width, height) {
-  // Pass all args in case the wrapper supports them; extra args are ignored by JS if not needed.
-  return getFile(globule, path, width, height);
+async function promisifiedGetFile(path) {
+  return getFile(path);
 }
 
 /**
  * Create a <globular-video-preview> + filename label for a path.
  */
-async function createVideoPreviewComponent(parentElement, filePath, titleId, globule) {
+async function createVideoPreviewComponent(parentElement, filePath, titleId) {
   const previewDivId = `_video_preview_${getUuidByString(filePath)}`;
   let existingPreviewDiv = parentElement.querySelector(`#${previewDivId}`);
   if (existingPreviewDiv) return existingPreviewDiv;
 
   try {
-    const file = await promisifiedGetFile(globule, filePath, 100, 64);
+    const file = await promisifiedGetFile(filePath);
 
-    const preview = new VideoPreview(
-      file,
-      64,
-      () => {
-        const fileNameSpan = preview.querySelector('span');
-        if (fileNameSpan && preview.width > 0 && preview.height > 0) {
-          const calculatedWidth = (preview.width / preview.height) * 64;
-          fileNameSpan.style.wordBreak = "break-all";
-          fileNameSpan.style.fontSize = ".85rem";
-          fileNameSpan.style.maxWidth = `${calculatedWidth}px`;
-          fileNameSpan.textContent = filePath.substring(filePath.lastIndexOf("/") + 1);
-        }
-      },
-      globule
-    );
-
-    const unlinkBtnId = `_unlink_btn_${randomUUID()}`;
-    preview.appendChild(
-      document.createRange().createContextualFragment(
-        `<paper-icon-button icon="icons:remove-circle" id="${unlinkBtnId}" style="position: absolute;"></paper-icon-button>`
-      )
-    );
-    const unlinkBtn = preview.querySelector(`#${unlinkBtnId}`);
+    const preview = new VideoPreview();
+    preview.setFile(file, 64);
 
     preview.name = titleId;
-    preview.onpreview = () => {
+    preview.setOnPreview(() => {
       parentElement.querySelectorAll("globular-video-preview").forEach(p => {
         if (preview.name !== p.name && p.stopPreview) p.stopPreview();
       });
-    };
+    });
 
     const previewDiv = document.createElement("div");
     previewDiv.id = previewDivId;
-    previewDiv.style.display = "flex";
-    previewDiv.style.flexDirection = "column";
+    previewDiv.classList.add("title-file-item");
     previewDiv.appendChild(preview);
 
     const fileNameSpan = document.createElement("span");
+    fileNameSpan.classList.add("title-file-name");
     fileNameSpan.textContent = filePath.substring(filePath.lastIndexOf("/") + 1);
     previewDiv.appendChild(fileNameSpan);
 
+    const unlinkBtnId = `_unlink_btn_${randomUUID()}`;
+    const unlinkBtn = document.createElement("paper-icon-button");
+    unlinkBtn.setAttribute("icon", "icons:remove-circle");
+    unlinkBtn.id = unlinkBtnId;
+    unlinkBtn.setAttribute("aria-label", "Dissociate file");
+    unlinkBtn.classList.add("title-file-unlink");
+    previewDiv.appendChild(unlinkBtn);
+
+    const updateLabelWidth = () => {
+      const width = Math.max(96, preview.width || 96);
+      fileNameSpan.style.maxWidth = `${width + 16}px`;
+    };
+    preview.setOnResize(updateLabelWidth);
+    updateLabelWidth();
+
     unlinkBtn.addEventListener('click', async (evt) => {
       evt.stopPropagation();
-      await showDissociateFileConfirmation(filePath, titleId, globule, previewDiv);
+      await showDissociateFileConfirmation(filePath, titleId, previewDiv);
     });
 
-    preview.onplay = async (f) => {
+    preview.setOnPlay(async (f) => {
       const path = f.getPath();
       const mime = f.getMime();
 
       let mediaPlayer = null;
       if (path.endsWith(".mp3") || (mime && mime.startsWith("audio"))) {
-        mediaPlayer = playAudio(path, () => { }, null, null, globule);
+        mediaPlayer = playAudio(path, () => { }, null, null);
       } else if (mime && mime.startsWith("video")) {
-        mediaPlayer = playVideo(path, () => { }, null, null, globule);
+        mediaPlayer = playVideo(path, () => { }, null, null);
       }
 
       if (mediaPlayer && mediaPlayer.toggleFullscreen) {
@@ -112,7 +108,7 @@ async function createVideoPreviewComponent(parentElement, filePath, titleId, glo
       if (titleInfoBox && titleInfoBox.parentNode) {
         titleInfoBox.parentNode.removeChild(titleInfoBox);
       }
-    };
+    });
 
     return previewDiv;
   } catch (err) {
@@ -124,7 +120,7 @@ async function createVideoPreviewComponent(parentElement, filePath, titleId, glo
 /**
  * Dissociate a file from a title with a confirmation toast (uses backend wrapper).
  */
-async function showDissociateFileConfirmation(filePath, titleId, globule, previewDiv) {
+async function showDissociateFileConfirmation(filePath, titleId, previewDiv) {
   const fileName = filePath.substring(filePath.lastIndexOf("/") + 1);
   const toast = displayMessage(`
     <style>
@@ -151,10 +147,7 @@ async function showDissociateFileConfirmation(filePath, titleId, globule, previe
     toast.hideToast();
     try {
       // Heuristic preserved: titles vs videos index
-      const indexPath = titleId.startsWith("tt")
-        ? `${globule.config.DataPath}/search/titles`
-        : `${globule.config.DataPath}/search/videos`;
-
+      const indexPath = titleId.startsWith("tt") ? "/search/titles" : "/search/videos";
       await dissociateFileWithTitle(filePath, titleId, indexPath);
 
       if (previewDiv && previewDiv.parentNode) {
@@ -170,9 +163,9 @@ async function showDissociateFileConfirmation(filePath, titleId, globule, previe
 /**
  * Get associated file paths for a title using backend wrapper.
  */
-async function getTitleFilePaths(_globule, indexPath, title) {
-  if (!title || !indexPath) {
-    throw new Error("Missing title or index path for getTitleFilePaths.");
+export async function getTitleFilePaths(title, indexPath = "/search/titles") {
+  if (!title) {
+    throw new Error("Missing title for getTitleFilePaths.");
   }
   try {
     const paths = await getTitleFiles(title.getId(), indexPath);
@@ -186,7 +179,7 @@ async function getTitleFilePaths(_globule, indexPath, title) {
 /**
  * Stream search via backend wrapper and collect TVEpisode results.
  */
-async function searchEpisodesBySerie(globule, serieId, indexPath) {
+async function searchEpisodesBySerie(serieId, indexPath = "/search/titles") {
   const episodes = [];
   try {
     const res = await searchTitles(serieId, indexPath, [], 1000, 0);
@@ -194,8 +187,7 @@ async function searchEpisodesBySerie(globule, serieId, indexPath) {
     hits.forEach(h => {
       if (h && h.getTitle && h.getTitle()) {
         const t = h.getTitle();
-        if (t.getType && t.getType() === "TVEpisode") {
-          t.globule = globule; // preserve contextual expectation
+        if (t.getType && t.getType() === "TVEpisode" && t.getSerie && t.getSerie() === serieId) {
           episodes.push(t);
         }
       }
@@ -221,19 +213,19 @@ async function searchEpisodesBySerie(globule, serieId, indexPath) {
 /**
  * Render previews for a title’s files.
  */
-export async function GetTitleFiles(indexPath, title, parentElement) {
-  if (!title || !title.globule || !indexPath) {
-    throw new Error("Missing title, globule, or index path for GetTitleFiles.");
+export async function GetTitleFiles(indexPath = "/search/titles", title, parentElement) {
+  if (!title || !indexPath) {
+    throw new Error("Missing title or index path for GetTitleFiles.");
   }
   parentElement.innerHTML = '<paper-progress indeterminate></paper-progress>';
 
   try {
-    const filePaths = await getTitleFilePaths(title.globule, title.globule.config.DataPath + indexPath, title);
+    const filePaths = await getTitleFilePaths(title, indexPath);
     parentElement.innerHTML = '';
 
     const previews = await Promise.all(
       filePaths.map(filePath =>
-        createVideoPreviewComponent(parentElement, filePath, title.getId(), title.globule)
+        createVideoPreviewComponent(parentElement, filePath, title.getId())
       )
     );
 
@@ -249,39 +241,28 @@ export async function GetTitleFiles(indexPath, title, parentElement) {
 /**
  * Cache + aggregate episodes across all globules.
  */
-export async function GetEpisodes(indexPath, title) {
+export async function GetEpisodes(indexPath = "/search/titles", title) {
   if (title.__episodes__ !== undefined) return title.__episodes__;
 
-  const globules = Backend.getGlobules();
-  let allEpisodes = [];
-
-  const results = await Promise.allSettled(
-    globules.map(globule => searchEpisodesBySerie(globule, title.getId(), indexPath))
-  );
-
-  results.forEach(result => {
-    if (result.status === 'fulfilled' && Array.isArray(result.value)) {
-      allEpisodes.push(...result.value);
-    }
-  });
+  const episodes = await searchEpisodesBySerie(title.getId(), indexPath);
 
   // Deduplicate by id
-  allEpisodes = [...new Map(allEpisodes.map(e => [e.getId(), e])).values()];
+  const uniqueEpisodes = [...new Map(episodes.map(e => [e.getId(), e])).values()];
 
   // Sort global list
-  allEpisodes.sort((a, b) => {
+  uniqueEpisodes.sort((a, b) => {
     if (a.getSeason() === b.getSeason()) {
       return a.getEpisode() - b.getEpisode();
     }
     return a.getSeason() - b.getSeason();
   });
 
-  title.__episodes__ = allEpisodes;
-  return allEpisodes;
+  title.__episodes__ = uniqueEpisodes;
+  return uniqueEpisodes;
 }
 
-export async function searchEpisodes(serieId, indexPath) {
-  return GetEpisodes(indexPath, { getId: () => serieId, globule: Backend.globule, __episodes__: undefined });
+export async function searchEpisodes(serieId, indexPath = "/search/titles") {
+  return GetEpisodes(indexPath, { getId: () => serieId, __episodes__: undefined });
 }
 
 /* =========================================================
@@ -289,18 +270,37 @@ export async function searchEpisodes(serieId, indexPath) {
  * =======================================================*/
 
 const TITLE_INFO_GLOBAL_STYLE = `
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .title-div {
   display: flex;
+  gap: 20px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .title-poster-div {
   padding-right: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .title-informations-div {
   font-size: 1em;
   min-width: 350px;
   max-width: 450px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .title-poster-div img, p { }
@@ -356,13 +356,63 @@ const TITLE_INFO_GLOBAL_STYLE = `
 
 .title-files-div {
   display: flex;
-  width: 100%;
   flex-wrap: wrap;
-  gap: 10px;
-  padding-left: 15px;
+  gap: 12px;
+  padding: 0 15px 10px;
   margin-top: 15px;
+  align-items: flex-start;
 }
-.title-files-div paper-progress { width: 100%; }
+.title-files-div paper-progress {
+  width: 100%;
+}
+.title-file-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 100px;
+  gap: 8px;
+  padding: 10px 8px 12px;
+  border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+  background: var(--surface-color);
+  border-radius: 10px;
+  min-height: 120px;
+  line-break: anywhere;
+  overflow: hidden;
+}
+.title-file-item globular-video-preview {
+  width: 100%;
+  margin-top: 2px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.title-file-item paper-icon-button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  --paper-icon-button-ink-color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.title-file-name {
+  font-size: .75rem;
+  color: var(--primary-text-color);
+  text-align: center;
+  width: 100%;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  line-height: 1.15em;
+  max-height: 3.45em;
+  word-break: break-word;
+}
 
 .title-top-credit, .title-credit {
   margin-top: 15px;
@@ -411,9 +461,7 @@ const TITLE_INFO_GLOBAL_STYLE = `
 }
 
 .episodes-div {
-  display: flex; flex-direction: column; width: 100%;
-  margin-top: 20px; border-top: 1px solid var(--palette-divider);
-  padding-top: 15px;
+  display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0;
 }
 .episodes-header-tabs paper-tabs {
   --paper-tabs-selection-bar-color: var(--primary-color);
@@ -422,16 +470,38 @@ const TITLE_INFO_GLOBAL_STYLE = `
   width: 100%;
 }
 .season-page-div {
-  display: flex; flex-wrap: wrap; gap: 15px; padding: 10px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 25px;
+  padding: 8px 0;
   justify-content: center;
+  overflow-y: auto;
+}
+.season-page-div::-webkit-scrollbar {
+  height: 6px;
+}
+.season-page-div::-webkit-scrollbar-thumb {
+  background: var(--palette-divider);
+  border-radius: 3px;
 }
 .episode-small-div {
-  display: flex; flex-direction: column; position: relative; width: 175px;
-  border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-elevation-2dp);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  width: 125px;
+  min-width: 125px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-elevation-2dp);
   transition: box-shadow 0.2s ease;
 }
 .episode-small-div:hover { box-shadow: var(--shadow-elevation-4dp); cursor: pointer; }
-.episode-small-div img { width: 100%; height: 132px; object-fit: cover; display: block; }
+.episode-small-div img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  display: block;
+}
 .episode-number-badge {
   position: absolute; top: 8px; right: 8px;
   background-color: color-mix(in srgb, var(--surface-color-dark, #000) 90%, transparent);
@@ -440,7 +510,8 @@ const TITLE_INFO_GLOBAL_STYLE = `
 }
 .play-episode-button {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  color: var(--primary-light-color, rgb(0, 179, 255)); font-size: 48px; opacity: 0; transition: opacity 0.2s ease;
+  color: rgb(0, 179, 255); font-size: 48px; opacity: 0; transition: opacity 0.2s ease;
+  width: 48px; height: 48px; --iron-icon-width:48px; --iron-icon-height:48px;
 }
 .episode-small-div:hover .play-episode-button { opacity: 1; }
 .slide-on-panel {
@@ -453,13 +524,24 @@ const TITLE_INFO_GLOBAL_STYLE = `
 .slide-on-panel-title-name {
   flex-grow: 1; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.info-episode-button { color: var(--primary-color); margin-left: 8px; }
+.info-episode-button {
+  color: var(--on-surface-color);
+  margin-left: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  padding: 4px;
+  /* set the size of the icon button */
+  height:30px;
+  width:30px;
+  --iron-icon-width:20px;
+  --iron-icon-height:20px;
+  --paper-icon-button-ink-color: var(--on-surface-color);
+}
 `;
 
 export class TitleInfo extends HTMLElement {
   // Data
   _title = null;
-  _globule = null;
   _isShortMode = false;
   _ondelete = null;
   _listeners = {};
@@ -486,15 +568,13 @@ export class TitleInfo extends HTMLElement {
   /**
    * @param {HTMLElement} titleHeaderDiv
    * @param {boolean} isShort
-   * @param {Object} globule
    */
-  constructor(titleHeaderDiv, isShort, globule) {
+  constructor(titleHeaderDiv, isShort) {
     super();
     this.attachShadow({ mode: 'open' });
 
     this._titleHeaderDiv = titleHeaderDiv;
     this._isShortMode = isShort;
-    this._globule = globule || Backend.globule;
 
     this._renderInitialStructure();
     this._getDomReferences();
@@ -503,13 +583,11 @@ export class TitleInfo extends HTMLElement {
 
   connectedCallback() {
     this._setupBackendSubscriptions();
+    
   }
 
   disconnectedCallback() {
-    for (const uuid in this._listeners) {
-      Backend.eventHub.unsubscribe(uuid);
-    }
-    this._listeners = {};
+    this._clearSubscriptions();
   }
 
   attributeChangedCallback(name, _oldValue, newValue) {
@@ -525,11 +603,20 @@ export class TitleInfo extends HTMLElement {
   set ondelete(callback) { this._ondelete = callback; }
   get ondelete() { return this._ondelete; }
 
+  setTitle(title) {
+    this.title = title;
+  }
+
   set title(title) {
     if (this._title !== title) {
       this._title = title;
       this._renderTitleSpecificContent();
       this._setupBackendSubscriptions();
+      if(this._title.getType() === "TVSeries"){
+        this._episodesContainerDiv.style.display = "block";
+      } else {
+        this._episodesContainerDiv.style.display = "none";
+      }
     }
   }
   get title() { return this._title; }
@@ -539,53 +626,95 @@ export class TitleInfo extends HTMLElement {
       <style>
         ${TITLE_INFO_GLOBAL_STYLE}
         .title-div {
-          max-height: calc(100vh - 300px);
           overflow-y: auto;
-          overflow-x: hidden;
+          height: 100%;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+          var(--scroll-track, var(--surface-color));
         }
         .action-div {
           display: flex; justify-content: flex-end; gap: 10px;
-          padding-top: 15px; border-top: 1px solid var(--palette-divider); margin-top: 15px;
+          border-top: 1px solid var(--palette-divider); margin-top: 15px;
+        }
+        .title-info-container {
+          flex: 1 1 auto;
+          display: flex;
+          flex-direction: row;
+          height: 100%;
+          min-height: 0;
+          gap: 20px;
+        }
+        .title-poster-div {
+          flex: 0 0 320px;
+          min-width: 280px;
+        }
+        .title-poster-img {
+          max-width: 300px;
+          max-height: 450px;
+          width: auto;
+          height: auto;
+        }
+        #episodes-div {
+          width: 50%;
+          height: 100%;
+   
+        }
+        #episodes-content{
+            scrollbar-width: thin;
+            scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+            var(--scroll-track, var(--surface-color));
+        }
+        @media (max-width: 1100px), (max-height: 700px) {
+          .title-info-container {
+            flex-direction: column;
+            display: block;
+          }
+          #episodes-div {
+            width: 100%;
+            height: 30%;
+            min-height: 220px;
+          }
         }
       </style>
-
-      <div class="title-div">
-        <div style="display: flex; flex-direction: column;">
-          <div class="title-poster-div">
-            <img class="title-poster-img"></img>
+      <div class="title-info-container">
+        <div class="title-div">
+          <div style="display: flex; flex-direction: column;">
+            <div class="title-poster-div">
+              <img class="title-poster-img"></img>
+            </div>
+            <div class="title-files-div">
+              <paper-progress indeterminate></paper-progress>
+            </div>
           </div>
-          <div class="title-files-div">
-            <paper-progress indeterminate></paper-progress>
+          <div class="title-informations-div">
+            <div class="title-genres-div"></div>
+            <p class="title-synopsis-div"></p>
+            <div class="title-rating-div">
+              <iron-icon class="rating-star" icon="icons:star"></iron-icon>
+              <div style="display: flex; flex-direction: column;">
+                <div><span id="rating-span"></span>/10</div>
+                <div id="rating-total-div"></div>
+              </div>
+            </div>
+            <div class="title-top-credit">
+              <div class="title-credit">
+                <div id="title-directors-title" class="title-credit-title">Director</div>
+                <div id="title-directors-lst" class="title-credit-lst"></div>
+              </div>
+              <div class="title-credit">
+                <div id="title-writers-title" class="title-credit-title">Writer</div>
+                <div id="title-writers-lst" class="title-credit-lst"></div>
+              </div>
+              <div class="title-credit">
+                <div id="title-actors-title" class="title-credit-title">Star</div>
+                <div id="title-actors-lst" class="title-credit-lst"></div>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="title-informations-div">
-          <div class="title-genres-div"></div>
-          <p class="title-synopsis-div"></p>
-          <div class="title-rating-div">
-            <iron-icon class="rating-star" icon="icons:star"></iron-icon>
-            <div style="display: flex; flex-direction: column;">
-              <div><span id="rating-span"></span>/10</div>
-              <div id="rating-total-div"></div>
-            </div>
-          </div>
-          <div class="title-top-credit">
-            <div class="title-credit">
-              <div id="title-directors-title" class="title-credit-title">Director</div>
-              <div id="title-directors-lst" class="title-credit-lst"></div>
-            </div>
-            <div class="title-credit">
-              <div id="title-writers-title" class="title-credit-title">Writer</div>
-              <div id="title-writers-lst" class="title-credit-lst"></div>
-            </div>
-            <div class="title-credit">
-              <div id="title-actors-title" class="title-credit-title">Star</div>
-              <div id="title-actors-lst" class="title-credit-lst"></div>
-            </div>
-          </div>
+        <div id="episodes-div" style="display: none;">
+          <slot name="episodes"></slot>
         </div>
-      </div>
-      <div id="episodes-div" style="display: none;">
-        <slot name="episodes"></slot>
       </div>
       <div class="action-div">
         <paper-button id="edit-indexation-btn">Edit</paper-button>
@@ -622,21 +751,30 @@ export class TitleInfo extends HTMLElement {
     if (this._deleteButton) this._deleteButton.addEventListener('click', this._handleDeleteClick.bind(this));
   }
 
+  _clearSubscriptions() {
+    const hub = Backend.eventHub;
+    if (!hub) return;
+    for (const [evt, uuid] of Object.entries(this._listeners)) {
+      hub.unsubscribe(evt, uuid);
+    }
+    this._listeners = {};
+  }
+
   _setupBackendSubscriptions() {
-    if (!this._title || !this._globule) {
-      console.warn("TitleInfo: Cannot setup backend subscriptions without title or globule.");
+    if (!this._title) {
+      console.warn("TitleInfo: Cannot setup backend subscriptions without title.");
       return;
     }
+    const hub = Backend.eventHub;
+    if (!hub) return;
 
     const titleId = this._title.getId();
-    const globuleInstance = this._globule;
 
     // Clear previous
-    for (const uuid in this._listeners) Backend.eventHub.unsubscribe(uuid);
-    this._listeners = {};
+    this._clearSubscriptions();
 
     // Updated event — re-render (optionally refetch if you add a getTitleById wrapper later)
-    globuleInstance.eventHub.subscribe(
+    hub.subscribe(
       `${titleId}_title_updated_event`,
       (uuid) => { this._listeners[`${titleId}_title_updated_event`] = uuid; },
       async (_evt) => {
@@ -653,7 +791,7 @@ export class TitleInfo extends HTMLElement {
     );
 
     // Delete event — remove from DOM & bubble callback
-    globuleInstance.eventHub.subscribe(
+    hub.subscribe(
       `${titleId}_title_delete_event`,
       (uuid) => { this._listeners[`${titleId}_title_delete_event`] = uuid; },
       (_evt) => {
@@ -753,17 +891,15 @@ export class TitleInfo extends HTMLElement {
 
     // Files / episodes
     if (this._filesProgress) this._filesProgress.style.display = "block";
-    if (this._title.getType() !== "TVEpisode" && this._title.getType() !== "TVSeries") {
-      this._filesDiv.style.paddingLeft = "15px";
-      await GetTitleFiles("/search/titles", this._title, this._filesDiv);
-    } else if (this._title.getType() === "TVSeries") {
+    if (this._title.getType() === "TVSeries") {
       this._filesDiv.style.paddingLeft = "0px";
-      const indexPath = `${this._globule.config.DataPath}/search/titles`;
+      const indexPath = "/search/titles";
       const episodes = await GetEpisodes(indexPath, this._title);
       if (this._title.onLoadEpisodes) this._title.onLoadEpisodes(episodes);
       this._displayEpisodes(episodes, this.shadowRoot.querySelector("#episodes-div"));
     } else {
-      this._filesDiv.innerHTML = "";
+      this._filesDiv.style.paddingLeft = "15px";
+      await GetTitleFiles("/search/titles", this._title, this._filesDiv);
     }
     if (this._filesProgress) this._filesProgress.style.display = "none";
 
@@ -825,7 +961,7 @@ export class TitleInfo extends HTMLElement {
           width: 185px; height: auto; object-fit: contain; padding-top: 10px; padding-bottom: 15px; align-self: center;
         }
         #delete-title-dialog .dialog-actions {
-          display: flex; justify-content: flex-end; gap: 10px; width: 100%; margin-top: 20px;
+          display: flex; justify-content: flex-end; gap: 10px; width: 100%;
         }
       </style>
       <div id="delete-title-dialog">
@@ -851,13 +987,28 @@ export class TitleInfo extends HTMLElement {
     cancelBtn.addEventListener('click', () => toast.hideToast());
     okBtn.addEventListener('click', async () => {
       toast.hideToast();
-      if (!this._title || !this._globule) return;
+      if (!this._title) return;
+
+      let associatedFilePaths = [];
+      try {
+        associatedFilePaths = await getTitleFilePaths(this._title, "/search/titles");
+      } catch (err) {
+        console.warn("TitleInfo: failed to enumerate associated files before delete", err);
+      }
 
       try {
-        await deleteTitle(this._title.getId(), `${this._globule.config.DataPath}/search/titles`);
+        await deleteTitle(this._title.getId(), "/search/titles");
 
         displaySuccess(`"${this._title.getName()}" was deleted!`, 3000);
-        Backend.eventHub.publish(`_delete_infos_${this._title.getId()}_evt`, {}, true);
+        associatedFilePaths.forEach((p) => invalidateFileCaches(p));
+        Backend.eventHub.publish(
+          `_delete_infos_${this._title.getId()}_evt`,
+          {
+            filePaths: associatedFilePaths,
+            infoType: "title",
+          },
+          true
+        );
 
         if (this.parentNode) this.parentNode.removeChild(this);
         if (this._ondelete) this._ondelete();
@@ -875,7 +1026,7 @@ export class TitleInfo extends HTMLElement {
         <div class="episodes-header-tabs">
           <paper-tabs selected="0" scrollable></paper-tabs>
         </div>
-        <div id="episodes-content" style="width: 100%; height: 355px; overflow-y: auto;"></div>
+        <div id="episodes-content" style="width: 100%; overflow-y: auto;"></div>
       </div>
     `;
 
@@ -920,11 +1071,11 @@ export class TitleInfo extends HTMLElement {
         const episodeHtml = `
           <div class="episode-small-div">
             <div class="episode-number-badge">${episode.getEpisode()}</div>
-            <paper-icon-button id="play-btn-${episodeId}" class="play-episode-button" icon="av:play-circle-filled"></paper-icon-button>
+            <iron-icon id="play-btn-${episodeId}" class="play-episode-button" icon="av:play-circle-filled"></iron-icon>
             <img src="${posterUrl}" alt="Episode Poster">
             <div class="slide-on-panel">
               <div class="slide-on-panel-title-name">${episode.getName()}</div>
-              <paper-icon-button id="infos-btn-${episodeId}" class="info-episode-button" icon="icons:info-outline"></paper-icon-button>
+              <iron-icon id="infos-btn-${episodeId}" class="info-episode-button" icon="icons:info-outline"></iron-icon>
             </div>
           </div>
         `;
@@ -948,14 +1099,13 @@ export class TitleInfo extends HTMLElement {
   }
 
   async _playEpisodeVideo(episode) {
-    const globule = episode.globule;
-    if (!globule || !episode || !episode.getId()) {
-      displayError("Cannot play episode: Globule or episode info missing.", 3000);
+    if (!episode || !episode.getId()) {
+      displayError("Cannot play episode: episode info missing.", 3000);
       return;
     }
     try {
-      const indexPath = `${globule.config.DataPath}/search/titles`;
-      const filePaths = await getTitleFilePaths(globule, indexPath, episode);
+      const indexPath = "/search/titles";
+      const filePaths = await getTitleFilePaths(episode, indexPath);
 
       if (filePaths.length === 0) {
         displayMessage(`No video file found for episode "${episode.getName()}".`, 3000);
@@ -969,7 +1119,7 @@ export class TitleInfo extends HTMLElement {
         if (titleInfoBox && titleInfoBox.parentNode) {
           // placeholder for fullscreen/close callback
         }
-      }, null, episode, globule);
+      }, null, episode);
 
       if (titleInfoBox && titleInfoBox.parentNode) {
         titleInfoBox.parentNode.removeChild(titleInfoBox);
@@ -1002,13 +1152,8 @@ export class TitleInfo extends HTMLElement {
   }
 
   async _updateButtonVisibility() {
-    let isLoggedIn = false;
-    try {
-      const token = await Backend.authenticatedCall(this._globule);
-      isLoggedIn = !!token;
-    } catch {
-      isLoggedIn = false;
-    }
+    const token = getToken();
+    const isLoggedIn = !!token;
     if (this._editButton) this._editButton.style.display = isLoggedIn ? "" : "none";
     if (this._deleteButton) this._deleteButton.style.display = isLoggedIn ? "" : "none";
   }

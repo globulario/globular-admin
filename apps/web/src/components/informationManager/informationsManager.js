@@ -79,10 +79,12 @@ export class InformationsManager extends HTMLElement {
       <style>
 
         :host {
-          display: block;
+          display: flex;
+          flex-direction: column;
           width: 100%;
           height: 100%;
-          overflow-y: auto;
+          min-height: 0;
+          overflow: hidden;
           background: var(--surface-color);
           color: var(--primary-text-color);
           scrollbar-width: thin;
@@ -103,11 +105,28 @@ export class InformationsManager extends HTMLElement {
         }
 
         #container {
-          display: flex; flex-direction: column;
-          padding: 8px; z-index: 100;
+          display: flex;
+          flex-direction: column;
+          padding: 8px;
+          z-index: 100;
+          flex: 1 1 auto;
+          min-height: 0;
           background: var(--surface-elevated-color, var(--surface-color));
           color: var(--primary-text-color);
           font-size: 1rem; user-select: none;
+        }
+        #container > slot {
+          flex: 1 1 auto;
+          min-height: 0;
+          display: flex;
+        }
+        ::slotted(*) {
+          flex: 1 1 auto;
+          min-height: 0;
+          display: flex;
+          width: 100%;
+          flex-direction: column;
+          overflow: auto;
         }
         #header {
           display: flex; align-items: center;

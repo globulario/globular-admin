@@ -4,12 +4,13 @@ import { Backend } from "../../backend/backend";
 import { displayError, displaySuccess, displayMessage} from "../../backend/ui/notify";
 import { VideoInfoEditor } from "./videoInformationsEditor.js";
 import getUuidByString from "uuid-by-string";
+import { getTitleFilePaths } from "./titleInfo.js";
 
 import "@polymer/paper-button/paper-button.js";
 import "@polymer/iron-icon/iron-icon.js";
 
 // ✅ Use centralized backend helpers (keep path consistent with your project)
-import { deleteVideo as deleteVideoHelper } from "../../backend/media/title";
+import { deleteVideo as deleteVideoHelper, invalidateFileCaches } from "../../backend/media/title";
 
 const VIDEO_INFO_GLOBAL_STYLE = `
 .title-div { display:flex; }
@@ -310,14 +311,29 @@ export class VideoInfo extends HTMLElement {
 
       try {
         // ✅ Delegate deletion to centralized helper (handles auth, indexPath, RPC)
+        const associatedFiles = [];
+        try {
+          associatedFiles.push(...await getTitleFilePaths(this._video, "/search/videos"));
+        } catch (err) {
+          console.warn("VideoInfo: failed to enumerate associated files before delete", err);
+        }
+
         await deleteVideoHelper(this._video.globule, this._video.getId());
 
         // Notify UI
         displaySuccess(`"${this._video.getDescription?.() || "Video"}" was deleted successfully!`, 3000);
+        associatedFiles.forEach((p) => invalidateFileCaches(p));
 
         // Keep your event bus behavior
         try {
-          Backend?.eventHub?.publish?.(`_delete_infos_${this._video.getId()}_evt`, {}, true);
+          Backend?.eventHub?.publish?.(
+            `_delete_infos_${this._video.getId()}_evt`,
+            {
+              filePaths: associatedFiles,
+              infoType: "video",
+            },
+            true
+          );
         } catch (_) { /* best-effort */ }
 
         // Remove from DOM & call callback

@@ -126,7 +126,7 @@ class _CacheManager {
 
   _buildCoverDataUrl(videoId, videoUrl, videoPath) {
     let url = getBaseUrl() || "";
-    url += "/get_video_cover_data_url";
+    url += "/api/get-imdb-poster";
     url += `?id=${videoId}&url=${encodeURIComponent(videoUrl)}&path=${encodeURIComponent(videoPath)}`;
     return url;
   }
@@ -180,7 +180,7 @@ export async function getImdbInfo(id) {
   if (!_cacheManager._imdbInfoCache[id] || !_cacheManager._imdbInfoCache[id].promise) {
     _cacheManager._imdbInfoCache[id] = {
       promise: new Promise((resolve, reject) => {
-        const url = `${getBaseUrl() || ""}/imdb_title?id=${encodeURIComponent(id)}`;
+        const url = `${getBaseUrl() || ""}/api/get-imdb-titles?id=${encodeURIComponent(id)}`;
         const xmlhttp = new XMLHttpRequest();
         xmlhttp.timeout = 10_000;
 

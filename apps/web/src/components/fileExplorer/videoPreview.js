@@ -93,10 +93,10 @@ export class VideoPreview extends HTMLElement {
       slot {
         position: relative;
         z-index: 1;
-        pointer-events: none;
+        pointer-events: auto;
       }
       ::slotted(*) {
-        pointer-events: none;
+        pointer-events: auto;
       }
     </style>
     <div id="container" draggable="false" aria-label="Video preview">
