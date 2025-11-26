@@ -51,7 +51,7 @@ export class TitleInfoEditor extends HTMLElement {
     this._titleDescriptionDiv = null; this._titleDescriptionInput = null; this._editTitleDescriptionBtn = null;
     this._titleYearDiv = null; this._titleYearInput = null; this._editTitleYearBtn = null;
 
-    this._titleTypeDiv = null; this._titleTypeSelect = null; this._editTitleTypeBtn = null;
+    this._titleTypeDiv = null; this._titleTypeSelect = null; this._titleTypeInputContainer = null; this._editTitleTypeBtn = null;
     this._titleSerieRow = null; this._titleSerieDiv = null; this._titleSerieInput = null; this._editTitleSerieBtn = null;
     this._titleSeasonRow = null; this._titleSeasonDiv = null; this._titleSeasonInput = null; this._editTitleSeasonBtn = null;
     this._titleEpisodeRow = null; this._titleEpisodeDiv = null; this._titleEpisodeInput = null; this._editTitleEpisodeBtn = null;
@@ -95,7 +95,7 @@ export class TitleInfoEditor extends HTMLElement {
     this._populatePersonEditors();
   }
 
-  set title(title) {
+  setTitleObject(title) {
     if (this._title !== title) {
       this._title = title;
       this._populateFields();
@@ -103,7 +103,15 @@ export class TitleInfoEditor extends HTMLElement {
       this._populatePersonEditors();
     }
   }
-  get title() { return this._title; }
+
+  getTitleObject() {
+    return this._title;
+  }
+
+  setTitle(title) {
+    this.setTitleObject(title);
+    return this;
+  }
 
   // ---------- UI
   _renderInitialStructure() {
@@ -127,7 +135,13 @@ export class TitleInfoEditor extends HTMLElement {
         .info-row:last-child{border-bottom:none;}
         .label{display:table-cell;font-weight:500;padding-right:15px;min-width:120px;vertical-align:middle;padding:8px 15px 8px 0;}
         .value-display{display:table-cell;width:100%;vertical-align:middle;padding:8px 0;}
-        .input-field{display:none;width:100%;vertical-align:middle;padding:8px 0;}
+        .input-field{
+          display:table-cell;
+          width:100%;
+          vertical-align:middle;
+          padding:8px 0;
+        }
+        .input-field.hidden{display:none;}
         .input-field paper-input,.input-field iron-autogrow-textarea{width:100%;}
         .button-cell{display:table-cell;width:48px;vertical-align:middle;}
         .button-cell iron-icon{color:var(--primary-text-color);}
@@ -166,15 +180,6 @@ export class TitleInfoEditor extends HTMLElement {
 
         #header{display:flex;align-items:center;gap:.5rem;margin-bottom:6px;}
         #header-text{font-size:1.2rem;font-weight:600;}
-        .permissions-panel{
-          width:100%;
-          margin:5px 0;
-          display:flex;
-          flex-direction:column;
-        }
-        .permissions-panel.iron-collapse-closed{
-          display:none;
-        }
         .cast-collapse-container{
           width:100%;
           height: 100%;
@@ -230,35 +235,35 @@ export class TitleInfoEditor extends HTMLElement {
             <div class="info-row">
               <div class="label">Id:</div>
               <div class="value-display" id="title-id-div"></div>
-              <div class="input-field"><paper-input id="title-id-input" no-label-float></paper-input></div>
+              <div class="input-field hidden"><paper-input id="title-id-input" no-label-float></paper-input></div>
               <div class="button-cell"><paper-icon-button id="edit-title-id-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
             <div class="info-row">
               <div class="label">Title:</div>
               <div class="value-display" id="title-name-div"></div>
-              <div class="input-field"><paper-input id="title-name-input" no-label-float></paper-input></div>
+              <div class="input-field hidden"><paper-input id="title-name-input" no-label-float></paper-input></div>
               <div class="button-cell"><paper-icon-button id="edit-title-name-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
             <div class="info-row">
               <div class="label" style="vertical-align:top;">Synopsis:</div>
               <div class="value-display" id="title-description-div" style="padding-bottom:10px;"></div>
-              <div class="input-field"><iron-autogrow-textarea id="title-description-input" no-label-float></iron-autogrow-textarea></div>
+              <div class="input-field hidden"><iron-autogrow-textarea id="title-description-input" no-label-float></iron-autogrow-textarea></div>
               <div class="button-cell"><paper-icon-button id="edit-title-description-btn" icon="editor:mode-edit" style="vertical-align:top;"></paper-icon-button></div>
             </div>
 
             <div class="info-row" id="title-year-row">
               <div class="label">Year:</div>
               <div class="value-display" id="title-year-div"></div>
-              <div class="input-field"><paper-input id="title-year-input" type="number" no-label-float></paper-input></div>
+              <div class="input-field hidden"><paper-input id="title-year-input" type="number" no-label-float></paper-input></div>
               <div class="button-cell"><paper-icon-button id="edit-title-year-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
             <div class="info-row">
               <div class="label">Type:</div>
               <div class="value-display" id="title-type-div"></div>
-              <div class="input-field">
+              <div class="input-field hidden">
                 <select id="title-type-select">
                   <option value="Movie">Movie</option>
                   <option value="TVSeries">TVSeries</option>
@@ -271,28 +276,28 @@ export class TitleInfoEditor extends HTMLElement {
             <div class="info-row" id="title-serie-row" style="display:${titleType !== "TVEpisode" ? "none" : "table-row"};">
               <div class="label">Serie:</div>
               <div class="value-display" id="title-serie-div"></div>
-              <div class="input-field"><paper-input id="title-serie-input" no-label-float></paper-input></div>
+              <div class="input-field hidden"><paper-input id="title-serie-input" no-label-float></paper-input></div>
               <div class="button-cell"><paper-icon-button id="edit-title-serie-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
             <div class="info-row" id="title-season-row" style="display:${titleType !== "TVEpisode" ? "none" : "table-row"};">
               <div class="label">Season:</div>
               <div class="value-display" id="title-season-div"></div>
-              <div class="input-field"><paper-input id="title-season-input" type="number" no-label-float></paper-input></div>
+              <div class="input-field hidden"><paper-input id="title-season-input" type="number" no-label-float></paper-input></div>
               <div class="button-cell"><paper-icon-button id="edit-title-season-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
             <div class="info-row" id="title-episode-row" style="display:${titleType !== "TVEpisode" ? "none" : "table-row"};">
               <div class="label">Episode:</div>
               <div class="value-display" id="title-episode-div"></div>
-              <div class="input-field"><paper-input id="title-episode-input" type="number" no-label-float></paper-input></div>
+              <div class="input-field hidden"><paper-input id="title-episode-input" type="number" no-label-float></paper-input></div>
               <div class="button-cell"><paper-icon-button id="edit-title-episode-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
             <div class="info-row">
               <div class="label">Genres:</div>
               <div class="value-display" id="title-genres-div"></div>
-              <div class="input-field"></div>
+              <div class="input-field hidden"></div>
               <div class="button-cell"></div>
             </div>
           </div>
@@ -364,10 +369,7 @@ export class TitleInfoEditor extends HTMLElement {
           </div>
         </div>
 
-        <iron-collapse id="collapse-panel" class="permissions-panel"></iron-collapse>
-
         <div class="action-div">
-        <paper-button id="edit-permissions-btn" title="Set who can edit this title information">Permissions</paper-button>
         <span style="flex-grow:1;"></span>
         <paper-button id="save-indexation-btn">Save</paper-button>
         <paper-button id="cancel-indexation-btn">Cancel</paper-button>
@@ -414,6 +416,7 @@ export class TitleInfoEditor extends HTMLElement {
 
     this._titleTypeDiv = $("#title-type-div");
     this._titleTypeSelect = $("#title-type-select");
+    this._titleTypeInputContainer = this._titleTypeSelect?.parentNode ?? null;
     this._editTitleTypeBtn = $("#edit-title-type-btn");
 
     this._titleSerieRow = $("#title-serie-row");
@@ -442,7 +445,6 @@ export class TitleInfoEditor extends HTMLElement {
     this._actorsTable = $("#actors-table");
     this._addActorsBtn = $("#add-actors-btn");
 
-    this._editPermissionsBtn = $("#edit-permissions-btn");
     this._collapsePanel = $("#collapse-panel");
     this._castCollapse = $("#cast-collapse");
     this._toggleCastBtn = $("#toggle-cast-btn");
@@ -502,6 +504,7 @@ export class TitleInfoEditor extends HTMLElement {
 
     if (this._editTitleTypeBtn && this._titleTypeSelect && this._titleTypeDiv) {
       this._editTitleTypeBtn.addEventListener("click", () => {
+        this._titleTypeInputContainer?.classList?.remove("hidden");
         this._titleTypeSelect.style.display = "table-cell";
         this._titleTypeDiv.style.display = "none";
       });
@@ -540,6 +543,18 @@ export class TitleInfoEditor extends HTMLElement {
 
     if (this._titleEpisodeDiv) this._titleEpisodeDiv.textContent = String(this._title.getEpisode());
     if (this._titleEpisodeInput) this._titleEpisodeInput.value = this._title.getEpisode();
+
+    this._resetEditableFieldState(this._titleIdDiv, this._titleIdInput);
+    this._resetEditableFieldState(this._titleNameDiv, this._titleNameInput);
+    this._resetEditableFieldState(this._titleDescriptionDiv, this._titleDescriptionInput);
+    this._resetEditableFieldState(this._titleYearDiv, this._titleYearInput);
+    this._resetEditableFieldState(this._titleSerieDiv, this._titleSerieInput);
+    this._resetEditableFieldState(this._titleSeasonDiv, this._titleSeasonInput);
+    this._resetEditableFieldState(this._titleEpisodeDiv, this._titleEpisodeInput);
+
+    this._titleTypeInputContainer?.classList?.add("hidden");
+    if (this._titleTypeSelect) this._titleTypeSelect.style.display = "none";
+    if (this._titleTypeDiv) this._titleTypeDiv.style.display = "table-cell";
 
     if (!this._titleGenresList && this._titleGenresDiv) {
       this._titleGenresList = new EditableStringList(this._title.getGenresList());
@@ -605,9 +620,14 @@ export class TitleInfoEditor extends HTMLElement {
   _setupEditableField(displayEl, inputEl, editBtn, setterName, inputType = "text", onSave) {
     if (!displayEl || !inputEl || !editBtn) return;
 
+    const inputContainer = inputEl.parentNode ?? inputEl;
+    const showInput = () => inputContainer?.classList?.remove("hidden");
+    const hideInput = () => inputContainer?.classList?.add("hidden");
+    hideInput();
+
     editBtn.addEventListener("click", () => {
       displayEl.style.display = "none";
-      (inputEl.parentNode ?? inputEl).style.display = "table-cell";
+      showInput();
       setTimeout(() => {
         const focusEl = inputEl?.textarea ?? inputEl?.inputElement?._inputElement ?? null;
         if (focusEl && focusEl.focus) {
@@ -633,7 +653,7 @@ export class TitleInfoEditor extends HTMLElement {
         this._title[setterName](valueToSet);
       }
 
-      (inputEl.parentNode ?? inputEl).style.display = "none";
+      hideInput();
       displayEl.style.display = "table-cell";
       onSave && onSave(newValue);
     };
@@ -644,10 +664,17 @@ export class TitleInfoEditor extends HTMLElement {
       else if (e.key === "Escape") {
         e.preventDefault();
         inputEl.value = displayEl.textContent;
-        (inputEl.parentNode ?? inputEl).style.display = "none";
+        hideInput();
         displayEl.style.display = "table-cell";
       }
     });
+  }
+
+  _resetEditableFieldState(displayEl, inputEl) {
+    if (!displayEl || !inputEl) return;
+    displayEl.style.display = "table-cell";
+    const inputContainer = inputEl.parentNode ?? inputEl;
+    inputContainer?.classList?.add("hidden");
   }
 
   _updateHeaderName(name) {
@@ -658,6 +685,7 @@ export class TitleInfoEditor extends HTMLElement {
     const selectedType = this._titleTypeSelect.options[this._titleTypeSelect.selectedIndex].value;
     this._titleTypeDiv.textContent = selectedType;
     this._titleTypeSelect.style.display = "none";
+    this._titleTypeInputContainer?.classList?.add("hidden");
     this._titleTypeDiv.style.display = "table-cell";
     if (this._title?.setType) this._title.setType(selectedType);
     this._updateEpisodeFieldsVisibility(selectedType);
@@ -670,12 +698,12 @@ export class TitleInfoEditor extends HTMLElement {
     if (this._titleSeasonRow) this._titleSeasonRow.style.display = isEpisode ? "table-row" : "none";
   }
 
+
   _initPermissionsManager() {
     const globule = this._title?.globule;
     if (!this._title || !globule) return;
 
     this._permissionManager = new PermissionsManager();
-    this._permissionManager.permissions = null;
     this._permissionManager.globule = globule;
     this._permissionManager.setPath(this._title.getId());
     this._permissionManager.setResourceType = "title_info";
@@ -734,9 +762,10 @@ export class TitleInfoEditor extends HTMLElement {
       this._titleYearInput, this._titleSerieInput, this._titleSeasonInput,
       this._titleEpisodeInput
     ].forEach((input) => {
-      if (input && input.style.display !== "none" && typeof input.blur === "function") {
-        input.blur();
-      }
+      if (!input || typeof input.blur !== "function") return;
+      const container = input.parentNode ?? input;
+      const isHidden = container?.classList?.contains("hidden");
+      if (!isHidden) input.blur();
     });
 
     if (this._titleTypeSelect && this._titleTypeSelect.style.display !== "none") {
@@ -812,7 +841,7 @@ export class TitleInfoEditor extends HTMLElement {
       personEditor.slot = slotName;
 
       personEditor.person = person;
-      personEditor.title = title;
+      personEditor.setTitleObject(title);
 
       personEditor.onremovefromcast = () => {
         personEditor.parentNode && personEditor.parentNode.removeChild(personEditor);

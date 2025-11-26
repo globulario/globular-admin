@@ -47,7 +47,7 @@ export class PersonEditor extends HTMLElement {
     this.attachShadow({ mode: 'open' });
 
     this._person = person;
-    this._titleInfo = title;
+    this.setTitleObject(title);
     this._uuid = `_${getUuidByString(person.getId())}`;
 
     this._renderInitialStructure();
@@ -101,7 +101,13 @@ export class PersonEditor extends HTMLElement {
         .info-row:last-child { border-bottom:none; }
         .label { display:table-cell; font-weight:500; padding-right:15px; min-width:120px; vertical-align:middle; padding:8px 0; white-space:nowrap; }
         .value-display { display:table-cell; width:100%; padding:8px 0; vertical-align:middle; }
-        .input-field { display:none; width:100%; padding:8px 0; vertical-align:middle; }
+        .input-field {
+          display:table-cell;
+          width:100%;
+          padding:8px 0;
+          vertical-align:middle;
+        }
+        .input-field.hidden { display:none; }
         .value-display a { color:var(--primary-text-color); }
         .value-display a:hover { text-decoration:underline; }
         .input-field paper-input, .input-field iron-autogrow-textarea {
@@ -134,49 +140,49 @@ export class PersonEditor extends HTMLElement {
               <div class="info-row">
                 <div class="label">Id:</div>
                 <div class="value-display" id="${this._uuid}-person-id-div"></div>
-                <div class="input-field"><paper-input id="${this._uuid}-person-id-input" no-label-float></paper-input></div>
+                <div class="input-field hidden"><paper-input id="${this._uuid}-person-id-input" no-label-float></paper-input></div>
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-id-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
 
               <div class="info-row">
                 <div class="label">Url:</div>
                 <div class="value-display" id="${this._uuid}-person-url-div"></div>
-                <div class="input-field"><paper-input id="${this._uuid}-person-url-input" no-label-float></paper-input></div>
+                <div class="input-field hidden"><paper-input id="${this._uuid}-person-url-input" no-label-float></paper-input></div>
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-url-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
 
               <div class="info-row">
                 <div class="label">Name:</div>
                 <div class="value-display" id="${this._uuid}-person-name-div"></div>
-                <div class="input-field"><paper-input id="${this._uuid}-person-name-input" no-label-float></paper-input></div>
+                <div class="input-field hidden"><paper-input id="${this._uuid}-person-name-input" no-label-float></paper-input></div>
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-name-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
 
               <div class="info-row">
                 <div class="label">Aliases:</div>
                 <div class="value-display" id="${this._uuid}-person-aliases-div"></div>
-                <div class="input-field"><paper-input id="${this._uuid}-person-aliases-input" no-label-float></paper-input></div>
+                <div class="input-field hidden"><paper-input id="${this._uuid}-person-aliases-input" no-label-float></paper-input></div>
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-aliases-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
 
               <div class="info-row">
                 <div class="label">Date of birth:</div>
                 <div class="value-display" id="${this._uuid}-person-birthdate-div"></div>
-                <div class="input-field"><paper-input id="${this._uuid}-person-birthdate-input" no-label-float></paper-input></div>
+                <div class="input-field hidden"><paper-input id="${this._uuid}-person-birthdate-input" no-label-float></paper-input></div>
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-birthdate-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
 
               <div class="info-row">
                 <div class="label">Place of birth:</div>
                 <div class="value-display" id="${this._uuid}-person-birthplace-div"></div>
-                <div class="input-field"><paper-input id="${this._uuid}-person-birthplace-input" no-label-float></paper-input></div>
+                <div class="input-field hidden"><paper-input id="${this._uuid}-person-birthplace-input" no-label-float></paper-input></div>
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-birthplace-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
 
               <div class="info-row">
                 <div class="label" style="vertical-align: top;">Biography:</div>
                 <div class="value-display" id="${this._uuid}-person-biography-div"></div>
-                <div class="input-field">
+                <div class="input-field hidden">
                   <iron-autogrow-textarea id="${this._uuid}-person-biography-input" style="border:none; width:100%;"></iron-autogrow-textarea>
                 </div>
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-biography-btn" icon="editor:mode-edit" style="vertical-align: top;"></paper-icon-button></div>
@@ -283,17 +289,30 @@ export class PersonEditor extends HTMLElement {
     try { decodedBio = decodedBio ? atob(decodedBio) : ""; } catch { decodedBio = this._person.getBiography(); }
     this._personBiographyDiv.textContent = decodedBio;
     this._personBiographyInput.value = decodedBio;
+
+    this._resetEditableFieldState(this._personIdDiv, this._personIdInput);
+    this._resetEditableFieldState(this._personUrlDiv, this._personUrlInput);
+    this._resetEditableFieldState(this._personNameDiv, this._personNameInput);
+    this._resetEditableFieldState(this._personAliasesDiv, this._personAliasesInput);
+    this._resetEditableFieldState(this._personBirthdateDiv, this._personBirthdateInput);
+    this._resetEditableFieldState(this._personBirthplaceDiv, this._personBirthplaceInput);
+    this._resetEditableFieldState(this._personBiographyDiv, this._personBiographyInput, 'textarea');
   }
 
   _setupEditableField(displayEl, inputEl, editBtn, setter, inputType = 'text', onSaveCb = null) {
     if (!displayEl || !inputEl || !editBtn) return;
 
+    const inputContainer = (inputType === 'textarea' ? inputEl.parentNode : inputEl.parentNode ?? inputEl);
+    const showInput = () => inputContainer?.classList?.remove("hidden");
+    const hideInput = () => inputContainer?.classList?.add("hidden");
+    hideInput();
+
     editBtn.addEventListener('click', () => {
       displayEl.style.display = 'none';
-      (inputType === 'textarea' ? inputEl.parentNode : inputEl).style.display = 'table-cell';
+      showInput();
       setTimeout(() => {
-        const focusEl = inputType === 'textarea' ? inputEl.textarea : inputEl.inputElement._inputElement;
-        if (focusEl) { focusEl.focus(); focusEl.select(); }
+        const focusEl = inputEl?.textarea ?? inputEl?.inputElement?._inputElement ?? null;
+        if (focusEl) { focusEl.focus(); focusEl.select && focusEl.select(); }
       }, 100);
     });
 
@@ -315,7 +334,7 @@ export class PersonEditor extends HTMLElement {
         this._person[setter](valueToSet);
       }
 
-      (inputType === 'textarea' ? inputEl.parentNode : inputEl).style.display = 'none';
+      hideInput();
       displayEl.style.display = 'table-cell';
       if (onSaveCb) onSaveCb(newValue);
     };
@@ -326,10 +345,32 @@ export class PersonEditor extends HTMLElement {
       else if (e.key === 'Escape') {
         e.preventDefault();
         inputEl.value = displayEl.textContent;
-        (inputType === 'textarea' ? inputEl.parentNode : inputEl).style.display = 'none';
+        hideInput();
         displayEl.style.display = 'table-cell';
       }
     });
+  }
+
+  _resetEditableFieldState(displayEl, inputEl, inputType = 'text') {
+    if (!displayEl || !inputEl) return;
+    displayEl.style.display = 'table-cell';
+    const inputContainer = (inputType === 'textarea' ? inputEl.parentNode : inputEl.parentNode ?? inputEl);
+    inputContainer?.classList?.add("hidden");
+  }
+
+  setTitleObject(title) {
+    if (this._titleInfo !== title) {
+      this._titleInfo = title;
+    }
+    return this;
+  }
+
+  getTitleObject() {
+    return this._titleInfo;
+  }
+
+  setTitle(title) {
+    return this.setTitleObject(title);
   }
 
   _updateHeaderText(newName) {
@@ -352,7 +393,10 @@ export class PersonEditor extends HTMLElement {
       this._personAliasesInput, this._personBirthdateInput, this._personBirthplaceInput,
       this._personBiographyInput
     ].forEach(input => {
-      if (input && input.style.display !== 'none') input.blur();
+      if (!input || typeof input.blur !== 'function') return;
+      const container = input.parentNode ?? input;
+      const isHidden = container?.classList?.contains('hidden');
+      if (!isHidden) input.blur();
     });
 
     this._person.setId(this._personIdInput.value);

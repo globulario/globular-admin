@@ -150,6 +150,33 @@ export async function getTitleInfo(
   return title;
 }
 
+export async function refreshTitleMetadata(
+  titleId: string
+): Promise<void> {
+  if (!titleId) throw new Error("Missing title ID for refresh.");
+
+  const base = getBaseUrl() ?? "";
+  const url = `${base.replace(/\/$/, "")}//api/refresh-title?id=${encodeURIComponent(titleId)}`;
+  const headers = await meta();
+  const reqHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(headers.token ? { token: headers.token, authorization: `Bearer ${headers.token}` } : {}),
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: reqHeaders,
+    body: JSON.stringify({ id: titleId }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `Refresh request failed (${res.status}): ${text ? text : res.statusText || ""}`
+    );
+  }
+}
+
 export async function getVideoInfo(
   id: string,
   indexPath = DEFAULT_INDEXES.videos
@@ -404,6 +431,10 @@ export function clearAllTitleCaches() {
   fileVideosCache.clear();
   fileAudiosCache.clear();
   imdbPending.clear();
+}
+
+export function invalidateTitleCache(titleId: string) {
+  if (titleId) titlesCache.delete(titleId);
 }
 
 /* =====================================================================================

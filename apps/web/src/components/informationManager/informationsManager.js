@@ -26,6 +26,8 @@ export class InformationsManager extends HTMLElement {
   // DOM refs
   _closeButton = null;
   _titleDiv = null;
+  _refreshButton = null;
+  _activeInfoComponent = null;
 
   static get observedAttributes() {
     return ["short"];
@@ -141,16 +143,20 @@ export class InformationsManager extends HTMLElement {
 
         .title-div {
           display: flex; flex-direction: row; gap: 10px; align-items: center;
+          justify-content: space-between;
           flex-grow: 1; color: var(--primary-text-color);
         }
-        .title-wrap { display:flex; flex-direction:column; }
+        .title-wrap { display:flex; flex-direction:column; flex:1; min-width:0; }
         .title-main-text { font-size: 1.55rem; font-weight: 700; margin: 0; }
         .title-sub-text { font-size: 1.1rem; color: var(--secondary-text-color); margin-top: 5px; }
       </style>
       <div id="container">
         <div id="header">
           <div class="title-div">
-            <!-- filled by _setHeader -->
+            <div class="title-wrap">
+              <!-- filled by _setHeader -->
+            </div>
+            <paper-icon-button id="title-refresh-button" icon="icons:refresh" title="Refresh title info" style="display:none;"></paper-icon-button>
           </div>
           <paper-icon-button id="close-button" icon="close"></paper-icon-button>
         </div>
@@ -162,11 +168,15 @@ export class InformationsManager extends HTMLElement {
   _cacheDom() {
     this._closeButton = this.shadowRoot.querySelector("#close-button");
     this._titleDiv = this.shadowRoot.querySelector(".title-div");
+    this._refreshButton = this.shadowRoot.querySelector("#title-refresh-button");
   }
 
   _bindDom() {
     if (this._closeButton) {
       this._closeButton.addEventListener("click", () => this._closeSelf());
+    }
+    if (this._refreshButton) {
+      this._refreshButton.addEventListener("click", () => this._handleTitleRefresh());
     }
   }
 
@@ -174,25 +184,61 @@ export class InformationsManager extends HTMLElement {
     if (this._closeButton) {
       this._closeButton.style.display = this._isShortMode ? "none" : "";
     }
+    if (this._refreshButton) {
+      this._updateRefreshButtonVisibility(this._activeInfoComponent);
+    }
+  }
+
+  _handleTitleRefresh() {
+    const cmp = this._activeInfoComponent;
+    if (!cmp || typeof cmp.refreshServerInfo !== "function") return;
+    if (this._refreshButton) this._refreshButton.disabled = true;
+
+    const refreshPromise = cmp.refreshServerInfo();
+    if (refreshPromise && typeof refreshPromise.then === "function") {
+      refreshPromise
+        .catch((err) => {
+          console.error("Title refresh failed:", err);
+        })
+        .finally(() => {
+          if (this._refreshButton) this._refreshButton.disabled = false;
+        });
+    } else if (this._refreshButton) {
+      this._refreshButton.disabled = false;
+    }
+  }
+
+  _updateRefreshButtonVisibility(component) {
+    if (!this._refreshButton) return;
+    const isTitleInfo =
+      component && component.tagName && component.tagName.toLowerCase() === "globular-title-info";
+    this._refreshButton.style.display =
+      isTitleInfo && !this._isShortMode ? "" : "none";
+    if (!isTitleInfo && this._refreshButton.disabled) {
+      this._refreshButton.disabled = false;
+    }
   }
 
   _setHeader(mainTitle, subTitle = "", icon = "") {
+    const wrapper = this._titleDiv?.querySelector(".title-wrap");
+    if (!wrapper) return;
     const iconHtml = icon
       ? `<iron-icon icon="${icon}" style="margin-right:4px;"></iron-icon>`
       : "";
-    this._titleDiv.innerHTML = `
+    wrapper.innerHTML = `
       ${iconHtml}
-      <div class="title-wrap">
-        <span class="title-main-text">${mainTitle || "Info"}</span>
-        ${subTitle ? `<span class="title-sub-text">${subTitle}</span>` : ""}
-      </div>
+      <span class="title-main-text">${mainTitle || "Info"}</span>
+      ${subTitle ? `<span class="title-sub-text">${subTitle}</span>` : ""}
     `;
   }
 
   _clearContent() {
     // Clear slotted children (host DOM) and header text
     this.innerHTML = "";
-    if (this._titleDiv) this._titleDiv.innerHTML = "";
+    const wrapper = this._titleDiv?.querySelector(".title-wrap");
+    if (wrapper) wrapper.innerHTML = "";
+    this._activeInfoComponent = null;
+    this._updateRefreshButtonVisibility(null);
   }
 
   _closeSelf() {
@@ -260,6 +306,19 @@ export class InformationsManager extends HTMLElement {
     component.ondelete = () => this._closeSelf();
 
     this.appendChild(component);
+    this._activeInfoComponent = component;
+    this._updateRefreshButtonVisibility(component);
+
+    if (component && component.tagName && component.tagName.toLowerCase() === "globular-title-info") {
+      component.addEventListener("title-refreshed", (evt) => {
+        const refreshedTitle = evt?.detail?.title;
+        if (refreshedTitle) {
+          const main = (refreshedTitle.getName && refreshedTitle.getName()) || "Title";
+          const sub = refreshedTitle.getYear ? String(refreshedTitle.getYear()) : "";
+          this._setHeader(main, sub, "av:movie");
+        }
+      });
+    }
   }
 
   /* -------------------------------------------------------------
@@ -346,13 +405,14 @@ export class InformationsManager extends HTMLElement {
 
     const name = (file.getName && file.getName()) || "File";
     // Custom header for file properties
-    this._titleDiv.innerHTML = `
-      <iron-icon icon="icons:info" style="margin-right: 10px;"></iron-icon>
-      <div class="title-wrap">
+    const wrapper = this._titleDiv?.querySelector(".title-wrap");
+    if (wrapper) {
+      wrapper.innerHTML = `
+        <iron-icon icon="icons:info" style="margin-right: 10px;"></iron-icon>
         <span class="title-main-text">${name}</span>
         <span class="title-sub-text" style="color: var(--secondary-text-color);">Properties</span>
-      </div>
-    `;
+      `;
+    }
 
     const cmp = new FileInfo();
     cmp.file = file;

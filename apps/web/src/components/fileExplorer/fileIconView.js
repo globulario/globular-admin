@@ -37,6 +37,13 @@ const ICON_FOR_KIND = {
   default: "icons:folder",
 };
 
+const IMDB_TITLE_URL_PATTERN = /^https:\/\/www\.imdb\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?title\/tt\d+/i;
+
+function isImdbTitleUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  return IMDB_TITLE_URL_PATTERN.test(url);
+}
+
 export class FileIconView extends HTMLElement {
   _file = null;
   _preview = null;
@@ -524,7 +531,7 @@ export class FileIconView extends HTMLElement {
     const domainDataTransfer = evt.dataTransfer.getData("domain");
     const urlDataTransfer = evt.dataTransfer.getData("Url");
 
-    if (urlDataTransfer && urlDataTransfer.startsWith("https://www.imdb.com/title")) {
+    if (isImdbTitleUrl(urlDataTransfer)) {
       this._viewContext?.setImdbTitleInfo?.(urlDataTransfer, this._file);
       return;
     }
@@ -570,7 +577,7 @@ export class FileIconView extends HTMLElement {
     if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
     evt._handledByFileIcon = true;
     const url = evt.dataTransfer.getData("Url");
-    if (url && url.startsWith("https://www.imdb.com/title")) {
+    if (isImdbTitleUrl(url)) {
       this._viewContext?.setImdbTitleInfo?.(url, this._file);
     }
   }

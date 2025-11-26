@@ -10,6 +10,8 @@ import '@polymer/paper-tabs/paper-tab.js';
 
 import { VideoPreview } from "../fileExplorer/videoPreview";
 import { TitleInfoEditor } from "./titleInformationsEditor";
+import { PersonEditor } from "./personEditor";
+import "./castPersonPanel.js";
 import { randomUUID } from "../utility";
 import { playAudio } from "../audio";
 import { playVideo } from "../video";
@@ -20,8 +22,12 @@ import {
   deleteTitle,
   dissociateFileWithTitle,
   getTitleFiles,
+  getTitleInfo,
   invalidateFileCaches,
-  searchTitles
+  invalidateTitleCache,
+  refreshTitleMetadata,
+  searchTitles,
+  updateTitleMetadata
 } from "../../backend/media/title";
 import { Backend } from "../../backend/backend";
 import { getToken } from "../../backend/core/session";
@@ -545,6 +551,7 @@ export class TitleInfo extends HTMLElement {
   _isShortMode = false;
   _ondelete = null;
   _listeners = {};
+  _refreshing = false;
 
   // DOM refs
   _titleDivContainer = null;
@@ -856,7 +863,7 @@ export class TitleInfo extends HTMLElement {
     if (this._ratingTotalDiv) this._ratingTotalDiv.textContent = this._title.getRatingcount();
 
     // People lists
-    const displayPersonsList = (listDiv, persons, titleDiv) => {
+    const displayPersonsList = (listDiv, persons, titleDiv, roleLabel) => {
       if (!listDiv) return;
       listDiv.innerHTML = "";
       if (persons && persons.length > 0) {
@@ -868,7 +875,7 @@ export class TitleInfo extends HTMLElement {
           lnk.id = `_${getUuidByString(p.getId())}`;
           lnk.addEventListener('click', (e) => {
             e.preventDefault();
-            this.showPersonEditor(p);
+            this._showCastPersonPanel(p, roleLabel);
           });
           listDiv.appendChild(lnk);
         });
@@ -877,9 +884,9 @@ export class TitleInfo extends HTMLElement {
         titleDiv.style.display = 'none';
       }
     };
-    displayPersonsList(this._directorsListDiv, this._title.getDirectorsList(), this.shadowRoot.querySelector("#title-directors-title"));
-    displayPersonsList(this._writersListDiv, this._title.getWritersList(), this.shadowRoot.querySelector("#title-writers-title"));
-    displayPersonsList(this._actorsListDiv, this._title.getActorsList(), this.shadowRoot.querySelector("#title-actors-title"));
+    displayPersonsList(this._directorsListDiv, this._title.getDirectorsList(), this.shadowRoot.querySelector("#title-directors-title"), "Director");
+    displayPersonsList(this._writersListDiv, this._title.getWritersList(), this.shadowRoot.querySelector("#title-writers-title"), "Writer");
+    displayPersonsList(this._actorsListDiv, this._title.getActorsList(), this.shadowRoot.querySelector("#title-actors-title"), "Actor");
 
     // Short mode toggles
     this._posterDiv.style.display = this._isShortMode ? "none" : "flex";
@@ -930,6 +937,19 @@ export class TitleInfo extends HTMLElement {
       document.body.appendChild(personEditor);
     }
     personEditor.focus();
+  }
+
+  _showCastPersonPanel(person, roleLabel = "Cast") {
+    if (!person) return;
+    let panel = document.body.querySelector("globular-cast-person-panel");
+    if (!panel) {
+      panel = document.createElement("globular-cast-person-panel");
+      document.body.appendChild(panel);
+    }
+    panel.setPerson(person, roleLabel, {
+      onEdit: () => this.showPersonEditor(person),
+    });
+    panel.open();
   }
 
   _handleEditClick() {
@@ -1015,7 +1035,52 @@ export class TitleInfo extends HTMLElement {
       } catch (err) {
         displayError(`Failed to delete title: ${err.message}`, 3000);
       }
-    });
+      });
+  }
+
+  async refreshServerInfo() {
+    if (!this._title) {
+      displayError("No title selected for refresh.", 3000);
+      return;
+    }
+    if (this._refreshing) {
+      displayMessage("Title refresh already in progress.", 2500);
+      return;
+    }
+
+    this._refreshing = true;
+    const titleId = this._title.getId();
+    if (!titleId) {
+      displayError("Cannot refresh title without an ID.", 3000);
+      this._refreshing = false;
+      return;
+    }
+
+    try {
+      await refreshTitleMetadata(titleId);
+      invalidateTitleCache(titleId);
+      const refreshed = await getTitleInfo(titleId);
+      if (!refreshed) {
+        throw new Error("Refresh response did not contain updated title data.");
+      }
+      await updateTitleMetadata(refreshed);
+      this._title = refreshed;
+      await this._renderTitleSpecificContent();
+      this._setupBackendSubscriptions();
+      this.dispatchEvent(
+        new CustomEvent("title-refreshed", {
+          detail: { title: refreshed },
+          bubbles: true,
+          composed: true,
+        })
+      );
+      displaySuccess(`"${refreshed.getName()}" metadata refreshed.`, 3000);
+    } catch (err) {
+      displayError(`Failed to refresh title info: ${err?.message || err}`, 4000);
+      throw err;
+    } finally {
+      this._refreshing = false;
+    }
   }
 
   _displayEpisodes(episodes, parentElement) {

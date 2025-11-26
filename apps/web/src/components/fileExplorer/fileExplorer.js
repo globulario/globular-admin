@@ -50,7 +50,7 @@ import { displayError, displayMessage } from "../../backend/ui/notify";
 
 // use session-driven account VM
 import { getCurrentAccount } from "../../backend/rbac/accounts";
-import { getFileAudiosInfo } from '../../backend/media/title';
+import { getFileAudiosInfo, clearAllTitleCaches, invalidateFileCaches } from '../../backend/media/title';
 import { FilesUploader } from './fileUploader';
 
 // ✅ helpers centralize VM/proto normalization
@@ -58,6 +58,27 @@ import { adaptFileVM, adaptDirVM, extractPath, mimeOf, pathOf, nameOf, thumbOf }
 
 function getElementIndex(element) {
   return Array.from(element.parentNode.children).indexOf(element);
+}
+
+function collectFilePaths(file, out = []) {
+  if (!file) return out;
+  if (!file.isDir && file.path) {
+    out.push(file.path);
+  }
+  if (Array.isArray(file.files)) {
+    file.files.forEach((child) => collectFilePaths(child, out));
+  }
+  return out;
+}
+
+function refreshDirectoryCaches(path, dirNode) {
+  if (!path || !dirNode) return;
+  clearAllTitleCaches();
+  const cache = getFilesCache();
+  cache?.invalidate(path);
+  if (dirNode.path && dirNode.path !== path) cache?.invalidate(dirNode.path);
+  const filePaths = collectFilePaths(dirNode);
+  filePaths.forEach((filePath) => invalidateFileCaches(filePath));
 }
 
 export class FileExplorer extends HTMLElement {
@@ -753,6 +774,9 @@ export class FileExplorer extends HTMLElement {
               dirVM = await this._buildPublicDirVM();
             } else {
               dirVM = await readDirFresh(path, true);
+            }
+            if (dirVM) {
+              refreshDirectoryCaches(path, dirVM);
             }
             if (this._fileNavigator?.reload) this._fileNavigator.reload(adaptDirVM(dirVM));
             if (dirVM.path === this._path) {

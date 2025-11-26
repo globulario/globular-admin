@@ -480,7 +480,7 @@ export class VideoInfoEditor extends HTMLElement {
       editor.slot = slotName;
 
       editor.person = person;
-      editor.title = video; // PersonEditor expects "title" context, we pass video
+      editor.setTitleObject(video); // PersonEditor expects "title" context, we pass video
 
       editor.onremovefromcast = () => {
         editor.parentNode && editor.parentNode.removeChild(editor);
