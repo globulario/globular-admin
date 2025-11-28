@@ -1198,7 +1198,7 @@ export class TitleInfo extends HTMLElement {
     let titleInfoBoxDialog = document.getElementById(`video-info-box-dialog-${title.getId()}`);
     if (!titleInfoBoxDialog) {
       const html = `
-        <paper-card id="video-info-box-dialog-${title.getId()}" style="background: var(--surface-color); border-top: 1px solid var(--surface-color); border-left: 1px solid var(--surface-color); z-index: 1001; position: fixed; top: 75px; left: 50%; transform: translate(-50%);">
+        <paper-card id="video-info-box-dialog-${title.getId()}" style="background: var(--surface-color); border-top: 1px solid var(--surface-color); border-left: 1px solid var(--surface-color); z-index: 1001; position: fixed; top: 75px; left: 50%; transform: translate(-50%); max-height: calc(100vh - 150px); overflow-y: auto; box-shadow: var(--shadow-elevation-8dp); border-radius: 8px; width: 90%; max-width: 800px;">
           <globular-informations-manager id="title-info-box"></globular-informations-manager>
         </paper-card>
       `;

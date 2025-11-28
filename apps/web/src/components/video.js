@@ -194,6 +194,10 @@ export class VideoPlayer extends HTMLElement {
     this.onMinimize = null
     this.onclose = null
     this.onplay = null
+    this._loadingOverlay = null
+    this._loadingOverlayLabel = null
+    this._dialogReady = false
+    this._loadingName = ''
 
     // refs
     this.skipPreviousBtn = null
@@ -257,11 +261,13 @@ export class VideoPlayer extends HTMLElement {
     this.container.getPreview = this.getPreview.bind(this)
     this.container.setBackGroundColor('black')
     this.container.onclick = (e) => e.stopPropagation()
+    this.container.style.display = 'none'
 
     this.titleSpan = this.shadowRoot.querySelector('#title-span')
     this.audioTrackSelector = this.shadowRoot.querySelector('#audio-track-selector')
     this.watchingMenu = this.shadowRoot.querySelector('globular-watching-menu')
     this.titleInfoButton = this.shadowRoot.querySelector('#title-info-button')
+    if (this.titleInfoButton) this.titleInfoButton.addEventListener('click', this._handleTitleInfoClick)
 
     // Hide watching menu if not logged
     if (!getAuthToken()) {
@@ -284,6 +290,29 @@ export class VideoPlayer extends HTMLElement {
 
     this.container.style.height = 'auto'
     this.container.name = 'video_player'
+  }
+
+  _handleVideoPlayError = (err) => {
+    if (!err) return
+    this._hideLoadingOverlay()
+    if (err.name === 'NotSupportedError') {
+      displayError(
+        "This video format is not supported by your browser. Try a different player or convert the file.",
+        4000
+      )
+      return
+    }
+    if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+      console.warn('Video playback failed:', err)
+    }
+  }
+
+  _playVideoElement = () => {
+    if (!this.videoElement) return
+    const promise = this.videoElement.play()
+    if (promise && typeof promise.catch === 'function') {
+      promise.catch(this._handleVideoPlayError)
+    }
   }
 
   async connectedCallback() {
@@ -376,6 +405,7 @@ export class VideoPlayer extends HTMLElement {
       const { width, height } = this._getFittedVideoSize()
       this.resize(width, height)
     }
+    this._finalizeVideoLoad()
     
     const subs = await getSubtitlesFiles(this.path)
 
@@ -439,6 +469,87 @@ export class VideoPlayer extends HTMLElement {
     if (this.isMinimized && this.container.setPreview) {
       this.container.setPreview(this.getPreview())
     }
+  }
+
+  _finalizeVideoLoad() {
+    if (this._dialogReady) return
+    this._dialogReady = true
+    if (!this.isMinimized && this.container) this.container.style.display = ''
+    this._hideLoadingOverlay()
+  }
+
+  _createLoadingOverlay() {
+    if (this._loadingOverlay || typeof document === 'undefined' || !document.body) return
+    const overlay = document.createElement('div')
+    overlay.id = 'globular-video-loading-overlay'
+    overlay.style.cssText =
+      'position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(0,0,0,.85);color:white;font-family:var(--font-family, "Segoe UI", Arial, sans-serif);z-index:2000;text-align:center;'
+    const style = document.createElement('style')
+    style.textContent = `
+      @keyframes globular-video-loading-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    `
+    const spinner = document.createElement('div')
+    spinner.style.cssText =
+      'width:48px;height:48px;border:4px solid rgba(255,255,255,0.25);border-top-color:white;border-radius:50%;animation:globular-video-loading-spin 1s linear infinite;'
+    const label = document.createElement('span')
+    overlay.appendChild(style)
+    overlay.appendChild(spinner)
+    overlay.appendChild(label)
+    document.body.appendChild(overlay)
+    this._loadingOverlay = overlay
+    this._loadingOverlayLabel = label
+  }
+
+  _showLoadingOverlay() {
+    this._createLoadingOverlay()
+    if (!this._loadingOverlay) return
+    this._loadingOverlay.style.display = 'flex'
+    if (this.container) this.container.style.display = 'none'
+    this._updateLoadingOverlayText()
+  }
+
+  _hideLoadingOverlay() {
+    if (!this._loadingOverlay) return
+    this._loadingOverlay.style.display = 'none'
+  }
+
+  _updateLoadingOverlayText() {
+    if (!this._loadingOverlayLabel) return
+    const title = this._loadingName || this._deriveInfoDisplayName()
+    this._loadingOverlayLabel.textContent = title ? `Loading ${title}…` : 'Loading video…'
+  }
+
+  _deriveInfoDisplayName() {
+    if (this.titleInfo) {
+      if (typeof this.titleInfo.getDescription === 'function') {
+        const desc = this.titleInfo.getDescription()
+        if (desc) return desc.replace(/<\/?br\s*\/?>/gi, ' ')
+      }
+      if (typeof this.titleInfo.getTitle === 'function') {
+        const title = this.titleInfo.getTitle()
+        if (title) return title
+      }
+      if (typeof this.titleInfo.getName === 'function') {
+        const name = this.titleInfo.getName()
+        if (name) return name
+      }
+      if (typeof this.titleInfo.getId === 'function') {
+        const id = this.titleInfo.getId()
+        if (id) return id
+      }
+    }
+    return ''
+  }
+
+  _getFileNameFromPath(path) {
+    if (!path) return ''
+    let clean = path
+    if (clean.endsWith('/playlist.m3u8')) clean = clean.substring(0, clean.lastIndexOf('/playlist.m3u8'))
+    const idx = clean.lastIndexOf('/')
+    return idx >= 0 ? clean.substring(idx + 1) : clean
   }
 
   // ---- helpers ----
@@ -624,7 +735,7 @@ export class VideoPlayer extends HTMLElement {
     let infoBox = document.getElementById('video-info-box-' + uuid)
     if (!infoBox) {
       const html = `
-        <paper-card id="video-info-box-dialog-${uuid}" style="background: var(--surface-color); z-index: 1001; position: fixed; top: 75px; left: 50%; transform: translate(-50%);">
+        <paper-card id="video-info-box-dialog-${uuid}" style="background: var(--surface-color); z-index: 1001; position: fixed; top: 75px; left: 50%; transform: translate(-50%); max-height: 80vh; overflow-y: auto;">
           <globular-informations-manager id="video-info-box-${uuid}"></globular-informations-manager>
         </paper-card>
       `
@@ -775,15 +886,18 @@ export class VideoPlayer extends HTMLElement {
 
     if (this.path === path && !this.videoElement.paused) {
       this.resume = true
-      this.videoElement.play()
+      this._playVideoElement()
       return
     } else if (this.path === path && this.videoElement.paused) {
       this.resume = true
-      this.videoElement.play()
+      this._playVideoElement()
       return
     } else {
       this.path = path
       this.resume = false
+      this._dialogReady = false
+      this._loadingName = this._getFileNameFromPath(path)
+      this._showLoadingOverlay()
     }
 
     try {
@@ -814,8 +928,6 @@ export class VideoPlayer extends HTMLElement {
 
     const fileName = path.substring(path.lastIndexOf('/') + 1).replace('/playlist.m3u8', '')
     this.titleSpan.innerHTML = fileName
-    if (!this.isMinimized) this.container.style.display = ''
-
     let info = this.titleInfo || null
     if (!info) {
       try {
@@ -844,6 +956,10 @@ export class VideoPlayer extends HTMLElement {
       }
     }
     this.titleInfo = info
+    if (this.titleSpan) {
+      this._loadingName = this.titleSpan.textContent || this._loadingName
+    }
+    this._updateLoadingOverlayText()
 
     if (this.titleInfo && this.titleInfo.getId) {
       const stored = localStorage.getItem(this.titleInfo.getId())
@@ -901,16 +1017,16 @@ export class VideoPlayer extends HTMLElement {
         this.hls.attachMedia(this.videoElement)
         this.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
           this.hls.loadSource(src)
-          this.hls.on(Hls.Events.MANIFEST_PARSED, () => this.videoElement.play())
+          this.hls.on(Hls.Events.MANIFEST_PARSED, () => this._playVideoElement())
         })
       } else {
         displayError('HLS is not supported in this browser for .m3u8 files.')
         this.videoElement.src = src
-        this.videoElement.play()
+        this._playVideoElement()
       }
     } else {
       this.videoElement.src = src
-      this.videoElement.play()
+      this._playVideoElement()
     }
 
     if (this.onplay && this.titleInfo) this.onplay(this.player, this.titleInfo)
@@ -939,6 +1055,8 @@ export class VideoPlayer extends HTMLElement {
   stop(save = true) {
     this.videoElement.pause()
     this.resized = false
+    this._dialogReady = false
+    this._hideLoadingOverlay()
 
     if (this.titleInfo && this.titleInfo.getId) {
       const payload = {

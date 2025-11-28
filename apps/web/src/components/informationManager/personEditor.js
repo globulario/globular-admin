@@ -324,7 +324,7 @@ export class PersonEditor extends HTMLElement {
         valueToSet = newValue.split(',').map(s => s.trim()).filter(Boolean);
         displayEl.textContent = valueToSet.join(", ");
       } else if (setter === 'setBiography') {
-        valueToSet = btoa(newValue);
+        valueToSet = this._encodeBiography(newValue);
         displayEl.textContent = newValue;
       } else {
         displayEl.textContent = newValue;
@@ -377,7 +377,21 @@ export class PersonEditor extends HTMLElement {
     if (this._headerTextDiv) this._headerTextDiv.textContent = newName;
   }
 
-  _encodeBiography(bio) { return btoa(bio); }
+  _encodeBiography(bio) {
+    const safe = bio == null ? "" : String(bio);
+    try {
+      if (typeof TextEncoder !== "undefined") {
+        const encoder = new TextEncoder();
+        const bytes = encoder.encode(safe);
+        let bin = "";
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+      }
+    } catch {
+      // fallback below
+    }
+    return btoa(unescape(encodeURIComponent(safe)));
+  }
 
   _handleCollapseToggle() {
     if (this._collapsePanel) {
@@ -402,7 +416,7 @@ export class PersonEditor extends HTMLElement {
     this._person.setId(this._personIdInput.value);
     this._person.setFullname(this._personNameInput.value);
     this._person.setUrl(this._personUrlInput.value);
-    this._person.setBiography(btoa(this._personBiographyInput.value));
+    this._person.setBiography(this._encodeBiography(this._personBiographyInput.value));
     if (this._imageSelector?.getImageUrl) this._person.setPicture(this._imageSelector.getImageUrl());
 
     const aliases = this._personAliasesInput.value.split(',').map(a => a.trim()).filter(Boolean);

@@ -128,7 +128,6 @@ export class InformationsManager extends HTMLElement {
           display: flex;
           width: 100%;
           flex-direction: column;
-          overflow: auto;
         }
         #header {
           display: flex; align-items: center;

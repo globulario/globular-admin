@@ -86,7 +86,7 @@ export async function uploadVideoByUrl(
   destDir: string,
   url: string,
   format: "mp4" | "mp3",
-  onMsg: (m: mediapb.UploadVideoResponse) => void
+  onMsg?: (m: mediapb.UploadVideoResponse) => void
 ): Promise<void> {
   const md = await meta();
   const rq = new mediapb.UploadVideoRequest();
@@ -94,7 +94,9 @@ export async function uploadVideoByUrl(
   rq.setUrl(url);
   rq.setFormat(format);
 
+  const msgHandler = typeof onMsg === "function" ? onMsg : () => {};
+
   await stream(clientFactory, "uploadVideo", rq, (m: any) => {
-    onMsg(m as mediapb.UploadVideoResponse);
+    msgHandler(m as mediapb.UploadVideoResponse);
   }, "media.MediaService", md);
 }

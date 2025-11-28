@@ -23,16 +23,24 @@ import { ImageSelector } from "../image.js";
 import {
   createOrUpdatePerson,
   createOrUpdateVideo,
+  getTitleFiles,
+  invalidateFileCaches,
   updateVideoMetadata,
 } from "../../backend/media/title"; // add `.js` if your bundler requires it
+import { Backend } from "../../backend/backend";
 
 export class VideoInfoEditor extends HTMLElement {
+  static FALLBACK_INDEX_PATHS = {
+    videos: "/search/videos",
+    persons: "/search/titles",
+  };
   _video = null;            // current Video proto
   _videoInfosDisplay = null;
   _permissionManager = null;
 
   // DOM refs
   _imageSelector = null;
+  _headerTextDiv = null;
 
   _publisherIdDiv = null; _publisherIdInput = null; _editPublisherIdBtn = null;
   _publisherUrlDiv = null; _publisherUrlInput = null; _editPublisherUrlBtn = null;
@@ -84,130 +92,272 @@ export class VideoInfoEditor extends HTMLElement {
   // ---------- Render ----------
   _renderInitialStructure() {
     const imageUrl = this._video?.getPoster?.() ? this._video.getPoster().getContenturl() : "";
-    let publisher = this._video?.getPublisherid?.();
-    if (!publisher) publisher = new Publisher();
 
     this.shadowRoot.innerHTML = `
       <style>
-        #container { display:flex; flex-wrap:wrap; margin:15px 0; padding:15px; box-sizing:border-box; }
-        .image-column { display:flex; flex-direction:column; justify-content:flex-start; margin-right:20px; align-items:center; flex-shrink:0; min-width:150px; }
-        .info-column { display:flex; flex-direction:column; flex-grow:1; min-width:300px; }
-        .info-table { display:table; width:100%; border-collapse:collapse; margin-top:20px; margin-bottom:10px; }
-        .info-row { display:table-row; border-bottom:1px solid var(--palette-divider); }
-        .info-row:last-child { border-bottom:none; }
-        .label { display:table-cell; font-weight:500; padding-right:15px; min-width:120px; vertical-align:middle; padding-top:8px; padding-bottom:8px; }
-        .value-display, .input-field { display:table-cell; width:100%; padding-top:8px; padding-bottom:8px; vertical-align:middle; }
-        .input-field paper-input, .input-field iron-autogrow-textarea {
+        #container {
+          display:flex;
+          flex-direction:column;
+          margin:15px 0;
+          padding:0 15px;
+          box-sizing:border-box;
+          height:100%;
+          min-height:0;
+        }
+        .content-scroll {
+          flex:1 1 auto;
+          min-height:0;
+          display:flex;
+          gap:20px;
+        }
+        .image-column {
+          display:flex;
+          flex-direction:column;
+          justify-content:flex-start;
+          margin-right:20px;
+          align-items:center;
+          flex-shrink:0;
+          min-width:150px;
+        }
+        .info-column {
+          display:flex;
+          flex-direction:column;
+          flex-grow:1;
+          min-width:300px;
+        }
+        .info-table {
+          display:table;
+          width:100%;
+          border-collapse:collapse;
+          margin-top:20px;
+          margin-bottom:10px;
+        }
+        .info-row {
+          display:table-row;
+          border-bottom:1px solid var(--palette-divider);
+        }
+        .info-row:last-child {
+          border-bottom:none;
+        }
+        .label {
+          display:table-cell;
+          font-weight:500;
+          padding-right:15px;
+          min-width:120px;
+          vertical-align:middle;
+          padding-top:8px;
+          padding-bottom:8px;
+        }
+        .value-display,
+        .input-field {
+          display:table-cell;
+          width:100%;
+          padding-top:8px;
+          padding-bottom:8px;
+          vertical-align:middle;
+        }
+        .input-field.hidden {
+          display:none;
+        }
+        .input-field paper-input,
+        .input-field iron-autogrow-textarea {
           width:100%;
           --paper-input-container-color:var(--primary-text-color);
           --paper-input-container-focus-color:var(--primary-color);
           --paper-input-container-label-floating-color:var(--primary-color);
           --paper-input-container-input-color:var(--primary-text-color);
         }
-        .button-cell { display:table-cell; width:48px; vertical-align:middle; }
-        .button-cell iron-icon { color:var(--primary-text-color); }
-        .button-cell iron-icon:hover { color:var(--primary-color); cursor:pointer; }
-        .action-div { display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--palette-divider); padding-top:15px; margin-top:20px; }
-        paper-button { background-color:var(--primary-color); color:var(--on-primary-color); padding:8px 16px; border-radius:4px; }
-        paper-button:hover { background-color:var(--primary-dark-color); }
-        .person-section-header { display:table-row; border-bottom:1px solid var(--palette-divider); margin-bottom:10px; }
-        .person-section-header .label { font-weight:500; font-size:1.1rem; padding-bottom:8px; }
-        .person-section-header .button-cell { position:relative; }
-        .person-list-table { display:table; width:100%; border-collapse:collapse; margin-left:20px; }
+        .button-cell {
+          display:table-cell;
+          width:48px;
+          vertical-align:middle;
+        }
+        .button-cell paper-icon-button {
+          height:32px;
+          width:32px;
+          padding:0;
+        }
+        .button-cell iron-icon {
+          color:var(--primary-text-color);
+        }
+        .button-cell iron-icon:hover {
+          color:var(--primary-color);
+          cursor:pointer;
+        }
+        .person-section-header {
+          display:flex;
+          align-items:center;
+          border-bottom:1px solid var(--palette-divider);
+          padding-bottom:8px;
+          margin-bottom:8px;
+        }
+        .person-section-header .label {
+          font-weight:500;
+          font-size:1.1rem;
+          padding:0;
+          margin-right:0.5rem;
+          flex:1;
+        }
+        .person-section-header .value-display {
+          flex:1;
+        }
+        .person-section-header .button-cell {
+          display:flex;
+          gap:8px;
+          align-items:center;
+          min-width:0;
+          position:relative;
+        }
+        .person-list-table {
+          display:flex;
+          width:100%;
+          flex-direction:column;
+          border-bottom:1px solid var(--palette-divider);
+          padding-bottom:10px;
+          margin-left:20px;
+          margin-bottom:10px;
+        }
+        #header {
+          display:flex;
+          align-items:center;
+          gap:.5rem;
+          margin-bottom:6px;
+        }
+        #header-text {
+          font-size:1.2rem;
+          font-weight:600;
+        }
+        .action-div {
+          display:flex;
+          justify-content:flex-end;
+          gap:10px;
+          border-top:1px solid var(--palette-divider);
+          padding:15px;
+          margin-top:20px;
+          position:sticky;
+          bottom:0;
+          z-index:2;
+          background:var(--surface-elevated-color, var(--surface-color));
+        }
+        paper-button {
+          background-color:var(--primary-color);
+          color:var(--on-primary-color);
+          padding:8px 16px;
+          border-radius:4px;
+        }
+        paper-button:hover {
+          background-color:var(--primary-dark-color);
+        }
+        select {
+          background:var(--surface-color);
+          color:var(--primary-text-color);
+          border:1px solid var(--palette-divider);
+          outline:0;
+          padding:8px;
+          border-radius:4px;
+          box-sizing:border-box;
+        }
+        select option {
+          background:var(--surface-color);
+          color:var(--primary-text-color);
+        }
       </style>
 
       <div id="container">
-        <div class="image-column">
-          <globular-image-selector label="Cover" url="${imageUrl}"></globular-image-selector>
+        <div id="header">
+          <div id="header-text">Video Information</div>
         </div>
 
-        <div class="info-column">
-          <!-- Publisher -->
-          <div class="info-table">
-            <div class="info-row" style="border-bottom:1px solid var(--palette-divider)">
-              <div class="label">Publisher</div>
-              <div class="value-display"></div>
-              <div class="button-cell"></div>
-            </div>
-            <div class="info-row">
-              <div class="label">Id:</div>
-              <div class="value-display" id="publisher-id-div"></div>
-              <div class="input-field"><paper-input id="publisher-id-input" no-label-float></paper-input></div>
-              <div class="button-cell"><paper-icon-button id="edit-publisher-id-btn" icon="image:edit"></paper-icon-button></div>
-            </div>
-            <div class="info-row">
-              <div class="label">Url:</div>
-              <div class="value-display" id="publisher-url-div"></div>
-              <div class="input-field"><paper-input id="publisher-url-input" no-label-float></paper-input></div>
-              <div class="button-cell"><paper-icon-button id="edit-publisher-url-btn" icon="image:edit"></paper-icon-button></div>
-            </div>
-            <div class="info-row">
-              <div class="label">Name:</div>
-              <div class="value-display" id="publisher-name-div"></div>
-              <div class="input-field"><paper-input id="publisher-name-input" no-label-float></paper-input></div>
-              <div class="button-cell"><paper-icon-button id="edit-publisher-name-btn" icon="image:edit"></paper-icon-button></div>
-            </div>
+        <div class="content-scroll">
+          <div class="image-column">
+            <globular-image-selector label="Cover" url="${imageUrl}"></globular-image-selector>
           </div>
 
-          <!-- Casting -->
-          <div class="person-list-table" id="casting-table">
-            <div class="person-section-header">
-              <div class="label">Casting</div>
-              <div class="value-display"></div>
-              <div class="button-cell">
-                <paper-icon-button id="add-casting-btn" icon="social:person-add" title="Add Casting"></paper-icon-button>
+          <div class="info-column">
+            <div class="info-table">
+              <div class="info-row" style="border-bottom:1px solid var(--palette-divider)">
+                <div class="label">Publisher</div>
+                <div class="value-display"></div>
+                <div class="button-cell"></div>
+              </div>
+              <div class="info-row">
+                <div class="label">Id:</div>
+                <div class="value-display" id="publisher-id-div"></div>
+                <div class="input-field hidden"><paper-input id="publisher-id-input" no-label-float></paper-input></div>
+                <div class="button-cell"><paper-icon-button id="edit-publisher-id-btn" icon="image:edit"></paper-icon-button></div>
+              </div>
+              <div class="info-row">
+                <div class="label">Url:</div>
+                <div class="value-display" id="publisher-url-div"></div>
+                <div class="input-field hidden"><paper-input id="publisher-url-input" no-label-float></paper-input></div>
+                <div class="button-cell"><paper-icon-button id="edit-publisher-url-btn" icon="image:edit"></paper-icon-button></div>
+              </div>
+              <div class="info-row">
+                <div class="label">Name:</div>
+                <div class="value-display" id="publisher-name-div"></div>
+                <div class="input-field hidden"><paper-input id="publisher-name-input" no-label-float></paper-input></div>
+                <div class="button-cell"><paper-icon-button id="edit-publisher-name-btn" icon="image:edit"></paper-icon-button></div>
               </div>
             </div>
-            <slot name="casting"></slot>
-          </div>
 
-          <!-- Video Info -->
-          <div class="info-table">
-            <div class="info-row" style="border-bottom:1px solid var(--palette-divider)">
-              <div class="label">Video Information</div>
-              <div class="value-display"></div>
-              <div class="button-cell"></div>
+            <div class="person-list-table" id="casting-table">
+              <div class="person-section-header">
+                <div class="label">Casting</div>
+                <div class="value-display"></div>
+                <div class="button-cell">
+                  <paper-icon-button id="add-casting-btn" icon="social:person-add" title="Add Casting"></paper-icon-button>
+                </div>
+              </div>
+              <slot name="casting"></slot>
             </div>
-            <div class="info-row">
-              <div class="label">Id:</div>
-              <div class="value-display" id="video-id-div"></div>
-              <div class="input-field"><paper-input id="video-id-input" no-label-float></paper-input></div>
-              <div class="button-cell"><paper-icon-button id="edit-video-id-btn" icon="image:edit"></paper-icon-button></div>
-            </div>
-            <div class="info-row">
-              <div class="label">URL:</div>
-              <div class="value-display" id="video-url-div"></div>
-              <div class="input-field"><paper-input id="video-url-input" no-label-float></paper-input></div>
-              <div class="button-cell"><paper-icon-button id="edit-video-url-btn" icon="image:edit"></paper-icon-button></div>
-            </div>
-            <div class="info-row">
-              <div class="label" style="vertical-align:top;">Description:</div>
-              <div class="value-display" id="video-description-div"></div>
-              <div class="input-field"><iron-autogrow-textarea id="video-description-input" no-label-float></iron-autogrow-textarea></div>
-              <div class="button-cell"><paper-icon-button id="edit-video-description-btn" icon="image:edit" style="vertical-align:top;"></paper-icon-button></div>
-            </div>
-            <div class="info-row">
-              <div class="label">Genres:</div>
-              <div class="value-display" id="video-genres-div"></div>
-              <div class="input-field"></div>
-              <div class="button-cell"></div>
-            </div>
-            <div class="info-row">
-              <div class="label">Tags:</div>
-              <div class="value-display" id="video-tags-div"></div>
-              <div class="input-field"></div>
-              <div class="button-cell"></div>
+
+            <div class="info-table">
+              <div class="info-row" style="border-bottom:1px solid var(--palette-divider)">
+                <div class="label">Video Information</div>
+                <div class="value-display"></div>
+                <div class="button-cell"></div>
+              </div>
+              <div class="info-row">
+                <div class="label">Id:</div>
+                <div class="value-display" id="video-id-div"></div>
+                <div class="input-field hidden"><paper-input id="video-id-input" no-label-float></paper-input></div>
+                <div class="button-cell"><paper-icon-button id="edit-video-id-btn" icon="image:edit"></paper-icon-button></div>
+              </div>
+              <div class="info-row">
+                <div class="label">URL:</div>
+                <div class="value-display" id="video-url-div"></div>
+                <div class="input-field hidden"><paper-input id="video-url-input" no-label-float></paper-input></div>
+                <div class="button-cell"><paper-icon-button id="edit-video-url-btn" icon="image:edit"></paper-icon-button></div>
+              </div>
+              <div class="info-row">
+                <div class="label" style="vertical-align:top;">Description:</div>
+                <div class="value-display" id="video-description-div"></div>
+                <div class="input-field hidden"><iron-autogrow-textarea id="video-description-input" no-label-float></iron-autogrow-textarea></div>
+                <div class="button-cell"><paper-icon-button id="edit-video-description-btn" icon="image:edit" style="vertical-align:top;"></paper-icon-button></div>
+              </div>
+              <div class="info-row">
+                <div class="label">Genres:</div>
+                <div class="value-display" id="video-genres-div"></div>
+                <div class="input-field hidden"></div>
+                <div class="button-cell"></div>
+              </div>
+              <div class="info-row">
+                <div class="label">Tags:</div>
+                <div class="value-display" id="video-tags-div"></div>
+                <div class="input-field hidden"></div>
+                <div class="button-cell"></div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <iron-collapse id="collapse-panel" class="permissions" style="display:flex; flex-direction:column; margin:5px;"></iron-collapse>
-      <div class="action-div">
-        <paper-button id="edit-permissions-btn" title="Set who can edit this video information">Permissions</paper-button>
-        <span style="flex-grow:1;"></span>
-        <paper-button id="save-indexation-btn">Save</paper-button>
-        <paper-button id="cancel-indexation-btn">Cancel</paper-button>
+        <iron-collapse id="collapse-panel" class="permissions" style="display:flex; flex-direction:column; margin:5px;"></iron-collapse>
+        <div class="action-div">
+          <paper-button id="edit-permissions-btn" title="Set who can edit this video information">Permissions</paper-button>
+          <span style="flex-grow:1;"></span>
+          <paper-button id="save-indexation-btn">Save</paper-button>
+          <paper-button id="cancel-indexation-btn">Cancel</paper-button>
+        </div>
       </div>
     `;
   }
@@ -217,6 +367,7 @@ export class VideoInfoEditor extends HTMLElement {
     const $ = (q) => this.shadowRoot.querySelector(q);
 
     this._imageSelector = $("globular-image-selector");
+    this._headerTextDiv = $("#header-text");
 
     this._publisherIdDiv = $("#publisher-id-div");
     this._publisherIdInput = $("#publisher-id-input");
@@ -260,6 +411,14 @@ export class VideoInfoEditor extends HTMLElement {
   _populateFields() {
     if (!this._video) return;
 
+    if (this._headerTextDiv) {
+      const headerText =
+        this._video.getDescription?.() ||
+        this._video.getId?.() ||
+        "Video Information";
+      this._headerTextDiv.textContent = headerText;
+    }
+
     // Poster
     if (this._imageSelector) {
       const url = this._video.getPoster?.() ? this._video.getPoster().getContenturl() : "";
@@ -274,22 +433,28 @@ export class VideoInfoEditor extends HTMLElement {
 
     this._publisherIdDiv.textContent = pubId;
     this._publisherIdInput.value = pubId;
+    this._resetEditableFieldState(this._publisherIdDiv, this._publisherIdInput);
 
     this._publisherUrlDiv.textContent = pubUrl;
     this._publisherUrlInput.value = pubUrl;
+    this._resetEditableFieldState(this._publisherUrlDiv, this._publisherUrlInput);
 
     this._publisherNameDiv.textContent = pubName;
     this._publisherNameInput.value = pubName;
+    this._resetEditableFieldState(this._publisherNameDiv, this._publisherNameInput);
 
     // Video Info
     this._videoIdDiv.textContent = this._video.getId?.() || "";
     this._videoIdInput.value = this._video.getId?.() || "";
+    this._resetEditableFieldState(this._videoIdDiv, this._videoIdInput);
 
     this._videoUrlDiv.textContent = this._video.getUrl?.() || "";
     this._videoUrlInput.value = this._video.getUrl?.() || "";
+    this._resetEditableFieldState(this._videoUrlDiv, this._videoUrlInput);
 
     this._videoDescriptionDiv.textContent = this._video.getDescription?.() || "";
     this._videoDescriptionInput.value = this._video.getDescription?.() || "";
+    this._resetEditableFieldState(this._videoDescriptionDiv, this._videoDescriptionInput);
 
     // Genres
     const genres = this._video.getGenresList?.() || [];
@@ -314,7 +479,7 @@ export class VideoInfoEditor extends HTMLElement {
     this._castingTable?.querySelectorAll("globular-person-editor").forEach(el => el.remove());
     if (!this._video) return;
     const list = this._video.getCastingList?.() || [];
-    list.forEach(p => this._appendPersonEditor(p, this._video, "casting"));
+    list.forEach(p => this._appendPersonEditor(p, "casting"));
   }
 
   // ---------- Events ----------
@@ -366,8 +531,8 @@ export class VideoInfoEditor extends HTMLElement {
   }
 
   async _handleSaveClick() {
-    if (!this._video || !this._video.globule) {
-      displayError("Video object or globule not set for saving.", 3000);
+    if (!this._video) {
+      displayError("Video object not set for saving.", 3000);
       return;
     }
 
@@ -376,11 +541,13 @@ export class VideoInfoEditor extends HTMLElement {
 
     try {
       // Save casting (persons)
-      await this._saveCasting(this._video, this._video.getCastingList?.() || []);
+      await this._saveCasting(this._video.getCastingList?.() || []);
 
       // Save video & metadata via helpers (title.ts)
-      await createOrUpdateVideo(this._video.globule, this._video);
-      await updateVideoMetadata(this._video.globule, this._video);
+      const videoIndexPath = this._getIndexPath("videos");
+      await createOrUpdateVideo(this._video, videoIndexPath);
+      await updateVideoMetadata(this._video, videoIndexPath);
+      await this._invalidateAssociatedFiles(this._video.getId?.(), "video", videoIndexPath);
 
       displaySuccess("Video Information updated successfully!", 3000);
 
@@ -399,44 +566,72 @@ export class VideoInfoEditor extends HTMLElement {
   _setupEditableField(displayEl, inputEl, editBtn, targetAndSetter, inputType = "text", onSave = null) {
     if (!displayEl || !inputEl || !editBtn) return;
 
+    const inputContainer = inputEl.parentNode ?? inputEl;
+    const showInput = () => inputContainer?.classList?.remove("hidden");
+    const hideInput = () => inputContainer?.classList?.add("hidden");
+    hideInput();
+
     editBtn.addEventListener("click", () => {
       displayEl.style.display = "none";
-      (inputType === "textarea" ? inputEl.parentNode : inputEl).style.display = "table-cell";
+      showInput();
       setTimeout(() => {
-        const focusEl = inputType === "textarea" ? inputEl.textarea : inputEl.inputElement?._inputElement;
-        if (focusEl) { focusEl.focus(); focusEl.select?.(); }
-      }, 100);
+        const focusEl =
+          inputEl?.textarea ??
+          inputEl?.inputElement?._inputElement ??
+          inputEl?.inputElement?.textarea ??
+          inputEl;
+        if (focusEl) {
+          focusEl.focus?.();
+          focusEl.select?.();
+        }
+      }, 50);
     });
 
     const commit = () => {
       const val = inputEl.value;
-      const [target, setter] = targetAndSetter.split(":"); // "publisher:setName" or "video:setUrl"
+      const [target, setter] = targetAndSetter.split(":");
 
       if (target === "publisher") {
         let pub = this._video.getPublisherid?.();
-        if (!pub) { pub = new Publisher(); this._video.setPublisherid(pub); }
+        if (!pub) {
+          pub = new Publisher();
+          this._video.setPublisherid(pub);
+        }
         pub[setter]?.(val);
       } else if (target === "video") {
-        this._video[setter]?.(inputType === "number" ? (parseInt(val) || 0) : val);
+        const newValue = inputType === "number" ? (parseInt(val, 10) || 0) : val;
+        this._video[setter]?.(newValue);
       }
 
       displayEl.textContent = val;
-      (inputType === "textarea" ? inputEl.parentNode : inputEl).style.display = "none";
+      hideInput();
       displayEl.style.display = "table-cell";
-
       onSave && onSave(val);
+    };
+
+    const revert = () => {
+      inputEl.value = displayEl.textContent || "";
+      hideInput();
+      displayEl.style.display = "table-cell";
     };
 
     inputEl.addEventListener("blur", commit);
     inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && inputType !== "textarea") { e.preventDefault(); commit(); }
-      else if (e.key === "Escape") {
+      if (e.key === "Enter" && inputType !== "textarea") {
         e.preventDefault();
-        inputEl.value = displayEl.textContent;
-        (inputType === "textarea" ? inputEl.parentNode : inputEl).style.display = "none";
-        displayEl.style.display = "table-cell";
+        commit();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        revert();
       }
     });
+  }
+
+  _resetEditableFieldState(displayEl, inputEl) {
+    if (!displayEl || !inputEl) return;
+    displayEl.style.display = "table-cell";
+    const inputContainer = inputEl.parentNode ?? inputEl;
+    inputContainer?.classList?.add("hidden");
   }
 
   _saveAllFieldsToVideoObject() {
@@ -455,11 +650,14 @@ export class VideoInfoEditor extends HTMLElement {
     if (this._videoTagsList?.getItems) this._video.setTagsList(this._videoTagsList.getItems());
   }
 
-  async _saveCasting(video, personList) {
+  async _saveCasting(personList) {
     const saved = [];
+    if (!Array.isArray(personList) || !personList.length) return saved;
+    const personIndexPath = this._getPersonIndexPath();
     for (const person of personList) {
+      this._syncPersonGlobule(person);
       try {
-        await createOrUpdatePerson(video.globule, person);
+        await createOrUpdatePerson(person, personIndexPath);
         saved.push(person);
       } catch (err) {
         console.error(`Failed to save person ${person.getFullname?.() || ""}:`, err);
@@ -468,8 +666,47 @@ export class VideoInfoEditor extends HTMLElement {
     return saved;
   }
 
-  _appendPersonEditor(person, video, slotName) {
-    person.globule = video.globule;
+  async _invalidateAssociatedFiles(infoId, infoType, indexPath) {
+    if (!infoId || !indexPath) return;
+    let filePaths = [];
+    try {
+      filePaths = await getTitleFiles(infoId, indexPath);
+    } catch (err) {
+      console.warn("VideoInfoEditor: failed to determine associated file paths", err);
+    }
+    filePaths.forEach((p) => invalidateFileCaches(p));
+    Backend.eventHub.publish(
+      `_invalidate_infos_${infoId}_evt`,
+      { infoType, filePaths },
+      true
+    );
+  }
+
+  _getIndexPath(kind = "videos") {
+    const dataPath = this._video?.globule?.config?.DataPath;
+    if (typeof dataPath === "string" && dataPath.trim().length > 0) {
+      const trimmed = dataPath.replace(/\/+$/, "");
+      return `${trimmed}/search/${kind}`;
+    }
+    return VideoInfoEditor.FALLBACK_INDEX_PATHS[kind] || VideoInfoEditor.FALLBACK_INDEX_PATHS.videos;
+  }
+
+  _getPersonIndexPath() {
+    return this._getIndexPath("persons");
+  }
+
+  _syncPersonGlobule(person) {
+    if (!person) return;
+    if (this._video?.globule) {
+      person.globule = this._video.globule;
+    } else {
+      delete person.globule;
+    }
+  }
+
+  _appendPersonEditor(person, slotName) {
+    if (!this._video) return null;
+    this._syncPersonGlobule(person);
 
     const editorId = `_person_editor_${getUuidByString((person.getId?.() || "") + slotName)}`;
     let editor = this.shadowRoot.querySelector(`#${editorId}`);
@@ -480,7 +717,7 @@ export class VideoInfoEditor extends HTMLElement {
       editor.slot = slotName;
 
       editor.person = person;
-      editor.setTitleObject(video); // PersonEditor expects "title" context, we pass video
+      editor.setTitleObject(this._video); // PersonEditor expects "title" context, we pass video
 
       editor.onremovefromcast = () => {
         editor.parentNode && editor.parentNode.removeChild(editor);
@@ -497,10 +734,12 @@ export class VideoInfoEditor extends HTMLElement {
   }
 
   _handleAddCastingClick() {
+    if (!this._video) return;
     const addCastingPanelId = "add-casting-panel";
     let panel = this.shadowRoot.querySelector(`#${addCastingPanelId}`);
     if (panel) return;
 
+    const personIndexPath = this._getPersonIndexPath();
     const html = `
       <style>
         #${addCastingPanelId} {
@@ -517,7 +756,7 @@ export class VideoInfoEditor extends HTMLElement {
         }
       </style>
       <paper-card id="${addCastingPanelId}">
-        <globular-search-person-input></globular-search-person-input>
+        <globular-search-person-input indexpath="${personIndexPath}"></globular-search-person-input>
         <div class="panel-actions">
           <paper-button id="new-person-btn" title="Create a new person">New</paper-button>
           <paper-button id="cancel-btn">Cancel</paper-button>
@@ -536,7 +775,7 @@ export class VideoInfoEditor extends HTMLElement {
     const cancelBtn = panel.querySelector("#cancel-btn");
 
     searchPersonInput.oneditperson = (person) => {
-      person.globule = this._video.globule;
+      this._syncPersonGlobule(person);
       const dialogId = `_person_editor_dialog_${getUuidByString(person.getId?.() || randomUUID())}`;
       let dialog = document.body.querySelector(`#${dialogId}`);
       if (!dialog) {
@@ -567,7 +806,7 @@ export class VideoInfoEditor extends HTMLElement {
     };
 
     searchPersonInput.onaddcasting = async (personToAdd) => {
-      personToAdd.globule = this._video.globule;
+      this._syncPersonGlobule(personToAdd);
 
       try {
         // Update Person: add this video ID in their casting list (if you model it that way)
@@ -578,14 +817,15 @@ export class VideoInfoEditor extends HTMLElement {
             personToAdd.setCastingList?.([...list, videoId]);
           }
         }
-        await createOrUpdatePerson(this._video.globule, personToAdd);
+        await createOrUpdatePerson(personToAdd, personIndexPath);
 
         // Update Video: add person if not already there
         const current = this._video.getCastingList?.() || [];
         if (!current.some(p => p.getId?.() === personToAdd.getId?.())) {
           this._video.setCastingList?.([...current, personToAdd]);
         }
-        await createOrUpdateVideo(this._video.globule, this._video);
+        const videoIndexPath = this._getIndexPath("videos");
+        await createOrUpdateVideo(this._video, videoIndexPath);
 
         displaySuccess(`${personToAdd.getFullname?.() || "Person"} added to casting.`, 3000);
         this._populatePersonEditors();
@@ -599,10 +839,10 @@ export class VideoInfoEditor extends HTMLElement {
       const p = new Person();
       p.setId?.(`New Person_${(randomUUID() || "").substring(0, 8)}`);
       p.setFullname?.("New Person");
-      p.globule = this._video.globule;
+      this._syncPersonGlobule(p);
 
-      const editor = this._appendPersonEditor(p, this._video, "casting");
-      editor.focus();
+      const editor = this._appendPersonEditor(p, "casting");
+      editor?.focus?.();
       panel.parentNode && panel.parentNode.removeChild(panel);
     };
 

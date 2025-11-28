@@ -2,6 +2,7 @@ import getUuidByString from "uuid-by-string";
 import { EditableStringList } from "../list";
 import { PermissionsManager } from "../permissionManager/permissionManager";
 import { displayError, displaySuccess } from "../../backend/ui/notify";
+import { Backend } from "../../backend/backend";
 
 import "@polymer/iron-icons/editor-icons.js";
 import "@polymer/paper-input/paper-input.js";
@@ -23,6 +24,8 @@ import { Person, Poster } from "globular-web-client/title/title_pb";
 import {
   createOrUpdatePerson,
   createOrUpdateTitle,
+  getTitleFiles,
+  invalidateFileCaches,
   updateTitleMetadata,
 } from "../../backend/media/title";
 
@@ -143,7 +146,7 @@ export class TitleInfoEditor extends HTMLElement {
         }
         .input-field.hidden{display:none;}
         .input-field paper-input,.input-field iron-autogrow-textarea{width:100%;}
-        .button-cell{display:table-cell;width:48px;vertical-align:middle;}
+        .button-cell{display:table-cell;width:48px;vertical-align:middle;position:relative;}
         .button-cell iron-icon{color:var(--primary-text-color);}
         .button-cell iron-icon:hover{color:var(--primary-color);cursor:pointer;}
 
@@ -798,6 +801,7 @@ export class TitleInfoEditor extends HTMLElement {
 
       // 3) Extra metadata (if your backend helper wants it separately)
       await updateTitleMetadata(this._title, indexPath);
+      await this._invalidateAssociatedFiles(this._title.getId?.(), "title", indexPath);
 
       displaySuccess("Title Information updated successfully!", 3000);
 
@@ -822,6 +826,22 @@ export class TitleInfoEditor extends HTMLElement {
         console.error(`Failed to save person ${person.getFullname?.() || person.getId?.()} (${roleSlot})`, err);
       }
     }
+  }
+
+  async _invalidateAssociatedFiles(infoId, infoType, indexPath) {
+    if (!infoId || !indexPath) return;
+    let filePaths = [];
+    try {
+      filePaths = await getTitleFiles(infoId, indexPath);
+    } catch (err) {
+      console.warn("TitleInfoEditor: failed to gather associated file paths for invalidation", err);
+    }
+    filePaths.forEach((p) => invalidateFileCaches(p));
+    Backend.eventHub.publish(
+      `_invalidate_infos_${infoId}_evt`,
+      { infoType, filePaths },
+      true
+    );
   }
 
   // ---------- People UI

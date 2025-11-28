@@ -2,6 +2,24 @@
   color-scheme: light dark;
 }
 
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scroll-track, var(--surface-color));
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb, var(--palette-divider));
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover, var(--palette-divider));
+}
+
+
 html,
 body {
   height: 100%;
@@ -237,6 +255,12 @@ globular-file-reader {
   border-radius: 50%;
   animation: spin 800ms linear infinite;
   vertical-align: -2px;
+}
+
+paper-card globular-informations-manager {
+  display: block;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb, var(--palette-divider)) var(--scroll-track, var(--surface-color));
 }
 
 @keyframes spin {

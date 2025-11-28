@@ -106,6 +106,8 @@ export class FileExplorer extends HTMLElement {
   _filesListBtn = undefined;
   _fileIconBtn = undefined;
   _fileUploaderBtn = undefined;
+  _fileUploaderBusy = false;
+  _fileUploaderVisible = false;
   _refreshBtn = undefined;
   _backNavigationBtn = undefined;
   _fowardNavigationBtn = undefined;
@@ -133,6 +135,7 @@ export class FileExplorer extends HTMLElement {
 
   // 🔧 NEW: track current delete-sub for info panel to avoid stacking
   _currentInfoDeleteSub = { event: null, uuid: null };
+  _currentInfoInvalidationSub = { event: null, uuid: null };
 
   constructor() {
     super();
@@ -606,6 +609,7 @@ export class FileExplorer extends HTMLElement {
     };
 
     this._sharePanel = null;
+    this._setUploaderVisibility(false);
   }
 
   _bindEventHandlers() {
@@ -666,10 +670,18 @@ export class FileExplorer extends HTMLElement {
           // display the files uploader if not already visible
           if (FileExplorer.fileUploader?.parentNode !== this._fileExplorerContent) {
             this._fileExplorerContent.appendChild(FileExplorer.fileUploader);
-            this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
+            this._setUploaderVisibility(true);
           }
         }
       }, false, this
+    );
+
+    Backend.eventHub.subscribe(
+      "__file_uploader_activity__",
+      (uuid) => { this._listeners["__file_uploader_activity__"] = uuid; },
+      (evt) => this._updateUploaderBusyState(evt?.active),
+      true,
+      this
     );
 
     Backend.eventHub.subscribe("follow_link_event_",
@@ -720,7 +732,7 @@ export class FileExplorer extends HTMLElement {
       true,
       this
     );
-    
+
     Backend.eventHub.subscribe(`update_globular_service_configuration_evt`,
       (uuid) => { this._listeners[`update_globular_service_configuration_evt`] = uuid; },
       () => { }, false, this
@@ -847,6 +859,20 @@ export class FileExplorer extends HTMLElement {
       }, true, this
     );
 
+    Backend.eventHub.subscribe(
+      "__file_uploader_close__",
+      (uuid) => { this._listeners["__file_uploader_close__"] = uuid },
+      () => {
+        // Only act if *this* explorer is the one hosting the uploader
+        if (FileExplorer.fileUploader?.parentNode === this._fileExplorerContent) {
+          this._fileExplorerContent.removeChild(FileExplorer.fileUploader)
+          this._setUploaderVisibility(false) // updates icon color + internal flag
+        }
+      },
+      true,
+      this
+    )
+    
     Backend.eventHub.subscribe("__refresh_media_request__",
       (uuid) => { this._listeners["__refresh_media_request__"] = uuid; },
       async (evt) => {
@@ -874,7 +900,7 @@ export class FileExplorer extends HTMLElement {
         const format = evt?.format || "mp4";
         if (!path || !url) return;
         try {
-          await uploadVideoByUrl(path, url, format === "mp3" ? "mp3" : "mp4", () => {});
+          await uploadVideoByUrl(path, url, format === "mp3" ? "mp3" : "mp4", () => { });
           displayMessage("Channel download request submitted.", 3000);
         } catch (err) {
           displayError(`Failed to download media from channel: ${err?.message || err}`, 3000);
@@ -1426,12 +1452,34 @@ export class FileExplorer extends HTMLElement {
 
     if (FileExplorer.fileUploader?.parentNode) {
       FileExplorer.fileUploader.parentNode.removeChild(FileExplorer.fileUploader);
-      this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
+      this._setUploaderVisibility(false);
     } else {
       this._fileExplorerContent.appendChild(FileExplorer.fileUploader);
-      this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
+      this._setUploaderVisibility(true);
     }
 
+  }
+
+  _setUploaderVisibility(visible) {
+    this._fileUploaderVisible = visible;
+    this._refreshUploaderIconColor();
+  }
+
+  _refreshUploaderIconColor() {
+    if (!this._fileUploaderBtn) return;
+    const color = this._fileUploaderBusy
+      ? "var(--palette-success, #4caf50)"
+      : this._fileUploaderVisible
+        ? "var(--palette-action-active)"
+        : "var(--palette-action-disabled)";
+    this._fileUploaderBtn.style.setProperty("--iron-icon-fill-color", color);
+    this._fileUploaderBtn.classList.toggle("active", this._fileUploaderVisible);
+  }
+
+  _updateUploaderBusyState(active) {
+    if (this._fileUploaderBusy === !!active) return;
+    this._fileUploaderBusy = !!active;
+    this._refreshUploaderIconColor();
   }
 
   _handleViewToggleClick(viewType, evt) {
@@ -2090,12 +2138,23 @@ export class FileExplorer extends HTMLElement {
 
   // ====== NEW: centralized info panel logic ======
 
+  _unsubscribeInfoInvalidation() {
+    const { event, uuid } = this._currentInfoInvalidationSub || {};
+    if (event && uuid) {
+      try {
+        Backend.eventHub.unsubscribe(event, uuid);
+      } catch {}
+    }
+    this._currentInfoInvalidationSub = { event: null, uuid: null };
+  }
+
   _unsubscribeInfoDelete() {
     const { event, uuid } = this._currentInfoDeleteSub || {};
     if (event && uuid) {
       try { Backend.eventHub.unsubscribe(event, uuid); } catch { }
     }
     this._currentInfoDeleteSub = { event: null, uuid: null };
+    this._unsubscribeInfoInvalidation();
   }
 
   _pruneDeletedInfoFromFile(file, infoId, arrKey) {
@@ -2125,6 +2184,13 @@ export class FileExplorer extends HTMLElement {
   }
 
   _removeInfoFromFiles(infoId, infoType = "title", filePaths = []) {
+    if (!infoId) return;
+    const arrKey = infoType === "audio" ? "audios" : infoType === "video" ? "videos" : "titles";
+    this._pruneDirInfo(this._currentDir, infoId, arrKey, filePaths);
+    this._pruneDirInfo(this._currentDirVM, infoId, arrKey, filePaths);
+  }
+
+  _invalidateInfoInFiles(infoId, infoType = "title", filePaths = []) {
     if (!infoId) return;
     const arrKey = infoType === "audio" ? "audios" : infoType === "video" ? "videos" : "titles";
     this._pruneDirInfo(this._currentDir, infoId, arrKey, filePaths);
@@ -2173,6 +2239,17 @@ export class FileExplorer extends HTMLElement {
           this._informationManager.style.display = "none";
           this._displayView(this._currentDir);
           this._unsubscribeInfoDelete();
+        },
+        true,
+        this
+      );
+      const invalidEvt = `_invalidate_infos_${infoId}_evt`;
+      Backend.eventHub.subscribe(
+        invalidEvt,
+        (uuid2) => { this._currentInfoInvalidationSub = { event: invalidEvt, uuid: uuid2 }; },
+        (evtData) => {
+          this._invalidateInfoInFiles(infoId, evtData?.infoType, evtData?.filePaths);
+          if (this._currentDir) this._displayView(this._currentDir);
         },
         true,
         this

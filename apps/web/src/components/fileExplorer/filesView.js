@@ -33,10 +33,10 @@ import {
   getImdbInfo,
 } from "../../backend/media/title";
 
-import { Title, Poster } from "globular-web-client/title/title_pb";
+import { Title, Poster, Video } from "globular-web-client/title/title_pb";
 
 import { getBaseUrl } from "../../backend/core/endpoints";
-import { getCoords, copyToClipboard } from "../utility.js";
+import { getCoords, copyToClipboard, randomUUID } from "../utility.js";
 
 // DRY helpers for proto/VM getters
 import {
@@ -1128,15 +1128,24 @@ export class FilesView extends HTMLElement {
   }
 
   async createTitleInformations(file) {
-    const p = pathOf(file);
+    const filePath = pathOf(file);
+    if (!filePath) {
+      throw new Error("Unable to determine the file path for creating title information.");
+    }
+
+    const fileName = nameOf(file) || "Untitled Title";
     const isSeries = isDirOf(file);
+    const titleMessage = new Title();
+    titleMessage.setId(`title-${randomUUID()}`);
+    titleMessage.setName(fileName);
+    titleMessage.setUrl(filePath);
+    titleMessage.setType(isSeries ? "TVSeries" : "Movie");
+    titleMessage.setUuid(randomUUID());
+
     try {
-      const created = await createTitleAndAssociate({
-        filePath: p,
-        titleType: isSeries ? "TVSeries" : undefined,
-      });
-      displayMessage(`Title info created for ${nameOf(file)}`, 2500);
-      return created;
+      await createTitleAndAssociate(filePath, titleMessage, "/search/titles");
+      displayMessage(`Title info created for ${fileName}`, 2500);
+      return titleMessage;
     } catch (err) {
       displayError(`Failed to create title info: ${err?.message || err}`, 3000);
       throw err;
@@ -1144,11 +1153,22 @@ export class FilesView extends HTMLElement {
   }
 
   async createVideoInformations(file) {
-    const p = pathOf(file);
+    const filePath = pathOf(file);
+    if (!filePath) {
+      throw new Error("Unable to determine the file path for creating video information.");
+    }
+
+    const fileName = nameOf(file) || "Untitled Video";
+    const videoMessage = new Video();
+    videoMessage.setId(`video-${randomUUID()}`);
+    videoMessage.setTitle(fileName);
+    videoMessage.setUrl(filePath);
+    videoMessage.setUuid(randomUUID());
+
     try {
-      const created = await createVideoAndAssociate({ filePath: p });
-      displayMessage(`Video info created for ${nameOf(file)}`, 2500);
-      return created;
+      await createVideoAndAssociate(filePath, videoMessage, "/search/videos");
+      displayMessage(`Video info created for ${fileName}`, 2500);
+      return videoMessage;
     } catch (err) {
       displayError(`Failed to create video info: ${err?.message || err}`, 3000);
       throw err;
@@ -1575,10 +1595,24 @@ export class FilesView extends HTMLElement {
         toast.hideToast();
         try {
           const format = mp3Radio.checked ? "mp3" : "mp4";
-          await uploadVideoByUrl(destDir, url, format);
+          let pid = -1;
+          await uploadVideoByUrl(destDir, url, format, (rsp) => {
+            if (rsp?.getPid?.() != null) pid = rsp.getPid();
+            Backend.eventHub.publish(
+              "__upload_link_event__",
+              {
+                pid,
+                path: destDir,
+                infos: rsp?.getResult?.() ?? "",
+                done: false,
+                lnk: lnkHtml
+              },
+              true
+            );
+          });
           Backend.eventHub.publish(
             "__upload_link_event__",
-            { path: destDir, infos: `Queued ${format} from URL`, done: true, lnk: lnkHtml },
+            { pid, path: destDir, infos: `Queued ${format} from URL`, done: true, lnk: lnkHtml },
             true
           );
           resolve();
