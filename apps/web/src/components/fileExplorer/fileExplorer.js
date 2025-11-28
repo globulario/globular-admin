@@ -763,14 +763,31 @@ export class FileExplorer extends HTMLElement {
     );
 
     // 🔧 Centralize info panel show logic
+    const unwrapPayload = (payload) => {
+      const isWrapper = payload && typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, "file");
+      const file = isWrapper ? payload.file : payload;
+      const view = isWrapper ? payload.view : undefined;
+      return { file, view };
+    };
+
     Backend.eventHub.subscribe(`display_media_infos_${explorerId}_event`,
       (uuid) => { this._listeners[`display_media_infos_${explorerId}_event`] = uuid; },
-      (file) => this._showInformation(file), false, this
+      (payload) => {
+        const { file, view } = unwrapPayload(payload);
+        this._showInformation(file, view);
+      },
+      false,
+      this
     );
 
     Backend.eventHub.subscribe(`display_file_infos_${explorerId}_event`,
       (uuid) => { this._listeners[`display_file_infos_${explorerId}_event`] = uuid; },
-      (file) => this._showInformation(file), false, this
+      (payload) => {
+        const { file } = unwrapPayload(payload);
+        this._showInformation(file, "file");
+      },
+      false,
+      this
     );
 
     Backend.eventHub.subscribe("reload_dir_event",
@@ -2197,11 +2214,18 @@ export class FileExplorer extends HTMLElement {
     this._pruneDirInfo(this._currentDirVM, infoId, arrKey, filePaths);
   }
 
-  _showInformation(file) {
+  _showInformation(file, forceView) {
     // Always clear before repopulating to avoid stale UI
     this._informationManager.clear?.();
 
     // Populate depending on payload shape
+    if (forceView === "file") {
+      this._informationManager.setFileInformation(file);
+      this._hideAllViewsExcept(this._informationManager);
+      this._closeAllGlobalMenus();
+      this._informationManager.style.display = "";
+      return;
+    }
     let infos = null;
     if (file?.titles?.length > 0) {
       this._informationManager.setTitlesInformation(file.titles);

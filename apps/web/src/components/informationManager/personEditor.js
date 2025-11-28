@@ -15,6 +15,26 @@ import {
   createOrUpdateVideo,
   deletePerson as deletePersonById,
 } from "../../backend/media/title";
+import { randomUUID } from "../utility";
+
+function getPersonCandidateId(person) {
+  if (!person) return "";
+  if (typeof person.getId === "function" && person.getId()) return person.getId();
+  if (typeof person.getUuid === "function" && person.getUuid()) return person.getUuid();
+  if (person.id) return person.id;
+  if (person.uuid) return person.uuid;
+  return "";
+}
+
+function personMatchesId(person, id) {
+  if (!id) return false;
+  return getPersonCandidateId(person) === id;
+}
+
+function derivePersonId(person) {
+  const candidate = getPersonCandidateId(person);
+  return candidate || randomUUID();
+}
 
 
 export class PersonEditor extends HTMLElement {
@@ -46,9 +66,10 @@ export class PersonEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
 
-    this._person = person;
+    this._person = person || new Person();
+    this._personId = derivePersonId(person);
     this.setTitleObject(title);
-    this._uuid = `_${getUuidByString(person.getId())}`;
+    this._uuid = `_${getUuidByString(this._personId)}`;
 
     this._renderInitialStructure();
     this._getDomReferences();
@@ -57,7 +78,7 @@ export class PersonEditor extends HTMLElement {
 
     // keep old subscription behavior
     Backend.eventHub.subscribe(
-      `delete_${this._person.getId()}_evt`,
+      `delete_${this._getEffectivePersonId()}_evt`,
       () => {},
       () => {
         if (this.parentNode) this.parentNode.removeChild(this);
@@ -68,8 +89,14 @@ export class PersonEditor extends HTMLElement {
   }
 
   _renderInitialStructure() {
-    const imageUrl = this._person.getPicture() || "";
-    let bio = this._person.getBiography();
+    const imageUrl =
+      typeof this._person.getPicture === "function"
+        ? this._person.getPicture() || ""
+        : this._person.picture || "";
+    let bio =
+      typeof this._person.getBiography === "function"
+        ? this._person.getBiography()
+        : this._person.biography;
     try { bio = bio ? atob(bio) : ""; } catch { bio = this._person.getBiography() || ""; }
 
     this.shadowRoot.innerHTML = `
@@ -267,8 +294,9 @@ export class PersonEditor extends HTMLElement {
     this._imageSelector.url = this._person.getPicture();
     this._headerTextDiv.textContent = this._person.getFullname();
 
-    this._personIdDiv.textContent = this._person.getId();
-    this._personIdInput.value = this._person.getId();
+    const effectiveId = this._getEffectivePersonId();
+    this._personIdDiv.textContent = effectiveId;
+    this._personIdInput.value = effectiveId;
 
     this._personUrlDiv.textContent = this._person.getUrl();
     this._personUrlInput.value = this._person.getUrl();
@@ -358,6 +386,10 @@ export class PersonEditor extends HTMLElement {
     inputContainer?.classList?.add("hidden");
   }
 
+  _getEffectivePersonId() {
+    return (this._person?.getId?.() || this._personId || "").toString();
+  }
+
   setTitleObject(title) {
     if (this._titleInfo !== title) {
       this._titleInfo = title;
@@ -440,6 +472,7 @@ export class PersonEditor extends HTMLElement {
 
     this._saveAllFieldsToPersonObject();
 
+    const effectiveId = this._getEffectivePersonId();
     try {
       // 1) Save person itself
       const personIndex = this._resolveIndexPath('titles'); // people live in titles index by default
@@ -457,7 +490,7 @@ export class PersonEditor extends HTMLElement {
           };
           const addPerson = (getter, setter) => {
             let arr = getter.call(this._titleInfo) || [];
-            if (!arr.some(p => p.getId() === this._person.getId())) arr = [...arr, this._person];
+            if (!arr.some((p) => personMatchesId(p, effectiveId))) arr = [...arr, this._person];
             setter.call(this._titleInfo, arr);
           };
 
@@ -520,9 +553,9 @@ export class PersonEditor extends HTMLElement {
       toast.hideToast();
       try {
         const personIndex = this._resolveIndexPath('titles');
-        await deletePersonById(this._person.getId(), personIndex);
+        await deletePersonById(this._getEffectivePersonId(), personIndex);
         displaySuccess(`${this._person.getFullname()} information was deleted!`, 3000);
-        Backend.eventHub.publish(`delete_${this._person.getId()}_evt`, {}, true);
+        Backend.eventHub.publish(`delete_${this._getEffectivePersonId()}_evt`, {}, true);
       } catch (err) {
         displayError(`Failed to delete person: ${err.message}`, 3000);
       }

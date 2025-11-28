@@ -5,6 +5,8 @@ import { displayError, displaySuccess, displayMessage} from "../../backend/ui/no
 import { VideoInfoEditor } from "./videoInformationsEditor.js";
 import getUuidByString from "uuid-by-string";
 import { getTitleFilePaths } from "./titleInfo.js";
+import { PersonEditor } from "./personEditor.js";
+import "./castPersonPanel.js";
 
 import "@polymer/paper-button/paper-button.js";
 import "@polymer/iron-icon/iron-icon.js";
@@ -15,7 +17,7 @@ import { deleteVideo as deleteVideoHelper, invalidateFileCaches } from "../../ba
 const VIDEO_INFO_GLOBAL_STYLE = `
 .title-div { display:flex; }
 .title-poster-div { padding-right:20px; }
-.title-informations-div { font-size:1em; min-width:350px; max-width:450px; }
+.title-informations-div { font-size:1em; min-width:350px; flex:1; }
 .title-poster-div img { max-width:320px; max-height:350px; object-fit:cover; width:auto; height:auto; }
 .title-genre-span { border:1px solid var(--palette-divider); padding:1px 5px; margin-right:5px; user-select:none; border-radius:4px; background-color:var(--surface-color-dark, var(--surface-elevated-color)); }
 .rating-star { --iron-icon-fill-color: rgb(245 197 24); padding-right:10px; height:30px; width:30px; }
@@ -85,20 +87,76 @@ export class VideoInfo extends HTMLElement {
   _renderInitialStructure() {
     this.shadowRoot.innerHTML = `
       <style>
+        :host {
+          display:flex;
+          flex-direction:column;
+          height:100%;
+          min-height:0;
+        }
         ${VIDEO_INFO_GLOBAL_STYLE}
-        .title-div { color:var(--primary-text-color); user-select:none; }
-        .action-div { display:flex; justify-content:flex-end; gap:10px; padding-top:15px; border-top:1px solid var(--palette-divider); margin-top:15px; }
-        paper-button { background-color:var(--primary-color); color:var(--on-primary-color); padding:8px 16px; border-radius:4px; }
-        paper-button:hover { background-color:var(--primary-dark-color); }
+        #content {
+          flex:1;
+          display:flex;
+          flex-direction:column;
+          overflow:hidden;
+        }
+        .title-div {
+          color:var(--primary-text-color);
+          user-select:none;
+          flex:1;
+          min-height:0;
+          display:flex;
+          overflow-y:auto;
+          gap:20px;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, rgba(120,120,120,0.7))
+                         var(--scroll-track, rgba(0,0,0,0.05));
+        }
+        .action-div {
+          display:flex;
+          justify-content:flex-end;
+          gap:10px;
+          padding:15px;
+          border-top:1px solid var(--palette-divider);
+        }
+        paper-button {
+          background-color:var(--primary-color);
+          color:var(--on-primary-color);
+          padding:8px 16px;
+          border-radius:4px;
+        }
+        paper-button:hover {
+          background-color:var(--primary-dark-color);
+        }
         @media only screen and (max-width: 600px) {
-          .title-div { flex-direction:column; max-height:calc(100vh - 300px); overflow-y:auto; overflow-x:hidden; }
-          .title-poster-img { max-width:256px; max-height:256px; }
+          .title-div {
+            flex-direction:column;
+            max-height:calc(100vh - 300px);
+            overflow-y:auto;
+            overflow-x:hidden;
+          }
+          .title-poster-img {
+            max-width:256px;
+            max-height:256px;
+          }
+        }
+
+        .title-synopsis-div {
+          max-height:500px;
+          min-width:600px;
+          overflow-y:auto;
+           overflow-x:hidden;
+          margin-bottom:10px;
+          line-height:1.4em;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, rgba(120,120,120,0.7))
+                         var(--scroll-track, rgba(0,0,0,0.05));
         }
       </style>
-      <div>
+      <div id="content">
         <div class="title-div">
           <div class="title-poster-div">
-            <img class="title-poster-img"></img>
+            <img class="title-poster-img" />
             <div class="title-files-div"></div>
           </div>
           <div class="title-informations-div">
@@ -118,10 +176,10 @@ export class VideoInfo extends HTMLElement {
             </div>
           </div>
         </div>
-        <div class="action-div">
-          <paper-button id="edit-indexation-btn">Edit</paper-button>
-          <paper-button id="delete-indexation-btn">Delete</paper-button>
-        </div>
+      </div>
+      <div class="action-div">
+        <paper-button id="edit-indexation-btn">Edit</paper-button>
+        <paper-button id="delete-indexation-btn">Delete</paper-button>
       </div>
     `;
   }
@@ -176,7 +234,7 @@ export class VideoInfo extends HTMLElement {
 
     // Casting
     const casting = typeof this._video.getCastingList === "function" ? this._video.getCastingList() : [];
-    this._displayPersonsList(this._actorsListDiv, casting, this._actorsTitleDiv);
+    this._displayPersonsList(this._actorsListDiv, casting, this._actorsTitleDiv, "Actor");
     if (casting.length === 0 && this._actorsTitleDiv?.parentNode) {
       this._actorsTitleDiv.parentNode.style.display = "none";
     } else if (this._actorsTitleDiv?.parentNode) {
@@ -230,23 +288,66 @@ export class VideoInfo extends HTMLElement {
     `;
   }
 
-  _displayPersonsList(listDiv, persons, titleDiv = null) {
+  _displayPersonsList(listDiv, persons, titleDiv = null, roleLabel = "Cast") {
     if (!listDiv) return;
     listDiv.innerHTML = "";
 
     if (persons && persons.length > 0) {
       persons.forEach((p) => {
-        const a = document.createElement("a");
-        a.href = p.getUrl?.() || "#";
-        a.textContent = p.getFullname?.() || "";
-        a.target = "_blank";
-        a.id = `_${getUuidByString(p.getId?.() || a.textContent)}`;
-        listDiv.appendChild(a);
+    const a = document.createElement("a");
+    a.href = "#";
+    a.textContent = p.getFullname?.() || "";
+    a.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      this._showCastPersonPanel(p, roleLabel);
+    });
+    a.id = `_${getUuidByString(
+      p.getId?.() || a.textContent || Math.random().toString()
+    )}`;
+    listDiv.appendChild(a);
       });
       if (titleDiv) titleDiv.style.display = "block";
     } else {
       if (titleDiv) titleDiv.style.display = "none";
     }
+  }
+
+  showPersonEditor(person) {
+    if (!person) return;
+    const personEditor = new PersonEditor(person, this._video);
+    const parent = this.parentNode;
+
+    if (parent) {
+      parent.removeChild(this);
+      parent.appendChild(personEditor);
+
+      personEditor.onclose = () => {
+        if (parent) {
+          parent.removeChild(personEditor);
+          parent.appendChild(this);
+          this._renderVideoContent();
+        }
+      };
+      personEditor.onremovefromcast = (_removedPerson) => {
+        this._renderVideoContent();
+      };
+    } else {
+      document.body.appendChild(personEditor);
+    }
+    personEditor.focus();
+  }
+
+  _showCastPersonPanel(person, roleLabel = "Cast") {
+    if (!person) return;
+    let panel = document.body.querySelector("globular-cast-person-panel");
+    if (!panel) {
+      panel = document.createElement("globular-cast-person-panel");
+      document.body.appendChild(panel);
+    }
+    panel.setPerson(person, roleLabel, {
+      onEdit: () => this.showPersonEditor(person),
+    });
+    panel.open();
   }
 
   _updateButtonVisibility() {

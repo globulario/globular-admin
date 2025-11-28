@@ -227,13 +227,22 @@ export class VideoInfoEditor extends HTMLElement {
           font-size:1.2rem;
           font-weight:600;
         }
+        #content {
+          flex:1;
+          display:flex;
+          flex-direction:column;
+          overflow-y:auto;
+          overflow-x:hidden;
+          min-height:0;
+          gap:10px;
+        }
         .action-div {
           display:flex;
           justify-content:flex-end;
           gap:10px;
           border-top:1px solid var(--palette-divider);
           padding:15px;
-          margin-top:20px;
+          margin-top:auto;
           position:sticky;
           bottom:0;
           z-index:2;
@@ -264,14 +273,15 @@ export class VideoInfoEditor extends HTMLElement {
       </style>
 
       <div id="container">
-        <div id="header">
-          <div id="header-text">Video Information</div>
-        </div>
-
-        <div class="content-scroll">
-          <div class="image-column">
-            <globular-image-selector label="Cover" url="${imageUrl}"></globular-image-selector>
+        <div id="content">
+          <div id="header">
+            <div id="header-text">Video Information</div>
           </div>
+      
+          <div class="content-scroll">
+            <div class="image-column">
+              <globular-image-selector label="Cover" url="${imageUrl}"></globular-image-selector>
+            </div>
 
           <div class="info-column">
             <div class="info-table">
@@ -350,8 +360,9 @@ export class VideoInfoEditor extends HTMLElement {
             </div>
           </div>
         </div>
+          <iron-collapse id="collapse-panel" class="permissions" style="display:flex; flex-direction:column; margin:5px;"></iron-collapse>
+        </div>
 
-        <iron-collapse id="collapse-panel" class="permissions" style="display:flex; flex-direction:column; margin:5px;"></iron-collapse>
         <div class="action-div">
           <paper-button id="edit-permissions-btn" title="Set who can edit this video information">Permissions</paper-button>
           <span style="flex-grow:1;"></span>
@@ -413,7 +424,9 @@ export class VideoInfoEditor extends HTMLElement {
 
     if (this._headerTextDiv) {
       const headerText =
-        this._video.getDescription?.() ||
+        this._video.getTitle?.() ||
+        this._video.getName?.() ||
+        this._video.getDescription?.()?.split(/\r?\n/)[0]?.trim() ||
         this._video.getId?.() ||
         "Video Information";
       this._headerTextDiv.textContent = headerText;
@@ -712,12 +725,14 @@ export class VideoInfoEditor extends HTMLElement {
     let editor = this.shadowRoot.querySelector(`#${editorId}`);
 
     if (!editor) {
-      editor = document.createElement("globular-person-editor");
+      editor = new PersonEditor(person, this._video)// document.createElement("globular-person-editor");
       editor.id = editorId;
       editor.slot = slotName;
 
       editor.person = person;
-      editor.setTitleObject(this._video); // PersonEditor expects "title" context, we pass video
+      if (typeof editor.setTitleObject === "function") {
+        editor.setTitleObject(this._video);
+      }
 
       editor.onremovefromcast = () => {
         editor.parentNode && editor.parentNode.removeChild(editor);
@@ -823,6 +838,7 @@ export class VideoInfoEditor extends HTMLElement {
         const current = this._video.getCastingList?.() || [];
         if (!current.some(p => p.getId?.() === personToAdd.getId?.())) {
           this._video.setCastingList?.([...current, personToAdd]);
+          this._populatePersonEditors();
         }
         const videoIndexPath = this._getIndexPath("videos");
         await createOrUpdateVideo(this._video, videoIndexPath);

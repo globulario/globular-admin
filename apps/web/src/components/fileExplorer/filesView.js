@@ -946,7 +946,7 @@ export class FilesView extends HTMLElement {
     if (this._fileExplorer && this._contextMenu.file) {
       Backend.eventHub.publish(
         `display_file_infos_${this._fileExplorer.id}_event`,
-        this._contextMenu.file,
+        { file: this._contextMenu.file, view: "file" },
         true
       );
     }
