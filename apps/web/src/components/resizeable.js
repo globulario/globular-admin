@@ -11,7 +11,7 @@ export function fireResize() {
  * @param {number}      zIndex     Z-index for the resize handles.
  * @param {number}      headerHeight Height to subtract from vertical drag (e.g., header).
  */
-export function setResizeable(div, onresize, side = 'right', zIndex = 100, headerHeight = 0) {
+export function setResizeable(div, onresize, side = 'right', zIndex = 100, headerHeight = 0, options = {}) {
   if (!(div instanceof HTMLElement)) {
     console.error('The first argument must be an HTMLElement.');
     return;
@@ -25,6 +25,8 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
 
   const name = div.getAttribute('name') || '';
   const isMobile = () => window.innerWidth < 500;
+  const allowHorizontal = options.horizontal ?? true;
+  const allowVertical = options.vertical ?? true;
 
   // Use explicit numeric properties if you set them on `div`, otherwise fallback to CSS or default.
   const cssMinW = parseInt(getComputedStyle(div).minWidth || '', 10);
@@ -135,25 +137,32 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
   };
 
   // Vertical edge for width
-  const widthHandle = createHandle(
-    'resize-width-handle',
-    { top: '0px', bottom: '5px', width: '5px', [side]: '-1px' },
-    'ew-resize'
-  );
+  const widthHandle = allowHorizontal
+    ? createHandle(
+        'resize-width-handle',
+        { top: '0px', bottom: '5px', width: '5px', [side]: '-1px' },
+        'ew-resize'
+      )
+    : null;
 
   // Horizontal edge for height
-  const heightHandle = createHandle(
-    'resize-height-handle',
-    { left: '0px', right: '5px', height: '5px', bottom: '-1px' },
-    'ns-resize'
-  );
+  const heightHandle = allowVertical
+    ? createHandle(
+        'resize-height-handle',
+        { left: '0px', right: '5px', height: '5px', bottom: '-1px' },
+        'ns-resize'
+      )
+    : null;
 
   // Corner (both)
-  const cornerHandle = createHandle(
-    'resize-corner-handle',
-    { bottom: '-1px', height: '10px', width: '10px', [side]: '-1px' },
-    'nwse-resize'
-  );
+  const cornerHandle =
+    allowHorizontal && allowVertical
+      ? createHandle(
+          'resize-corner-handle',
+          { bottom: '-1px', height: '10px', width: '10px', [side]: '-1px' },
+          'nwse-resize'
+        )
+      : null;
 
   // ---------- 4) Pointer listeners (Shadow DOM-safe) ----------
   const root = div.getRootNode();
@@ -232,9 +241,9 @@ export function setResizeable(div, onresize, side = 'right', zIndex = 100, heade
   const handlePointerDown = (e) => {
     // Use composedPath so events crossing shadow boundaries still find the handle.
     const path = e.composedPath?.() || [];
-    const hitWidth  = path.includes(widthHandle);
-    const hitHeight = path.includes(heightHandle);
-    const hitCorner = path.includes(cornerHandle);
+    const hitWidth  = widthHandle ? path.includes(widthHandle) : false;
+    const hitHeight = heightHandle ? path.includes(heightHandle) : false;
+    const hitCorner = cornerHandle ? path.includes(cornerHandle) : false;
     if (!hitWidth && !hitHeight && !hitCorner) return;
 
     e.preventDefault();

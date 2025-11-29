@@ -273,6 +273,7 @@ export class VideoPlayer extends HTMLElement {
     this.container.setBackGroundColor('black')
     this.container.onclick = (e) => e.stopPropagation()
     this.container.style.display = 'none'
+    this.container.setAttribute('resize-direction', 'horizontal')
 
     this.titleSpan = this.shadowRoot.querySelector('#title-span')
     this.audioTrackSelector = this.shadowRoot.querySelector('#audio-track-selector')
@@ -395,7 +396,7 @@ export class VideoPlayer extends HTMLElement {
     if (dim) {
       const { width, height } = JSON.parse(dim)
       if (this.container.setWidth) this.container.setWidth(width)
-      if (this.container.setHeight) this.container.setHeight(height)
+      if (this.container.setHeight) this.container.style.height = "auto"
     }
   }
 
@@ -1181,29 +1182,120 @@ export class VideoPlayer extends HTMLElement {
     }
   }
 
-  resize(w) {
-    if (this.isMinimized) return;
+resize(w) {
+  if (this.isMinimized) return;
 
-    const calculatedWidth = this._resolveResizeWidth(w);
-    if (!calculatedWidth || isNaN(calculatedWidth) || calculatedWidth <= 0) return;
+  // Need intrinsic video size to keep aspect ratio
+  const videoW = this.videoElement?.videoWidth;
+  const videoH = this.videoElement?.videoHeight;
+  if (!videoW || !videoH) return;
 
-    this.resized = true;
+  const calculatedWidth = this._resolveResizeWidth(w);
+  if (!calculatedWidth || isNaN(calculatedWidth) || calculatedWidth <= 0) return;
 
-    const maxWidth = Math.max(window.innerWidth * 0.95, 360);
-    const widthToApply = Math.min(calculatedWidth, maxWidth);
+  this.resized = true;
 
-    if (this.container.setWidth) this.container.setWidth(widthToApply);
-
-    const ratio = (this.videoElement?.videoWidth && this.videoElement?.videoHeight)
-      ? this.videoElement.videoHeight / this.videoElement.videoWidth
-      : 9 / 16;
-    const HEADER_OFFSET = 48;
-    const videoHeight = Math.round(widthToApply * ratio);
-    const maxHeight = Math.max(window.innerHeight * 0.95, 360);
-    const heightToApply = Math.min(videoHeight + HEADER_OFFSET, maxHeight);
-    if (this.container.setHeight) this.container.setHeight(heightToApply);
-
+  // --- Playlist width (if visible) ---
+  let playlistWidth = 0;
+  try {
+    if (this._playlistIsVisible && this._playlistIsVisible()) {
+      playlistWidth =
+        (this._getPlaylistWidth && this._getPlaylistWidth()) ||
+        this.playlist?.offsetWidth ||
+        0;
+    }
+  } catch {
+    // best-effort only
   }
+
+  // Avoid negative space for the video
+  playlistWidth = Math.max(0, playlistWidth);
+
+  // Viewport max for the *whole* dialog
+  const viewportMaxContainerWidth = window.innerWidth * 0.95;
+
+  // Use the given width as "desired container width"
+  let desiredContainerWidth = calculatedWidth;
+
+  // Don't let desired container be smaller than playlist alone
+  const minVideoWidth = 200; // arbitrary sane minimum
+  const minContainerWidth = playlistWidth + minVideoWidth;
+  if (desiredContainerWidth < minContainerWidth) {
+    desiredContainerWidth = minContainerWidth;
+  }
+
+  // Container can't exceed viewport
+  desiredContainerWidth = Math.min(desiredContainerWidth, viewportMaxContainerWidth);
+
+  // From the desired container width, derive desired video width
+  let desiredVideoWidth = desiredContainerWidth - playlistWidth;
+  if (desiredVideoWidth <= 0) return;
+
+  // Now enforce:
+  // - video width ≤ intrinsic video width
+  // - video width ≤ viewport after accounting for playlist
+  const maxVideoWidthByViewport = viewportMaxContainerWidth - playlistWidth;
+  const maxVideoWidthAllowed = Math.min(videoW, maxVideoWidthByViewport);
+
+  if (maxVideoWidthAllowed <= 0) return;
+
+  let videoWidthToApply = Math.min(desiredVideoWidth, maxVideoWidthAllowed);
+
+  // Final container width to apply
+  let containerWidthToApply = videoWidthToApply + playlistWidth;
+
+  // Apply the width
+  if (this.container && typeof this.container.setWidth === 'function') {
+    this.container.setWidth(containerWidthToApply);
+  } else {
+    this.style.width = containerWidthToApply + 'px';
+  }
+
+  // --- Keep aspect ratio for height ---
+  const ratio = videoH / videoW; // H/W
+  const HEADER_OFFSET = 48;
+
+  let videoHeight = Math.round(videoWidthToApply * ratio);
+
+  // Clamp total height to viewport
+  const viewportMaxHeight = window.innerHeight * 0.95;
+  const maxAllowedHeight = Math.max(viewportMaxHeight - HEADER_OFFSET, 200);
+
+  if (videoHeight > maxAllowedHeight) {
+    // Too tall: clamp by height and recompute video width
+    videoHeight = maxAllowedHeight;
+    videoWidthToApply = Math.round(videoHeight / ratio);
+
+    // Recalculate container width based on new video width
+    containerWidthToApply = videoWidthToApply + playlistWidth;
+
+    // Ensure we still respect viewport and intrinsic width
+    const maxVideoWidthAgain = Math.min(
+      videoW,
+      viewportMaxContainerWidth - playlistWidth
+    );
+    if (videoWidthToApply > maxVideoWidthAgain) {
+      videoWidthToApply = maxVideoWidthAgain;
+      containerWidthToApply = videoWidthToApply + playlistWidth;
+      videoHeight = Math.round(videoWidthToApply * ratio);
+    }
+
+    if (this.container && typeof this.container.setWidth === 'function') {
+      this.container.setWidth(containerWidthToApply);
+    } else {
+      this.style.width = containerWidthToApply + 'px';
+    }
+  }
+
+  const heightToApply = videoHeight + HEADER_OFFSET;
+
+  if (this.container && typeof this.container.setHeight === 'function') {
+    this.container.setHeight(heightToApply);
+  } else {
+    this.style.height = heightToApply + 'px';
+  }
+}
+
 
 
 }

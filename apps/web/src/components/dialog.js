@@ -42,6 +42,7 @@ export class Dialog extends HTMLElement {
     _isMinimizeable = false;
     _isMoveable = false;
     _offset = 0;
+    _resizeDirection = "both";
 
     _originalWidth = 0;
     _originalHeight = 0;
@@ -54,7 +55,7 @@ export class Dialog extends HTMLElement {
     onminimize = null;
     onmove = null;
 
-    static get observedAttributes() { return ["offset"]; }
+    static get observedAttributes() { return ["offset", "resize-direction"]; }
     attributeChangedCallback(name, _oldValue, newValue) {
         if (name === "offset") {
             const n = parseInt(newValue) || 0;
@@ -64,6 +65,8 @@ export class Dialog extends HTMLElement {
                 this._dialogElement.style.top = "";
                 this._dialogElement.style.height = "";
             }
+        } else if (name === "resize-direction") {
+            this._resizeDirection = newValue || "both";
         }
     }
 
@@ -298,6 +301,7 @@ export class Dialog extends HTMLElement {
         this._isMinimizeable = this.getAttribute("is-minimizeable") === "true";
         this._isMoveable = this.getAttribute("is-moveable") === "true";
         this._offset = parseInt(this.getAttribute("offset")) || 0;
+        this._resizeDirection = this.getAttribute("resize-direction") || "both";
 
         // set host flag for CSS override
         if (this._isModal) this.setAttribute("data-modal", "true");
@@ -341,7 +345,11 @@ export class Dialog extends HTMLElement {
                 },
                 "right",
                 1000,
-                40 // header height if you want vertical drag to start below header
+                40, // header height if you want vertical drag to start below header
+                {
+                    horizontal: this._resizeDirection !== "vertical",
+                    vertical: this._resizeDirection !== "horizontal"
+                }
             );
         }
 

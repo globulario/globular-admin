@@ -287,6 +287,9 @@ export class PlayList extends HTMLElement {
         background-color:black;
         width:fit-content;
         height:100%;          /* ← important */
+        scrollbar-width: thin;
+        scrollbar-color: var(--scroll-thumb, rgba(120,120,120,0.7))
+                         var(--scroll-track, rgba(0,0,0,0.05));
       }
 
       #items {
@@ -308,7 +311,6 @@ export class PlayList extends HTMLElement {
     </style>
     <div id="container">
       <div id="items"><slot></slot></div>
-      <paper-icon-button id="hide-n-show-btn" icon="icons:chevron-left"></paper-icon-button>
     </div>
   `;
   }
@@ -316,7 +318,6 @@ export class PlayList extends HTMLElement {
   _cacheElements() {
     this._container = this.shadowRoot.querySelector('#container');
     this._itemsContainer = this.shadowRoot.querySelector('#items');
-    this._hideNShowBtn = this.shadowRoot.querySelector('#hide-n-show-btn');
   }
 
   _setupEventListeners() {
@@ -330,48 +331,8 @@ export class PlayList extends HTMLElement {
     if (this._hideNShowBtn) {
       this._hideNShowBtn.removeEventListener('click', this._handleHideShowClick);
     }
-    //window.removeEventListener('resize', this._handleWindowResize);
   }
 
-  _handleHideShowClick = () => {
-    const itemsContainer = this._itemsContainer;
-    if (this._hideNShowBtn.icon === 'icons:chevron-left') {
-      this._hideNShowBtn.icon = 'icons:chevron-right';
-      itemsContainer.style.animation = 'slideOut 0.3s forwards';
-      itemsContainer.addEventListener('animationend', () => {
-        itemsContainer.style.display = 'none';
-        itemsContainer.style.animation = '';
-      }, { once: true });
-      this.dispatchEvent(new CustomEvent('hide', { detail: { hide: true } }));
-    } else {
-      this._hideNShowBtn.icon = 'icons:chevron-left';
-      itemsContainer.style.animation = 'none';
-      itemsContainer.style.display = 'table';
-      itemsContainer.offsetHeight; // reflow
-      itemsContainer.style.animation = 'slideIn 0.3s forwards';
-      itemsContainer.addEventListener('animationend', () => {
-        itemsContainer.style.animation = '';
-        itemsContainer.style.display = 'table';
-      }, { once: true });
-      this.dispatchEvent(new CustomEvent('show', { detail: { show: true } }));
-    }
-  };
-
-  hidePlaylist() {
-    this.style.display = 'none';
-    if (this._hideNShowBtn) this._hideNShowBtn.icon = 'icons:chevron-right';
-    this.parentElement?.hidePlaylist?.();
-  }
-
-  showPlaylist() {
-    if (this.count() > 1) {
-      this.style.display = '';
-      if (this._hideNShowBtn) this._hideNShowBtn.icon = 'icons:chevron-left';
-      this.parentElement?.showPlaylist?.();
-    } else {
-      this.hidePlaylist();
-    }
-  }
 }
 
 customElements.define('globular-playlist', PlayList);
