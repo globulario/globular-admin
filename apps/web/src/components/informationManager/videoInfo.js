@@ -143,7 +143,8 @@ export class VideoInfo extends HTMLElement {
 
         .title-synopsis-div {
           max-height:500px;
-          min-width:600px;
+          min-width:400px;
+          max-width:600px;
           overflow-y:auto;
            overflow-x:hidden;
           margin-bottom:10px;

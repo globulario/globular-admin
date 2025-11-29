@@ -611,6 +611,31 @@ export class VideoPlayer extends HTMLElement {
     return idx >= 0 ? clean.substring(idx + 1) : clean
   }
 
+  _setTitleFromInfo(info) {
+    if (!info || !this.titleSpan) return
+    let display = ''
+
+    if (info.getTitle && info.getTitle()) {
+      display = info.getTitle()
+    } else if (info.getName && info.getName()) {
+      display = info.getName()
+    } else if (info.getDescription && info.getDescription()) {
+      display = info.getDescription().replace(/<\/?br\s*\/?>/gi, ' ')
+    } else if (info.getId && info.getId()) {
+      display = info.getId()
+    }
+
+    if (info.getYear && info.getYear()) {
+      display += ` (${info.getYear()})`
+    }
+
+    if (info.getType && info.getType() === 'TVEpisode' && info.getSeason && info.getEpisode) {
+      display += ` S${info.getSeason()}E${info.getEpisode()}`
+    }
+
+    this.titleSpan.innerHTML = display || ''
+  }
+
   // ---- helpers ----
   _addCustomPlyrControls() {
     const controls = this.querySelector('.plyr__controls')
@@ -932,6 +957,8 @@ export class VideoPlayer extends HTMLElement {
   async play(path, titleInfo) {
     if (titleInfo) {
       this.titleInfo = titleInfo
+      // set the title
+      this._setTitleFromInfo(titleInfo)
     } else {
       this.titleInfo = null
     }
@@ -997,10 +1024,6 @@ export class VideoPlayer extends HTMLElement {
     this.resized = false
     this.style.zIndex = 100
 
-    const fileName = path.substring(path.lastIndexOf('/') + 1).replace('/playlist.m3u8', '')
-    // remove the ?token=... part if any
-    const cleanFileName = fileName.split('?')[0]
-    this.titleSpan.innerHTML = cleanFileName
     let info = this.titleInfo || null
     if (!info) {
       try {
@@ -1008,20 +1031,13 @@ export class VideoPlayer extends HTMLElement {
         if (Array.isArray(vids) && vids.length > 0) {
           info = vids[0]
           info.isVideo = true
-          if (info.getDescription) this.titleSpan.innerHTML = info.getTitle().replace('</br>', ' ')
+          this._setTitleFromInfo(info)
         } else {
           const titles = await getFileTitlesInfo(path).catch(() => [])
           if (Array.isArray(titles) && titles.length > 0) {
             info = titles[0]
             info.isVideo = false
-            let display = info.getName ? info.getName() : ''
-            if (info.getYear && info.getYear()) display += ` (${info.getYear()})`
-            if (info.getType && info.getType() === 'TVEpisode') {
-              if (info.getSeason && info.getEpisode) {
-                display += ` S${info.getSeason()}E${info.getEpisode()}`
-              }
-            }
-            this.titleSpan.innerHTML = display
+            this._setTitleFromInfo(info)
           }
         }
       } catch (err) {
