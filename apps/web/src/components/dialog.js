@@ -138,7 +138,9 @@ export class Dialog extends HTMLElement {
             box-shadow:
                 0 18px 45px rgba(0,0,0,0.6),
                 0 0 0 1px rgba(0,0,0,0.6); /* tighter edge in dark mode */
+
         }
+
 
         .dialog.minimizing { animation: minimize 1s ease-in-out forwards; pointer-events: none; }
         .dialog.closing { animation: implode 0.2s ease-in-out forwards; pointer-events: none; }

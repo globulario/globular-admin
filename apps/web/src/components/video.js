@@ -220,6 +220,7 @@ export class VideoPlayer extends HTMLElement {
     this.loop = localStorage.getItem('video_loop') === 'true'
     this.shuffle = localStorage.getItem('video_shuffle') === 'true'
     this.resized = false
+    this._cachedPlaylistWidth = 320
 
     const youtubeLogoUrl = new URL('../assets/icons/youtube-flat.svg', import.meta.url).href;
 
@@ -247,6 +248,8 @@ export class VideoPlayer extends HTMLElement {
         .plyr__controls__item.plyr__control iron-icon{fill:var(--plyr-control-icon-color,#424242);height:32px;width:32px;}
         .plyr__controls__item.plyr__control.active iron-icon{fill:var(--plyr-control-icon-active-color,white);}
         .plyr__controls{flex-wrap:wrap !important;justify-content:flex-start !important;}
+        .plyr__controls__item.plyr__control.custom-control{flex:none;min-width:52px;min-height:52px;display:flex;align-items:center;justify-content:center;}
+        .plyr__controls__item.plyr__control.custom-control iron-icon{--iron-icon-width:32px;--iron-icon-height:32px;height:32px;width:32px;}
       </style>
       <globular-dialog id="video-container" name="video-player" is-moveable="true" is-maximizeable="true" is-resizeable="true" show-icon="true" is-minimizeable="true">
         <span id="title-span" slot="title">no select</span>
@@ -347,6 +350,7 @@ export class VideoPlayer extends HTMLElement {
     this.playlist.addEventListener('hide', this._handlePlaylistHide)
     this.playlist.addEventListener('show', this._handlePlaylistShow)
     window.addEventListener('orientationchange', this._handleOrientationChange)
+    window.addEventListener('resize', this._handleWindowResize)
 
     this._loadInitialTracks()
   }
@@ -361,6 +365,7 @@ export class VideoPlayer extends HTMLElement {
     this.playlist.removeEventListener('hide', this._handlePlaylistHide)
     this.playlist.removeEventListener('show', this._handlePlaylistShow)
     window.removeEventListener('orientationchange', this._handleOrientationChange)
+    window.removeEventListener('resize', this._handleWindowResize)
     document.removeEventListener('refresh-preview', this._refreshPreviewHandler)
 
     this.skipPreviousBtn?.removeEventListener('click', this._skipPrevious)
@@ -394,6 +399,40 @@ export class VideoPlayer extends HTMLElement {
     }
   }
 
+  _handleWindowResize = () => {
+    if (this.isMinimized || !this._content) return
+    if (window.innerWidth < 500) {
+      this._content.style.height = 'calc(100vh - 100px)'
+      this._content.style.overflowY = 'auto'
+      return
+    }
+    this._content.style.height = ''
+    this._content.style.overflowY = ''
+  }
+
+  _playlistIsVisible() {
+    if (!this.playlist) return false;
+    const count = this.playlist.count ? this.playlist.count() : 0;
+    return count > 1 && this.playlist.style.display !== 'none';
+  }
+
+  _getPlaylistWidth() {
+    if (!this.playlist) return this._cachedPlaylistWidth;
+    const measured = this.playlist.offsetWidth || this.playlist.clientWidth || 0;
+    if (measured > 0) {
+      this._cachedPlaylistWidth = measured;
+    }
+    return this._cachedPlaylistWidth;
+  }
+
+  _resolveResizeWidth(w) {
+    if (typeof w === 'number' && w > 0) {
+      return w;
+    }
+    const videoWidth = this.videoElement?.videoWidth || 720;
+    const playlistWidth = this._playlistIsVisible() ? this._getPlaylistWidth() : 0;
+    return videoWidth + playlistWidth;
+  }
   _handleOrientationChange = () => {
     const o = (screen.orientation || {}).type || screen.mozOrientation || screen.msOrientation
     if (['landscape-primary', 'landscape-secondary'].includes(o)) this.becomeFullscreen()
@@ -468,9 +507,21 @@ export class VideoPlayer extends HTMLElement {
 
   _handleTitleInfoClick = (evt) => {
     evt.stopPropagation()
+    if (!this.titleInfo) {
+      const playlistItem = this._currentPlaylistItem()
+      if (playlistItem?.video) {
+        this.titleInfo = playlistItem.video
+      } else if (playlistItem?.audio) {
+        this.titleInfo = playlistItem.audio
+      }
+    }
     if (!this.titleInfo) return displayError('No title information found.')
     if (this.titleInfo.clearActorsList) this.showTitleInfo(this.titleInfo)
     else this.showVideoInfo(this.titleInfo)
+  }
+
+  _currentPlaylistItem() {
+    return this.playlist?._items?.[this.playlist?._index ?? -1]
   }
 
   _refreshPreviewHandler = () => {
@@ -487,7 +538,7 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _createLoadingOverlay() {
-    if (this._loadingOverlay || !this.container) return
+    if (this._loadingOverlay || !this._content) return
     const overlay = document.createElement('div')
     overlay.id = 'globular-video-loading-overlay'
     overlay.style.cssText =
@@ -506,7 +557,7 @@ export class VideoPlayer extends HTMLElement {
     overlay.appendChild(style)
     overlay.appendChild(spinner)
     overlay.appendChild(label)
-    this.container.appendChild(overlay)
+    this._content.appendChild(overlay)
     this._loadingOverlay = overlay
     this._loadingOverlayLabel = label
   }
@@ -569,11 +620,11 @@ export class VideoPlayer extends HTMLElement {
 
     const frag = document.createRange().createContextualFragment(`
       <div style="flex-basis:100%;height:1px;"></div>
-      <iron-icon class="plyr__controls__item plyr__control custom-control" title="Shuffle Playlist" id="shuffle" icon="av:shuffle"></iron-icon>
-      <iron-icon class="plyr__controls__item plyr__control custom-control" id="skip-previous" title="Previous Track" icon="av:skip-previous"></iron-icon>
-      <iron-icon class="plyr__controls__item plyr__control custom-control" id="skip-next" title="Next Track" icon="av:skip-next"></iron-icon>
-      <iron-icon class="plyr__controls__item plyr__control custom-control" id="stop-button" title="Stop" icon="av:stop"></iron-icon>
-      <iron-icon class="plyr__controls__item plyr__control custom-control" title="Loop Playlist" id="repeat" icon="av:repeat"></iron-icon>
+      <iron-icon class="plyr__controls__item plyr__control custom-control" title="Shuffle Playlist" id="shuffle" icon="av:shuffle" style="--iron-icon-width:32px;--iron-icon-height:32px;height:32px;width:32px;"></iron-icon>
+      <iron-icon class="plyr__controls__item plyr__control custom-control" id="skip-previous" title="Previous Track" icon="av:skip-previous" style="--iron-icon-width:32px;--iron-icon-height:32px;height:32px;width:32px;"></iron-icon>
+      <iron-icon class="plyr__controls__item plyr__control custom-control" id="skip-next" title="Next Track" icon="av:skip-next" style="--iron-icon-width:32px;--iron-icon-height:32px;height:32px;width:32px;"></iron-icon>
+      <iron-icon class="plyr__controls__item plyr__control custom-control" id="stop-button" title="Stop" icon="av:stop" style="--iron-icon-width:32px;--iron-icon-height:32px;height:32px;width:32px;"></iron-icon>
+      <iron-icon class="plyr__controls__item plyr__control custom-control" title="Loop Playlist" id="repeat" icon="av:repeat" style="--iron-icon-width:32px;--iron-icon-height:32px;height:32px;width:32px;"></iron-icon>
       <div id="track-info" class="custom-control"></div>
     `)
     controls.appendChild(frag)
@@ -729,37 +780,9 @@ export class VideoPlayer extends HTMLElement {
       setTimeout(fireResize, 500)
     })
 
-    // set the css value to display the playlist correctly...
-    window.addEventListener("resize", (evt) => {
-      if (this.isMinimized) {
-        // Use the cached content element, not an undefined property.
-        if (this._content) {
-          this._content.style.height = "auto";
-          this._content.style.overflowY = "";
-        }
-        return;
-      }
+    this._handleWindowResize()
 
-      let w = window.innerWidth;
-      if (w < 500) {
-        if (this._content) {
-          this._content.style.height = "calc(100vh - 100px)";
-          this._content.style.overflowY = "auto";
-        }
-      } else {
-        if (this._content) {
-          this._content.style.height = "";
-          this._content.style.overflowY = "";
-          if (this.videoElement.videoHeight < this._content.offsetHeight) {
-            this.playlist.style.height = this.videoElement.videoHeight + "px";
-          } else {
-            this.playlist.style.height = this._content.offsetHeight + "px";
-          }
-        }
-      }
-    });
-
-    setTimeout(fireResize(), 500)
+    setTimeout(fireResize, 500)
   }
 
   _updatePlaylistVisibility() {
@@ -1158,64 +1181,28 @@ export class VideoPlayer extends HTMLElement {
     }
   }
 
-  resize(containerWidth) {
+  resize(w) {
     if (this.isMinimized) return;
+
+    const calculatedWidth = this._resolveResizeWidth(w);
+    if (!calculatedWidth || isNaN(calculatedWidth) || calculatedWidth <= 0) return;
 
     this.resized = true;
 
-    const hasExplicitWidth =
-      typeof containerWidth === 'number' && !Number.isNaN(containerWidth);
+    const maxWidth = Math.max(window.innerWidth * 0.95, 360);
+    const widthToApply = Math.min(calculatedWidth, maxWidth);
 
-    // Base width: explicit width from dialog-resized, otherwise video native width, otherwise 720
-    let w = hasExplicitWidth ? containerWidth : (this.videoElement.videoWidth || 720);
+    if (this.container.setWidth) this.container.setWidth(widthToApply);
 
-    const nativeW = this.videoElement.videoWidth || 0;
-    const listW =
-      this.playlist && this.playlist.offsetWidth ? this.playlist.offsetWidth : 0;
+    const ratio = (this.videoElement?.videoWidth && this.videoElement?.videoHeight)
+      ? this.videoElement.videoHeight / this.videoElement.videoWidth
+      : 9 / 16;
+    const HEADER_OFFSET = 48;
+    const videoHeight = Math.round(widthToApply * ratio);
+    const maxHeight = Math.max(window.innerHeight * 0.95, 360);
+    const heightToApply = Math.min(videoHeight + HEADER_OFFSET, maxHeight);
+    if (this.container.setHeight) this.container.setHeight(heightToApply);
 
-    // When we are auto-sizing (no explicit width coming from the resizer),
-    // keep the video at its native width, then add the playlist width if visible,
-    // just like the old implementation.
-    if (!hasExplicitWidth) {
-      if (nativeW > 0 && w > nativeW) {
-        w = nativeW;
-      }
-
-      if (this.playlist && this.playlist.count && this.playlist.count() > 1) {
-        if (this.playlist.style.display !== 'none') {
-          // Playlist visible: add its current width and cache it.
-          w += listW;
-          this.playlist.__width__ = listW;
-        } else if (this.playlist.__width__) {
-          // Playlist hidden but we know its width from before.
-          w += this.playlist.__width__;
-        }
-      }
-    }
-    // If hasExplicitWidth === true, w is already the FULL dialog width
-    // (video + playlist) coming from <globular-dialog>'s resizeable logic.
-    // Do NOT add playlist width again, otherwise the dialog will "grow"
-    // every time you drag the handle when the playlist is visible.
-
-    // Clamp to screen width
-    const max = screen.width * 0.95;
-    if (w > max) w = max;
-
-    if (this.container.setWidth) this.container.setWidth(w);
-    if (this.container.setHeight) this.container.setHeight('auto');
-
-    // Keep playlist height in sync with the content, like in the legacy code.
-    const content = this._content;
-    if (this.playlist && content) {
-      if (window.innerWidth >= 500) {
-        const videoH = (this.videoElement && this.videoElement.videoHeight) || content.offsetHeight || 0;
-        const h = Math.min(videoH, content.offsetHeight || videoH);
-        this.playlist.style.height = `${h}px`;
-      } else {
-        // On mobile, layout is stacked vertically; let height flow.
-        this.playlist.style.height = '';
-      }
-    }
   }
 
 

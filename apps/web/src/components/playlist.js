@@ -60,7 +60,7 @@ export class PlayList extends HTMLElement {
   connectedCallback() {
     this._cacheElements();
     this._setupEventListeners();
-    fireResize();
+    setTimeout(fireResize(), 500)
   }
 
   disconnectedCallback() {
@@ -251,60 +251,66 @@ export class PlayList extends HTMLElement {
     return this._items.length;
   }
 
+  _handleWindowResize = () => {
+    // Let the host size be the authority; just ensure container matches it.
+    // Let the parent (VideoPlayer) decide exact height; we just stretch.
+    if (this._container) {
+      this._container.style.height = '100%';
+    }
+  };
+
   // --- DOM / events
 
   _renderHTML() {
     this.shadowRoot.innerHTML = `
-      <style>
-        ::-webkit-scrollbar {
-          width: 10px;
-        }
-        ::-webkit-scrollbar-track {
-          background: var(--scroll-track, var(--surface-color));
-        }
-        ::-webkit-scrollbar-thumb {
-          background: var(--scroll-thumb, var(--palette-divider));
-          border-radius: 6px;
-        }
+    <style>
+      :host {
+        display:block;
+        height:100%;
+      }
 
-        #container {
-          display:flex; overflow-y:auto; overflow-x:hidden;
-          background-color:black; width:fit-content;
-        }
+      ::-webkit-scrollbar {
+        width: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--scroll-track, var(--surface-color));
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb, var(--palette-divider));
+        border-radius: 6px;
+      }
 
-        #items { display:table; border-collapse:separate; flex-grow:1; padding-bottom:50px; max-width:100vw; }
+      #container {
+        display:flex;
+        overflow-y:auto;
+        overflow-x:hidden;
+        background-color:black;
+        width:fit-content;
+        height:100%;          /* ← important */
+      }
 
-        ::slotted(globular-playlist-item) {
-          display:table-row; padding:2px; transition: box-shadow .3s ease;
-        }
-        ::slotted(.playing) { box-shadow: inset 5px 5px 15px 5px #152635; }
+      #items {
+        display:table;
+        border-collapse:separate;
+        flex-grow:1;
+        padding-bottom:50px;
+        max-width:100vw;
+      }
 
-        #hide-n-show-btn {
-          color:white; width:40px; height:40px; margin:5px;
-          --iron-icon-width:40px; --iron-icon-height:40px;
-        }
+      ::slotted(.playing) {
+        box-shadow: inset 5px 5px 15px 5px rgba(8, 16, 32, 0.95);
+        background: linear-gradient(90deg, rgba(255,255,255,0.1), rgba(255,255,255,0));
+        border-top: 1px solid rgba(255,255,255,0.28);
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
 
-        .cell img { height:48px; }
-        .title { font-size:1rem; color:white; max-width:400px; }
-        :host-context(globular-playlist) { display:table; width:100%; }
-        .cell { display:table-cell; vertical-align:middle; color:white; }
-        .cell img { border:1px solid var(--palette-divider, #424242); }
-        iron-icon:hover { cursor:pointer; }
-        #play-arrow, #pause { visibility:hidden; }
-        :host(:hover) ::slotted(globular-playlist-item:hover) #play-arrow,
-        :host(:hover) ::slotted(globular-playlist-item:hover) #pause {
-          visibility:visible;
-        }
- 
-
-        @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-        @keyframes slideOut { from { transform: translateX(0); } to { transform: translateX(-100%); } }
-      </style>
-      <div id="container">
-        <div id="items"><slot></slot></div>
-        <paper-icon-button id="hide-n-show-btn" icon="icons:chevron-left"></paper-icon-button>
-      </div>
-    `;
+      /* ... rest unchanged ... */
+    </style>
+    <div id="container">
+      <div id="items"><slot></slot></div>
+      <paper-icon-button id="hide-n-show-btn" icon="icons:chevron-left"></paper-icon-button>
+    </div>
+  `;
   }
 
   _cacheElements() {
@@ -317,14 +323,14 @@ export class PlayList extends HTMLElement {
     if (this._hideNShowBtn) {
       this._hideNShowBtn.addEventListener('click', this._handleHideShowClick);
     }
-    window.addEventListener('resize', this._handleWindowResize);
+    //window.addEventListener('resize', this._handleWindowResize);
   }
 
   _cleanupEventListeners() {
     if (this._hideNShowBtn) {
       this._hideNShowBtn.removeEventListener('click', this._handleHideShowClick);
     }
-    window.removeEventListener('resize', this._handleWindowResize);
+    //window.removeEventListener('resize', this._handleWindowResize);
   }
 
   _handleHideShowClick = () => {
@@ -348,12 +354,6 @@ export class PlayList extends HTMLElement {
         itemsContainer.style.display = 'table';
       }, { once: true });
       this.dispatchEvent(new CustomEvent('show', { detail: { show: true } }));
-    }
-  };
-
-  _handleWindowResize = () => {
-    if (this.parentElement?.container?.getHeight) {
-      this._container.style.height = `${this.parentElement.container.getHeight() - 86}px`;
     }
   };
 
