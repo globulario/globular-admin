@@ -127,7 +127,7 @@ export class PlayList extends HTMLElement {
    * @param {*} player AudioPlayer or VideoPlayer instance
    * @param {Function=} callback optional callback when rendered
    */
-  async load(txt, _globule, player, callback) {
+  async load(txt, metaPaths, player, callback) {
     this._audioPlayer = player?.constructor?.name === 'AudioPlayer' ? player : null;
     this._videoPlayer = player?.constructor?.name === 'VideoPlayer' ? player : null;
 
@@ -143,9 +143,11 @@ export class PlayList extends HTMLElement {
 
     let playlistData = null;
     try {
-      if (txt.startsWith('#EXTM3U')) {
+      if (typeof txt === 'string' && txt.startsWith('#EXTM3U')) {
         // Raw content
         playlistData = parseAndMap(txt);
+      } else if (Array.isArray(txt)) {
+        playlistData = { items: txt };
       } else if (/^https?:\/\//i.test(txt)) {
         // External URL
         const resp = await fetch(txt, { credentials: 'include' });
@@ -161,6 +163,13 @@ export class PlayList extends HTMLElement {
       return;
     }
 
+    if (Array.isArray(metaPaths) && playlistData?.items?.length === metaPaths.length) {
+      playlistData.items.forEach((it, idx) => {
+        const path = metaPaths[idx];
+        it.filePath = path;
+        it.url = path;
+      });
+    }
     this.playlist = playlistData;
     await this.refresh(callback);
   }
@@ -226,12 +235,13 @@ export class PlayList extends HTMLElement {
     item.classList.add('playing');
 
     // Note: we pass `null` for globule (no resolver here)
+    const trackPath = item.filePath || item.url;
     if (this._audioPlayer) {
-      this._audioPlayer.play(item.url, null, item.audio, restart, resume);
-      this._audioPlayer.setTarckInfo(this._index, this._items.length);
+      this._audioPlayer.play(trackPath, null, item.audio, restart, resume);
+      this._audioPlayer.setTrackInfo?.(this._index, this._items.length);
     } else if (this._videoPlayer) {
-      this._videoPlayer.play(item.url, null, item.video, restart, resume);
-      this._videoPlayer.setTarckInfo(this._index, this._items.length);
+      this._videoPlayer.play(trackPath, null, item.video, restart, resume);
+      this._videoPlayer.setTrackInfo?.(this._index, this._items.length);
     }
 
     item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -273,6 +283,19 @@ export class PlayList extends HTMLElement {
           color:white; width:40px; height:40px; margin:5px;
           --iron-icon-width:40px; --iron-icon-height:40px;
         }
+
+        .cell img { height:48px; }
+        .title { font-size:1rem; color:white; max-width:400px; }
+        :host-context(globular-playlist) { display:table; width:100%; }
+        .cell { display:table-cell; vertical-align:middle; color:white; }
+        .cell img { border:1px solid var(--palette-divider, #424242); }
+        iron-icon:hover { cursor:pointer; }
+        #play-arrow, #pause { visibility:hidden; }
+        :host(:hover) ::slotted(globular-playlist-item:hover) #play-arrow,
+        :host(:hover) ::slotted(globular-playlist-item:hover) #pause {
+          visibility:visible;
+        }
+ 
 
         @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
         @keyframes slideOut { from { transform: translateX(0); } to { transform: translateX(-100%); } }
@@ -434,7 +457,7 @@ export class PlayListItem extends HTMLElement {
         .title { font-size: 1rem; color: white; max-width: 400px; }
         :host-context(globular-playlist) { display: table; width: 100%; }
         .cell { display: table-cell; vertical-align: middle; padding: 10px 5px; color: white; }
-        .cell img { border: 1px solid var(--palette-divider, #424242); }
+        .cell img { border: 1px solid var(--palette-divider, #424242);  height: 48px; }
         iron-icon:hover { cursor: pointer; }
         #play-arrow, #pause { visibility: hidden; }
         :host(:hover) #play-arrow, :host(:hover) #pause { visibility: visible; }

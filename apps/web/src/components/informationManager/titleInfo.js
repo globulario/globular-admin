@@ -682,6 +682,13 @@ export class TitleInfo extends HTMLElement {
             min-height: 220px;
           }
         }
+        .title-synopsis-div {
+          font-size: .9 rem;
+          color: var(--primary-text-color);
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+          var(--scroll-track, var(--surface-color));
+        }
       </style>
       <div class="title-info-container">
         <div class="title-div">

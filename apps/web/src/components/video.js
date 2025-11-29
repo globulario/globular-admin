@@ -86,20 +86,21 @@ export function playVideos(videos, name) {
   const unique = [...new Map(videos.map(v => [v.getId(), v])).values()]
   let m3u = '#EXTM3U\n'
   m3u += `#PLAYLIST: ${name}\n\n`
+  const filePaths = []
 
   let i = 0
   const next = async () => {
     if (i >= unique.length) {
-      // No globule anymore; keep API compatible by omitting it
-      playVideo(m3u, null, null, null)
+      if (filePaths.length > 0) {
+        playVideo({ playlist: m3u, filePaths }, null, null, null)
+      } else {
+        playVideo(m3u, null, null, null)
+      }
       return
     }
 
     const v = unique[i++]
-
-    // Without globule/config, default to the standard index path
     const indexPath = '/search/videos'
-
     try {
       const files = await getTitleFiles(v.getId(), indexPath)
       if (files.length > 0) {
@@ -107,8 +108,9 @@ export function playVideos(videos, name) {
         if (!/\.(mp4|m3u8|mkv)$/i.test(filePath)) filePath += '/playlist.m3u8'
         const isHls = /\.m3u8$/i.test(filePath)
         const url = isHls ? buildFileUrl(filePath, { includeToken: false }) : buildFileUrl(filePath)
-        m3u += `#EXTINF:${v.getDuration()}, ${v.getDescription()}, tvg-id="${v.getId()}"\n`
+        m3u += `#EXTINF:${v.getDuration()}, ${v.getTitle()}, tvg-id="${v.getId()}"\n`
         m3u += `${url}\n\n`
+        filePaths.push(filePath)
       }
     } catch (e) {
       console.warn(`Failed to process video ${v.getId()}: ${e.message}`)
@@ -122,6 +124,11 @@ export function playVideos(videos, name) {
 
 // (removed globule param; extra args from older callers are harmless in JS)
 export function playVideo(path, onplay, onclose, title) {
+  let playlistPayload = path
+  let playlistText = path
+  if (path && typeof path === 'object' && path.playlist) {
+    playlistPayload = path.playlist
+  }
   // Close menus
   document.body.querySelectorAll('globular-dropdown-menu').forEach(menu => {
     if (menu.close) menu.close()
@@ -148,8 +155,8 @@ export function playVideo(path, onplay, onclose, title) {
   const watching = document.querySelector('globular-media-watching')
   if (watching && watching.parentNode) watching.parentNode.removeChild(watching)
 
-  if ((path || '').endsWith('video.m3u') || (path || '').startsWith('#EXTM3U')) {
-    vp.loadPlaylist(path)
+  if ((playlistPayload || '').endsWith('video.m3u') || (playlistPayload || '').startsWith('#EXTM3U')) {
+    vp.loadPlaylist(playlistPayload, path?.filePaths)
   } else {
     vp.play(path, title || null)
   }
@@ -253,6 +260,7 @@ export class VideoPlayer extends HTMLElement {
     `
 
     this.container = this.shadowRoot.querySelector('#video-container')
+    this._content = this.shadowRoot.querySelector('#content')
     this.container.onminimize = () => {
       this.isMinimized = true
       if (this.onMinimize) this.onMinimize()
@@ -406,7 +414,7 @@ export class VideoPlayer extends HTMLElement {
       this.resize(width, height)
     }
     this._finalizeVideoLoad()
-    
+
     const subs = await getSubtitlesFiles(this.path)
 
     subs.forEach(f => {
@@ -479,11 +487,11 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _createLoadingOverlay() {
-    if (this._loadingOverlay || typeof document === 'undefined' || !document.body) return
+    if (this._loadingOverlay || !this.container) return
     const overlay = document.createElement('div')
     overlay.id = 'globular-video-loading-overlay'
     overlay.style.cssText =
-      'position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(0,0,0,.85);color:white;font-family:var(--font-family, "Segoe UI", Arial, sans-serif);z-index:2000;text-align:center;'
+      'position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(0,0,0,.85);color:white;font-family:var(--font-family, "Segoe UI", Arial, sans-serif);z-index:998;text-align:center;pointer-events:auto;'
     const style = document.createElement('style')
     style.textContent = `
       @keyframes globular-video-loading-spin {
@@ -498,7 +506,7 @@ export class VideoPlayer extends HTMLElement {
     overlay.appendChild(style)
     overlay.appendChild(spinner)
     overlay.appendChild(label)
-    document.body.appendChild(overlay)
+    this.container.appendChild(overlay)
     this._loadingOverlay = overlay
     this._loadingOverlayLabel = label
   }
@@ -507,7 +515,6 @@ export class VideoPlayer extends HTMLElement {
     this._createLoadingOverlay()
     if (!this._loadingOverlay) return
     this._loadingOverlay.style.display = 'flex'
-    if (this.container) this.container.style.display = 'none'
     this._updateLoadingOverlayText()
   }
 
@@ -605,7 +612,7 @@ export class VideoPlayer extends HTMLElement {
       this.resume = false
       if (this.titleInfo) localStorage.removeItem(this.titleInfo.getId())
 
-      if (this.playlist.items.length > 1) this.playlist.playNext()
+      if ((this.playlist?.count?.() ?? 0) > 1) this.playlist.playNext()
       else if (this.loop) this.play(this.path, this.titleInfo || null)
       else this.stop()
     }
@@ -691,6 +698,14 @@ export class VideoPlayer extends HTMLElement {
             if (getDur) {
               const label = (video.getTitle && video.getTitle()) || (video.getDescription && video.getDescription()) || ''
               m3u += `#EXTINF:${getDur}, ${label}, tvg-id="${video.getId()}"\n`
+              let titleFile = await getTitleFiles(video.getId(), '/search/videos')
+              if (Array.isArray(titleFile) && titleFile.length > 0) {
+                let filePath = titleFile[0]
+                if (!/\.(mp4|m3u8|mkv)$/i.test(filePath)) filePath += '/playlist.m3u8'
+                const isHls = /\.m3u8$/i.test(filePath)
+                const url = isHls ? buildFileUrl(filePath, { includeToken: false }) : buildFileUrl(filePath)
+                m3u += `${url}\n\n`
+              }
               m3u += `${video.getUrl()}\n\n`
             }
           } catch (err) {
@@ -705,14 +720,46 @@ export class VideoPlayer extends HTMLElement {
     }
   }
 
-  loadPlaylist(path) {
+  loadPlaylist(path, filePaths) {
     this.playlist.clear()
     // If your PlayList.load previously expected (path, globule, player, cb),
     // it should now ignore the second argument or you can update that class similarly.
-    this.playlist.load(path, /* deprecated globule */ undefined, this, () => {
+    this.playlist.load(path, filePaths, this, () => {
       this._updatePlaylistVisibility()
       setTimeout(fireResize, 500)
     })
+
+    // set the css value to display the playlist correctly...
+    window.addEventListener("resize", (evt) => {
+      if (this.isMinimized) {
+        // Use the cached content element, not an undefined property.
+        if (this._content) {
+          this._content.style.height = "auto";
+          this._content.style.overflowY = "";
+        }
+        return;
+      }
+
+      let w = window.innerWidth;
+      if (w < 500) {
+        if (this._content) {
+          this._content.style.height = "calc(100vh - 100px)";
+          this._content.style.overflowY = "auto";
+        }
+      } else {
+        if (this._content) {
+          this._content.style.height = "";
+          this._content.style.overflowY = "";
+          if (this.videoElement.videoHeight < this._content.offsetHeight) {
+            this.playlist.style.height = this.videoElement.videoHeight + "px";
+          } else {
+            this.playlist.style.height = this._content.offsetHeight + "px";
+          }
+        }
+      }
+    });
+
+    setTimeout(fireResize(), 500)
   }
 
   _updatePlaylistVisibility() {
@@ -927,7 +974,9 @@ export class VideoPlayer extends HTMLElement {
     this.style.zIndex = 100
 
     const fileName = path.substring(path.lastIndexOf('/') + 1).replace('/playlist.m3u8', '')
-    this.titleSpan.innerHTML = fileName
+    // remove the ?token=... part if any
+    const cleanFileName = fileName.split('?')[0]
+    this.titleSpan.innerHTML = cleanFileName
     let info = this.titleInfo || null
     if (!info) {
       try {
@@ -935,7 +984,7 @@ export class VideoPlayer extends HTMLElement {
         if (Array.isArray(vids) && vids.length > 0) {
           info = vids[0]
           info.isVideo = true
-          if (info.getDescription) this.titleSpan.innerHTML = info.getDescription().replace('</br>', ' ')
+          if (info.getDescription) this.titleSpan.innerHTML = info.getTitle().replace('</br>', ' ')
         } else {
           const titles = await getFileTitlesInfo(path).catch(() => [])
           if (Array.isArray(titles) && titles.length > 0) {
@@ -1110,34 +1159,66 @@ export class VideoPlayer extends HTMLElement {
   }
 
   resize(containerWidth) {
-    if (this.isMinimized) return
+    if (this.isMinimized) return;
 
-    this.resized = true
+    this.resized = true;
 
-    // Prefer an explicit containerWidth, then native video width, then 720
-    let w = containerWidth || this.videoElement.videoWidth || 720
+    const hasExplicitWidth =
+      typeof containerWidth === 'number' && !Number.isNaN(containerWidth);
 
-    const nativeW = this.videoElement.videoWidth || 0
+    // Base width: explicit width from dialog-resized, otherwise video native width, otherwise 720
+    let w = hasExplicitWidth ? containerWidth : (this.videoElement.videoWidth || 720);
+
+    const nativeW = this.videoElement.videoWidth || 0;
     const listW =
-      this.playlist && this.playlist.offsetWidth ? this.playlist.offsetWidth : 0
+      this.playlist && this.playlist.offsetWidth ? this.playlist.offsetWidth : 0;
 
-    // Don’t go wider than the video itself (before adding playlist)
-    if (nativeW > 0 && w > nativeW) {
-      w = nativeW
-    }
+    // When we are auto-sizing (no explicit width coming from the resizer),
+    // keep the video at its native width, then add the playlist width if visible,
+    // just like the old implementation.
+    if (!hasExplicitWidth) {
+      if (nativeW > 0 && w > nativeW) {
+        w = nativeW;
+      }
 
-    // If playlist is visible and has more than one item, add its width
-    if (this.playlist.count() > 1 && this.playlist.style.display !== 'none') {
-      w += listW
+      if (this.playlist && this.playlist.count && this.playlist.count() > 1) {
+        if (this.playlist.style.display !== 'none') {
+          // Playlist visible: add its current width and cache it.
+          w += listW;
+          this.playlist.__width__ = listW;
+        } else if (this.playlist.__width__) {
+          // Playlist hidden but we know its width from before.
+          w += this.playlist.__width__;
+        }
+      }
     }
+    // If hasExplicitWidth === true, w is already the FULL dialog width
+    // (video + playlist) coming from <globular-dialog>'s resizeable logic.
+    // Do NOT add playlist width again, otherwise the dialog will "grow"
+    // every time you drag the handle when the playlist is visible.
 
     // Clamp to screen width
-    const max = screen.width * 0.95
-    if (w > max) w = max
+    const max = screen.width * 0.95;
+    if (w > max) w = max;
 
-    if (this.container.setWidth) this.container.setWidth(w)
-    if (this.container.setHeight) this.container.setHeight('auto')
+    if (this.container.setWidth) this.container.setWidth(w);
+    if (this.container.setHeight) this.container.setHeight('auto');
+
+    // Keep playlist height in sync with the content, like in the legacy code.
+    const content = this._content;
+    if (this.playlist && content) {
+      if (window.innerWidth >= 500) {
+        const videoH = (this.videoElement && this.videoElement.videoHeight) || content.offsetHeight || 0;
+        const h = Math.min(videoH, content.offsetHeight || videoH);
+        this.playlist.style.height = `${h}px`;
+      } else {
+        // On mobile, layout is stacked vertically; let height flow.
+        this.playlist.style.height = '';
+      }
+    }
   }
+
+
 }
 
 customElements.define('globular-video-player', VideoPlayer)

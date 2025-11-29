@@ -148,6 +148,7 @@ export class VideoInfo extends HTMLElement {
            overflow-x:hidden;
           margin-bottom:10px;
           line-height:1.4em;
+          font-size:.9rem;
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, rgba(120,120,120,0.7))
                          var(--scroll-track, rgba(0,0,0,0.05));
