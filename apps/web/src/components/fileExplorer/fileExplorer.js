@@ -704,7 +704,7 @@ export class FileExplorer extends HTMLElement {
             const parentPath = p.substring(0, p.lastIndexOf("/")) || "/";
             let parentDir = await readDir(parentPath);
             if (!parentDir) {
-              parentDir = await readDirFresh(parentPath, true);
+              parentDir = await readDirFresh(parentPath, false);
             }
             this.setDir(adaptDirVM(parentDir));
 
@@ -802,7 +802,7 @@ export class FileExplorer extends HTMLElement {
             if (path === "/public") {
               dirVM = await this._buildPublicDirVM();
             } else {
-              dirVM = await readDirFresh(path, true);
+              dirVM = await readDirFresh(path, false);
             }
             if (dirVM) {
               refreshDirectoryCaches(path, dirVM);

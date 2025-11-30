@@ -5,6 +5,7 @@ import { secondsToTime, fireResize } from "./utility"
 
 // UI bus + helpers
 import { displayError } from "../backend/ui/notify"
+import { Backend } from "../backend/backend"
 
 // New function-style backends
 import * as Title from "../backend/media/title"
@@ -249,7 +250,7 @@ export class AudioPlayer extends HTMLElement {
           background: var(--scroll-thumb, var(--palette-divider));
           border-radius: 6px;
         }
-        #content{height:100%;width:100%;display:flex;background:#000;justify-content:center;overflow:hidden;background-color:var(--surface-color);color:var(--primary-text-color);}
+        #content{height:100%;width:100%;display:flex;background:#000;justify-content:center;overflow:hidden;color:var(--primary-text-color);}
         @media (max-width:600px){
           .header{width:100vw;}
           #content{overflow-y:auto;width:100vw;max-width:100vw;min-width:0;background:black;flex-direction:column-reverse;height:410px;overflow:hidden;}
@@ -556,7 +557,7 @@ export class AudioPlayer extends HTMLElement {
     if (!this._wavesurfer.isPlaying()) return
     const duration = this._wavesurfer.getDuration()
     const next = this._wavesurfer.getCurrentTime() + duration * 0.1
-    if (next < duration) this._wavesurfer.seekAndCenter(next / duration)
+    if (next < duration) this._seekAndCenter(next / duration)
     else this.stop()
   }
 
@@ -564,7 +565,7 @@ export class AudioPlayer extends HTMLElement {
     if (!this._wavesurfer.isPlaying()) return
     const duration = this._wavesurfer.getDuration()
     const prev = this._wavesurfer.getCurrentTime() - duration * 0.1
-    if (prev > 0) this._wavesurfer.seekAndCenter(prev / duration)
+    if (prev > 0) this._seekAndCenter(prev / duration)
     else this.stop()
   }
 
@@ -616,6 +617,15 @@ export class AudioPlayer extends HTMLElement {
     this._playBtn.style.display = "none"
     this._pauseBtn.style.display = "block"
     fireResize()
+  }
+
+  _seekAndCenter(value) {
+    if (!this._wavesurfer) return
+    const fn =
+      typeof this._wavesurfer.seekAndCenter === "function"
+        ? this._wavesurfer.seekAndCenter
+        : this._wavesurfer.seekTo
+    if (typeof fn === "function") fn.call(this._wavesurfer, value)
   }
 
   _wavesurferAudioProcessHandler = (position) => {
@@ -922,7 +932,9 @@ export class AudioPlayer extends HTMLElement {
 
     // Header info text + cover/title
     const fileName = path.substring(path.lastIndexOf("/") + 1)
-    this._titleSpan.innerHTML = fileName
+    // remove the ?query part if any
+    const cleanFileName = fileName.split("?")[0]
+    this._titleSpan.innerHTML = cleanFileName
 
     let info = this._audioData || null
     if (!info) {
@@ -958,9 +970,10 @@ export class AudioPlayer extends HTMLElement {
       this._albumNameElement.innerHTML = album || ""
       this._albumYearElement.innerHTML = year || ""
       const poster = info.getPoster && info.getPoster()
-      const posterUrl = poster && poster.URL ? poster.URL : DEFAULT_AUDIO_COVER
+      const posterUrl = poster && poster.getContenturl ? poster.getContenturl() : DEFAULT_AUDIO_COVER
       this._albumCoverElement.src = posterUrl
 
+      console.log("Playing audio:", info  )
       // continue listening position (localStorage + optional watching title)
       if (info.getId) {
         const stored = localStorage.getItem(info.getId())

@@ -773,7 +773,7 @@ export class VideoPlayer extends HTMLElement {
             })
             const getDur = video.getDuration ? video.getDuration() : 0
             if (getDur) {
-              const label = (video.getTitle && video.getTitle()) || (video.getDescription && video.getDescription()) || ''
+              const label = (video.getTitle && video.getTitle()) || ''
               m3u += `#EXTINF:${getDur}, ${label}, tvg-id="${video.getId()}"\n`
               let titleFile = await getTitleFiles(video.getId(), '/search/videos')
               if (Array.isArray(titleFile) && titleFile.length > 0) {
@@ -864,7 +864,7 @@ export class VideoPlayer extends HTMLElement {
     if (this.previewElement) {
       if (this.titleInfo && this.titleInfo.getPoster) {
         this.previewElement.style.backgroundImage = `url('${this.titleInfo.getPoster().getContenturl()}')`
-        if (this.previewElement._title) this.previewElement._title.innerHTML = this.titleInfo.getDescription()
+        if (this.previewElement._title) this.previewElement._title.innerHTML = this.titleInfo.getTitle()
       }
       const playBtn = this.previewElement.querySelector('#preview-play-btn')
       const pauseBtn = this.previewElement.querySelector('#preview-pause-btn')
@@ -1031,13 +1031,11 @@ export class VideoPlayer extends HTMLElement {
         if (Array.isArray(vids) && vids.length > 0) {
           info = vids[0]
           info.isVideo = true
-          this._setTitleFromInfo(info)
         } else {
           const titles = await getFileTitlesInfo(path).catch(() => [])
           if (Array.isArray(titles) && titles.length > 0) {
             info = titles[0]
             info.isVideo = false
-            this._setTitleFromInfo(info)
           }
         }
       } catch (err) {
@@ -1045,8 +1043,10 @@ export class VideoPlayer extends HTMLElement {
       }
     }
     this.titleInfo = info
-    if (this.titleSpan) {
-      this._loadingName = this.titleSpan.textContent || this._loadingName
+    if (this.titleInfo) {
+      this._setTitleFromInfo(info)
+    }else{
+      this.titleSpan.innerHTML = this._getFileNameFromPath(path)
     }
     this._updateLoadingOverlayText()
 

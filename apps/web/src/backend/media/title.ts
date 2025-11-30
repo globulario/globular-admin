@@ -47,6 +47,26 @@ const fileTitlesCache = new Map<string, titlepb.Title[]>();
 // IMDb request-coalescing cache: id -> Promise<any>
 const imdbPending = new Map<string, Promise<any>>();
 
+function isRpcNotFoundError(err: any): boolean {
+  if (!err) return false;
+  const containsNoFile = String(err?.message || err?.grpcMessage || "")
+    .toLowerCase()
+    .includes("no file found");
+  if (containsNoFile) return true;
+  if (typeof err.code === "number" && err.code === 5) return true;
+  const meta = err.metadata;
+  const grpcStatus = typeof meta?.get === "function" ? meta.get("grpc-status") : meta?.["grpc-status"];
+  const statusValue = Array.isArray(grpcStatus) ? grpcStatus[0] : grpcStatus;
+  if (statusValue !== undefined && statusValue !== null) {
+    return String(statusValue) === "5";
+  }
+  if (err?.status !== undefined) {
+    const statusStr = String(err.status);
+    if (statusStr === "5" || statusStr === "3") return true;
+  }
+  return false;
+}
+
 /* =====================================================================================
  * Defaults
  * ===================================================================================== */
@@ -283,11 +303,17 @@ export async function getFileVideosInfo(
   rq.setFilepath(safeFilePath);
   rq.setIndexpath(safeIndexPath);
 
-  const rsp = await unary(clientFactory, "getFileVideos", rq, undefined, md) as titlepb.GetFileVideosResponse;
-
-  // generated API: rsp.getVideos() -> Videos message -> getVideosList()
-  const videosContainer = rsp.getVideos?.();
-  const list: titlepb.Video[] = videosContainer?.getVideosList?.() ?? [];
+  let list: titlepb.Video[] = [];
+  try {
+    const rsp = await unary(clientFactory, "getFileVideos", rq, undefined, md) as titlepb.GetFileVideosResponse;
+    // generated API: rsp.getVideos() -> Videos message -> getVideosList()
+    const videosContainer = rsp.getVideos?.();
+    list = videosContainer?.getVideosList?.() ?? [];
+  } catch (err) {
+    if (!isRpcNotFoundError(err)) {
+      throw err;
+    }
+  }
 
   list.forEach(v => videosCache.set(v.getId(), v));
   fileVideosCache.set(safeFilePath, list);
@@ -318,20 +344,41 @@ export async function getFileAudiosInfo(
   rq.setFilepath(safeFilePath);
   rq.setIndexpath(safeIndexPath);
 
-  const rsp = await unary(
-    clientFactory,
-    "getFileAudios",
-    rq,
-    undefined,
-    md
-  ) as titlepb.GetFileAudiosResponse;
+  let list: titlepb.Audio[] = [];
+  try {
+    const rsp = await unary(
+      clientFactory,
+      "getFileAudios",
+      rq,
+      undefined,
+      md
+    ) as titlepb.GetFileAudiosResponse;
 
-  // rsp.getAudios() -> Audios message -> getAudiosList()
-  const audiosContainer = rsp.getAudios?.();
-  const list: titlepb.Audio[] = audiosContainer?.getAudiosList?.() ?? [];
+    // rsp.getAudios() -> Audios message -> getAudiosList()
+    const audiosContainer = rsp.getAudios?.();
+    list = audiosContainer?.getAudiosList?.() ?? [];
+  } catch (err) {
+    if (!isRpcNotFoundError(err)) {
+      throw err;
+    }
+  }
 
+  console.log("Fetched audios for file:", safeIndexPath, safeFilePath, "Count:", list.length);
   list.forEach(a => audiosCache.set(a.getId(), a));
   fileAudiosCache.set(safeFilePath, list);
+
+  if (!list.length && !safeFilePath.includes("/.hidden/")) {
+    const lastSlash = safeFilePath.lastIndexOf("/");
+    if (lastSlash > -1) {
+      const hiddenPath = `${safeFilePath.substring(0, lastSlash)}/.hidden${safeFilePath.substring(lastSlash)}`;
+      const hiddenList = await getFileAudiosInfo(hiddenPath, safeIndexPath).catch(() => []);
+      if (hiddenList.length) {
+        fileAudiosCache.set(safeFilePath, hiddenList);
+        return hiddenList;
+      }
+    }
+  }
+
   return list;
 }
 

@@ -237,7 +237,7 @@ export class PlayList extends HTMLElement {
     // Note: we pass `null` for globule (no resolver here)
     const trackPath = item.filePath || item.url;
     if (this._audioPlayer) {
-      this._audioPlayer.play(trackPath, null, item.audio, restart, resume);
+      this._audioPlayer.play(trackPath, item.audio, restart, resume);
       this._audioPlayer.setTrackInfo?.(this._index, this._items.length);
     } else if (this._videoPlayer) {
       this._videoPlayer.play(trackPath, null, item.video, restart, resume);
