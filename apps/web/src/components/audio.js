@@ -368,8 +368,8 @@ export class AudioPlayer extends HTMLElement {
       this._container.onclose = this.close.bind(this)
       this._container.onminimize = this._handleMinimize.bind(this)
       this._container.setAttribute("resize-direction", "horizontal")
-      this._container.style.minWidth = "420px"
-      this._container.style.minHeight = "360px"
+      this._container.style.minWidth = "360px"
+      this._container.style.minHeight = "320px"
       this._container.style.width = this._container.style.width || "640px"
       if (typeof this._container.setBackGroundColor === "function") {
         this._container.setBackGroundColor("rgba(0,0,0,0.85)")

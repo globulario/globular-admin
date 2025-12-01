@@ -400,7 +400,7 @@ export class FileExplorer extends HTMLElement {
       }
 
       .card-actions.footer {
-        display: flex;
+        display: flex !important;
         align-items: center;
         background-color: var(--surface-color);
         color: var(--on-surface-color);
@@ -468,7 +468,7 @@ export class FileExplorer extends HTMLElement {
         </globular-split-view>
       </div>
 
-      <div class="card-actions.footer">
+      <div class="card-actions footer">
         <div id="progress-div">
             <span id="progress-message">Loading...</span>
             <paper-progress id="globular-dir-loading-progress-bar" indeterminate></paper-progress>
