@@ -454,7 +454,7 @@ export class FileNavigator extends HTMLElement {
       if (!isSyntheticPublic(dirVM) && !getFiles(dirVM).length) {
         try {
           this._fileExplorer?.displayWaitMessage?.(`Loading ${nameOf(dirVM)}…`);
-          const updated = await readDir(path, { refresh: true });
+          const updated = await readDir(path);
           setFiles(dirVM, getFiles(updated));
         } catch (e) {
           console.error(`Failed to load subdirectories for ${path}:`, e);
@@ -705,7 +705,7 @@ export class FileNavigator extends HTMLElement {
         const children = await Promise.all(
           paths.map(async (p) => {
             try {
-              const dir = await readDir(p, { refresh: true });
+              const dir = await readDir(p);
               markAsPublic(dir);
               dir.name = nameOf(dir) || (p.split("/").pop() || p);
               const aliasBase = `/public/${dir.name}`.replace(/\/{2,}/g, "/").replace(/\/$/, "");
@@ -935,7 +935,7 @@ export class FileNavigator extends HTMLElement {
         const loadSharedNode = async (realPath) => {
           if (!realPath) return null;
           try {
-            const dir = await readDir(realPath, { refresh: true });
+            const dir = await readDir(realPath);
             markAsShare(dir);
             return dir;
           } catch (err) {

@@ -238,7 +238,7 @@ export class SearchDocumentBar extends HTMLElement {
       let dir;
       try {
         // Use new wrapper; includeHidden = true
-        dir = await readDir(currentDir, { includeHidden: true });
+        dir = await readDir(currentDir);
       } catch (e) {
         // Silently skip unreadable dirs
         return;

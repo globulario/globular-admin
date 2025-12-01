@@ -254,7 +254,7 @@ export class PathNavigator extends HTMLElement {
           files = await Promise.all(
             paths.map(async (p) => {
               try {
-                const dir = await readDir(p, true);
+                const dir = await readDir(p);
                 markAsPublic(dir);
                 dir.name = dir.name || (p.split("/").pop() || p);
                 return dir;
@@ -287,7 +287,7 @@ export class PathNavigator extends HTMLElement {
         } else {
           const resolved =
             this._fileExplorer?._resolveRealPath?.(parentPath) || parentPath;
-          const dir = await readDir(resolved, true);
+          const dir = await readDir(resolved);
           files = (dir && dir.files) || [];
         }
 

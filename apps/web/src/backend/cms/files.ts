@@ -293,7 +293,8 @@ export type DirVM = FileVM;
 let CACHE_ENABLED = true;
 
 // Inject a fetcher that calls readDirFresh to avoid recursion
-const injectedFetcher: ReadDirFetcher = (p, includeHidden) => readDirFresh(p, !!includeHidden);
+const injectedFetcher: ReadDirFetcher = (p, includeHidden) =>
+  readDirFresh(p, { recursive: !!includeHidden }).promise;
 
 let _cache: FilesCache | null = new FilesCache({
   max: 200,
@@ -447,114 +448,184 @@ export async function readDir(path: string, recursive = false): Promise<DirVM> {
   if (CACHE_ENABLED && _cache) {
     return _cache.getDir(path, /*swr*/ true, recursive) as unknown as DirVM;
   }
-  return readDirFresh(path, recursive);
+  const attempt = async (currentPath: string, original = true): Promise<DirVM> => {
+    try {
+      return await readDirFresh(currentPath, { recursive }).promise;
+    } catch (err: any) {
+      if (isNotDirectoryError(err) && !original) {
+        // already attempted fallback paths, avoid infinite loop
+      } else if (isNotDirectoryError(err)) {
+        const parent = parentOf(currentPath || "/");
+        if (parent && parent !== currentPath) {
+          return attempt(parent, false);
+        }
+      }
+      throw err;
+    }
+  };
+  return attempt(path || "/");
 }
-export async function readDirFresh(path: string, recursive = false): Promise<DirVM> {
-  const md = await meta();
-  const rq: any = newRq(['ReadDirRequest']);
-  const requestedPath = path || '/';
-  const encodedPath = encodeURI(requestedPath);
 
-  if (typeof rq.setPath === 'function') rq.setPath(encodedPath);
-  if (typeof rq.setRecursive === 'function') rq.setRecursive(recursive);
-  if (typeof rq.setThumbnailheight === 'function') rq.setThumbnailheight(80);
-  if (typeof rq.setThumbnailwidth === 'function') rq.setThumbnailwidth(80);
+function isNotDirectoryError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err?.message || "").toLowerCase();
+  if (msg.includes("is not a directory")) return true;
+  const grpcStatus = err?.metadata?.get?.("grpc-status")?.[0] ?? err?.metadata?.["grpc-status"];
+  if (String(grpcStatus) === "13") return true;
+  const code = err?.code ?? err?.status;
+  if (code === 13) return true;
+  return false;
+}
 
-  const client = clientFactory();
-  const method = 'readDir' in (client as any) ? 'readDir' : 'readdir';
+export interface ReadDirOptions {
+  recursive?: boolean;
+  /** Called for every entry (dir or file) as soon as it’s integrated in the tree. */
+  onEntry?: (entry: FileVM, root: DirVM | null) => void;
+  /** Called once when the stream finishes (and wasn’t cancelled). */
+  onDone?: (root: DirVM) => void;
+}
 
-  // Build a proper tree while streaming
-  const nodes = new Map<string, FileVM>();
-  let root: FileVM | null = null;
+export interface ReadDirHandle {
+  /** Resolves with the final DirVM, or rejects if cancelled/failed. */
+  promise: Promise<DirVM>;
+  /** Stop processing new chunks (and optionally cancel the underlying stream if you wire it). */
+  cancel: () => void;
+}
 
-  // Helpers
-  const norm = (p: string) => (p || '/').replace(/\/+/g, '/');
-  const isUnder = (child: string, rootPath: string) => {
-    const c = norm(child);
-    const r = norm(rootPath);
-    if (c === r) return true;
-    return c.startsWith(r.endsWith('/') ? r : r + '/');
-  };
-  const getOrCreate = (p: string): FileVM => {
-    const k = norm(p);
-    let n = nodes.get(k);
-    if (!n) {
-      n = new FileVM({ path: k, name: basename(k), isDir: true, files: [] });
-      nodes.set(k, n);
-    }
-    if (!Array.isArray(n.files)) n.files = [];
-    return n;
-  };
-  const addChild = (parent: FileVM, child: FileVM) => {
-    if (!Array.isArray(parent.files)) parent.files = [];
-    if (!parent.files.find((f) => f.path === child.path)) parent.files.push(child);
-  };
+export function readDirFresh(
+  path: string,
+  options: ReadDirOptions = {}
+): ReadDirHandle {
+  const { recursive = false, onEntry, onDone } = options;
+  let cancelled = false;
+  let activeCall: any = null;
+  const requestedPath = path || "/";
 
-  await stream(() => client, method, rq, (chunk: any) => {
-    const info = chunk?.getInfo?.() ?? chunk?.info;
-    if (!info) return;
+  const worker = new Worker(
+    new URL("./readDirWorker.ts", import.meta.url),
+    { type: "module" }
+  );
 
-    const vm = FileVM.fromProto(info);
-    const vmPath = norm(vm.path);
+  let workerCleanup: (() => void) | null = null;
+  let rejectWorker: ((err: any) => void) | null = null;
+  const workerPromise = new Promise<DirVM>((resolve, reject) => {
+    rejectWorker = reject;
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data || {};
+      if (data.type === "error") {
+        reject(data.error);
+        return;
+      }
+      if (data.type === "update") {
+        // entry always present; root may be undefined except for first update
+        if (onEntry) onEntry(data.entry, data.root || null);
+      } else if (data.type === "done") {
+        resolve(data.root);
+      }
+    };
+    const handleError = (event: ErrorEvent) => {
+      reject(event.error || new Error("readDirWorker error"));
+    };
+    worker.addEventListener("message", handleMessage);
+    worker.addEventListener("error", handleError);
 
-    // First message is often the root directory itself
-    if (!root && (vmPath === norm(encodedPath) || vmPath === norm(requestedPath))) {
-      vm.isDir = true;
-      if (!Array.isArray(vm.files)) vm.files = [];
-      root = vm;
-      nodes.set(vmPath, vm);
-      return;
-    }
+    worker.postMessage({ type: "init", path: requestedPath });
 
-    // Ignore anything not under the requested root (defensive)
-    const rootPath = root ? root.path : (requestedPath || '/');
-    if (!isUnder(vmPath, rootPath)) return;
-
-    // Ensure the node and its parent exist
-    const node = getOrCreate(vmPath);
-    // Preserve fields from the streamed vm (don’t nuke existing children)
-    Object.assign(node, { ...vm, files: node.files ?? vm.files ?? [] });
-
-    // Link into parent (but don’t link above the requested root)
-    const p = parentOf(vmPath);
-    if (isUnder(p, rootPath)) {
-      const parentNode = getOrCreate(p);
-      addChild(parentNode, node);
-    }
-  }, "file.FileService", md as any);
-
-  // If server never streamed the root, synthesize it and attach direct children
-  if (!root) {
-    root = new FileVM({
-      name: basename(requestedPath || "/"),
-      path: norm(requestedPath || "/"),
-      isDir: true,
-      files: [],
-    });
-    nodes.set(root.path, root);
-  }
-
-  // Ensure root.files is at least an array
-  if (!Array.isArray(root.files)) root.files = [];
-
-  const linkPromises: Promise<any>[] = [];
-  nodes.forEach((node) => {
-    if (!node || node.isDir) return;
-    if (!isLinkFile(node)) return;
-    linkPromises.push(
-      loadLinkTarget(node).catch((err) => {
-        console.warn("Failed to resolve link target", err);
-        return null;
-      })
-    );
+    workerCleanup = () => {
+      worker.removeEventListener("message", handleMessage);
+      worker.removeEventListener("error", handleError);
+    };
   });
-  if (linkPromises.length) await Promise.allSettled(linkPromises);
 
+  const promise = (async () => {
+    const md = await meta();
+    const rq: any = newRq(["ReadDirRequest"]);
+    const encodedPath = encodeURI(requestedPath);
 
+    if (typeof rq.setPath === "function") rq.setPath(encodedPath);
+    if (typeof rq.setRecursive === "function") rq.setRecursive(recursive);
+    if (typeof rq.setThumbnailheight === "function") rq.setThumbnailheight(80);
+    if (typeof rq.setThumbnailwidth === "function") rq.setThumbnailwidth(80);
 
-  return root as DirVM;
+    const client = clientFactory();
+    const method = "readDir" in (client as any) ? "readDir" : "readdir";
+
+    try {
+      await stream(
+        () => client,
+        method,
+        rq,
+        (chunk: any) => {
+          if (cancelled) return;
+
+          const info = chunk?.getInfo?.() ?? chunk?.info;
+          if (!info) return;
+
+          const vm = FileVM.fromProto(info);
+          const entryPayload = { ...vm };
+          delete (entryPayload as any).files;
+
+          worker.postMessage({ type: "entry", entry: entryPayload });
+        },
+        "file.FileService",
+        md as any,
+        { onCall: (call) => { activeCall = call; } }
+      );
+    } catch (err) {
+      worker.postMessage({ type: "cancel" });
+      workerCleanup?.();
+      worker.terminate();
+      const workerError = cancelled ? new Error("readDirFresh cancelled") : err;
+      rejectWorker?.(workerError);
+      if (cancelled) {
+        throw workerError;
+      }
+      throw err;
+    }
+
+    worker.postMessage({ type: "done" });
+    const root = await workerPromise;
+    workerCleanup?.();
+    worker.terminate();
+
+    const linkPromises: Promise<any>[] = [];
+    const traverse = (node: DirVM) => {
+      if (!node) return;
+      if (Array.isArray(node.files)) {
+        node.files.forEach((child) => {
+          traverse(child);
+        });
+      }
+      if (isLinkFile(node)) {
+        linkPromises.push(
+          loadLinkTarget(node).catch((err) => {
+            console.warn("Failed to resolve link target", err);
+            return null;
+          })
+        );
+      }
+    };
+    traverse(root);
+    if (linkPromises.length) await Promise.allSettled(linkPromises);
+
+    if (cancelled) throw new Error("readDirFresh cancelled");
+
+    if (onDone) onDone(root);
+    return root;
+  })();
+
+  return {
+    promise,
+    cancel: () => {
+      cancelled = true;
+      worker.postMessage({ type: "cancel" });
+      workerCleanup?.();
+      worker.terminate();
+      rejectWorker?.(new Error("readDirFresh cancelled"));
+      activeCall?.cancel?.();
+    },
+  };
 }
-
 /** Fetch a single file’s info */
 export async function getFile(path: string): Promise<FileVM | null> {
   const md = await meta();
@@ -937,7 +1008,7 @@ export async function getHiddenFiles(path: string, subDirName: string): Promise<
     const dir = basePath.substring(0, basePath.lastIndexOf("/") + 1);
     const leaf = basePath.substring(basePath.lastIndexOf("/"));
     const hiddenDirPath = `${dir}.hidden${leaf}/${subDirName}`;
-    return await readDirFresh(hiddenDirPath, true).catch(() => null);
+    return await readDirFresh(hiddenDirPath, { recursive: false }).promise.catch(() => null);
   } catch (e) {
     console.warn(`getHiddenFiles failed for ${path}:`, e);
     return null;

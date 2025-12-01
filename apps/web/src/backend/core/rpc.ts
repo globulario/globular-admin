@@ -4,7 +4,7 @@ import { normalizeError } from "./errors";
 import * as grpcWeb from "grpc-web";
 
 export interface UnaryOpts { timeoutMs?: number, base?: string }
-export interface StreamOpts { base?: string }
+export interface StreamOpts { base?: string, onCall?: (call: grpcWeb.ClientReadableStream<any>) => void }
 
 /** Heuristic to detect auth expiry across different backends/messages */
 function looksExpired(err: any): boolean {
@@ -95,6 +95,7 @@ export async function stream<TReq, TMsg>(
   const startOnce = (headers: Record<string, string>) =>
     new Promise<void>((resolve, reject) => {
       const call = client[methodName](req, headers);
+      opts?.onCall?.(call);
       call.on("data", (m: TMsg) => onMsg(m));
       call.on("end", () => resolve());
       call.on("error", (e: any) => reject(normalizeError(e)));

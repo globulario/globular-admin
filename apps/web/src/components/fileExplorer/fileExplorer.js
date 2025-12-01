@@ -96,6 +96,7 @@ export class FileExplorer extends HTMLElement {
   _onopen = undefined;
   _onloaded = undefined;
   _listeners = {};
+  _currentReadToken = 0;
 
   _filesListView = undefined;
   _filesIconView = undefined;
@@ -136,6 +137,9 @@ export class FileExplorer extends HTMLElement {
   // 🔧 NEW: track current delete-sub for info panel to avoid stacking
   _currentInfoDeleteSub = { event: null, uuid: null };
   _currentInfoInvalidationSub = { event: null, uuid: null };
+
+  // 🔧 NEW: progressive directory loading handle
+  _currentReadHandle = null;
 
   constructor() {
     super();
@@ -271,6 +275,9 @@ export class FileExplorer extends HTMLElement {
 
     this._filesIconView?.stopPreview?.();
     this._filesListView?.stopPreview?.();
+
+    // cancel any in-flight directory read
+    this._cancelCurrentRead();
 
     if (FileExplorer.fileUploader && FileExplorer.fileUploader.parentNode === this) {
       this.removeChild(FileExplorer.fileUploader);
@@ -461,7 +468,7 @@ export class FileExplorer extends HTMLElement {
         </globular-split-view>
       </div>
 
-      <div class="card-actions footer">
+      <div class="card-actions.footer">
         <div id="progress-div">
             <span id="progress-message">Loading...</span>
             <paper-progress id="globular-dir-loading-progress-bar" indeterminate></paper-progress>
@@ -655,7 +662,7 @@ export class FileExplorer extends HTMLElement {
     Backend.eventHub.subscribe("__set_dir_event__",
       (uuid) => { this._listeners["__set_dir_event__"] = uuid; },
       (evt) => {
-        if (evt.file_explorer_id === explorerId) this._handleSetDirEvent(evt.dir);
+        if (evt.file_explorer_id === explorerId) this._handleSetDirEvent(evt);
       }, true, this
     );
 
@@ -704,7 +711,8 @@ export class FileExplorer extends HTMLElement {
             const parentPath = p.substring(0, p.lastIndexOf("/")) || "/";
             let parentDir = await readDir(parentPath);
             if (!parentDir) {
-              parentDir = await readDirFresh(parentPath, false);
+              const parentHandle = readDirFresh(parentPath, { recursive: false });
+              parentDir = await parentHandle.promise;
             }
             this.setDir(adaptDirVM(parentDir));
 
@@ -802,7 +810,8 @@ export class FileExplorer extends HTMLElement {
             if (path === "/public") {
               dirVM = await this._buildPublicDirVM();
             } else {
-              dirVM = await readDirFresh(path, false);
+              const dirHandle = readDirFresh(path, { recursive: false });
+              dirVM = await dirHandle.promise;
             }
             if (dirVM) {
               refreshDirectoryCaches(path, dirVM);
@@ -983,6 +992,102 @@ export class FileExplorer extends HTMLElement {
       displayError(`Failed to initialize file explorer: ${err.message}`, 5000);
       console.error("File explorer initialization failed:", err);
     }
+  }
+
+  // --- helpers for progressive directory loading ---
+
+  _cancelCurrentRead() {
+    if (this._currentReadHandle && typeof this._currentReadHandle.cancel === "function") {
+      this._currentReadHandle.cancel();
+    }
+    this._currentReadHandle = null;
+    this._currentReadToken++;
+  }
+
+  _startProgressiveDirLoad(fetchPath, displayPath) {
+    this._cancelCurrentRead();
+
+    const explorerId = this._id;
+    let rootInitialized = false;
+    const effectiveDisplayPath = displayPath || fetchPath;
+    const token = this._currentReadToken;
+
+    const handle = readDirFresh(fetchPath, {
+      recursive: false,
+      onEntry: (entry, root) => {
+        if (token !== this._currentReadToken) return;
+        if (!root) return;
+
+        // First time we get the root: set up navigation/history normally
+        if (!rootInitialized) {
+          rootInitialized = true;
+          let dirVM = root;
+
+          const synthetic =
+            this._syntheticPathForRealPath(effectiveDisplayPath) ||
+            dirVM.__syntheticPublicPath;
+          if (synthetic) {
+            dirVM.__syntheticPublicPath = synthetic;
+          }
+
+          this._currentDirVM = dirVM;
+          const adapted = adaptDirVM(dirVM);
+          Backend.eventHub.publish(
+            "__set_dir_event__",
+            { dir: adapted, file_explorer_id: explorerId, displayPath: effectiveDisplayPath },
+            true
+          );
+          return;
+        }
+
+        // Subsequent updates: refresh views but preserve navigation history
+        if (token !== this._currentReadToken) return;
+        if (token !== this._currentReadToken) return;
+        let dirVM = root;
+        const synthetic =
+          this._syntheticPathForRealPath(effectiveDisplayPath) ||
+          dirVM.__syntheticPublicPath;
+        if (synthetic) {
+          dirVM.__syntheticPublicPath = synthetic;
+        }
+        this._currentDirVM = dirVM;
+        const adapted = adaptDirVM(dirVM);
+        Backend.eventHub.publish(
+          "__set_dir_event__",
+          { dir: adapted, file_explorer_id: explorerId, displayPath: effectiveDisplayPath, preserveHistory: true },
+          true
+        );
+      },
+      onDone: (root) => {
+        let dirVM = root;
+        const synthetic =
+          this._syntheticPathForRealPath(effectiveDisplayPath) ||
+          dirVM.__syntheticPublicPath;
+        if (synthetic) {
+          dirVM.__syntheticPublicPath = synthetic;
+        }
+        this._currentDirVM = dirVM;
+        const adapted = adaptDirVM(dirVM);
+        Backend.eventHub.publish(
+          "__set_dir_event__",
+          { dir: adapted, file_explorer_id: explorerId, displayPath: effectiveDisplayPath },
+          true
+        );
+        this.resume();
+      },
+    });
+
+    this._currentReadHandle = handle;
+
+    handle.promise.catch((err) => {
+      if (token !== this._currentReadToken) return;
+      if (!err) return;
+      const msg = String(err?.message || err);
+      if (msg === "readDirFresh cancelled") return;
+      console.error("readDirFresh failed", err);
+      displayError(`Failed to load directory ${effectiveDisplayPath}: ${msg}`, 3000);
+      this.resume();
+    });
   }
 
   // --- put these inside class FileExplorer ---
@@ -1539,44 +1644,54 @@ export class FileExplorer extends HTMLElement {
     this.displayWaitMessage(`Loading ${path}...`);
     try {
       if (path === "/shared" || path === "/Shared") {
-        if (this.openSharedRoot()) return;
+        if (this.openSharedRoot()) {
+          this.resume();
+          return;
+        }
       }
       if (path?.startsWith("/Shared/")) {
-        if (this.openSharedOwner(path)) return;
+        if (this.openSharedOwner(path)) {
+          this.resume();
+          return;
+        }
       }
 
       const fetchPath = this._resolveRealPath(path) || path;
-      let dirVM;
-      let displayPath = path;
+      const displayPath = path;
+
       if (fetchPath === "/public" || fetchPath?.startsWith("/public/")) {
-        dirVM = await this._buildPublicDirVM();
-        displayPath = path;
+        const dirVM = await this._buildPublicDirVM();
+        const adapted = adaptDirVM(dirVM);
+        this._currentDirVM = dirVM;
+        Backend.eventHub.publish(
+          "__set_dir_event__",
+          { dir: adapted, file_explorer_id: this._id, displayPath },
+          true
+        );
+        this.resume();
       } else {
-        dirVM = await readDir(fetchPath);
-        const synthetic =
-          this._syntheticPathForRealPath(path) ||
-          dirVM.__syntheticPublicPath;
-        if (synthetic) {
-          dirVM.__syntheticPublicPath = synthetic;
-          displayPath = synthetic;
-        }
+        // non-public: progressive loading
+        this._startProgressiveDirLoad(fetchPath, displayPath);
       }
-      const adapted = adaptDirVM(dirVM);
-      this._currentDirVM = dirVM;
-      Backend.eventHub.publish(
-        "__set_dir_event__",
-        { dir: adapted, file_explorer_id: this._id, displayPath },
-        true
-      );
     } catch (err) {
       displayError(`Failed to load directory ${path}: ${err.message}`, 3000);
       this._onerror(err);
-    } finally {
       this.resume();
     }
   }
 
-  _handleSetDirEvent(dir) { this.setDir(dir); }
+  _handleSetDirEvent(evt) {
+    const dir = evt?.dir;
+    const displayPath = evt?.displayPath;
+    const preserveHistory = !!evt?.preserveHistory;
+
+    if (displayPath) {
+      // make sure the synthetic path follows the event if present
+      dir.__syntheticPublicPath = displayPath;
+    }
+
+    this.setDir(dir, undefined, preserveHistory);
+  }
 
   _resolveRealPath(path) {
     if (!path || !this._aliasToRealMap?.size) return "";
@@ -1625,7 +1740,7 @@ export class FileExplorer extends HTMLElement {
     return true;
   }
 
-  setDir(dir, callback) {
+  setDir(dir, callback, preserveHistory) {
     this._currentDir = dir;
     this._path = extractPath(dir);
 
@@ -1643,26 +1758,29 @@ export class FileExplorer extends HTMLElement {
       activeDirSpan.style.display = "block";
     }
 
-    if (!this._navigations.length) {
-      // first visited directory
-      this._navigations = [this._path];
-      this._navigationIndex = 0;
-    } else if (this._navigatingFromHistory) {
-      // We are moving along existing history: do NOT change _navigations
-      // _navigationIndex has already been set in _handleNavigationClick
-      this._navigatingFromHistory = false;
+    // Navigation history handling (can be suppressed for progressive updates)
+    if (!preserveHistory) {
+      if (!this._navigations.length) {
+        // first visited directory
+        this._navigations = [this._path];
+        this._navigationIndex = 0;
+      } else if (this._navigatingFromHistory) {
+        // We are moving along existing history: do NOT change _navigations
+        // _navigationIndex has already been set in _handleNavigationClick
+        this._navigatingFromHistory = false;
 
-      // Make sure the history entry at that index matches the new path
-      this._navigations[this._navigationIndex] = this._path;
-    } else {
-      // Normal navigation (clicking folders, path navigator, create dir, etc.)
-      // Browser-like behavior: if we're not at the end, drop "forward" entries
-      if (this._navigationIndex < this._navigations.length - 1) {
-        this._navigations = this._navigations.slice(0, this._navigationIndex + 1);
+        // Make sure the history entry at that index matches the new path
+        this._navigations[this._navigationIndex] = this._path;
+      } else {
+        // Normal navigation (clicking folders, path navigator, create dir, etc.)
+        // Browser-like behavior: if we're not at the end, drop "forward" entries
+        if (this._navigationIndex < this._navigations.length - 1) {
+          this._navigations = this._navigations.slice(0, this._navigationIndex + 1);
+        }
+
+        this._navigations.push(this._path);
+        this._navigationIndex = this._navigations.length - 1;
       }
-
-      this._navigations.push(this._path);
-      this._navigationIndex = this._navigations.length - 1;
     }
 
     // --- existing UI updates ---
@@ -1697,7 +1815,7 @@ export class FileExplorer extends HTMLElement {
     const children = await Promise.all(
       paths.map(async (p) => {
         try {
-          const dir = await readDir(p, true);
+          const dir = await readDir(p);
           markAsPublic(dir);
           dir.name = dir.name || p.split("/").pop() || p;
           const aliasBase = this._computePublicAliasPath(dir.name || p);

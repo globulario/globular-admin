@@ -288,7 +288,7 @@ export class AudioPlayer extends HTMLElement {
         }
       </style>
 
-      <globular-dialog id="audio-container" name="audio-player" is-moveable="true" show-icon="true" is-minimizeable="true">
+      <globular-dialog id="audio-container" name="audio-player" is-moveable="true" is-maximizeable="true" is-resizeable="true" show-icon="true" is-minimizeable="true">
         <span id="title-span" slot="title">no select</span>
         <img slot="icon" src="${icon}"/>
         <div id="content">
@@ -367,6 +367,13 @@ export class AudioPlayer extends HTMLElement {
       this._container.getPreview = this.getPreview.bind(this)
       this._container.onclose = this.close.bind(this)
       this._container.onminimize = this._handleMinimize.bind(this)
+      this._container.setAttribute("resize-direction", "horizontal")
+      this._container.style.minWidth = "420px"
+      this._container.style.minHeight = "360px"
+      this._container.style.width = this._container.style.width || "640px"
+      if (typeof this._container.setBackGroundColor === "function") {
+        this._container.setBackGroundColor("rgba(0,0,0,0.85)")
+      }
     }
 
     this.playlist.audioPlayer = this

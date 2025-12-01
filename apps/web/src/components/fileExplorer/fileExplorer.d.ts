@@ -459,7 +459,7 @@ export class FileExplorer extends HTMLElement {
           this._filesIconView.setSelected({});
           this._filesListView.setSelected({});
           try {
-            const dirVM = await readDir(path, true); // DirVM { path, files: FileVM[] }
+            const dirVM = await readDir(path); // DirVM { path, files: FileVM[] }
             // only reload file navigator if we have it
             if (this._fileNavigator?.reload) this._fileNavigator.reload(dirVM);
             if (dirVM.path === this._path) {
