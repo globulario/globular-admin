@@ -21,6 +21,8 @@ let requestedPath = "/";
 let normalizedRootPath = "/";
 let cancelled = false;
 let rootSent = false;
+let updateCounter = 0;
+const ROOT_UPDATE_INTERVAL = 50;
 
 const normalizePath = (p: string) => (p || "/").replace(/\/+/g, "/");
 const basename = (p: string) => {
@@ -73,9 +75,13 @@ const ensureNode = (entry: EntryPayload): NodeEntry => {
   return node;
 };
 
-const notifyUpdate = (entry: NodeEntry | null, includeRoot = false) => {
+const notifyUpdate = (entry: NodeEntry | null, forceRoot = false) => {
   const payload: any = { type: "update", entry };
-  if (includeRoot && root) payload.root = root;
+  const shouldSendRoot = forceRoot || (!rootSent && !!root) || ((++updateCounter % ROOT_UPDATE_INTERVAL === 0) && !!root);
+  if (shouldSendRoot) {
+    payload.root = root;
+    rootSent = true;
+  }
   self.postMessage(payload);
 };
 
@@ -87,7 +93,6 @@ const processEntry = (entry: EntryPayload) => {
   if (!root && vmPath === normalizePath(requestedPath)) {
     node.isDir = true;
     root = node;
-    rootSent = true;
     notifyUpdate(node, true);
     return;
   }
@@ -104,8 +109,7 @@ const processEntry = (entry: EntryPayload) => {
     readDirAddChild(parentNode, node);
   }
 
-  notifyUpdate(node, !rootSent && !!root);
-  if (root) rootSent = true;
+  notifyUpdate(node);
 };
 
 const readDirAddChild = (parent: NodeEntry, child: NodeEntry) => {
@@ -126,6 +130,7 @@ const resetState = (path: string) => {
   requestedPath = path || "/";
   normalizedRootPath = normalizePath(requestedPath);
   rootSent = false;
+  updateCounter = 0;
 };
 
 self.addEventListener("message", (event) => {

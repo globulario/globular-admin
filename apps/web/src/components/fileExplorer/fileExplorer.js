@@ -1011,61 +1011,27 @@ export class FileExplorer extends HTMLElement {
     let rootInitialized = false;
     const effectiveDisplayPath = displayPath || fetchPath;
     const token = this._currentReadToken;
+    let pendingRoot = null;
+    let flushScheduled = false;
 
-    const handle = readDirFresh(fetchPath, {
-      recursive: false,
-      onEntry: (entry, root) => {
-        if (token !== this._currentReadToken) return;
-        if (!root) return;
+    const flush = () => {
+      flushScheduled = false;
+      if (token !== this._currentReadToken) return;
+      const root = pendingRoot;
+      pendingRoot = null;
+      if (!root) return;
 
-        // First time we get the root: set up navigation/history normally
-        if (!rootInitialized) {
-          rootInitialized = true;
-          let dirVM = root;
-
-          const synthetic =
-            this._syntheticPathForRealPath(effectiveDisplayPath) ||
-            dirVM.__syntheticPublicPath;
-          if (synthetic) {
-            dirVM.__syntheticPublicPath = synthetic;
-          }
-
-          this._currentDirVM = dirVM;
-          const adapted = adaptDirVM(dirVM);
-          Backend.eventHub.publish(
-            "__set_dir_event__",
-            { dir: adapted, file_explorer_id: explorerId, displayPath: effectiveDisplayPath },
-            true
-          );
-          return;
-        }
-
-        // Subsequent updates: refresh views but preserve navigation history
-        if (token !== this._currentReadToken) return;
-        if (token !== this._currentReadToken) return;
+      if (!rootInitialized) {
+        rootInitialized = true;
         let dirVM = root;
+
         const synthetic =
           this._syntheticPathForRealPath(effectiveDisplayPath) ||
           dirVM.__syntheticPublicPath;
         if (synthetic) {
           dirVM.__syntheticPublicPath = synthetic;
         }
-        this._currentDirVM = dirVM;
-        const adapted = adaptDirVM(dirVM);
-        Backend.eventHub.publish(
-          "__set_dir_event__",
-          { dir: adapted, file_explorer_id: explorerId, displayPath: effectiveDisplayPath, preserveHistory: true },
-          true
-        );
-      },
-      onDone: (root) => {
-        let dirVM = root;
-        const synthetic =
-          this._syntheticPathForRealPath(effectiveDisplayPath) ||
-          dirVM.__syntheticPublicPath;
-        if (synthetic) {
-          dirVM.__syntheticPublicPath = synthetic;
-        }
+
         this._currentDirVM = dirVM;
         const adapted = adaptDirVM(dirVM);
         Backend.eventHub.publish(
@@ -1073,6 +1039,42 @@ export class FileExplorer extends HTMLElement {
           { dir: adapted, file_explorer_id: explorerId, displayPath: effectiveDisplayPath },
           true
         );
+        return;
+      }
+
+      let dirVM = root;
+      const synthetic =
+        this._syntheticPathForRealPath(effectiveDisplayPath) ||
+        dirVM.__syntheticPublicPath;
+      if (synthetic) {
+        dirVM.__syntheticPublicPath = synthetic;
+      }
+      this._currentDirVM = dirVM;
+      const adapted = adaptDirVM(dirVM);
+      Backend.eventHub.publish(
+        "__set_dir_event__",
+        { dir: adapted, file_explorer_id: explorerId, displayPath: effectiveDisplayPath, preserveHistory: true },
+        true
+      );
+    };
+
+    const enqueueFlush = () => {
+      if (flushScheduled) return;
+      flushScheduled = true;
+      requestAnimationFrame(flush);
+    };
+
+    const handle = readDirFresh(fetchPath, {
+      recursive: false,
+      onEntry: (entry, root) => {
+        if (token !== this._currentReadToken) return;
+        if (!root) return;
+        pendingRoot = root;
+        enqueueFlush();
+      },
+      onDone: (root) => {
+        pendingRoot = root;
+        flush();
         this.resume();
       },
     });
