@@ -221,6 +221,7 @@ export class VideoPlayer extends HTMLElement {
     this.shuffle = localStorage.getItem('video_shuffle') === 'true'
     this.resized = false
     this._cachedPlaylistWidth = 320
+    this._onPlayFired = false
 
     const youtubeLogoUrl = new URL('../assets/icons/youtube-flat.svg', import.meta.url).href;
 
@@ -445,6 +446,12 @@ export class VideoPlayer extends HTMLElement {
       const { width } = this._getFittedVideoSize()
       this.resize(width) // height will be computed in resize()
     }
+
+    if (this.onplay && !this._onPlayFired) {
+      this._onPlayFired = true
+      this.onplay(this.player, this.titleInfo)
+    }
+    
   }
 
   _handleVideoLoadedData = async () => {
@@ -997,6 +1004,7 @@ export class VideoPlayer extends HTMLElement {
       this._loadingName = this._getFileNameFromPath(path)
       this._showLoadingOverlay()
     }
+    this._onPlayFired = false
 
     try {
       const headHeaders = {}
@@ -1117,8 +1125,6 @@ export class VideoPlayer extends HTMLElement {
       this.videoElement.src = src
       this._playVideoElement()
     }
-
-    if (this.onplay && this.titleInfo) this.onplay(this.player, this.titleInfo)
   }
 
   becomeFullscreen() {

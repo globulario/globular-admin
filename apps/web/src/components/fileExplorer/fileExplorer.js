@@ -102,6 +102,8 @@ export class FileExplorer extends HTMLElement {
   _filesIconView = undefined;
   _permissionManager = undefined;
   _informationManager = undefined;
+  _videoPlayer = undefined;
+  _audioPlayer = undefined;
   _pathNavigator = undefined;
   _fileNavigator = undefined;
   _filesListBtn = undefined;
@@ -1081,11 +1083,34 @@ export class FileExplorer extends HTMLElement {
 
     this._currentReadHandle = handle;
 
-    handle.promise.catch((err) => {
+    handle.promise.catch(async (err) => {
       if (token !== this._currentReadToken) return;
       if (!err) return;
       const msg = String(err?.message || err);
       if (msg === "readDirFresh cancelled") return;
+
+      const lowerMsg = msg.toLowerCase();
+      if (lowerMsg.includes("not a directory")) {
+        // When a file path is passed instead of a directory, open the file instead of failing
+        this.resume();
+        try {
+          const file = await getFileInfo(fetchPath);
+          if (file) {
+            const adapted = adaptFileVM(file);
+            const mimeRoot = mimeOf(adapted).split("/")[0];
+            if (mimeRoot === "video") this.playVideo(adapted);
+            else if (mimeRoot === "audio") this.playAudio(adapted);
+            else if (mimeRoot === "image") this.showImage(adapted);
+            else this.readFile(adapted);
+            return;
+          }
+        } catch (infoErr) {
+          console.warn("Failed to open file after readDir error", infoErr);
+          displayError(`Failed to open ${effectiveDisplayPath}: ${infoErr?.message || infoErr}`, 3000);
+          return;
+        }
+      }
+
       console.error("readDirFresh failed", err);
       displayError(`Failed to load directory ${effectiveDisplayPath}: ${msg}`, 3000);
       this.resume();
@@ -1998,6 +2023,44 @@ export class FileExplorer extends HTMLElement {
 
   resume() { if (this._progressDiv) this._progressDiv.style.display = "none"; }
 
+  _buildMediaWaitMessage(kind, file, info) {
+    const pick = (obj, keys) => {
+      if (!obj) return "";
+      for (const key of keys) {
+        try {
+          const val = typeof obj[key] === "function" ? obj[key]() : obj[key];
+          if (val !== undefined && val !== null) {
+            const str = String(val).trim();
+            if (str) return str;
+          }
+        } catch { /* ignore */ }
+      }
+      return "";
+    };
+
+    const baseInfo =
+      info ||
+      (kind === "audio" ? file?.audios?.[0] : file?.videos?.[0]) ||
+      file?.titles?.[0];
+
+    const title = pick(baseInfo, ["getTitle", "getName", "getDescription", "title", "name", "description"]);
+    const artist = pick(baseInfo, ["getArtist", "artist", "getArtistName"]);
+    const album = pick(baseInfo, ["getAlbum", "album"]);
+
+    let label = "";
+    if (artist && title) label = `${artist} - ${title}`;
+    else if (title) label = title;
+    else if (artist && album) label = `${artist} - ${album}`;
+    else if (album) label = album;
+    else if (artist) label = artist;
+
+    if (!label) {
+      label = nameOf(file) || pathOf(file) || extractPath(file) || kind;
+    }
+
+    return `Opening ${kind} "${label}"...`;
+  }
+
   hideNavigator() { this._fileNavigator.hide(); fireResize(); }
   showNavigator() { this._fileNavigator.show(); fireResize(); }
 
@@ -2009,22 +2072,97 @@ export class FileExplorer extends HTMLElement {
     if (file?.videos?.length > 0) videoInfo = file.videos[0];
     else if (file?.titles?.length > 0) videoInfo = file.titles[0];
     const path = extractPath(file);
-    if (!path) return displayError("Invalid file path.", 3000);
-    playVideo(path, null, () => { }, videoInfo);
+    if (!path) {
+      displayError("Invalid file path.", 3000);
+      this.resume();
+      return;
+    }
+
+    let resumed = false;
+    const resumeOnce = () => {
+      if (resumed) return;
+      resumed = true;
+      this.resume();
+    };
+
+    this.displayWaitMessage(this._buildMediaWaitMessage("video", file, videoInfo));
+    let cleanup = () => { };
+    try {
+      const vp = playVideo(
+        path,
+        null,
+        () => { cleanup(); resumeOnce(); this._videoPlayer = undefined; },
+        videoInfo
+      );
+      if (vp) vp.fileExplorer = this;
+      this._videoPlayer = vp;
+      const ve = vp?.videoElement;
+      let onPlayEvt = null;
+      let onErrEvt = null;
+      cleanup = () => {
+        if (!ve) return;
+        if (onPlayEvt) ve.removeEventListener("playing", onPlayEvt);
+        if (onErrEvt) ve.removeEventListener("error", onErrEvt);
+      };
+      if (ve) {
+        onPlayEvt = () => { cleanup(); resumeOnce(); };
+        onErrEvt = () => { cleanup(); resumeOnce(); };
+        ve.addEventListener("playing", onPlayEvt);
+        ve.addEventListener("error", onErrEvt);
+      }
+    } catch (err) {
+      displayError(`Failed to open video: ${err?.message || err}`, 3000);
+      resumeOnce();
+    }
   }
 
   async playAudio(file) {
     this.style.zIndex = 1;
-    try {
-      const path = extractPath(file);
-      if (!path) return displayError("Invalid file path.", 3000);
-      const audios = await getFileAudiosInfo(path);
-      const audioInfo = (audios && audios.length > 0) ? audios[0] : null;
+    const path = extractPath(file);
+    const initialInfo = (file?.audios?.length ? file.audios[0] : null) || (file?.titles?.length ? file.titles[0] : null);
 
-      playAudio(path, () => { }, () => { }, audioInfo);
+    if (!path) {
+      displayError("Invalid file path.", 3000);
+      this.resume();
+      return;
+    }
+
+    let resumed = false;
+    const resumeOnce = () => {
+      if (resumed) return;
+      resumed = true;
+      this.resume();
+    };
+
+    this.displayWaitMessage(this._buildMediaWaitMessage("audio", file, initialInfo));
+    try {
+      const audios = await getFileAudiosInfo(path);
+      const audioInfo = (audios && audios.length > 0) ? audios[0] : initialInfo;
+
+      if (audioInfo) {
+        const player = await playAudio(
+          path,
+          () => resumeOnce(),
+          () => { resumeOnce(); this._audioPlayer = undefined; },
+          audioInfo
+        );
+        if (player) player.fileExplorer = this;
+        this._audioPlayer = player;
+        const ws = player?._wavesurfer;
+        if (ws?.on) {
+          const onPlay = () => { if (ws.un) ws.un("play", onPlay); if (ws.un) ws.un("error", onErr); resumeOnce(); };
+          const onErr = () => { if (ws.un) ws.un("play", onPlay); if (ws.un) ws.un("error", onErr); resumeOnce(); };
+          ws.on("play", onPlay);
+          ws.on("error", onErr);
+        }
+      } else {
+        displayMessage("No audio information found for this file.", 3000);
+        resumeOnce();
+      }
 
     } catch (err) {
       displayError(`Failed to get audio info: ${err.message}`, 3000);
+      resumeOnce();
     }
   }
 

@@ -852,6 +852,10 @@ export class AudioPlayer extends HTMLElement {
     this._trackInfoElement.style.display = "none"
     this._stopBtn.style.display = "none"
     this._loopBtn.style.display = "none"
+    if (this._container) {
+      this._container.style.width = "400px"
+    }
+    if (this._vizWrapper) this._vizWrapper.style.minWidth = "0px"
   }
 
   showPlaylist() {
@@ -863,6 +867,10 @@ export class AudioPlayer extends HTMLElement {
       this._trackInfoElement.style.display = ""
       this._stopBtn.style.display = ""
       this._loopBtn.style.display = ""
+      if (this._container) {
+        this._container.style.width = "640px"
+      }
+      if (this._vizWrapper) this._vizWrapper.style.minWidth = "600px"
     } else {
       this.hidePlaylist()
     }
