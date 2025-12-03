@@ -1,6 +1,6 @@
 // src/pages/rbac_organizations.ts
 import "../widgets/organizations_manager";   // <globular-organizations-manager>
-import "../components/markdown";             // optional info panel
+import "@globular/components/markdown.js";             // optional info panel
 import "@polymer/iron-icons/iron-icons.js";
 import "@polymer/paper-icon-button/paper-icon-button.js";
 import "@polymer/iron-collapse/iron-collapse.js";

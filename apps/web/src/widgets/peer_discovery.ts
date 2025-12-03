@@ -1,6 +1,12 @@
 // src/widgets/peer_discovery.ts
-import { displayError, displaySuccess } from '../backend/ui/notify'
-import { scanPeers, pingPeer, registerPeer, DiscoveredHost } from '../backend/rbac/peers'
+import {
+  displayError,
+  displaySuccess,
+  scanPeers,
+  pingPeer,
+  registerPeer,
+  type DiscoveredHost,
+} from '@globular/backend'
 
 function toHostSafe(h: any): DiscoveredHost {
   // allow raw objects too

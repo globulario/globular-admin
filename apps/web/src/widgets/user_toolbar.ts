@@ -1,6 +1,6 @@
 // src/widgets/user_toolbar.ts
-import { getUsername, isSa, logout } from '../backend/core/session'
-import '../components/fileExplorer/fileExplorer.js'
+import { getUsername, isSa, logout } from "@globular/backend"
+import "@globular/components/fileExplorer/fileExplorer.js"
 
 class UserToolbar extends HTMLElement {
   private shadow!: ShadowRoot

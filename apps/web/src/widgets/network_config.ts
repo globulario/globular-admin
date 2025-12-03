@@ -1,8 +1,13 @@
 // src/widgets/network_config.ts
 import '@polymer/paper-icon-button/paper-icon-button.js'
 import '@polymer/iron-icons/iron-icons.js'
-import { fetchNetworkSummary, applyNetworkUpdate, NetworkSummary } from '../backend/core/network'
-import { displayError, displaySuccess } from '../backend/ui/notify'
+import {
+  fetchNetworkSummary,
+  applyNetworkUpdate,
+  type NetworkSummary,
+  displayError,
+  displaySuccess,
+} from "@globular/backend";
 
 class NetworkConfig extends HTMLElement {
   private shadow!: ShadowRoot

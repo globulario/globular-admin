@@ -1,6 +1,6 @@
 // src/pages/rbac_accounts.ts
 import '../widgets/users_manager'          // <globular-users-manager>
-import '../components/markdown'            // optional, if you still want the info panel
+import "@globular/components/markdown.js" // optional, if you still want the info panel
 import '@polymer/iron-icons/iron-icons.js'
 import '@polymer/paper-icon-button/paper-icon-button.js'
 import '@polymer/iron-collapse/iron-collapse.js'

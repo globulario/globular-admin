@@ -1,6 +1,6 @@
 // src/pages/cluster_overview.ts
 import '../widgets/network_config'
-import '../components/markdown.js'                  // registers <globular-markdown>
+import "@globular/components/markdown.js";                  // registers <globular-markdown>
 import '@polymer/iron-icons/iron-icons.js'
 import '@polymer/paper-icon-button/paper-icon-button.js'
 

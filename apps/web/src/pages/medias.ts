@@ -13,4 +13,4 @@ class PageMedia extends HTMLElement {
 
 customElements.define("page-media", PageMedia);
 
-import "../components/media/mediaSettings.js";
+import "@globular/components/media/mediaSettings.js";

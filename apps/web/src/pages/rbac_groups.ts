@@ -1,6 +1,6 @@
 // src/pages/rbac_groups.ts
 import "../widgets/groups_manager";          // <globular-groups-manager>
-import "../components/markdown";             // optional info panel
+import "@globular/components/markdown.js";             // optional info panel
 import "@polymer/iron-icons/iron-icons.js";
 import "@polymer/paper-icon-button/paper-icon-button.js";
 import "@polymer/iron-collapse/iron-collapse.js";

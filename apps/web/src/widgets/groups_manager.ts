@@ -1,27 +1,27 @@
 // src/widgets/groups_manager.ts
 import {
-  // backend actions + VM
   listGroups,
   createGroup,
   updateGroup,
   deleteGroup,
   addGroupMember,
   removeGroupMember,
-  GroupVM,
-} from "../backend/rbac/groups";
-
-import { AccountVM, listAccounts, getAccount } from "../backend/rbac/accounts";
-
-import { displayError, displayQuestion, displaySuccess } from "../backend/ui/notify";
+  type GroupVM,
+  listAccounts,
+  type AccountVM,
+  displayError,
+  displayQuestion,
+  displaySuccess,
+} from "@globular/backend";
 
 import "@polymer/iron-icons/iron-icons.js";
 import "@polymer/paper-icon-button/paper-icon-button.js";
 import "@polymer/iron-collapse/iron-collapse.js";
 
-import "../components/table";       // <globular-table>
+import "@globular/components/table.js";       // <globular-table>
 import "../widgets/avatar_changer"; // <avatar-changer>
 import { UserView } from "./user_view.js"; // <globular-user-view>
-import { getBase64FromImageUrl } from "../components/utility";
+import { getBase64FromImageUrl } from "@globular/components/utility.js";
 
 // ---------- table row ----------
 type TableRow = {

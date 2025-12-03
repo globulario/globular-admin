@@ -1,7 +1,13 @@
 // src/pages/login.ts
-import { setToken, login } from '../backend/core/auth'
-import { hasBaseUrl, getBaseUrl, setBaseUrl } from '../backend/core/endpoints'
-import { displayError, displaySuccess } from '../backend/ui/notify' // ← update path if needed
+import {
+  setToken,
+  login,
+  hasBaseUrl,
+  getBaseUrl,
+  setBaseUrl,
+  displayError,
+  displaySuccess,
+} from "@globular/backend";
 
 /**
  * <page-login>

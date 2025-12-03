@@ -1,11 +1,14 @@
 // /widgets/organization_view.ts
 // <globular-organization-view> — works with OrganizationVM *or* legacy proto-like organization objects
 
-import { displayError } from "../backend/ui/notify";
-import { AccountVM, getAccount } from "../backend/rbac/accounts";
-import type { OrganizationVM } from "../backend/rbac/organizations";
+import {
+  displayError,
+  getAccount,
+  getGroupById,
+  type AccountVM, 
+  type OrganizationVM
+} from "@globular/backend";
 import { GroupView } from "./group_view";                 // ensures <globular-group-view> is registered
-import { getGroupById } from "../backend/rbac/groups";     // returns GroupVM | null (adjust if your API differs)
 import "./user_view";                                      // ensures <globular-user-view> is registered
 
 // Legacy proto-like shape (for backward compatibility)

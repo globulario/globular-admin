@@ -1,9 +1,13 @@
 // widgets/group_view.ts
 // <globular-group-view> — works with GroupVM *or* legacy proto-like groups
 
-import { displayError } from "../backend/ui/notify"
-import { AccountVM, getAccount } from "../backend/rbac/accounts"              // adjust if needed
-import type { GroupVM } from "../backend/rbac/groups"                        // adjust if needed
+import {
+  displayError,
+  getAccount,
+  type AccountVM, 
+  type GroupVM 
+} from "@globular/backend";
+
 import "./user_view"                                                         // ensures <globular-user-view> is registered
 
 // Legacy proto-like shape (for backward compatibility)

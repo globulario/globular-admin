@@ -10,26 +10,28 @@ import {
   removeRoleFromOrganization,
   addRoleActions,
   removeRoleAction,
-  RoleVM as Role,
   getRoleById,
-} from "../backend/rbac/roles";
-
-import { displayError, displayQuestion, displaySuccess } from "../backend/ui/notify";
+  displayError,
+  displayQuestion,
+  displaySuccess,
+  listAccounts,
+  listOrganizations as listOrgs,
+  listActions,
+  RoleVM as Role,
+  AccountVM,
+  OrganizationVM as Organization,
+} from "@globular/backend";
 
 import "@polymer/iron-icons/iron-icons.js";
 import "@polymer/paper-icon-button/paper-icon-button.js";
 import "@polymer/iron-collapse/iron-collapse.js";
 
-import "../components/table";         // <globular-table>
+import "@globular/components/table.js";         // <globular-table>
 import "./action_view";      // <globular-action-view>
 
-import { listAccounts, AccountVM } from "../backend/rbac/accounts";
 import { UserView } from "./user_view.js"; // <globular-user-view>
 
 import { OrganizationView } from "./organization_view"; // <globular-organization-view>
-import { listOrganizations as listOrgs, OrganizationVM as Organization } from "../backend/rbac/organizations";
-
-import { listActions } from "../backend/core/services";
 
 
 /* ---------- table row ---------- */

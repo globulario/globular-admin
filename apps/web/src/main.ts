@@ -2,9 +2,13 @@
 import './styles/styles.css'
 import './styles/theme.css'
 
-import './components/applicationLayout.js'
+
+import "@globular/components";
 import './widgets/user_toolbar' // registers <user-toolbar>
+
 import { startRouter } from './router'
+import { navigateTo } from "./router";
+
 
 // Register pages
 import './pages/dashboard'
@@ -30,15 +34,19 @@ import './widgets/user_toolbar'
 import './widgets/theme_toggle'
 import './widgets/peer_discovery'
 
-// src/main.ts
+// theme
 import { applyTheme, watchSystemTheme } from './theme/theme'
 
-// main.ts
-import { Backend } from "./backend/backend";
-import { getEventClient } from "./backend/event/event"; // your factory for EventServiceClient
-import { getBaseUrl } from "./backend/core/endpoints";
-import { restoreSession, enableVisibilityAutoRefresh } from "./backend/core/auth";
 
+// ✅ backend helpers from the library
+import {
+  Backend,
+  getEventClient,
+  setNavigateHandler,
+} from "@globular/backend";
+
+// hook the router into the backend session utils
+setNavigateHandler(navigateTo);
 
 //restoreSession();
 //enableVisibilityAutoRefresh(); // optional but nice

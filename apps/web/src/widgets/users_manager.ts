@@ -1,13 +1,21 @@
 // src/widgets/users_manager.ts
-import { listAccounts, createAccount, updateAccount, deleteAccount } from '../backend/rbac/accounts'
-import { displayError, displayQuestion, displaySuccess } from '../backend/ui/notify' // <-- update path if needed
-import { getBase64FromImageUrl } from '../components/utility.js'
-import { setPassword, setRootPassword } from '../backend/core/auth' // <-- update path if needed
+import {
+  listAccounts,
+  createAccount,
+  updateAccount,
+  deleteAccount,
+  displayError,
+  displayQuestion,
+  displaySuccess,
+  setPassword,
+  setRootPassword,
+} from "@globular/backend";
+import { getBase64FromImageUrl } from "@globular/components/utility.js";
 import '@polymer/iron-icons/iron-icons.js'
 import '@polymer/paper-icon-button/paper-icon-button.js'
 import '@polymer/iron-collapse/iron-collapse.js'
-import '../components/table'     // <globular-table>
-import '../components/markdown'  // <globular-markdown> (optional)
+import "@globular/components/table.js"     // <globular-table>
+import "@globular/components/markdown.js"  // <globular-markdown> (optional)
 import '../widgets/avatar_changer' // <avatar-changer>
 
 type Account = {

@@ -8,24 +8,24 @@ import {
   removeOrganizationAccount,
   addOrganizationGroup,
   removeOrganizationGroup,
-  Organization,
-} from "../backend/rbac/organizations";
-
-import { displayError, displayQuestion, displaySuccess } from "../backend/ui/notify";
-import { getBase64FromImageUrl } from "../components/utility.js";
+  type Organization,
+  displayError,
+  displayQuestion,
+  displaySuccess,
+  listAccounts,
+  type AccountVM,
+  listGroups,
+} from "@globular/backend";
+import { getBase64FromImageUrl } from "@globular/components/utility.js";
 
 import "@polymer/iron-icons/iron-icons.js";
 import "@polymer/paper-icon-button/paper-icon-button.js";
 import "@polymer/iron-collapse/iron-collapse.js";
 
-import "../components/table";         // <globular-table>
+import "@globular/components/table.js";         // <globular-table>
 import "../widgets/avatar_changer";   // <avatar-changer>
-
-import { getAccount, listAccounts, AccountVM } from "../backend/rbac/accounts";
 import { UserView } from "./user_view.js";  // <globular-user-view>
-
 import { GroupView } from "./group_view.js"; // <globular-group-view>
-import { getGroupById, listGroups } from "../backend/rbac/groups";
 
 /* ---------- table row ---------- */
 type TableRow = {

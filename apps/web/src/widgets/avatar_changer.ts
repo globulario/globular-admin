@@ -1,5 +1,5 @@
 // src/components/avatar-changer.ts
-import { updateAccount } from "../backend/rbac/accounts"; // keep if you want auto-persist
+import { updateAccount } from "@globular/backend";
 
 // TypeScript declaration for Vite's import.meta.glob
 interface ImportMeta {
@@ -175,7 +175,7 @@ private async loadImages(_path: string) {
   // ✅ glob from /src, not /public
   const faceImgs = import.meta.glob(
     '../assets/pixmaps/faces/**/*.{png,jpg,jpeg,webp,svg,gif}',
-    { eager: true, as: 'url' }
+    { eager: true, import: 'default', query: '?url' }
   ) as Record<string, string>;
 
   // build list + thumbs

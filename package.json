@@ -2,9 +2,6 @@
   "name": "globular-admin",
   "private": true,
   "version": "0.1.0",
-  "workspaces": [
-    "apps/web"
-  ],
   "scripts": {
     "dev": "pnpm --filter @globular/admin-web dev",
     "build": "pnpm --filter @globular/admin-web build",
@@ -16,5 +13,9 @@
   "packageManager": "pnpm@9.0.0",
   "dependencies": {
     "dom-to-image": "^2.6.0"
+  },
+  "devDependencies": {
+    "rimraf": "^6.0.0",
+    "typescript": "^5.9.3"
   }
 }
