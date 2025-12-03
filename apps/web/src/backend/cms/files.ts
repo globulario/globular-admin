@@ -20,6 +20,17 @@ export const SUBTITLES_DIR = "/__subtitles__";
 export const TIMELINE_THUMBNAILS_DIR = "/__timeline__";
 export const DEFAULT_AVATAR_PATH = "https://www.w3schools.com/howto/img_avatar.png";
 export const LOCAL_MEDIA_PROTOCOL = "local-media://";
+export const HIDDEN_DIR_SEGMENT = "/.hidden";
+
+export function buildHiddenTimelineDir(path: string): string {
+  if (!path) return HIDDEN_DIR_SEGMENT;
+  const lastSlash = path.lastIndexOf("/");
+  const baseDir = lastSlash >= 0 ? path.substring(0, lastSlash + 1) : "/";
+  const fileNameWithSlash = lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
+  const dot = fileNameWithSlash.lastIndexOf(".");
+  const bareName = dot > 0 ? fileNameWithSlash.substring(0, dot) : fileNameWithSlash;
+  return `${baseDir}.hidden/${bareName}/${TIMELINE_THUMBNAILS_DIR}`;
+}
 
 /* ------------------------------------------------------------------
  * FileVM mirrors proto FileInfo (recursive). Extras remain optional
@@ -452,6 +463,9 @@ export async function readDir(path: string, recursive = false): Promise<DirVM> {
     try {
       return await readDirFresh(currentPath, { recursive }).promise;
     } catch (err: any) {
+      if (isMissingPathError(err)) {
+        return buildEmptyDirVM(currentPath);
+      }
       if (isNotDirectoryError(err) && !original) {
         // already attempted fallback paths, avoid infinite loop
       } else if (isNotDirectoryError(err)) {
@@ -475,6 +489,26 @@ function isNotDirectoryError(err: any): boolean {
   const code = err?.code ?? err?.status;
   if (code === 13) return true;
   return false;
+}
+
+function isMissingPathError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err?.message || "").toLowerCase();
+  if (!msg) return false;
+  return msg.includes("no file found") || msg.includes("not found");
+}
+
+function buildEmptyDirVM(path: string): DirVM {
+  const cleanPath = path || "/";
+  const segments = cleanPath.split("/").filter(Boolean);
+  const name = segments.length ? segments[segments.length - 1] : "/";
+  return new FileVM({
+    path: cleanPath,
+    name,
+    isDir: true,
+    mime: "inode/directory",
+    files: [],
+  });
 }
 
 export interface ReadDirOptions {
@@ -536,6 +570,9 @@ export function readDirFresh(
       worker.removeEventListener("error", handleError);
     };
   });
+  const guardedWorkerPromise = workerPromise.catch((err) => {
+    throw err;
+  });
 
   const promise = (async () => {
     const md = await meta();
@@ -584,7 +621,7 @@ export function readDirFresh(
     }
 
     worker.postMessage({ type: "done" });
-    const root = await workerPromise;
+    const root = await guardedWorkerPromise;
     workerCleanup?.();
     worker.terminate();
 
@@ -614,8 +651,17 @@ export function readDirFresh(
     return root;
   })();
 
+  const wrappedPromise = promise.catch((err) => {
+    if (isMissingPathError(err)) {
+      const empty = buildEmptyDirVM(requestedPath);
+      if (onDone) onDone(empty);
+      return empty;
+    }
+    throw err;
+  });
+
   return {
-    promise,
+    promise: wrappedPromise,
     cancel: () => {
       cancelled = true;
       worker.postMessage({ type: "cancel" });

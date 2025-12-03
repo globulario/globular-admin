@@ -13,7 +13,6 @@ import './pages/rbac_accounts'
 import './pages/rbac_orgs'
 import './pages/rbac_groups'
 import './pages/rbac_roles'
-import './pages/cms_browser'
 import './pages/console_shell'
 import './pages/repo_market'
 // ------------------------------
@@ -97,7 +96,7 @@ const routes: Record<string, RouteHandler> = {
   '#/rbac/organizations': () => document.createElement('page-rbac-organizations'),
   '#/rbac/groups': () => document.createElement('page-rbac-groups'),
   '#/rbac/roles': () => document.createElement('page-rbac-roles'),
-  '#/cms/browser': () => document.createElement('page-cms-browser'),
+  '#/media': () => document.createElement('page-media'),
   '#/console': () => document.createElement('page-console'),
   '#/repository': () => document.createElement('page-repository'),
 }

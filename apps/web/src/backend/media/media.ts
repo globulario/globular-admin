@@ -5,6 +5,7 @@ import { unary, stream } from "../core/rpc";
 // ---- stubs ----
 import { MediaServiceClient } from "globular-web-client/media/media_grpc_web_pb";
 import * as mediapb from "globular-web-client/media/media_pb";
+export type MediaFilePB = mediapb.MediaFile;
 
 // keep this identical to accounts.ts
 function clientFactory(): MediaServiceClient {
@@ -99,4 +100,178 @@ export async function uploadVideoByUrl(
   await stream(clientFactory, "uploadVideo", rq, (m: any) => {
     msgHandler(m as mediapb.UploadVideoResponse);
   }, "media.MediaService", md);
+}
+
+// -------- Media files listing (for metadata/process candidates) --------
+
+/** Stream all media files (audio/video) relative to /files root. */
+export async function listMediaFiles(
+  onFile: (f: mediapb.MediaFile) => void,
+  onComplete?: () => void
+): Promise<void> {
+  const rq = new mediapb.ListMediaFilesRequest();
+  await stream(
+    clientFactory,
+    "listMediaFiles",
+    rq,
+    (m: any) => {
+      if (m && typeof onFile === "function") onFile(m as mediapb.MediaFile);
+    },
+    "media.MediaService"
+  );
+  if (typeof onComplete === "function") onComplete();
+}
+
+// ----------------------- Video worker (global) -----------------------
+
+/** Start the background video processing worker (no specific path). */
+export async function startVideoWorker(): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.StartProcessVideoRequest();
+  await unary(clientFactory, "startProcessVideo", rq, undefined, md);
+}
+
+/** Stop the background video processing worker. */
+export async function stopVideoWorker(): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.StopProcessVideoRequest();
+  await unary(clientFactory, "stopProcessVideo", rq, undefined, md);
+}
+
+/** Check if the background video processing worker is running. */
+export async function isVideoProcessingRunning(): Promise<boolean> {
+  const md = await meta();
+  const rq = new mediapb.IsProcessVideoRequest();
+  const rsp: any = await unary(clientFactory, "isProcessVideo", rq, undefined, md);
+
+  if (!rsp) return false;
+
+  // proto usually generates getIsprocessvideo(); keep fallbacks just in case
+  if (typeof rsp.getIsprocessvideo === "function") return !!rsp.getIsprocessvideo();
+  if (typeof rsp.getIsProcessVideo === "function") return !!rsp.getIsProcessVideo();
+  return !!(rsp.isprocessvideo ?? rsp.value ?? false);
+}
+
+// ---------------------- Automatic conversion flags ----------------------
+
+/** Enable/disable automatic video conversion (to MP4). */
+export async function setVideoConversion(enabled: boolean): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.SetVideoConversionRequest();
+  rq.setValue(enabled);
+  await unary(clientFactory, "setVideoConversion", rq, undefined, md);
+}
+
+/** Enable/disable automatic stream conversion (MP4 → HLS). */
+export async function setVideoStreamConversion(enabled: boolean): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.SetVideoStreamConversionRequest();
+  rq.setValue(enabled);
+  await unary(clientFactory, "setVideoStreamConversion", rq, undefined, md);
+}
+
+/** Set the daily start hour for automatic conversions ("HH:MM"). */
+export async function setStartVideoConversionHour(value: string): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.SetStartVideoConversionHourRequest();
+  rq.setValue(value);
+  await unary(clientFactory, "setStartVideoConversionHour", rq, undefined, md);
+}
+
+/** Set the maximum duration for automatic conversions ("HH:MM"). */
+export async function setMaximumVideoConversionDelay(value: string): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.SetMaximumVideoConversionDelayRequest();
+  rq.setValue(value);
+  await unary(clientFactory, "setMaximumVideoConversionDelay", rq, undefined, md);
+}
+
+// ----------------------------- Logs ---------------------------------
+
+export type VideoConversionLogPB = mediapb.VideoConversionLog;
+export type VideoConversionErrorPB = mediapb.VideoConversionError;
+
+/** Get all video conversion logs. */
+export async function getVideoConversionLogs(): Promise<VideoConversionLogPB[]> {
+  const md = await meta();
+  const rq = new mediapb.GetVideoConversionLogsRequest();
+  const rsp: any = await unary(clientFactory, "getVideoConversionLogs", rq, undefined, md);
+
+  if (rsp && typeof rsp.getLogsList === "function") {
+    return rsp.getLogsList() as VideoConversionLogPB[];
+  }
+  return [];
+}
+
+/** Clear *all* conversion logs. */
+export async function clearVideoConversionLogs(): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.ClearVideoConversionLogsRequest();
+  await unary(clientFactory, "clearVideoConversionLogs", rq, undefined, md);
+}
+
+/** Get all conversion errors. */
+export async function getVideoConversionErrors(): Promise<VideoConversionErrorPB[]> {
+  const md = await meta();
+  const rq = new mediapb.GetVideoConversionErrorsRequest();
+  const rsp: any = await unary(clientFactory, "getVideoConversionErrors", rq, undefined, md);
+
+  if (rsp && typeof rsp.getErrorsList === "function") {
+    return rsp.getErrorsList() as VideoConversionErrorPB[];
+  }
+  return [];
+}
+
+/** Clear a single conversion error by path. */
+export async function clearVideoConversionError(path: string): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.ClearVideoConversionErrorRequest();
+  rq.setPath(path);
+  await unary(clientFactory, "clearVideoConversionError", rq, undefined, md);
+}
+
+/** Clear *all* conversion errors. */
+export async function clearVideoConversionErrors(): Promise<void> {
+  const md = await meta();
+  const rq = new mediapb.ClearVideoConversionErrorsRequest();
+  await unary(clientFactory, "clearVideoConversionErrors", rq, undefined, md);
+}
+
+// ----------------------------- Settings ------------------------------
+
+export type MediaConversionSettings = {
+  automaticVideoConversion: boolean;
+  automaticStreamConversion: boolean;
+  startVideoConversionHour: string;
+  maximumVideoConversionDelay: string;
+};
+
+/** Best-effort fetch of media conversion settings persisted on the server. */
+export async function getMediaConversionSettings(): Promise<MediaConversionSettings> {
+  const defaults: MediaConversionSettings = {
+    automaticVideoConversion: false,
+    automaticStreamConversion: false,
+    startVideoConversionHour: "00:00",
+    maximumVideoConversionDelay: "00:00",
+  };
+
+  try {
+    const base = (getBaseUrl() ?? "").replace(/\/$/, "");
+    if (!base) return defaults;
+
+    // Config service usually exposes service configs under /config/{serviceId}
+    const res = await fetch(`${base}/config/media.MediaService`, {
+      credentials: "include",
+    });
+    if (!res.ok) return defaults;
+    const cfg = await res.json();
+    return {
+      automaticVideoConversion: !!cfg.AutomaticVideoConversion,
+      automaticStreamConversion: !!cfg.AutomaticStreamConversion,
+      startVideoConversionHour: cfg.StartVideoConversionHour || defaults.startVideoConversionHour,
+      maximumVideoConversionDelay: cfg.MaximumVideoConversionDelay || defaults.maximumVideoConversionDelay,
+    };
+  } catch {
+    return defaults;
+  }
 }

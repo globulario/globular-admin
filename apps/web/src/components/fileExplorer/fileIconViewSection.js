@@ -8,7 +8,7 @@ import { copyToClipboard } from "../utility.js";
 import { pathOf, nameOf, filesOf, mimeRootOf } from "./filevm-helpers";
 
 // Proper backend wrappers (no direct HTTP fetch)
-import { getFile, readText } from "../../backend/cms/files";
+import { readText } from "../../backend/cms/files";
 
 import "@polymer/iron-icon/iron-icon.js";
 import "@polymer/paper-checkbox/paper-checkbox.js";
@@ -258,8 +258,8 @@ export class FileIconViewSection extends HTMLElement {
   async _loadPlaylistJsonBackend() {
     const filePath = `${pathOf(this._dir)}/.hidden/playlist.json`;
     try {
-      const file = await getFile(filePath);
-      const text = await readText(file);
+      // We only need the raw content; `readText` already takes a path string.
+      const text = await readText(filePath);
       if (!text) return null;
       return JSON.parse(text);
     } catch (e) {

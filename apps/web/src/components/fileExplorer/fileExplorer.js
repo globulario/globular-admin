@@ -85,6 +85,37 @@ export class FileExplorer extends HTMLElement {
   static paperTray = [];
   static fileUploader = null;
   static editMode = "";
+  static STATE_STORAGE_KEY = "__globular_file_explorer_state__";
+  static _lastSessionState = null;
+
+  static getPersistedState() {
+    if (FileExplorer._lastSessionState) return FileExplorer._lastSessionState;
+    if (typeof sessionStorage === "undefined") return null;
+    try {
+      const raw = sessionStorage.getItem(FileExplorer.STATE_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      FileExplorer._lastSessionState = parsed;
+      return parsed;
+    } catch (err) {
+      console.warn("FileExplorer: failed to restore previous state", err);
+      return null;
+    }
+  }
+
+  static setPersistedState(state) {
+    FileExplorer._lastSessionState = state || null;
+    if (typeof sessionStorage === "undefined") return;
+    try {
+      if (!state) {
+        sessionStorage.removeItem(FileExplorer.STATE_STORAGE_KEY);
+      } else {
+        sessionStorage.setItem(FileExplorer.STATE_STORAGE_KEY, JSON.stringify(state));
+      }
+    } catch (err) {
+      console.warn("FileExplorer: failed to persist state", err);
+    }
+  }
 
   _id = null;
   _path = undefined;
@@ -135,6 +166,7 @@ export class FileExplorer extends HTMLElement {
   _aliasToRealMap = new Map();
   _publicAliasMap = new Map();
   _account = null;
+  _restoredState = null;
 
   // 🔧 NEW: track current delete-sub for info panel to avoid stacking
   _currentInfoDeleteSub = { event: null, uuid: null };
@@ -154,6 +186,7 @@ export class FileExplorer extends HTMLElement {
     this._root = undefined;
     this._navigations = [];
     this._listeners = {};
+    this._restoredState = FileExplorer.getPersistedState();
 
     if (FileExplorer.fileUploader === null) {
       FileExplorer.fileUploader = new FilesUploader();
@@ -284,6 +317,8 @@ export class FileExplorer extends HTMLElement {
     if (FileExplorer.fileUploader && FileExplorer.fileUploader.parentNode === this) {
       this.removeChild(FileExplorer.fileUploader);
     }
+
+    this._persistSessionState();
   }
 
   _initializeLayout() {
@@ -434,7 +469,7 @@ export class FileExplorer extends HTMLElement {
       is-resizeable="true"
       show-icon="true"
       is-minimizeable="true"
-      offset="64">
+      offset="0">
 
       <globular-search-document-bar slot="search"></globular-search-document-bar>
       <span id="title-span" slot="title">File Explorer</span>
@@ -504,7 +539,12 @@ export class FileExplorer extends HTMLElement {
     </globular-dialog>
   `;
     this._dialog = this.shadowRoot.querySelector("globular-dialog");
+    if (this._dialog) {
+      const uniqueDialogId = `${this._id}-dialog`;
+      this._dialog.setAttribute("id", uniqueDialogId);
+    }
     this._dialog.getPreview = this.getPreview.bind(this);
+    this._ensureDefaultDialogSize();
   }
 
   _initializeComponents() {
@@ -631,6 +671,7 @@ export class FileExplorer extends HTMLElement {
       this._filesIconView.hideMenu();
       this._filesListView.hideMenu();
     };
+    this._ensureDefaultDialogSize();
 
     this._refreshBtn = this.shadowRoot.querySelector("#navigation-refresh-btn");
     this._createDirectoryBtn = this.shadowRoot.querySelector("#navigation-create-dir-btn");
@@ -988,7 +1029,9 @@ export class FileExplorer extends HTMLElement {
 
       this.resume();
       this._onloaded?.();
-      this._fileIconBtn.click();
+      const preferredView = this._restoredState?.viewMode === "list" ? "list" : "icon";
+      if (preferredView === "list") this._filesListBtn.click();
+      else this._fileIconBtn.click();
     } catch (err) {
       this.resume();
       displayError(`Failed to initialize file explorer: ${err.message}`, 5000);
@@ -1004,6 +1047,28 @@ export class FileExplorer extends HTMLElement {
     }
     this._currentReadHandle = null;
     this._currentReadToken++;
+  }
+
+  _ensureDefaultDialogSize() {
+    const dialog = this._dialog;
+    if (!dialog) return;
+    const ensure = () => {
+      if (!dialog) return;
+      const getter = typeof dialog.getWidth === "function" ? dialog.getWidth.bind(dialog) : null;
+      const heightGetter = typeof dialog.getHeight === "function" ? dialog.getHeight.bind(dialog) : null;
+      const width = getter ? getter() : dialog.offsetWidth;
+      const height = heightGetter ? heightGetter() : dialog.offsetHeight;
+      if (!width || width <= 0) {
+        if (typeof dialog.setWidth === "function") dialog.setWidth(1024);
+        else dialog.style.width = "1024px";
+      }
+      if (!height || height <= 0) {
+        if (typeof dialog.setHeight === "function") dialog.setHeight(768);
+        else dialog.style.height = "768px";
+      }
+    };
+    ensure();
+    requestAnimationFrame(ensure);
   }
 
   _startProgressiveDirLoad(fetchPath, displayPath) {
@@ -1665,6 +1730,7 @@ export class FileExplorer extends HTMLElement {
     this._filesListView.hideMenu();
     this._filesIconView.hideMenu();
     this.clearSelections();
+    this._persistSessionState();
   }
 
   async publishSetDirEvent(path) {
@@ -1834,6 +1900,30 @@ export class FileExplorer extends HTMLElement {
 
     this._updateNavigationButtonStates();
     this._updateNavigationListMenu(dir);
+    this._persistSessionState();
+  }
+
+  _persistSessionState(extra = {}) {
+    const path =
+      this._path ||
+      extractPath(this._currentDir) ||
+      extractPath(this._currentDirVM);
+    if (!path) return;
+
+    const synthetic =
+      (this._currentDir && this._currentDir.__syntheticPublicPath) ||
+      (this._currentDirVM && this._currentDirVM.__syntheticPublicPath) ||
+      this._syntheticPathForRealPath(path) ||
+      path;
+    const viewMode = this._filesListBtn?.classList.contains("active") ? "list" : "icon";
+
+    FileExplorer.setPersistedState({
+      path,
+      displayPath: synthetic || path,
+      viewMode,
+      timestamp: Date.now(),
+      ...extra,
+    });
   }
 
   async _buildPublicDirVM() {

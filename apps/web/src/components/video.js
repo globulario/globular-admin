@@ -9,7 +9,7 @@ import { displayError } from '../backend/ui/notify'
 import { Backend } from '../backend/backend'
 
 // Controllers / unified wrappers
-import { readDir } from '../backend/cms/files'
+import { readDir, buildHiddenTimelineDir } from '../backend/cms/files'
 
 // Utilities
 import { fireResize } from './utility'
@@ -78,6 +78,16 @@ function buildFileUrl(rawPath, tokenOrOptions, application) {
   if (application) qs.append('application', application)
   if (qs.toString()) url += '?' + qs.toString()
   return url
+}
+
+function callMaybe(obj, method, args = []) {
+  if (!obj || typeof obj[method] !== 'function') return undefined
+  try { return obj[method](...args) } catch { return undefined }
+}
+
+function propMaybe(obj, prop) {
+  if (!obj) return undefined
+  return obj[prop]
 }
 
 // --------- playlist helper ---------
@@ -869,9 +879,20 @@ export class VideoPlayer extends HTMLElement {
 
   getPreview() {
     if (this.previewElement) {
-      if (this.titleInfo && this.titleInfo.getPoster) {
-        this.previewElement.style.backgroundImage = `url('${this.titleInfo.getPoster().getContenturl()}')`
-        if (this.previewElement._title) this.previewElement._title.innerHTML = this.titleInfo.getTitle()
+      if (this.titleInfo) {
+        const posterObj = callMaybe(this.titleInfo, 'getPoster') || propMaybe(this.titleInfo, 'poster')
+        const posterUrl = posterObj
+          ? callMaybe(posterObj, 'getContenturl') || propMaybe(posterObj, 'contenturl') || propMaybe(posterObj, 'url')
+          : ''
+        if (posterUrl) {
+          this.previewElement.style.backgroundImage = `url('${posterUrl}')`
+        }
+        const titleText =
+          callMaybe(this.titleInfo, 'getTitle') ||
+          propMaybe(this.titleInfo, 'title') ||
+          propMaybe(this.titleInfo, 'name') ||
+          ''
+        if (this.previewElement._title && titleText) this.previewElement._title.innerHTML = titleText
       }
       const playBtn = this.previewElement.querySelector('#preview-play-btn')
       const pauseBtn = this.previewElement.querySelector('#preview-pause-btn')
@@ -892,8 +913,17 @@ export class VideoPlayer extends HTMLElement {
     let description = ''
 
     if (this.titleInfo) {
-      posterUrl = this.titleInfo.getPoster && this.titleInfo.getPoster().getContenturl()
-      description = this.titleInfo.getDescription ? this.titleInfo.getDescription() : ''
+      const posterObj = callMaybe(this.titleInfo, 'getPoster') || propMaybe(this.titleInfo, 'poster')
+      posterUrl = posterObj
+        ? callMaybe(posterObj, 'getContenturl') || propMaybe(posterObj, 'contenturl') || propMaybe(posterObj, 'url')
+        : ''
+      description =
+        callMaybe(this.titleInfo, 'getDescription') ||
+        propMaybe(this.titleInfo, 'description') ||
+        callMaybe(this.titleInfo, 'getTitle') ||
+        propMaybe(this.titleInfo, 'title') ||
+        propMaybe(this.titleInfo, 'name') ||
+        ''
     } else {
       description = this.path.substring(this.path.lastIndexOf('/') + 1)
     }
@@ -1084,16 +1114,17 @@ export class VideoPlayer extends HTMLElement {
       }
     }
 
-    // timeline thumbnail
-    let thumbBase = path
-    if (/\.(mp4|MP4|mkv)$/i.test(path)) thumbBase = path.substring(0, path.lastIndexOf('.'))
-    const vtt = buildFileUrl(
-      `${thumbBase.substring(0, thumbBase.lastIndexOf('/') + 1)}.hidden${thumbBase.substring(thumbBase.lastIndexOf('/'))}/__timeline__/thumbnails.vtt`,
-      token
-    )
-    if (this.player && this.player.setPreviewThumbnails) {
-      this.player.setPreviewThumbnails({ enabled: 'true', src: vtt })
+    // timeline thumbnail previews
+    const timelineDir = buildHiddenTimelineDir(path)
+    const previewSrc = appendTokenParam(buildFileUrl(`${timelineDir}/thumbnails.vtt`, token), token)
+    if (previewSrc && this.player && this.player.setPreviewThumbnails) {
+      this.player.setPreviewThumbnails({ enabled: 'true', src: previewSrc })
     }
+
+    // reset element before assigning new source to avoid stale decode state
+    this.videoElement.pause()
+    this.videoElement.removeAttribute('src')
+    this.videoElement.load()
 
     // set source
     const src = urlToPlay
@@ -1168,6 +1199,7 @@ export class VideoPlayer extends HTMLElement {
       localStorage.setItem(this.titleInfo.getId(), String(this.videoElement.currentTime))
     }
   }
+
   /**
  * Compute a video size that fits nicely on the current screen.
  * Keeps aspect ratio, clamps to ~80% of viewport.
@@ -1372,3 +1404,14 @@ export class VideoTrack extends HTMLElement {
 }
 
 customElements.define('globular-video-track', VideoTrack)
+function appendTokenParam(inputUrl, token) {
+  if (!token || !inputUrl) return inputUrl
+  try {
+    const url = new URL(inputUrl, window.location.origin)
+    url.searchParams.set('token', token)
+    return url.toString()
+  } catch {
+    const glue = inputUrl.includes('?') ? '&' : '?'
+    return `${inputUrl}${glue}token=${encodeURIComponent(token)}`
+  }
+}

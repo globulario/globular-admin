@@ -35,7 +35,7 @@
     "@polymer/polymer": "^3.5.1",
     "@types/toastify-js": "^1.12.4",
     "dom-to-image": "^2.6.0",
-    "globular-web-client": "^1.2.012",
+    "globular-web-client": "^1.2.013",
     "highlight.js": "^11.11.1",
     "hljs": "^6.2.3",
     "hls.js": "^1.6.14",

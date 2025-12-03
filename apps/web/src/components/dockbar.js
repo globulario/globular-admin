@@ -1,6 +1,21 @@
 import * as getUuid from 'uuid-by-string';
 import { getCoords } from './utility';
 
+const sanitizeId = (value) => {
+  if (!value) return "dialog";
+  return String(value).replace(/[^a-zA-Z0-9_-]+/g, "-");
+};
+
+let handleCounter = 0;
+const ensureHandleId = (dialog) => {
+  if (!dialog.__dockbarHandleId) {
+    const base = sanitizeId(dialog.getAttribute("name") || dialog.id || dialog.tagName || "dialog");
+    handleCounter = (handleCounter + 1) % Number.MAX_SAFE_INTEGER;
+    dialog.__dockbarHandleId = `${base}-${Date.now()}-${handleCounter}`;
+  }
+  return dialog.__dockbarHandleId;
+};
+
 /**
  * `globular-dialog-handle` Web Component.
  * Represents a minimized dialog's clickable icon in the dockbar.
@@ -80,12 +95,13 @@ export class DialogHandle extends HTMLElement {
     }
     this._isDocked = false;
     if (this._minimizeBtn) this._minimizeBtn.style.display = "block";
+    if (this._previewContainer) this._previewContainer.innerHTML = "";
   }
 
   blur() {
     this._isFocused = false;
     if (this._container)
-      this._container.style.border = "1px solid var(--border-subtle-color, var(--divider-color))";
+      this._container.style.border = "1px solid var(--divider-color)";
   }
 
   focus() {
@@ -96,68 +112,71 @@ export class DialogHandle extends HTMLElement {
     this._isFocused = true;
     this._dialog?.focus();
     if (this._container)
-      this._container.style.border = "1px solid var(--primary-light-color)";
+      this._container.style.border = "1px solid var(--primary-color)";
   }
 
   hasFocus() { return this._isFocused; }
 
   _renderHTML() {
     this.shadowRoot.innerHTML = `
-            <style>
-        #container {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          background-color: var(--surface-elevated-color);
-          border: 1px solid var(--border-subtle-color, var(--divider-color));
-          border-radius: 6px;
-          height: var(--dialog-handle-height);
-          width: var(--dialog-handle-width);
-          overflow: hidden;
-          box-sizing: border-box;
-          box-shadow: 0 4px 10px rgba(0,0,0,0.35);
-        }
-        #header-bar {
-          display: flex;
-          align-items: center;
-          z-index: 1000;
-          background-color: var(--primary-light-color);
-          color: var(--on-primary-color);
-          padding: 2px 4px;
-        }
-        #close-btn, #minimize-btn {
-          width: 22px;
-          height: 22px;
-          margin-right: 2px;
-          padding: 4px;
-          color: var(--on-primary-color);
-        }
-        #title-span {
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          flex-grow: 1;
-          font-size: 0.8rem;
-          padding: 0 4px;
-        }
-        .preview-container {
-          flex-grow: 1;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background-color: var(--surface-color);
-        }
-      </style>
-      <div id="container">
-        <div id="header-bar">
-          <paper-icon-button id="close-btn" icon="clear"></paper-icon-button>
-          <span id="title-span"></span>
-          <paper-icon-button id="minimize-btn" icon="icons:remove"></paper-icon-button>
+        <style>
+            #container {
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                background-color: var(--surface-color);
+                border: 1px solid var(--divider-color);
+                height: var(--dialog-handle-height);
+                width: var(--dialog-handle-width);
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+
+            #header-bar {
+                display: flex;
+                align-items: center;
+                z-index: 1000;
+                background-color: var(--primary-light-color);
+                color: var(--on-primary-color);
+                padding: 2px;
+            }
+
+            #close-btn, #minimize-btn {
+                width: 24px;
+                height: 24px;
+                margin-right: 2px;
+                color: var(--on-primary-color);
+                padding: 5px;
+            }
+
+            #title-span {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                flex-grow: 1;
+                font-size: 0.85rem;
+                padding: 0 4px;
+            }
+
+            .preview-container {
+                flex-grow: 1;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background-color: black;
+            }
+        </style>
+        <div id="container">
+            <div id="header-bar">
+                <paper-icon-button id="close-btn" icon="clear"></paper-icon-button>
+                <span id="title-span"></span>
+                <paper-icon-button id="minimize-btn" icon="icons:remove"></paper-icon-button>
+            </div>
+            <div class="preview-container">
+                </div>
         </div>
-        <div class="preview-container"></div>
-      </div>
-    `;
+        `;
   }
 
   _cacheElements() {
@@ -171,8 +190,10 @@ export class DialogHandle extends HTMLElement {
   _applyInitialStyles() {
     this.style.setProperty('--dialog-handle-height', `${this._height + 10}px`);
     this.style.setProperty('--dialog-handle-width', `${this._height}px`);
-    if (this._dialog && this._titleSpan) {
-      this._titleSpan.textContent = this._dialog.getTitle() || this._dialog.getAttribute('name') || "Dialog";
+    if (this._dialog) {
+      if (this._titleSpan) {
+        this._titleSpan.textContent = this._dialog.getTitle() || this._dialog.getAttribute('name') || "Dialog";
+      }
     }
   }
 
@@ -201,17 +222,23 @@ export class DialogHandle extends HTMLElement {
     this.undock();
     this._dialog?.close();
   };
+
   _handleMinimizeClick = (evt) => {
     evt.stopPropagation();
     this._dialog?.minimize();
   };
+
   _handleContainerClick = (evt) => {
     evt.stopPropagation();
     this.focus();
-    if (this._isDocked) this.undock();
+    if (this._isDocked) {
+      this.undock();
+    }
   };
+
   _handleDialogFocused = () => this.focus();
   _handleRefreshPreview = () => this.refreshPreview();
+
   _handleDialogClosing = () => {
     if (this._isDocked) {
       this.undock();
@@ -219,21 +246,18 @@ export class DialogHandle extends HTMLElement {
     }
   };
 }
+
 customElements.define('globular-dialog-handle', DialogHandle);
 
-
-/**
- * `globular-dialog-handles` — groups of handles.
- */
 export class DialogHandles extends HTMLElement {
   _iconElement = null;
   _countSpan = null;
   _handlesContainer = null;
   _container = null;
 
-  // state for stable hover/flyout
-  _isHot = false;
-  _hideTimer = null;
+  // hover state
+  _hoverInside = false;
+  _hideTimeout = null;
 
   constructor() {
     super();
@@ -247,11 +271,20 @@ export class DialogHandles extends HTMLElement {
     this._updateCountAndIcon();
   }
 
+  disconnectedCallback() {
+    this._cleanupEventListeners();
+    if (this._hideTimeout) {
+      clearTimeout(this._hideTimeout);
+      this._hideTimeout = null;
+    }
+  }
+
   appendHandle(handle) {
     if (this.querySelector(`#${handle.id}`)) {
       console.log(`Handle with ID ${handle.id} already exists.`);
       return;
     }
+
     this.appendChild(handle);
     this._updateCountAndIcon();
 
@@ -259,6 +292,8 @@ export class DialogHandles extends HTMLElement {
     handle.addEventListener('mouseover', this._handleHandleMouseOver);
     handle.addEventListener('mouseout', this._handleHandleMouseOut);
 
+    this.hideHandles();
+    this._updateDockbarVisibility();
   }
 
   removeHandle(handle) {
@@ -269,14 +304,16 @@ export class DialogHandles extends HTMLElement {
     handle.removeEventListener('mouseover', this._handleHandleMouseOver);
     handle.removeEventListener('mouseout', this._handleHandleMouseOut);
 
-    if (this.children.length === 0) {
-      this._handlesContainer.style.display = "none";
+    if (this.children.length === 0 && this._handlesContainer) {
+      this._handlesContainer.style.display = 'none';
     }
+    this._updateDockbarVisibility();
   }
 
   hideHandles() {
-    this._isHot = false;
-    this._scheduleHide();
+    if (this._handlesContainer) {
+      this._handlesContainer.style.display = 'none';
+    }
   }
 
   _renderHTML() {
@@ -284,30 +321,42 @@ export class DialogHandles extends HTMLElement {
       <style>
         #container {
           position: relative;
-          display: none;        /* hidden until we have children */
+          display: flex;
           justify-content: center;
           align-items: center;
           margin-right: 10px;
+          display: none;
         }
+
         #main-icon {
-          width: 40px; height: 40px; object-fit: contain;
+          width: 40px;
+          height: 40px;
+          object-fit: contain;
         }
+
         #count-badge {
-          position: absolute; top: -5px; left: -5px;
+          position: absolute;
+          top: -5px;
+          left: -5px;
           background-color: var(--primary-dark-color);
           color: var(--on-primary-dark-color);
           border-radius: 50%;
-          width: 20px; height: 20px;
-          text-align: center; font-size: 12px; line-height: 20px;
+          width: 20px;
+          height: 20px;
+          text-align: center;
+          font-size: 12px;
+          line-height: 20px;
           display: none;
         }
+
         .handles {
           display: none;
           flex-direction: row;
           align-items: flex-end;
           justify-content: flex-start;
-          position: fixed;      /* viewport anchored */
-          top: 0; left: 0;      /* set via JS */
+          position: absolute;
+          top: -212px;
+          left: 0px;
           padding: 5px;
           border-radius: 5px;
           background-color: var(--surface-color);
@@ -315,101 +364,117 @@ export class DialogHandles extends HTMLElement {
           box-shadow: 0 4px 8px rgba(0,0,0,0.2);
           z-index: 10000;
         }
+
         .handles ::slotted(globular-dialog-handle) {
           margin: 0 5px;
           transition: box-shadow 0.2s ease;
         }
       </style>
+     
       <div id="container">
         <img id="main-icon"></img>
         <span id="count-badge"></span>
-        <div class="handles"><slot></slot></div>
+        <div class="handles">
+          <slot></slot>
+        </div>
       </div>
     `;
   }
 
   _cacheElements() {
-    this._container = this.shadowRoot.getElementById("container");
-    this._iconElement = this.shadowRoot.getElementById("main-icon");
-    this._countSpan = this.shadowRoot.getElementById("count-badge");
-    this._handlesContainer = this.shadowRoot.querySelector(".handles");
+    this._container = this.shadowRoot.getElementById('container');
+    this._iconElement = this.shadowRoot.getElementById('main-icon');
+    this._countSpan = this.shadowRoot.getElementById('count-badge');
+    this._handlesContainer = this.shadowRoot.querySelector('.handles');
   }
 
   _setupEventListeners() {
-    // pointer events (don’t bubble like mouseenter/leave)
-    this._container.addEventListener("pointerenter", this._onIconEnter);
-    this._container.addEventListener("pointerleave", this._onIconLeave);
-    this._handlesContainer.addEventListener("pointerenter", this._onHandlesEnter);
-    this._handlesContainer.addEventListener("pointerleave", this._onHandlesLeave);
+    if (!this._container || !this._handlesContainer) return;
+
+    // Hover on icon container
+    this._container.addEventListener('pointerenter', this._handleContainerEnter);
+    this._container.addEventListener('pointerleave', this._handleContainerLeave);
+
+    // Hover on handles popup
+    this._handlesContainer.addEventListener('pointerenter', this._handleHandlesEnter);
+    this._handlesContainer.addEventListener('pointerleave', this._handleHandlesLeave);
   }
 
   _cleanupEventListeners() {
-    this._container.removeEventListener("pointerenter", this._onIconEnter);
-    this._container.removeEventListener("pointerleave", this._onIconLeave);
-    this._handlesContainer.removeEventListener("pointerenter", this._onHandlesEnter);
-    this._handlesContainer.removeEventListener("pointerleave", this._onHandlesLeave);
+    if (!this._container || !this._handlesContainer) return;
+
+    this._container.removeEventListener('pointerenter', this._handleContainerEnter);
+    this._container.removeEventListener('pointerleave', this._handleContainerLeave);
+
+    this._handlesContainer.removeEventListener('pointerenter', this._handleHandlesEnter);
+    this._handlesContainer.removeEventListener('pointerleave', this._handleHandlesLeave);
   }
 
-  // --- stable hover logic ---
-  _showHandles = () => {
-    this._handlesContainer.style.display = "flex";
+  // --- hover logic -------------------------------------------------------
 
-    const iconRect = this._iconElement.getBoundingClientRect();
-    const handles = this._handlesContainer;
+  _showHandles() {
+    if (!this._handlesContainer) return;
 
-    // force layout to get size
-    const w = handles.offsetWidth;
-    const h = handles.offsetHeight;
+    this._handlesContainer.style.display = 'flex';
 
-    const left = Math.round(iconRect.left + (iconRect.width - w) / 2);
-    const top = Math.round(iconRect.top - h - 8); // 8px gap above icon
-
-    const clampedLeft = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-    const clampedTop = Math.max(8, top);
-
-    handles.style.left = `${clampedLeft}px`;
-    handles.style.top = `${clampedTop}px`;
-
-    // refresh previews of children
+    // Ask each child handle to refresh its preview
     Array.from(this.children).forEach(child => {
       if (child instanceof DialogHandle && typeof child.refreshPreview === 'function') {
         child.refreshPreview();
       }
     });
-  };
 
-  _scheduleHide = () => {
-    if (this._hideTimer) clearTimeout(this._hideTimer);
-    this._hideTimer = setTimeout(() => {
-      if (!this._isHot) this._handlesContainer.style.display = "none";
-    }, 120);
-  };
+    this._positionHandlesContainer();
+  }
 
-  _onIconEnter = () => {
-    // close other groups
-    document.querySelectorAll("globular-dialog-handles").forEach(other => {
-      if (other !== this && typeof other.hideHandles === 'function') other.hideHandles();
+  _scheduleHideHandles() {
+    if (this._hideTimeout) {
+      clearTimeout(this._hideTimeout);
+    }
+    // small delay to allow smooth move between icon and popup
+    this._hideTimeout = setTimeout(() => {
+      if (!this._hoverInside) {
+        this.hideHandles();
+      }
+    }, 100);
+  }
+
+  _handleContainerEnter = (evt) => {
+    evt.stopPropagation();
+    this._hoverInside = true;
+
+    // hide other groups
+    document.querySelectorAll('globular-dialog-handles').forEach(otherHandles => {
+      if (otherHandles !== this && typeof otherHandles.hideHandles === 'function') {
+        otherHandles.hideHandles();
+      }
     });
-    this._isHot = true;
+
     this._showHandles();
   };
 
-  _onIconLeave = (evt) => {
-    if (this._handlesContainer.contains(evt.relatedTarget)) return; // moving into flyout
-    this._isHot = false;
-    this._scheduleHide();
+  _handleContainerLeave = (evt) => {
+    evt.stopPropagation();
+    this._hoverInside = false;
+    this._scheduleHideHandles();
   };
 
-  _onHandlesEnter = () => {
-    this._isHot = true;
-    if (this._hideTimer) clearTimeout(this._hideTimer);
+  _handleHandlesEnter = (evt) => {
+    evt.stopPropagation();
+    this._hoverInside = true;
+    if (this._hideTimeout) {
+      clearTimeout(this._hideTimeout);
+      this._hideTimeout = null;
+    }
   };
 
-  _onHandlesLeave = (evt) => {
-    if (this._container.contains(evt.relatedTarget)) return; // moving back to icon
-    this._isHot = false;
-    this._scheduleHide();
+  _handleHandlesLeave = (evt) => {
+    evt.stopPropagation();
+    this._hoverInside = false;
+    this._scheduleHideHandles();
   };
+
+  // ----------------------------------------------------------------------
 
   _handleHandleClick = (evt) => {
     evt.stopPropagation();
@@ -424,8 +489,8 @@ export class DialogHandles extends HTMLElement {
     evt.stopPropagation();
     const handle = evt.currentTarget;
     if (handle instanceof DialogHandle && handle._dialog?.style) {
-      handle.style.boxShadow = "0px 0px 5px 0px var(--primary-light-color)";
-      handle._dialog.style.boxShadow = "0px 0px 5px 0px var(--primary-light-color)";
+      handle.style.boxShadow = '0px 0px 5px 0px var(--primary-light-color)';
+      handle._dialog.style.boxShadow = '0px 0px 5px 0px var(--primary-light-color)';
     }
   };
 
@@ -433,34 +498,62 @@ export class DialogHandles extends HTMLElement {
     evt.stopPropagation();
     const handle = evt.currentTarget;
     if (handle instanceof DialogHandle && handle._dialog?.style) {
-      handle.style.boxShadow = "";
-      handle._dialog.style.boxShadow = "";
+      handle.style.boxShadow = '';
+      handle._dialog.style.boxShadow = '';
     }
   };
 
   _updateCountAndIcon() {
     const count = this.children.length;
-    this._countSpan.innerHTML = count;
-    this._countSpan.style.display = count > 0 ? "block" : "none";
+    if (this._countSpan) {
+      this._countSpan.innerHTML = String(count);
+      this._countSpan.style.display = count > 0 ? 'block' : 'none';
+    }
 
     if (count > 0) {
       const lastHandle = this.children[count - 1];
       if (lastHandle instanceof DialogHandle && lastHandle._dialog && lastHandle._dialog.getIcon) {
         this._iconElement.src = lastHandle._dialog.getIcon();
       }
-      this._container.style.display = "flex";
+      if (this._container) {
+        this._container.style.display = 'flex';
+      }
     } else {
-      this._iconElement.src = "";
-      this._container.style.display = "none";
+      if (this._iconElement) this._iconElement.src = '';
+      if (this._container) this._container.style.display = 'none';
+      this.hideHandles();
     }
   }
+
+  _positionHandlesContainer() {
+    if (!this._iconElement || !this._handlesContainer || !this._container) return;
+
+    const iconRect = this._iconElement.getBoundingClientRect();
+    const containerRect = this._container.getBoundingClientRect();
+    const handlesWidth = this._handlesContainer.offsetWidth;
+    const handlesHeight = this._handlesContainer.offsetHeight;
+
+    const left = iconRect.left - containerRect.left + iconRect.width / 2 - handlesWidth / 2;
+    const top = iconRect.top - containerRect.top - handlesHeight - 10;
+
+    this._handlesContainer.style.left = `${left}px`;
+    this._handlesContainer.style.top = `${top}px`;
+  }
+
+  _updateDockbarVisibility() {
+    const dockbarHost = this.parentNode instanceof Dockbar ? this.parentNode : null;
+    if (!dockbarHost || !dockbarHost.shadowRoot) return;
+    const dockbarCard = dockbarHost.shadowRoot.getElementById("dockbar");
+    if (!dockbarCard) return;
+    const hasHandles = Array.from(dockbarHost.querySelectorAll("globular-dialog-handles")).some(
+      (group) => group.children.length > 0
+    );
+    dockbarCard.style.display = hasHandles ? "flex" : "none";
+  }
 }
+
 customElements.define('globular-dialog-handles', DialogHandles);
 
-
-/**
- * `globular-dockbar` — main dockbar container.
- */
 export class Dockbar extends HTMLElement {
   _dialogs = [];
   _dockbarContainer = null;
@@ -489,14 +582,15 @@ export class Dockbar extends HTMLElement {
       this.appendChild(handlesGroup);
     }
 
-    let dialogHandle = handlesGroup.querySelector(`#${dialog.id}-handle`);
+    const handleIdentifier = ensureHandleId(dialog);
+    let dialogHandle = handlesGroup.querySelector(`#${handleIdentifier}`);
     if (!dialogHandle) {
       dialogHandle = new DialogHandle(dialog);
-      dialogHandle.id = `${dialog.id}-handle`;
+      dialogHandle.id = handleIdentifier;
       dialogHandle.name = groupId;
       handlesGroup.appendHandle(dialogHandle);
     } else {
-      console.log(`Handle for dialog ID ${dialog.id} already exists.`);
+      console.log(`Handle for dialog already exists.`);
     }
 
     this._setupDialogListeners(dialog, handlesGroup, dialogHandle);
@@ -505,51 +599,51 @@ export class Dockbar extends HTMLElement {
   }
 
   getCoords() {
-    let rect = this.shadowRoot.querySelector("#dockbar").getBoundingClientRect();
+    let rect = this.shadowRoot.querySelector("#container").getBoundingClientRect();
     return rect;
   }
 
   _renderHTML() {
     this.shadowRoot.innerHTML = `
-    <style>
-      #container {
-        position: fixed;
-        bottom: 0;
-        left: 50%;
-        right: 50%;
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        justify-content: center; /* horizontally center #dockbar */
-        user-select: none;
-        /* no transform, no pointer-events hacks */
-      }
+        <style>
+            #container {
+                position: fixed;
+                z-index: 10000;
+                bottom: 0px;
+                margin-left: 50%;
+                transform: translateX(-50%);
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                justify-content: center;
+                user-select: none;
+            }
 
-      #dockbar {
-        pointer-events: auto;
-        z-index: 1000;
-        display: none;
-        flex-direction: row;
-        align-items: center;
-        padding: 8px 12px;
-        border-radius: 10px;
-        background-color: var(--surface-elevated-color, var(--surface-color));
-        border: 1px solid var(--border-subtle-color, var(--divider-color));
-        color: var(--on-surface-color);
-        height: auto;
-        min-width: 260px;
-        margin-bottom: 10px;
-        box-shadow: var(--dockbar-shadow);
-      }
+            #dockbar {
+                z-index: 1000;
+                display: none;
+                flex-direction: row;
+                align-items: center;
+                padding: 10px;
+                border-radius: 5px;
+                background-color: var(--surface-color);
+                border: 1px solid var(--divider-color);
+                color: var(--on-surface-color);
+                height: auto;
+                min-width: 400px;
+                margin-bottom: 10px;
+            }
 
-      #dockbar ::slotted(globular-dialog-handles) {
-        margin: 0 4px;
-      }
-    </style>
-      <div id="container">
-        <paper-card id="dockbar"><slot></slot></paper-card>
-      </div>
-    `;
+            #dockbar ::slotted(globular-dialog-handles) {
+                margin: 0 5px;
+            }
+
+        </style>
+        <div id="container">
+            <paper-card id="dockbar">
+                <slot></slot> </paper-card>
+        </div>
+        `;
   }
 
   _cacheElements() {
@@ -578,8 +672,9 @@ export class Dockbar extends HTMLElement {
         this._dockbarContainer.style.display = "none";
       }
 
-      const dialogIndex = this._dialogs.findIndex(d => d.id === dialog.id);
+      const dialogIndex = this._dialogs.findIndex(d => d === dialog);
       if (dialogIndex > -1) this._dialogs.splice(dialogIndex, 1);
+      if (dialog.__dockbarHandleId) delete dialog.__dockbarHandleId;
 
       dialog.removeEventListener("dialog-minimized", handle._handleMinimizedListener);
       dialog.removeEventListener("dialog-opened", handle._handleOpenedListener);
@@ -597,7 +692,6 @@ export class Dockbar extends HTMLElement {
 
 customElements.define('globular-dockbar', Dockbar);
 
-// Singleton dockbar instance
 export const dockbar = new Dockbar();
 if (document.body) {
   document.body.appendChild(dockbar);
