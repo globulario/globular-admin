@@ -20,7 +20,7 @@ import { getBaseUrl } from "@globular/backend"
 
 // --- Constants ---
 const AUDIO_PLAYER_ID = "globular-audio-player-instance"
-const DEFAULT_AUDIO_COVER = "../assets/icons/music-quavers-flat.svg"
+const DEFAULT_AUDIO_COVER = new URL('../assets/icons/music-quavers-flat.svg', import.meta.url).href
 
 const AUDIO_LOOP_STORAGE_KEY = "audio_loop"
 const AUDIO_SHUFFLE_STORAGE_KEY = "audio_shuffle"
@@ -234,7 +234,7 @@ export class AudioPlayer extends HTMLElement {
 
   _renderHTML() {
 
-    const icon = new URL(DEFAULT_AUDIO_COVER, import.meta.url).href;
+    const icon = DEFAULT_AUDIO_COVER;
     this.shadowRoot.innerHTML = `
       <style>
         .header{display:flex;align-items:center;color:var(--palette-text-accent);background-color:var(--palette-primary-accent);}

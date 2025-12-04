@@ -127,7 +127,6 @@ export class AppLayout extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
         <style>
-          @import url('./styles.css');
 
           app-drawer-layout {
             --app-drawer-width: 256px;
@@ -374,7 +373,6 @@ export class SideBar extends HTMLElement {
   connectedCallback() {
     this.shadowRoot.innerHTML = `
       <style>
-        @import url('./styles.css');
 
         #container{
           background-color: var(--surface-color);
@@ -539,7 +537,6 @@ export class SideBarMenuItem extends HTMLElement {
   connectedCallback() {
     this.shadowRoot.innerHTML = `
       <style>
-          @import url('./styles.css');
 
           #container{
               transition: background 0.8s ease,padding 0.8s linear;

@@ -12,6 +12,10 @@
     "@globular/backend": "workspace:*",
     "@globular/components": "workspace:*",
     "@fortawesome/fontawesome-free": "^7.1.0",
+    "@polymer/app-layout": "^3.1.0",
+    "@polymer/iron-collapse": "^3.0.1",
+    "@polymer/iron-icons": "^3.0.1",
+    "@polymer/paper-icon-button": "^3.0.2",
     "toastify-js": "^1.12.0"
   },
   "devDependencies": {

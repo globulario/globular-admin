@@ -3,7 +3,7 @@ import './styles/styles.css'
 import './styles/theme.css'
 
 
-import "@globular/components";
+import "@globular/components/applicationLayout.js";
 import './widgets/user_toolbar' // registers <user-toolbar>
 
 import { startRouter } from './router'
