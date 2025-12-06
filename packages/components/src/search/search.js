@@ -9,19 +9,13 @@ import {
   searchTitles,
   // unary helper to fetch file paths for a title
   getTitleFiles,
-} from "@globular/backend";
-
-import {
   // streaming: same shape as the service messages (summary/facets/hit)
   searchBlogPosts,
-} from "@globular/backend";
-
-import {
   // both a stream and a convenience collector exist; we’ll use the collector here
   searchDocuments,
+  getBaseUrl
 } from "@globular/backend";
  
-import { getBaseUrl } from "@globular/backend";
 
 /* ------------------------------------------------------------------------------------------------
  * 1) Focused search: Audio by album — now via title backend stream (cluster-transparent)

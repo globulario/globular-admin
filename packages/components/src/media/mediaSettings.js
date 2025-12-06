@@ -42,7 +42,7 @@ class MediaSettings extends HTMLElement {
     Object.keys(this._listeners || {}).forEach((k) => {
       try {
         Backend.eventHub.unsubscribe(this._listeners[k]);
-      } catch {}
+      } catch { }
       delete this._listeners[k];
     });
   }
@@ -57,27 +57,35 @@ class MediaSettings extends HTMLElement {
         }
 
         .card {
-          background: var(--surface-color);
+          background:  var(--surface-elevated-color, var(--surface-color));
           color: var(--on-surface-color);
           border: 1px solid var(--palette-divider);
           border-radius: 8px;
-          padding: 10px 12px;
           box-shadow: var(--globular-elevation-1, 0 1px 2px rgba(0,0,0,0.16));
-          max-width: 900px;
           box-sizing: border-box;
+         
+        }
+
+        #header-row {
+
         }
 
         .card-header {
+
           display: flex;
-          align-items: center;
           justify-content: space-between;
-          margin-bottom: 6px;
-          gap: 8px;
+          align-items: center;
+          padding: 10px;
+          border-bottom: 1px solid var(--border-subtle-color);
+          background-color: var(--surface-color);
+          border-top-left-radius: 8px;
+          border-top-right-radius: 8px;
         }
+
 
         h3 {
           margin: 0;
-          font-size: 0.96rem;
+          font-size: 1rem;
           font-weight: 600;
         }
 
@@ -91,6 +99,7 @@ class MediaSettings extends HTMLElement {
           background: var(--surface-variant-color, rgba(255,255,255,0.03));
           border: 1px solid var(--palette-divider);
           white-space: nowrap;
+          height: 24px;
         }
         .status-dot {
           width: 7px;
@@ -120,6 +129,7 @@ class MediaSettings extends HTMLElement {
           border: 1px solid var(--palette-divider);
           border-radius: 6px;
           padding: 6px 8px;
+          margin: 6px 10px 6px 10px;
         }
 
         .section-title {
@@ -708,12 +718,16 @@ class MediaSettings extends HTMLElement {
   }
 
   _splitPath(path) {
-    const clean = path || "";
-    const idx = clean.lastIndexOf("/");
-    if (idx <= 0) return { dir: clean || "/", name: clean };
-    const dir = clean.substring(0, idx) || "/";
-    const name = clean.substring(idx + 1);
-    return { dir, name };
+    const clean = (path || "").replace(/\\/g, "/");
+    if (!clean) return { dir: "/", name: "" };
+    const lastSep = clean.lastIndexOf("/");
+    if (lastSep >= 0) {
+      return {
+        dir: clean.substring(0, lastSep) || "/",
+        name: clean.substring(lastSep + 1) || "",
+      };
+    }
+    return { dir: "/", name: clean };
   }
 
   _logKey(path, msg) {

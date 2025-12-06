@@ -9,9 +9,9 @@
 
 <body>
   <globular-app-layout application-name="Globular Admin">
-  
+
     <globular-sidebar slot="app-side-menu" header-title="Globular" header-subtitle="© 2025 Globular Project">
-    
+
       <globular-sidebar-menu>
         <globular-sidebar-menu-item text="Dashboard" route="#/dashboard"></globular-sidebar-menu-item>
 
@@ -32,7 +32,12 @@
           <globular-sidebar-menu-item text="Roles" route="#/rbac/roles"></globular-sidebar-menu-item>
         </globular-sidebar-menu-item>
 
-        <globular-sidebar-menu-item text="Media" route="#/media"></globular-sidebar-menu-item>
+        <globular-sidebar-menu-item text="Media">
+          <globular-sidebar-menu-item text="Search" route="#/media/search"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Settings" route="#/media/settings"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Watching" route="#/media/watching"></globular-sidebar-menu-item>
+        </globular-sidebar-menu-item>
+
 
         <globular-sidebar-menu-item text="Console" route="#/console"></globular-sidebar-menu-item>
         <globular-sidebar-menu-item text="Repository" route="#/repository"></globular-sidebar-menu-item>
@@ -40,7 +45,7 @@
     </globular-sidebar>
 
     <div slot="app-logo" style="display:flex;align-items:center;padding-left:8px;">
-        
+
     </div>
     <div slot="app-title">
       <h3 style="margin:0;padding-left:8px;">Globular Admin</h3>

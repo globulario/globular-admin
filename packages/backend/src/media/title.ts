@@ -1,6 +1,12 @@
 // src/backend/media/title.ts
 import { getBaseUrl } from "../core/endpoints";
 import { stream, unary } from "../core/rpc";
+import { decodeJwtPayload } from "../core/session";
+import {
+  findDocuments,
+  replaceOneDocument,
+  deleteOneDocument,
+} from "../persistence/persistence";
 
 // ---- stubs ----
 import { TitleServiceClient } from "globular-web-client/title/title_grpc_web_pb";
@@ -79,6 +85,58 @@ const DEFAULT_INDEXES = {
 
 // --- add with other defaults (re-use titles index for people) ---
 const DEFAULT_PERSONS_INDEX = DEFAULT_INDEXES.titles;
+const COLLECTION_WATCHING = "watching";
+const DATABASE_SUFFIX = "_db";
+
+type WatchingContext = {
+  token: string;
+  username: string;
+  domain: string;
+  dbId: string;
+};
+
+function sanitizeIdentifierPart(value: string): string {
+  return (value || "").split("@").join("_").split(".").join("_");
+}
+
+function currentWatchingContext(): WatchingContext | null {
+  try {
+    const token = sessionStorage.getItem("__globular_token__");
+    if (!token) return null;
+    const payload = decodeJwtPayload(token);
+    if (!payload) return null;
+
+    const username =
+      payload.username ||
+      payload.preferred_username ||
+      payload.name ||
+      payload.sub ||
+      payload.email ||
+      "";
+
+    if (!username) return null;
+
+    const domain =
+      payload.user_domain ||
+      payload.domain ||
+      (typeof payload.preferred_username === "string" &&
+        payload.preferred_username.includes("@")
+        ? payload.preferred_username.split("@")[1]
+        : "") ||
+      "";
+
+    const dbId = `${sanitizeIdentifierPart(username)}${DATABASE_SUFFIX}`;
+
+    return {
+      token,
+      username,
+      domain,
+      dbId,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /* =====================================================================================
  * Create + Associate APIs (kept from your original file)
@@ -832,6 +890,93 @@ export async function searchTitles(
 }
 
 // Todo Implement similar streaming searchVideos, searchAudios if needed
-export async function getWatchingTitle(titleId: string): Promise<any> {
+export async function getWatchingTitles(): Promise<any[]> {
+  const ctx = currentWatchingContext();
+  if (!ctx) return [];
 
+  try {
+    const docs = await findDocuments({
+      connectionId: ctx.dbId,
+      database: ctx.dbId,
+      collection: COLLECTION_WATCHING,
+      query: "{}",
+    });
+    return Array.isArray(docs) ? docs : [];
+  } catch (err: any) {
+    console.error("Failed to fetch watching titles:", err);
+    throw err;
+  }
+}
+
+export async function getWatchingTitle(
+  titleId: string,
+  onSuccess?: (entry: any | undefined) => void,
+  onError?: (err: any) => void
+): Promise<any | undefined> {
+  if (!titleId) {
+    const err = new Error("Missing title identifier.");
+    if (onError) onError(err);
+    throw err;
+  }
+
+  try {
+    const ctx = currentWatchingContext();
+    if (!ctx) {
+      const err = new Error("Not authenticated.");
+      if (onError) onError(err);
+      throw err;
+    }
+
+    const docs = await findDocuments({
+      connectionId: ctx.dbId,
+      database: ctx.dbId,
+      collection: COLLECTION_WATCHING,
+      query: `{"_id":"${titleId}"}`,
+    });
+    const entry = Array.isArray(docs) && docs.length > 0 ? docs[0] : undefined;
+    if (onSuccess) onSuccess(entry);
+    return entry;
+  } catch (err) {
+    if (onError) onError(err);
+    throw err;
+  }
+}
+
+export async function removeWatchingTitle(title: { _id?: string } | string): Promise<void> {
+  const ctx = currentWatchingContext();
+  if (!ctx) throw new Error("Not authenticated.");
+
+  const id = typeof title === "string" ? title : title?._id;
+  if (!id) throw new Error("Missing watching title identifier.");
+
+  await deleteOneDocument({
+    connectionId: ctx.dbId,
+    database: ctx.dbId,
+    collection: COLLECTION_WATCHING,
+    query: `{"_id":"${id}"}`,
+  });
+}
+
+export async function saveWatchingTitle(entry: any): Promise<void> {
+  const ctx = currentWatchingContext();
+  if (!ctx) throw new Error("Not authenticated.");
+
+  if (!entry || !entry._id) {
+    throw new Error("Missing title identifier.");
+  }
+
+  const payload = {
+    ...entry,
+    domain: entry.domain || ctx.domain,
+    date: entry.date || new Date().toISOString(),
+  };
+
+  await replaceOneDocument({
+    connectionId: ctx.dbId,
+    database: ctx.dbId,
+    collection: COLLECTION_WATCHING,
+    query: `{"_id":"${payload._id}"}`,
+    value: JSON.stringify(payload),
+    options: `[{"upsert": true}]`,
+  });
 }

@@ -15,6 +15,9 @@ import './pages/rbac_groups'
 import './pages/rbac_roles'
 import './pages/console_shell'
 import './pages/repo_market'
+import './pages/medias_settings'
+import './pages/medias_search'
+import './pages/medias_watching'
 // ------------------------------
 
 // --- Auth helpers (tiny & framework-agnostic) ---
@@ -96,7 +99,9 @@ const routes: Record<string, RouteHandler> = {
   '#/rbac/organizations': () => document.createElement('page-rbac-organizations'),
   '#/rbac/groups': () => document.createElement('page-rbac-groups'),
   '#/rbac/roles': () => document.createElement('page-rbac-roles'),
-  '#/media': () => document.createElement('page-media'),
+  '#/media/search': () => document.createElement('page-media-search'),
+  '#/media/settings': () => document.createElement('page-media-settings'),
+  '#/media/watching': () => document.createElement('page-media-watching'),
   '#/console': () => document.createElement('page-console'),
   '#/repository': () => document.createElement('page-repository'),
 }

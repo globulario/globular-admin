@@ -156,6 +156,7 @@ export function adaptFileVM(vm) {
     getMime: () => f.mime || "",
     getSize: () => (typeof f.size === "number" ? f.size : 0),
     getThumbnail: () => f.thumbnail || "",
+    getChecksum: () => f.checksum || "",
     getLinkTarget: () => f.linkTarget || null,
     modeTime: f.mode_time || 0,
     // direct fields sometimes accessed by views
@@ -173,6 +174,7 @@ export function adaptFileVM(vm) {
   obj.mime = obj.getMime();
   obj.size = obj.getSize();
   obj.thumbnail = obj.getThumbnail();
+  obj.checksum = obj.getChecksum();
   obj.linkTarget = f.linkTarget || null;
   obj.isLink = !!f.isLink;
 

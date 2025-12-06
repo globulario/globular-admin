@@ -302,6 +302,7 @@ const TITLE_INFO_GLOBAL_STYLE = `
   font-size: 1em;
   min-width: 350px;
   max-width: 450px;
+  max-height: 600px;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;

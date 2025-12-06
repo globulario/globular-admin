@@ -23,7 +23,9 @@ import './pages/rbac_groups'
 import './pages/rbac_roles'
 import './pages/console_shell'
 import './pages/repo_market'
-import './pages/medias'
+import './pages/medias_settings'
+import './pages/medias_search'
+import './pages/medias_watching'
 
 // css
 import "@fortawesome/fontawesome-free/css/all.min.css";
