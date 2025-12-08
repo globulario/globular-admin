@@ -278,14 +278,24 @@ export class MediaWatching extends HTMLElement {
             this._updateSectionCounts();
 
             // Subscribe to removal event for this specific card
-            Backend.eventHub.subscribe(EVENT_REMOVE_VIDEO_PLAYER, `remove_card_${title._id}`, (evt) => {
-                if (title._id === evt._id) {
-                    if (card && card.parentNode) {
-                        card.parentNode.removeChild(card);
-                        this._updateSectionCounts(); // Update counts after removal
+            Backend.eventHub.subscribe(
+                EVENT_REMOVE_VIDEO_PLAYER,
+                (uuid) => { card._removeVideoSubscriptionId = uuid; },
+                (evt) => {
+                    if (title._id === evt._id) {
+                        if (card && card.parentNode) {
+                            card.parentNode.removeChild(card);
+                            this._updateSectionCounts(); // Update counts after removal
+                        }
+                        if (card._removeVideoSubscriptionId) {
+                            Backend.eventHub.unsubscribe(EVENT_REMOVE_VIDEO_PLAYER, card._removeVideoSubscriptionId);
+                            delete card._removeVideoSubscriptionId;
+                        }
                     }
-                }
-            }, true); // persistent: true
+                },
+                true,
+                card
+            ); // persistent: true
 
             if (callback) callback();
         } catch (err) {
@@ -475,22 +485,23 @@ export class WatchingMenu extends HTMLElement {
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                color: var(--palette-primary);
+                color: var(--on-surface-color);
             }
 
             iron-icon {
                 color: inherit;
-                transition: color 0.2s ease;
+                transition: opacity 0.2s ease;
             }
-
+/*
             :host(:hover) iron-icon {
-                color: var(--primary-light-color, var(--palette-primary-light, var(--palette-primary)));
+                color: var(--palette-primary);
+                opacity: 0.85;
             }
+            */
         </style>
 
         <iron-icon title="Watching" icon="maps:local-movies"></iron-icon>
-        `;
-
+        `   ;
         // Attempt to get existing MediaWatching instance or initialize a new one
         this.mediaWatchingInstance = document.querySelector("globular-media-watching");
 
@@ -560,11 +571,41 @@ export class WatchingMenu extends HTMLElement {
         }
 
         // Subscribe to global event hub events
-        this._peerStartSubscriptionId = Backend.eventHub.subscribe(EVENT_START_PEER, `peer_start_watching_menu_init`, this._handlePeerStart, true);
-        this._peerStopSubscriptionId = Backend.eventHub.subscribe(EVENT_STOP_PEER, `peer_stop_watching_menu_init`, this._handlePeerStop, true);
-        this._playVideoSubscriptionId = Backend.eventHub.subscribe(EVENT_PLAY_VIDEO_PLAYER, `play_video_watching_menu_init`, this._handlePlayVideoEvent, true);
-        this._stopVideoSubscriptionId = Backend.eventHub.subscribe(EVENT_STOP_VIDEO_PLAYER, `stop_video_watching_menu_init`, this._handleStopVideoEvent, true);
-        this._removeVideoSubscriptionId = Backend.eventHub.subscribe(EVENT_REMOVE_VIDEO_PLAYER, `remove_video_watching_menu_init`, this._handleRemoveVideoEvent, true);
+        Backend.eventHub.subscribe(
+            EVENT_START_PEER,
+            (uuid) => { this._peerStartSubscriptionId = uuid; },
+            this._handlePeerStart,
+            true,
+            this
+        );
+        Backend.eventHub.subscribe(
+            EVENT_STOP_PEER,
+            (uuid) => { this._peerStopSubscriptionId = uuid; },
+            this._handlePeerStop,
+            true,
+            this
+        );
+        Backend.eventHub.subscribe(
+            EVENT_PLAY_VIDEO_PLAYER,
+            (uuid) => { this._playVideoSubscriptionId = uuid; },
+            this._handlePlayVideoEvent,
+            true,
+            this
+        );
+        Backend.eventHub.subscribe(
+            EVENT_STOP_VIDEO_PLAYER,
+            (uuid) => { this._stopVideoSubscriptionId = uuid; },
+            this._handleStopVideoEvent,
+            true,
+            this
+        );
+        Backend.eventHub.subscribe(
+            EVENT_REMOVE_VIDEO_PLAYER,
+            (uuid) => { this._removeVideoSubscriptionId = uuid; },
+            this._handleRemoveVideoEvent,
+            true,
+            this
+        );
 
         // Load initial watching titles
         await this._loadInitialWatchingTitles();

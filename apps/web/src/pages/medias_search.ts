@@ -10,7 +10,7 @@ class PageMediaSearch extends HTMLElement {
         <p>Search through indexed titles, videos, audios, and blog posts.</p>
         <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem;">
           <globular-search-bar></globular-search-bar>
-          <globular-search-results></globular-search-results>
+          <globular-search-results persistent></globular-search-results>
         </div>
       </section>
     `;

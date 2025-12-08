@@ -17,6 +17,9 @@ export class FacetSearchFilter extends HTMLElement {
     // Private instance properties
     _page = null; // Reference to the parent search results page component
     _panels = {}; // Stores instances of SearchFacetPanel, keyed by facet field UUID
+    _facetContexts = {}; // Map of panel IDs to contexts
+    _contextEnabled = {}; // Track which contexts are visible
+    _facetData = {}; // Aggregated facet values per field
 
     /**
      * Constructor for the FacetSearchFilter custom element.
@@ -26,6 +29,10 @@ export class FacetSearchFilter extends HTMLElement {
         super();
         this.attachShadow({ mode: 'open' });
         this._page = page; // Store reference to the parent page
+        this._facetData = {}; // Aggregate facets across contexts
+
+        // Render immediately so setFacets can populate before the element is connected
+        this._renderInitialStructure();
     }
 
     /**
@@ -33,8 +40,7 @@ export class FacetSearchFilter extends HTMLElement {
      * Performs initial rendering.
      */
     connectedCallback() {
-        this._renderInitialStructure();
-        // Subsequent population handled by setFacets setter
+        // No-op: structure already rendered in constructor
     }
 
     /**
@@ -94,18 +100,33 @@ export class FacetSearchFilter extends HTMLElement {
      * Sets the facets data and updates the display of SearchFacetPanel components.
      * @param {Object} facets - The facets object from search results.
      */
-    setFacets(facets) {
-        if (!facets || !facets.getFacetsList) {
+    setFacets(facets, context = "global") {
+        if (!facets || typeof facets.getFacetsList !== "function") {
             console.warn("FacetSearchFilter: Invalid facets data provided.");
             return;
         }
 
-        // Keep track of active facet IDs to remove old ones
-        const currentFacetIds = new Set();
+        const facetList = facets.getFacetsList();
+        if (facetList.length === 0) {
+            this._facetData = {};
+            Object.values(this._panels).forEach(panel => panel.remove());
+            this._panels = {};
+            this._facetContexts = {};
+            return;
+        }
 
-        facets.getFacetsList().forEach(facet => {
-            const id = `_${getUuidByString(facet.getField())}`;
-            currentFacetIds.add(id);
+        if (context && this._contextEnabled[context] === undefined) {
+            this._contextEnabled[context] = true;
+        }
+
+        facetList.forEach(facet => {
+            const total = typeof facet.getTotal === "function" ? facet.getTotal() : 0;
+            if (total === 0) {
+                return; // Skip facets that have no results at all
+            }
+            const aggregated = this._accumulateFacetData(facet);
+            const fieldName = aggregated.getField();
+            const id = `_${getUuidByString(fieldName)}`;
 
             let panel = this._panels[id];
             if (!panel) {
@@ -115,28 +136,92 @@ export class FacetSearchFilter extends HTMLElement {
                 this.appendChild(panel); // Append to DOM
             }
 
-            // Only update if facet has terms (total > 0)
-            if (facet.getTotal() > 0) {
-                panel.setFacet(facet); // Set new facet data on the panel
-                panel.style.display = ''; // Ensure panel is visible
-            } else {
-                // If facet has no terms, hide or remove the panel
-                if (panel.parentNode) {
-                    panel.parentNode.removeChild(panel);
-                }
-                delete this._panels[id]; // Remove from internal panels map
+            if (!this._facetContexts[id]) {
+                this._facetContexts[id] = new Set();
             }
+            if (context) {
+                this._facetContexts[id].add(context);
+            }
+
+            panel.setFacet(aggregated);
+            panel.style.display = '';
         });
 
-        // Remove panels that are no longer present in the new facets list
-        for (const id in this._panels) {
-            if (!currentFacetIds.has(id)) {
-                if (this._panels[id].parentNode) {
-                    this._panels[id].parentNode.removeChild(this._panels[id]);
-                }
-                delete this._panels[id];
-            }
+        this._updatePanelVisibility();
+    }
+
+    _accumulateFacetData(facet) {
+        const field = facet.getField();
+        if (!field) {
+            return facet;
         }
+
+        if (!this._facetData[field]) {
+            this._facetData[field] = {
+                total: 0,
+                other: 0,
+                terms: new Map(),
+            };
+        }
+
+        const store = this._facetData[field];
+        store.total += facet.getTotal ? facet.getTotal() : 0;
+        store.other += facet.getOther ? facet.getOther() : 0;
+
+        if (typeof facet.getTermsList === "function") {
+            facet.getTermsList().forEach(term => {
+                if (!term) return;
+                const name = typeof term.getTerm === "function" ? term.getTerm() : "";
+                const count = typeof term.getCount === "function" ? term.getCount() : 0;
+                if (!name) return;
+                store.terms.set(name, (store.terms.get(name) ?? 0) + count);
+            });
+        }
+
+        if (store.terms.size === 0 && field.toLowerCase() === "rating") {
+            this._populateRatingTerms(store);
+        }
+
+        return {
+            getField: () => field,
+            getTotal: () => store.total,
+            getOther: () => store.other,
+            getTermsList: () => Array.from(store.terms.entries()).map(([name, count]) => ({
+                getTerm: () => name,
+                getCount: () => count,
+            })),
+        };
+    }
+
+    _populateRatingTerms(store) {
+        const low = this._page.countElementByClassName("low");
+        const medium = this._page.countElementByClassName("medium");
+        const high = this._page.countElementByClassName("high");
+
+        if (low + medium + high === 0) {
+            return;
+        }
+
+        store.terms.set("low", low);
+        store.terms.set("medium", medium);
+        store.terms.set("high", high);
+    }
+
+    setContextEnabled(context, enabled) {
+        this._contextEnabled[context] = enabled;
+        this._updatePanelVisibility();
+    }
+
+    _updatePanelVisibility() {
+        Object.entries(this._panels).forEach(([id, panel]) => {
+            const contexts = this._facetContexts[id];
+            if (!contexts || contexts.size === 0) {
+                panel.style.display = '';
+                return;
+            }
+            const isVisible = Array.from(contexts).some(ctx => this._contextEnabled[ctx] !== false);
+            panel.style.display = isVisible ? '' : 'none';
+        });
     }
 }
 customElements.define('globular-facet-search-filter', FacetSearchFilter);
@@ -166,6 +251,11 @@ export class SearchFacetPanel extends HTMLElement {
         super();
         this.attachShadow({ mode: 'open' });
         this._page = page; // Store reference to the parent page
+
+        // Render immediately so setters can manipulate DOM safely
+        this._renderInitialStructure();
+        this._getDomReferences();
+        this._bindEventListeners();
     }
 
     /**
@@ -173,10 +263,7 @@ export class SearchFacetPanel extends HTMLElement {
      * Performs initial rendering and sets up event listeners.
      */
     connectedCallback() {
-        this._renderInitialStructure();
-        this._getDomReferences();
-        this._bindEventListeners();
-        // Data population is handled by setFacet setter
+        // All initialization performed in constructor to support early setFacet calls
     }
 
     /**
@@ -226,6 +313,9 @@ export class SearchFacetPanel extends HTMLElement {
                     margin-left: 25px; /* Indent terms */
                     margin-top: 8px; /* Space between terms */
                     font-size: 0.95rem; /* Smaller font for terms */
+                }
+                .term-item.zero-count {
+                    opacity: 0.65;
                 }
                 .term-item paper-checkbox {
                     --paper-checkbox-checked-color: var(--primary-color);
@@ -292,11 +382,13 @@ export class SearchFacetPanel extends HTMLElement {
 
             if (count > 0) {
                 termData.countSpan.textContent = `(${count})`;
-                if (termData.itemElement && !termData.itemElement.parentNode) {
-                    this._facetListDiv.appendChild(termData.itemElement); // Re-append if it was removed
-                }
-            } else if (termData.itemElement && termData.itemElement.parentNode) {
-                termData.itemElement.parentNode.removeChild(termData.itemElement); // Remove if count is zero
+            } else {
+                termData.countSpan.textContent = `(0)`;
+            }
+
+            if (termData.itemElement) {
+                termData.itemElement.dataset.count = String(count);
+                termData.itemElement.classList.toggle("zero-count", count === 0);
             }
         }
     }
@@ -460,6 +552,25 @@ export class SearchFacetPanel extends HTMLElement {
         this._page.offset = 0;
         this._page.refresh();
         this._page.refreshNavigatorAndContextSelector();
+    }
+
+    _handlePlayFacetClick() {
+        if (!this._facet) {
+            displayError("No facet data available to play", 3000);
+            return;
+        }
+
+        const field = this._facet.getField();
+        const audios = this._page.getAudios(field);
+        const videos = this._page.getVideos(field, field);
+
+        if (audios && audios.length > 0) {
+            playAudios(audios, field);
+        } else if (videos && videos.length > 0) {
+            playVideos(videos, field);
+        } else {
+            displayError("No media found for this facet", 3000);
+        }
     }
 
     /**

@@ -57,11 +57,11 @@ export class SearchBar extends HTMLElement {
           border: none;
           margin-right: 11px;
           background: transparent;
-          color: var(--on-primary-color);
+          color: var(--primary-text-color, var(--on-surface-color));
           box-sizing: border-box;
           font-size: 1.2rem;
         }
-        ::placeholder { color: var(--palette-text-accent); opacity: 1; }
+        ::placeholder { color: color-mix(in srgb, var(--primary-text-color) 60%, transparent); opacity: 1; }
         iron-icon {
           padding-left: 11px;
           padding-right: 11px;
@@ -153,8 +153,6 @@ export class SearchBar extends HTMLElement {
         <input id="search_input" placeholder="Search" aria-label="Search" />
         <paper-icon-button id="change-search-context" icon="icons:expand-more" aria-label="Change search context"></paper-icon-button>
         <paper-card id="context-search-selector" role="dialog" aria-label="Search context">
-          <paper-checkbox class="context" name="webPages" id="context-search-selector-webpages">Webpages</paper-checkbox>
-          <paper-checkbox class="context" name="blogPosts" id="context-search-selector-blog-posts">Blog Posts</paper-checkbox>
 
           <div style="display: flex; flex-direction: column">
             <paper-checkbox class="context" name="titles" id="context-search-selector-titles">Titles</paper-checkbox>
@@ -195,6 +193,15 @@ export class SearchBar extends HTMLElement {
     this._youtubeCheckbox = this.shadowRoot.querySelector("#context-search-selector-youtube");
     this._adultCheckbox = this.shadowRoot.querySelector("#context-search-selector-adult");
     this._audiosCheckbox = this.shadowRoot.querySelector("#context-search-selector-audios");
+
+    // default selections
+    if (this._titlesCheckbox) this._titlesCheckbox.checked = true;
+    if (this._moviesCheckbox) this._moviesCheckbox.checked = true;
+    if (this._tvSeriesCheckbox) this._tvSeriesCheckbox.checked = true;
+    if (this._tvEpisodesCheckbox) this._tvEpisodesCheckbox.checked = true;
+    if (this._videosCheckbox) this._videosCheckbox.checked = true;
+    if (this._youtubeCheckbox) this._youtubeCheckbox.checked = true;
+    if (this._audiosCheckbox) this._audiosCheckbox.checked = true;
 
     this._contextCheckboxes = Array.from(this.shadowRoot.querySelectorAll(".context"));
   }
@@ -310,8 +317,8 @@ export class SearchBar extends HTMLElement {
   _applyFocusStyles() {
     if (!this._searchBarDiv || !this._searchInput || !this._searchIcon || !this._changeSearchContextBtn) return;
     this._searchBarDiv.style.boxShadow = "var(--dark-mode-shadow)";
-    this._searchBarDiv.style.backgroundColor = "var(--surface-color)";
-    this._searchInput.style.color = "var(--on-surface-color)";
+        this._searchBarDiv.style.backgroundColor = "var(--surface-color)";
+        this._searchInput.style.color = "var(--on-surface-color)";
     this._searchIcon.style.setProperty("--iron-icon-fill-color", "var(--on-surface-color)");
     this._changeSearchContextBtn.style.setProperty("--iron-icon-fill-color", "var(--on-surface-color)");
   }
@@ -321,7 +328,7 @@ export class SearchBar extends HTMLElement {
     this._searchBarDiv.style.boxShadow = "";
     this._searchBarDiv.style.backgroundColor = "";
     this._searchInput.style.backgroundColor = "transparent";
-    this._searchInput.style.color = "var(--on-primary-color)";
+    this._searchInput.style.color = "var(--primary-text-color, var(--on-surface-color))";
     this._searchIcon.style.setProperty("--iron-icon-fill-color", "var(--palette-text-accent)");
     this._changeSearchContextBtn.style.setProperty("--iron-icon-fill-color", "var(--palette-text-accent)");
   }
@@ -336,7 +343,7 @@ export class SearchBar extends HTMLElement {
 
     if (selectedContexts.length === 0) {
       displayMessage(
-        "You must select at least one search context (Webpages, Blog Posts, Titles, Videos, Audios).",
+        "You must select at least one search context (Titles, Videos, Audios).",
         3000
       );
       if (this._contextSearchSelector) this._contextSearchSelector.style.display = "flex";
@@ -365,8 +372,6 @@ export class SearchBar extends HTMLElement {
     this._contextCheckboxes.forEach((checkbox) => {
       if (checkbox.checked) {
         if (
-          checkbox.id === "context-search-selector-webpages" ||
-          checkbox.id === "context-search-selector-blog-posts" ||
           checkbox.id === "context-search-selector-titles" ||
           checkbox.id === "context-search-selector-videos" ||
           checkbox.id === "context-search-selector-audios"

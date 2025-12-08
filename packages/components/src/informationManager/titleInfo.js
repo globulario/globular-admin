@@ -95,9 +95,32 @@ async function createVideoPreviewComponent(parentElement, filePath, titleId) {
       await showDissociateFileConfirmation(filePath, titleId, previewDiv);
     });
 
+    previewDiv.addEventListener("click", async (evt) => {
+      evt.stopPropagation();
+      if (typeof preview._playVideo === "function") {
+        preview._playVideo();
+      } else {
+        preview.dispatchEvent(
+          new CustomEvent("preview-file", {
+            bubbles: true,
+            composed: true,
+            detail: { file: preview._file },
+          })
+        );
+      }
+    });
+
     preview.setOnPlay(async (f) => {
-      const path = f.getPath();
-      const mime = f.getMime();
+      const path =
+        (f && typeof f.getPath === "function" && f.getPath()) ||
+        f?.path ||
+        f?.Path ||
+        filePath;
+      const mime =
+        (f && typeof f.getMime === "function" && f.getMime()) ||
+        f?.mime ||
+        f?.Mime ||
+        "";
 
       let mediaPlayer = null;
       if (path.endsWith(".mp3") || (mime && mime.startsWith("audio"))) {
@@ -114,6 +137,15 @@ async function createVideoPreviewComponent(parentElement, filePath, titleId) {
       if (titleInfoBox && titleInfoBox.parentNode) {
         titleInfoBox.parentNode.removeChild(titleInfoBox);
       }
+    });
+
+    previewDiv.addEventListener("click", async (evt) => {
+      evt.stopPropagation();
+      if (preview && typeof preview._playVideo === "function") {
+        preview._playVideo();
+        return;
+      }
+      preview.dispatchEvent(new CustomEvent("play-preview", { bubbles: true, composed: true, detail: { file: preview._file } }));
     });
 
     return previewDiv;
@@ -300,14 +332,13 @@ const TITLE_INFO_GLOBAL_STYLE = `
 
 .title-informations-div {
   font-size: 1em;
-  min-width: 350px;
   max-width: 450px;
   max-height: 600px;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  border-radius: 8px;
 }
 
 .title-poster-div img, p { }
@@ -364,7 +395,6 @@ const TITLE_INFO_GLOBAL_STYLE = `
 .title-files-div {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
   padding: 0 15px 10px;
   margin-top: 15px;
   align-items: flex-start;
@@ -570,8 +600,11 @@ export class TitleInfo extends HTMLElement {
   _episodesDiv = null;
   _editButton = null;
   _deleteButton = null;
+  _showSynopsisOverride = false;
+_hideGenres = false;
+_compactSynopsis = false;
 
-  static get observedAttributes() { return ['short']; }
+static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres', 'compact-synopsis']; }
 
   /**
    * @param {HTMLElement} titleHeaderDiv
@@ -583,6 +616,9 @@ export class TitleInfo extends HTMLElement {
 
     this._titleHeaderDiv = titleHeaderDiv;
     this._isShortMode = isShort;
+    this._showSynopsisOverride = this.hasAttribute("show-synopsis");
+    this._hideGenres = this.hasAttribute("hide-genres");
+    this._compactSynopsis = this.hasAttribute("compact-synopsis");
 
     this._renderInitialStructure();
     this._getDomReferences();
@@ -603,6 +639,30 @@ export class TitleInfo extends HTMLElement {
       const newIsShort = newValue === 'true';
       if (this._isShortMode !== newIsShort) {
         this._isShortMode = newIsShort;
+        this._renderTitleSpecificContent();
+      }
+    } else if (name === "show-synopsis") {
+      const newOverride = this.hasAttribute("show-synopsis")
+        ? (newValue === "" || newValue === "true" || newValue === "1")
+        : false;
+      if (this._showSynopsisOverride !== newOverride) {
+        this._showSynopsisOverride = newOverride;
+        this._renderTitleSpecificContent();
+      }
+    } else if (name === "hide-genres") {
+      const newHide = this.hasAttribute("hide-genres")
+        ? (newValue === "" || newValue === "true" || newValue === "1")
+        : false;
+      if (this._hideGenres !== newHide) {
+        this._hideGenres = newHide;
+        this._renderTitleSpecificContent();
+      }
+    } else if (name === "compact-synopsis") {
+      const newCompact = this.hasAttribute("compact-synopsis")
+        ? (newValue === "" || newValue === "true" || newValue === "1")
+        : false;
+      if (this._compactSynopsis !== newCompact) {
+        this._compactSynopsis = newCompact;
         this._renderTitleSpecificContent();
       }
     }
@@ -650,7 +710,12 @@ export class TitleInfo extends HTMLElement {
           flex-direction: row;
           height: 100%;
           min-height: 0;
-          gap: 20px;
+          gap: 10px;
+          max-height: calc(100vh - 400px);
+          overflow-y: auto;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+          var(--scroll-track, var(--surface-color));
         }
         .title-poster-div {
           flex: 0 0 320px;
@@ -676,6 +741,7 @@ export class TitleInfo extends HTMLElement {
           .title-info-container {
             flex-direction: column;
             display: block;
+            max-height: calc(100vh - 250px);
           }
           #episodes-div {
             width: 100%;
@@ -684,12 +750,15 @@ export class TitleInfo extends HTMLElement {
           }
         }
         .title-synopsis-div {
-          font-size: .9 rem;
+          font-size: 0.82rem;
+          line-height: 1.35;
           color: var(--primary-text-color);
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, var(--palette-divider))
           var(--scroll-track, var(--surface-color));
         }
+
+
       </style>
       <div class="title-info-container">
         <div class="title-div">
@@ -899,7 +968,23 @@ export class TitleInfo extends HTMLElement {
     // Short mode toggles
     this._posterDiv.style.display = this._isShortMode ? "none" : "flex";
     this._filesDivContainer.style.display = this._isShortMode ? "none" : "flex";
-    this._synopsisP.style.display = this._isShortMode ? "none" : "block";
+    if (this._synopsisP) {
+      const showSynopsis = !this._isShortMode || this._showSynopsisOverride;
+      this._synopsisP.style.display = showSynopsis ? "block" : "none";
+      if (this._compactSynopsis && showSynopsis) {
+        this._synopsisP.style.width = "100%";
+        this._synopsisP.style.lineHeight = "1.1";
+        this._synopsisP.style.textAlign = "left";
+      } else {
+        this._synopsisP.style.width = "";
+        this._synopsisP.style.lineHeight = "";
+        this._synopsisP.style.textAlign = "";
+      }
+    }
+    if (this._genresDiv) {
+      const hideGenres = this._hideGenres && this._isShortMode;
+      this._genresDiv.style.display = hideGenres ? "none" : "flex";
+    }
     this._topCreditDiv.style.display = this._isShortMode ? "none" : "flex";
     this._actionDiv.style.display = this._isShortMode ? "none" : "flex";
     this._episodesContainerDiv.style.display = this._isShortMode ? "none" : "block";

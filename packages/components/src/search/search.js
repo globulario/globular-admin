@@ -15,6 +15,105 @@ import {
   searchDocuments,
   getBaseUrl
 } from "@globular/backend";
+
+const normalizeFacetTerm = (term) => {
+  if (!term) return undefined;
+  if (typeof term.getTerm === "function") {
+    return term;
+  }
+
+  const valueFromArray = (arr, index, fallback) =>
+    Array.isArray(arr) ? arr[index] ?? fallback : fallback;
+
+  const rawArray = term.u ?? term;
+  const text = term.term ?? term.Term ?? valueFromArray(rawArray, 0, "");
+  const count = term.count ?? term.Count ?? valueFromArray(rawArray, 1, 0);
+
+  return {
+    getTerm: () => String(text ?? ""),
+    getCount: () => Number(count ?? 0),
+  };
+};
+
+const normalizeFacet = (facet) => {
+  if (!facet) return undefined;
+  if (typeof facet.getField === "function") {
+    return facet;
+  }
+  const valueFromArray = (arr, index, fallback) =>
+    Array.isArray(arr) ? arr[index] ?? fallback : fallback;
+
+  const rawArray = facet.u ?? facet;
+  const field = facet.field ?? facet.Field ?? valueFromArray(rawArray, 0, "");
+  const total = facet.total ?? facet.Total ?? valueFromArray(rawArray, 1, 0);
+  const other = facet.other ?? facet.Other ?? 0;
+  const terms = Array.isArray(facet.termsList)
+    ? facet.termsList
+    : Array.isArray(facet.terms)
+      ? facet.terms
+      : Array.isArray(facet.f?.[3])
+        ? facet.f[3]
+        : Array.isArray(rawArray)
+          ? rawArray[2]
+          : Array.isArray(facet.u?.[2])
+            ? facet.u[2]
+            : [];
+  const normalizedTerms = terms
+    .map((t) => normalizeFacetTerm(t))
+    .filter((t) => t !== undefined);
+
+  return {
+    getField: () => field,
+    getTotal: () => total,
+    getTermsList: () => normalizedTerms,
+    getOther: () => other,
+  };
+};
+
+const normalizeSearchFacets = (raw) => {
+  if (!raw) return undefined;
+  if (typeof raw.getFacetsList === "function") {
+    return raw;
+  }
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw.facetsList)
+      ? raw.facetsList
+      : Array.isArray(raw.facets)
+        ? raw.facets
+        : Array.isArray(raw.f?.[1])
+          ? raw.f[1]
+          : Array.isArray(raw.u?.[0])
+            ? raw.u[0]
+        : undefined;
+  if (!list) return undefined;
+
+  const normalized = list
+    .map((facet) => normalizeFacet(facet))
+    .filter((facet) => facet !== undefined);
+
+  return {
+    getFacetsList: () => normalized,
+  };
+};
+
+const extractFacetsFromResponse = (rsp) => {
+  if (!rsp) return undefined;
+  if (typeof rsp.getFacets === "function") {
+    const facets = rsp.getFacets();
+    if (facets) return normalizeSearchFacets(facets);
+  }
+  if (rsp.facets) {
+    return normalizeSearchFacets(rsp.facets);
+  }
+  if (typeof rsp.toObject === "function") {
+    const obj = rsp.toObject();
+    if (obj?.facets) {
+      return normalizeSearchFacets(obj.facets);
+    }
+  }
+  return normalizeSearchFacets(rsp);
+};
  
 
 /* ------------------------------------------------------------------------------------------------
@@ -65,7 +164,7 @@ async function getTitleFilePaths(indexPath, title) {
     throw new Error("Missing title or index path for getTitleFilePaths.");
   }
   try {
-    const paths = await getTitleFiles(indexPath, title.getId());
+    const paths = await getTitleFiles(title.getId(),indexPath);
     return Array.isArray(paths) ? paths : [];
   } catch (err) {
     displayError(`Failed to get files for title ${title.getId()}: ${err?.message || err}`, 3000);
@@ -344,7 +443,11 @@ async function _searchTitles(
   maxResults,
   fields = null
 ) {
-  const hits = [];
+  const uuid = `_${getUuidByString(query)}`;
+  const contextName = indexPath.substring(indexPath.lastIndexOf("/") + 1);
+    const hits = [];
+    let pendingFacets = null;
+    let summaryPublished = false;
 
   await new Promise((resolve, reject) => {
     const cancel = searchTitles(
@@ -357,25 +460,44 @@ async function _searchTitles(
       },
       (rsp) => {
         if (typeof rsp?.hasSummary === "function" && rsp.hasSummary() && !fields) {
+          summaryPublished = true;
           Backend.eventHub.publish("_display_search_results_", {}, true);
           Backend.eventHub.publish(
             "__new_search_event__",
             { query, summary: rsp.getSummary(), contexts, offset },
             true
           );
-        } else if (typeof rsp?.hasFacets === "function" && rsp.hasFacets() && !fields) {
-          const uuid = `_${getUuidByString(query)}`;
-          Backend.eventHub.publish(`${uuid}_search_facets_event__`, { facets: rsp.getFacets() }, true);
-        } else if (typeof rsp?.hasHit === "function" && rsp.hasHit()) {
-          const hit = rsp.getHit();
+          if (pendingFacets) {
+            Backend.eventHub.publish(`${uuid}_search_facets_event__`, { facets: pendingFacets, context: contextName }, true);
+            pendingFacets = null;
+          }
+          return;
+        }
 
+        if (typeof rsp?.hasFacets === "function" && rsp.hasFacets() && !fields) {
+          const facets = extractFacetsFromResponse(rsp.getFacets());
+          if (!facets) {
+            return;
+          }
+          if (!summaryPublished) {
+            pendingFacets = facets;
+          } else {
+            Backend.eventHub.publish(`${uuid}_search_facets_event__`, { facets, context: contextName }, true);
+          }
+          return;
+        }
+
+        if (typeof rsp?.hasHit === "function" && rsp.hasHit()) {
+          const hit = rsp.getHit();
           if (!fields) {
-            const uuid = `_${getUuidByString(query)}`;
-            const contextName = indexPath.substring(indexPath.lastIndexOf("/") + 1);
             const snippets = hit.getSnippetsList?.() ?? [];
-            snippets.forEach(() => {
+            if (snippets.length === 0) {
               Backend.eventHub.publish(`${uuid}_search_hit_event__`, { hit, context: contextName }, true);
-            });
+            } else {
+              snippets.forEach(() => {
+                Backend.eventHub.publish(`${uuid}_search_hit_event__`, { hit, context: contextName }, true);
+              });
+            }
           } else {
             hits.push(hit);
           }
@@ -387,6 +509,7 @@ async function _searchTitles(
         reject(err);
       }
     );
+
     void cancel;
   });
 
@@ -397,39 +520,53 @@ async function _searchTitles(
  * 11) Blog posts — via backend/blog stream; preserves your event publishing (no globule)
  * ------------------------------------------------------------------------------------------------*/
 async function _searchBlogPosts(query, contexts, indexPath, offset, maxResults) {
-  await new Promise((resolve, reject) => {
-    const cancel = searchBlogPosts(
+  const uuid = `_${getUuidByString(query)}`;
+  let summaryPublished = false;
+  let pendingFacets = null;
+
+  try {
+    await searchBlogPosts(
+      query,
       {
         indexPath,
-        query,
         offset,
         size: maxResults,
       },
-      (rsp) => {
-        if (typeof rsp?.hasSummary === "function" && rsp.hasSummary()) {
+      {
+        onSummary: (summary) => {
+          summaryPublished = true;
           Backend.eventHub.publish("_display_search_results_", {}, true);
           Backend.eventHub.publish(
             "__new_search_event__",
-            { query, summary: rsp.getSummary(), contexts, offset },
+            { query, summary, contexts, offset },
             true
           );
-        } else if (typeof rsp?.hasFacets === "function" && rsp.hasFacets()) {
-          const uuid = `_${getUuidByString(query)}`;
-          Backend.eventHub.publish(`${uuid}_search_facets_event__`, { facets: rsp.getFacets() }, true);
-        } else if (typeof rsp?.hasHit === "function" && rsp.hasHit()) {
-          const hit = rsp.getHit();
-          const uuid = `_${getUuidByString(query)}`;
+          if (pendingFacets) {
+            Backend.eventHub.publish(`${uuid}_search_facets_event__`, { facets: pendingFacets, context: "blogPosts" }, true);
+            pendingFacets = null;
+          }
+        },
+        onFacets: (facets) => {
+          const normalized = extractFacetsFromResponse(facets);
+          if (!normalized) return;
+          if (!summaryPublished) {
+            pendingFacets = normalized;
+          } else {
+            Backend.eventHub.publish(`${uuid}_search_facets_event__`, { facets: normalized, context: "blogPosts" }, true);
+          }
+        },
+        onHit: (hit) => {
           Backend.eventHub.publish(`${uuid}_search_hit_event__`, { hit, context: "blogPosts" }, true);
-        }
-      },
-      () => resolve(),
-      (err) => {
-        displayError(`SearchBlogPosts stream error: ${err?.message || err}`, 3000);
-        reject(err);
+        },
+        onError: (err) => {
+          displayError(`SearchBlogPosts stream error: ${err?.message || err}`, 3000);
+        },
       }
     );
-    void cancel;
-  });
+  } catch (err) {
+    displayError(`SearchBlogPosts error: ${err?.message || err}`, 3000);
+    throw err;
+  }
 }
 
 /* ------------------------------------------------------------------------------------------------

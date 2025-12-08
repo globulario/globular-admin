@@ -1,5 +1,5 @@
 import getUuidByString from "uuid-by-string";
-import { Backend } from "@globular/backend";
+import { Backend, displayMessage } from "@globular/backend";
 import { BlogPostInfo } from "../informationManager/blogPostInfo"; // Assuming BlogPostInfo is a custom element
 import { InformationsManager } from "../informationManager/informationsManager"; // Assuming InformationsManager is a custom element
 import { SearchAudioCard } from "./searchAudioCard"; // Assuming SearchAudioCard is a custom element
@@ -7,6 +7,8 @@ import { FacetSearchFilter } from "./searchFacet"; // Assuming FacetSearchFilter
 import { SearchTitleCard } from "./searchTitleCard"; // Assuming SearchTitleCard is a custom element
 import { SearchVideoCard } from "./searchVideoCard"; // Assuming SearchVideoCard is a custom element
 import { randomUUID } from "../utility"; // Assuming randomUUID is a utility function
+import { playVideos } from "../video";
+import { playAudios } from "../audio";
 
 // Polymer component imports
 import '@polymer/paper-icon-button/paper-icon-button.js'; // For paper-icon-button
@@ -322,6 +324,7 @@ export class SearchResultsPage extends HTMLElement {
     _webpageSearchResultsCountSpan = null;
     _webpageSearchResultsHeader = null; // Reference to "Webpage search results" header div
     _resultsActionsDiv = null; // Container for pagination buttons at bottom
+    _mosaicSlotChangeHandler = null;
 
     facetFilter = null; // Reference to the FacetSearchFilter instance
     contextsSelector = null; // Reference to the SearchResultsPageContextsSelector instance
@@ -345,6 +348,9 @@ export class SearchResultsPage extends HTMLElement {
         this._contexts = contexts;
         this._tab = tab;
         this._count = 0; // Initial visible count
+        this._listeners = {};
+        this._pendingFacets = [];
+        this._mosaicSlotChangeHandler = this._updateMosaicSectionsVisibility.bind(this);
 
         // Initialize internal hit caches
         this._hits = {};
@@ -356,6 +362,17 @@ export class SearchResultsPage extends HTMLElement {
         this._bindEventListeners();
         this._initChildComponents(); // Initialize child components
         this._setupBackendSubscriptions(); // Setup backend events for hits/facets
+    }
+
+    get offset() {
+        return this._offset;
+    }
+
+    set offset(value) {
+        if (typeof value !== "number" || Number.isNaN(value)) {
+            return;
+        }
+        this._offset = Math.max(0, Math.floor(value));
     }
 
     /**
@@ -410,16 +427,47 @@ export class SearchResultsPage extends HTMLElement {
                     padding-right: 5px; /* Padding for scrollbar */
                 }
 
-                #mosaic-view, #list-view {
-                    display: flex; /* Flex container for cards/items */
-                    flex-wrap: wrap; /* Allow cards to wrap */
-                    gap: 15px; /* Space between cards */
-                    padding: 10px; /* Padding around results */
-                    justify-content: center; /* Center cards in mosaic view */
+                #mosaic-view {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 25px;
+                    padding: 10px;
+                }
+                .mosaic-section {
+                    display: none; /* Hidden until content exists */
+                    padding: 10px 0 5px;
+                }
+                .mosaic-section-header {
+                    font-size: 1.05rem;
+                    font-weight: 600;
+                    padding-bottom: 6px;
+                    margin-bottom: 12px;
+                    border-bottom: 1px solid var(--palette-divider);
+                    color: var(--primary-text-color);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                }
+                .mosaic-section-header paper-icon-button {
+                    --iron-icon-fill-color: var(--on-surface-color);
+                    color: var(--on-surface-color);
+                    width: 36px;
+                    height: 36px;
+                    padding: 4px;
+                }
+                .mosaic-section-content {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 15px;
+                    justify-content: flex-start;
                 }
                 #list-view {
+                    display: flex;
                     flex-direction: column; /* Stack list items vertically */
                     align-items: center; /* Center list items */
+                    gap: 15px;
+                    padding: 10px;
                 }
 
                 #webpage-search-results {
@@ -529,10 +577,40 @@ export class SearchResultsPage extends HTMLElement {
 
                     <div id="results">
                         <div id="mosaic-view">
-                            <slot name="mosaic_blogPosts"></slot>
-                            <slot name="mosaic_videos"></slot>
-                            <slot name="mosaic_titles"></slot>
-                            <slot name="mosaic_audios"></slot>
+                            <div class="mosaic-section" data-section="blogPosts">
+                                <div class="mosaic-section-header">
+                                    <span>Blog Posts</span>
+                                </div>
+                                <div class="mosaic-section-content">
+                                    <slot name="mosaic_blogPosts"></slot>
+                                </div>
+                            </div>
+                            <div class="mosaic-section" data-section="videos">
+                                <div class="mosaic-section-header">
+                                    <span>Videos</span>
+                                    <paper-icon-button class="mosaic-play-btn" data-section="videos" icon="av:play-arrow" title="Play All Videos"></paper-icon-button>
+                                </div>
+                                <div class="mosaic-section-content">
+                                    <slot name="mosaic_videos"></slot>
+                                </div>
+                            </div>
+                            <div class="mosaic-section" data-section="titles">
+                                <div class="mosaic-section-header">
+                                    <span>Titles</span>
+                                </div>
+                                <div class="mosaic-section-content">
+                                    <slot name="mosaic_titles"></slot>
+                                </div>
+                            </div>
+                            <div class="mosaic-section" data-section="audios">
+                                <div class="mosaic-section-header">
+                                    <span>Audios</span>
+                                    <paper-icon-button class="mosaic-play-btn" data-section="audios" icon="av:play-arrow" title="Play All Audios"></paper-icon-button>
+                                </div>
+                                <div class="mosaic-section-content">
+                                    <slot name="mosaic_audios"></slot>
+                                </div>
+                            </div>
                         </div>
                         <div id="list-view" style="display: none;">
                             <slot name="list_blogPosts"></slot>
@@ -577,6 +655,12 @@ export class SearchResultsPage extends HTMLElement {
         this._resultsActionsDiv = this.shadowRoot.querySelector("#results-actions"); // The sticky pagination bar
 
         this._facetsPanel = this.shadowRoot.querySelector("#facets-panel"); // The container for facets
+
+        this.shadowRoot.querySelectorAll('slot[name^="mosaic_"]').forEach(slot => {
+            slot.addEventListener('slotchange', this._mosaicSlotChangeHandler);
+        });
+        this._updateMosaicSectionsVisibility();
+        this._setupMosaicPlayButtons();
     }
 
     /**
@@ -618,6 +702,10 @@ export class SearchResultsPage extends HTMLElement {
         // Initialize FacetSearchFilter
         this.facetFilter = new FacetSearchFilter(this);
         this._facetsPanel.appendChild(this.facetFilter); // Append to the facets panel
+        if (this._pendingFacets.length > 0) {
+            this._pendingFacets.forEach(evt => this.facetFilter.setFacets(evt.facets, evt.context));
+            this._pendingFacets = [];
+        }
 
         // Set initial view type
         this._updateViewTypeDisplay();
@@ -633,7 +721,11 @@ export class SearchResultsPage extends HTMLElement {
             `${this._uuid}_search_facets_event__`,
             (uuid) => { this._listeners[`${this._uuid}_search_facets_event__`] = uuid; },
             (evt) => {
-                this.facetFilter.setFacets(evt.facets);
+                if (this.facetFilter) {
+                    this.facetFilter.setFacets(evt.facets, evt.context);
+                } else {
+                    this._pendingFacets.push(evt);
+                }
             }, true, this
         );
 
@@ -682,6 +774,19 @@ export class SearchResultsPage extends HTMLElement {
      */
     _handlePreviousResultsClick() {
         this.navigator.setIndex(this._offset - 1);
+    }
+
+    _getHitUniqueId(hit) {
+        if (typeof hit?.getId === "function") return hit.getId();
+        if (hit?.getTitle && hit.getTitle()?.getId) return hit.getTitle().getId();
+        if (hit?.getVideo && hit.getVideo()?.getId) return hit.getVideo().getId();
+        if (hit?.getAudio && hit.getAudio()?.getId) return hit.getAudio().getId();
+        if (hit?.getBlog && hit.getBlog()?.getId) return hit.getBlog().getId();
+        try {
+            return getUuidByString(JSON.stringify(hit ?? {}));
+        } catch {
+            return randomUUID();
+        }
     }
 
     /**
@@ -745,11 +850,21 @@ export class SearchResultsPage extends HTMLElement {
 
             // Append to DOM if it falls within the current display page (offset)
             if (this._hitsByContext[context].length <= (this._offset + 1) * MAX_DISPLAY_RESULTS) {
-                this.appendChild(this._displayMosaicHit(hit, context));
-                this.appendChild(this._displayListHit(hit, context));
+                const mosaicEl = this._displayMosaicHit(hit, context);
+                const listEl = this._displayListHit(hit, context);
+                if (mosaicEl) {
+                    this.appendChild(mosaicEl);
+                }
+                if (listEl) this.appendChild(listEl);
+                this._updateMosaicSectionsVisibility();
             }
             this.refreshNavigatorAndContextSelector(); // Update pagination and context totals
         }
+    }
+
+    setSummary(summary) {
+        this._summary = summary;
+        this.refreshNavigatorAndContextSelector();
     }
 
     /**
@@ -769,7 +884,7 @@ export class SearchResultsPage extends HTMLElement {
             }
         };
 
-        if (hit.hasTitle()) {
+        if (typeof hit?.hasTitle === "function" && hit.hasTitle()) {
             const title = hit.getTitle();
             title.getGenresList().forEach(g => g.split(" ").forEach(g_ => addClassHit(g_)));
             addClassHit(title.getType()); // Add type as a class (e.g., "Movie", "TVEpisode")
@@ -779,7 +894,7 @@ export class SearchResultsPage extends HTMLElement {
             if (rating < 3.5) addClassHit("low");
             else if (rating < 7.0) addClassHit("medium");
             else addClassHit("high");
-        } else if (hit.hasVideo()) {
+        } else if (typeof hit?.hasVideo === "function" && hit.hasVideo()) {
             const video = hit.getVideo();
             video.getGenresList().forEach(g => g.split(" ").forEach(g_ => addClassHit(g_)));
             video.getTagsList().forEach(tag => addClassHit(tag));
@@ -788,10 +903,10 @@ export class SearchResultsPage extends HTMLElement {
             if (rating < 3.5) addClassHit("low");
             else if (rating < 7.0) addClassHit("medium");
             else addClassHit("high");
-        } else if (hit.hasAudio()) {
+        } else if (typeof hit?.hasAudio === "function" && hit.hasAudio()) {
             const audio = hit.getAudio();
             audio.getGenresList().forEach(g => g.split(" ").forEach(g_ => addClassHit(g_)));
-        } else if (hit.hasBlog()) {
+        } else if (typeof hit?.hasBlog === "function" && hit.hasBlog()) {
             const blog = hit.getBlog();
             blog.getKeywordsList().forEach(kw => addClassHit(kw));
         }
@@ -804,6 +919,8 @@ export class SearchResultsPage extends HTMLElement {
      * @private
      */
     _handleWebpageSearchResults(results) {
+
+        console.log("Displaying webpage search results:", results); 
         if (!this._webpageSearchResultsDiv) return;
 
         this._webpageSearchResultsDiv.innerHTML = ""; // Clear previous results
@@ -914,6 +1031,58 @@ export class SearchResultsPage extends HTMLElement {
         }
     }
 
+    /**
+     * Removes existing slotted result nodes on the host element.
+     * @param {string[]} prefixes - Slot name prefixes to remove (e.g., "mosaic").
+     * @private
+     */
+    _clearSlottedResults(prefixes = []) {
+        prefixes.forEach(prefix => {
+            if (!prefix) return;
+            this.querySelectorAll(`[slot^="${prefix}_"]`).forEach(node => node.remove());
+        });
+        this._updateMosaicSectionsVisibility();
+    }
+
+    /**
+     * Toggles mosaic sections visibility based on whether their slots have content.
+     * @private
+     */
+    _updateMosaicSectionsVisibility() {
+        if (!this.shadowRoot) return;
+        this.shadowRoot.querySelectorAll(".mosaic-section").forEach(section => {
+            const slot = section.querySelector("slot");
+            if (!slot) return;
+            const assigned = typeof slot.assignedElements === "function"
+                ? slot.assignedElements({ flatten: true })
+                : slot.assignedNodes({ flatten: true }).filter(node => node.nodeType === Node.ELEMENT_NODE);
+            const hasContent = assigned.length > 0;
+            section.style.display = hasContent ? "block" : "none";
+            const playBtn = section.querySelector(".mosaic-play-btn");
+            if (playBtn) {
+                playBtn.style.display = hasContent ? "inline-flex" : "none";
+            }
+        });
+    }
+
+    /**
+     * Attaches click handlers to mosaic play buttons.
+     * @private
+     */
+    _setupMosaicPlayButtons() {
+        this.shadowRoot.querySelectorAll(".mosaic-play-btn").forEach(btn => {
+            btn.addEventListener("click", (evt) => {
+                evt.stopPropagation();
+                const targetSection = btn.getAttribute("data-section");
+                if (targetSection === "videos") {
+                    this._playAllVideos();
+                } else if (targetSection === "audios") {
+                    this._playAllAudios();
+                }
+            });
+        });
+    }
+
 
     /**
      * Clears all displayed search hits from the view.
@@ -922,8 +1091,7 @@ export class SearchResultsPage extends HTMLElement {
         this._hits = {};
         this._hitsByContext = {};
         this._hitsByClassName = {};
-        this._mosaicView.innerHTML = "";
-        this._listView.innerHTML = "";
+        this._clearSlottedResults(["mosaic", "list"]);
         this._webpageSearchResultsDiv.innerHTML = "";
         this._webpageSearchResultsCountSpan.textContent = "0";
         this._webpageSearchResultsHeader.style.display = "none";
@@ -943,8 +1111,7 @@ export class SearchResultsPage extends HTMLElement {
         }
 
         // Remove all current search hit elements from slots before re-appending
-        this._mosaicView.innerHTML = "";
-        this._listView.innerHTML = "";
+        this._clearSlottedResults(["mosaic", "list"]);
 
         let visibleHits = [];
         for (const context in this._hitsByContext) {
@@ -964,22 +1131,44 @@ export class SearchResultsPage extends HTMLElement {
         const hitsForCurrentPage = visibleHits.slice(startIndex, endIndex);
 
         hitsForCurrentPage.forEach(({ hit, context }) => {
-            // Append to appropriate mosaic slot
             const mosaicElement = this._displayMosaicHit(hit, context);
-            if (mosaicElement && mosaicElement.slot) { // Ensure slot property is set by displayMosaicHit
-                this.shadowRoot.querySelector(`slot[name="${mosaicElement.slot}"]`).appendChild(mosaicElement);
+            if (mosaicElement) {
+                this.appendChild(mosaicElement);
             }
-            // Append to appropriate list slot
+
             const listElement = this._displayListHit(hit, context);
-            if (listElement && listElement.slot) { // Ensure slot property is set by displayListHit
-                this.shadowRoot.querySelector(`slot[name="${listElement.slot}"]`).appendChild(listElement);
+            if (listElement) {
+                this.appendChild(listElement);
             }
         });
+        this._updateMosaicSectionsVisibility();
 
         // Update navigator and action buttons
         this._updatePaginationButtons();
         this.refreshNavigatorAndContextSelector();
         this.facetFilter.refresh(); // Ensure facet counts are updated
+    }
+
+    /**
+     * Plays all currently visible video hits in order.
+     * @private
+     */
+    async _playAllVideos() {
+        const videos = this.getVideos();
+        if (!videos || videos.length === 0) {
+            displayMessage("No videos available to play.", 3000);
+            return;
+        }
+        playVideos(videos, "Search Results");
+    }
+
+    async _playAllAudios() {
+        const audios = this.getAudios();
+        if (!audios || audios.length === 0) {
+            displayMessage("No audios available to play.", 3000);
+            return;
+        }
+        playAudios(audios, "Search Results");
     }
 
     /**
@@ -1074,7 +1263,6 @@ export class SearchResultsPage extends HTMLElement {
                 hit.hidden = true;
             }
         }
-        this.refresh(); // Refresh display after hiding
     }
 
     /**
@@ -1091,7 +1279,25 @@ export class SearchResultsPage extends HTMLElement {
                 hit.hidden = false;
             }
         }
-        this.refresh(); // Refresh display after showing
+    }
+
+    setContextState(context, enabled) {
+        if (!this._hitsByContext[context]) {
+            return;
+        }
+
+        this._hitsByContext[context].forEach(hit => {
+            hit.enable = enabled;
+        });
+
+        this.refresh();
+        this.refreshNavigatorAndContextSelector();
+        if (this.facetFilter) {
+            this.facetFilter.setContextEnabled(context, enabled);
+        }
+        if (this.facetFilter) {
+            this.facetFilter.refresh();
+        }
     }
 
     /**
@@ -1139,7 +1345,7 @@ export class SearchResultsPage extends HTMLElement {
      */
     getVideos(className, field) {
         let videos = [];
-        const uuidClassName = getUuidByString(className.toLowerCase());
+        const uuidClassName = className ? getUuidByString(className.toLowerCase()) : null;
         if (this._hitsByContext["videos"]) {
             this._hitsByContext["videos"].forEach(hit => {
                 const video = hit.getVideo();
@@ -1162,6 +1368,19 @@ export class SearchResultsPage extends HTMLElement {
         return [...new Map(videos.map(v => [v.getId(), v])).values()];
     }
 
+    _getSlotContext(hit, fallbackContext) {
+        if (typeof hit?.hasVideo === "function" && hit.hasVideo()) {
+            return "videos";
+        }
+        if (typeof hit?.hasAudio === "function" && hit.hasAudio()) {
+            return "audios";
+        }
+        if (typeof hit?.hasBlog === "function" && hit.hasBlog()) {
+            return "blogPosts";
+        }
+        return fallbackContext || "titles";
+    }
+
     /**
      * Displays a mosaic view hit (blog, video, title, audio).
      * @param {Object} hit - The search hit object.
@@ -1172,20 +1391,21 @@ export class SearchResultsPage extends HTMLElement {
         let cardElement = null;
         let id = null;
         let dataObject = null;
-
-        if (hit.hasTitle()) {
+        console.log("Displaying hit in mosaic view:", hit);
+        if (typeof hit?.hasTitle === "function" && hit.hasTitle()) {
             dataObject = hit.getTitle();
             id = `_flip_card_${getUuidByString(dataObject.getName())}`;
             cardElement = new SearchTitleCard();
-        } else if (hit.hasVideo()) {
+        } else if (typeof hit?.hasVideo === "function" && hit.hasVideo()) {
+            console.log("Displaying video hit in mosaic view:", hit);
             dataObject = hit.getVideo();
             id = `_video_card_${getUuidByString(dataObject.getId())}`;
             cardElement = new SearchVideoCard();
-        } else if (hit.hasAudio()) {
+        } else if (typeof hit?.hasAudio === "function" && hit.hasAudio()) {
             dataObject = hit.getAudio();
             id = `_audio_card_${getUuidByString(dataObject.getId())}`; // Use ID for audio card
             cardElement = new SearchAudioCard();
-        } else if (hit.hasBlog()) {
+        } else if (typeof hit?.hasBlog === "function" && hit.hasBlog()) {
             dataObject = hit.getBlog();
             id = `_blog_info_${dataObject.getUuid()}`; // Use blog UUID
             cardElement = new BlogPostInfo(); // Assumed to have a short mode or a setter for it
@@ -1196,13 +1416,17 @@ export class SearchResultsPage extends HTMLElement {
             dataObject.globule = hit.globule; // Attach globule context
 
             cardElement.id = id;
-            cardElement.slot = `mosaic_${context}`; // Assign to correct slot
+            const slotContext = this._getSlotContext(hit, context);
+            cardElement.slot = `mosaic_${slotContext}`; // Assign to correct slot
+            if (cardElement instanceof SearchVideoCard && typeof cardElement.setIndexPath === "function") {
+                cardElement.setIndexPath(`/search/${slotContext}`);
+            }
 
             // Set data on the specific card type
-            if (cardElement instanceof SearchTitleCard) cardElement.setTitle(dataObject);
-            else if (cardElement instanceof SearchVideoCard) cardElement.setVideo(dataObject);
-            else if (cardElement instanceof SearchAudioCard) cardElement.setAudio(dataObject);
-            else if (cardElement instanceof BlogPostInfo) cardElement.blogPost = dataObject;
+        if (cardElement instanceof SearchTitleCard && typeof cardElement.setTitle === "function") cardElement.setTitle(dataObject);
+        else if (cardElement instanceof SearchVideoCard && typeof cardElement.setVideo === "function") cardElement.setVideo(dataObject);
+        else if (cardElement instanceof SearchAudioCard && typeof cardElement.setAudio === "function") cardElement.setAudio(dataObject);
+        else if (cardElement instanceof BlogPostInfo && dataObject) cardElement.blogPost = dataObject;
 
             // Add filterable classes
             const addFilterableClasses = (entity, type) => {
@@ -1226,10 +1450,10 @@ export class SearchResultsPage extends HTMLElement {
                 }
             };
             // Call for the specific data object
-            if (hit.hasTitle()) addFilterableClasses(hit.getTitle(), "title");
-            else if (hit.hasVideo()) addFilterableClasses(hit.getVideo(), "video");
-            else if (hit.hasAudio()) addFilterableClasses(hit.getAudio(), "audio");
-            else if (hit.hasBlog()) addFilterableClasses(hit.getBlog(), "blog");
+            if (typeof hit?.hasTitle === "function" && hit.hasTitle()) addFilterableClasses(hit.getTitle(), "title");
+            else if (typeof hit?.hasVideo === "function" && hit.hasVideo()) addFilterableClasses(hit.getVideo(), "video");
+            else if (typeof hit?.hasAudio === "function" && hit.hasAudio()) addFilterableClasses(hit.getAudio(), "audio");
+            else if (typeof hit?.hasBlog === "function" && hit.hasBlog()) addFilterableClasses(hit.getBlog(), "blog");
 
             return cardElement;
         }
@@ -1247,22 +1471,24 @@ export class SearchResultsPage extends HTMLElement {
         let uuid = null;
         let infoDisplay = null; // InformationsManager instance
 
-        if (hit.hasTitle()) {
+        const baseUuid = typeof hit?.getId === "function" ? hit.getId() : `${Math.random()}`;
+
+        if (typeof hit?.hasTitle === "function" && hit.hasTitle()) {
             titleName = hit.getTitle().getName();
-            uuid = getUuidByString(hit.getId() + "_list_title"); // Use hit ID for uniqueness
+            uuid = getUuidByString(baseUuid + "_list_title"); // Use hit ID for uniqueness
             infoDisplay = new InformationsManager();
             infoDisplay.setTitlesInformation([hit.getTitle()]);
-        } else if (hit.hasVideo()) {
+        } else if (typeof hit?.hasVideo === "function" && hit.hasVideo()) {
             titleName = hit.getVideo().getDescription(); // Use description as title for video
-            uuid = getUuidByString(hit.getId() + "_list_video");
+            uuid = getUuidByString(baseUuid + "_list_video");
             infoDisplay = new InformationsManager();
             infoDisplay.setVideosInformation([hit.getVideo()]);
-        } else if (hit.hasAudio()) {
+        } else if (typeof hit?.hasAudio === "function" && hit.hasAudio()) {
             titleName = hit.getAudio().getTitle(); // Use audio title
-            uuid = getUuidByString(hit.getId() + "_list_audio");
+            uuid = getUuidByString(baseUuid + "_list_audio");
             infoDisplay = new InformationsManager();
             infoDisplay.setAudiosInformation([hit.getAudio()]);
-        } else if (hit.hasBlog()) {
+        } else if (typeof hit?.hasBlog === "function" && hit.hasBlog()) {
             titleName = hit.getBlog().getTitle(); // Use blog title
             uuid = getUuidByString(hit.getBlog().getUuid() + "_list_blog");
             infoDisplay = new InformationsManager();
@@ -1275,7 +1501,8 @@ export class SearchResultsPage extends HTMLElement {
         const hitDiv = document.createElement("div");
         hitDiv.id = `hit-div-${uuid}`;
         hitDiv.classList.add("hit-div", "filterable", context); // Add context class
-        hitDiv.slot = `list_${context}`; // Assign to list slot
+        const listSlotContext = this._getSlotContext(hit, context);
+        hitDiv.slot = `list_${listSlotContext}`; // Assign to list slot
 
         hitDiv.innerHTML = `
             <style>

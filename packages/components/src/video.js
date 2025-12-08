@@ -22,7 +22,8 @@ import {
   getFileVideosInfo,
   getTitleFiles,
   getVideoInfo,
-  getWatchingTitle
+  getWatchingTitle,
+  saveWatchingTitle
 } from '@globular/backend'
 import { getBaseUrl } from '@globular/backend'
 
@@ -313,6 +314,8 @@ export class VideoPlayer extends HTMLElement {
 
     this.container.style.height = 'auto'
     this.container.name = 'video_player'
+    this._retryingPlayback = false
+    this._pendingSeekTime = null
   }
 
   _handleVideoPlayError = (err) => {
@@ -387,7 +390,8 @@ export class VideoPlayer extends HTMLElement {
     this.shuffleBtn?.removeEventListener('click', this._toggleShuffle)
     this.titleInfoButton?.removeEventListener('click', this._handleTitleInfoClick)
     this.videoElement?.removeEventListener('playing', this._handleVideoPlaying)
-    this.videoElement?.removeEventListener('onloadeddata', this._handleVideoLoadedData)
+    this.videoElement?.removeEventListener('loadeddata', this._handleVideoLoadedData)
+    this.videoElement?.removeEventListener('error', this._handleVideoElementError)
     this.audioTrackSelector?.removeEventListener('change', this._handleAudioTrackChange)
 
     this.shadowRoot.querySelectorAll('.plyr__controls__item.custom-control').forEach(el => el.remove())
@@ -464,11 +468,28 @@ export class VideoPlayer extends HTMLElement {
     
   }
 
+  _handleVideoElementError = () => {
+    const mediaError = this.videoElement?.error
+    if (!mediaError) return
+    const networkCode = typeof MediaError !== 'undefined' ? MediaError.MEDIA_ERR_NETWORK : 2
+    if (mediaError.code === networkCode) {
+      this._retryPlaybackAfterFailure()
+    }
+  }
+
   _handleVideoLoadedData = async () => {
     // On first load, size the dialog to fit within viewport (both W & H)
     if (!this.resized) {
       const { width, height } = this._getFittedVideoSize()
       this.resize(width, height)
+    }
+    if (typeof this._pendingSeekTime === 'number' && !Number.isNaN(this._pendingSeekTime)) {
+      try {
+        this.videoElement.currentTime = this._pendingSeekTime
+      } catch (err) {
+        console.warn('Failed to restore playback position after reload:', err)
+      }
+      this._pendingSeekTime = null
     }
     this._finalizeVideoLoad()
 
@@ -512,6 +533,38 @@ export class VideoPlayer extends HTMLElement {
     } else {
       this.audioTrackSelector.style.display = 'none'
     }
+  }
+
+  _retryPlaybackAfterFailure() {
+    if (this._retryingPlayback || !this.path) return
+    this._retryingPlayback = true
+    const resumeTime = this.videoElement?.currentTime || 0
+    const titleInfo = this.titleInfo || null
+    let timeoutId = null
+    this._pendingSeekTime = resumeTime
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId)
+      this._retryingPlayback = false
+    }
+    const handleLoaded = () => {
+      this.videoElement.removeEventListener('loadeddata', handleLoaded)
+      cleanup()
+    }
+    this.videoElement.addEventListener('loadeddata', handleLoaded, { once: true })
+    timeoutId = setTimeout(() => {
+      this.videoElement.removeEventListener('loadeddata', handleLoaded)
+      cleanup()
+    }, 10000)
+    this.resume = true
+    const restart = () => {
+      const currentItem = this.playlist?._items?.[this.playlist._index]
+      if (currentItem && typeof this.playlist.setPlaying === 'function') {
+        this.playlist.setPlaying(currentItem, true, true)
+      } else {
+        this.play(this.path, titleInfo)
+      }
+    }
+    restart()
   }
 
   _handleAudioTrackChange = (evt) => {
@@ -700,6 +753,7 @@ export class VideoPlayer extends HTMLElement {
 
     this.videoElement.addEventListener('loadeddata', this._handleVideoLoadedData)
     this.videoElement.addEventListener('playing', this._handleVideoPlaying)
+    this.videoElement.addEventListener('error', this._handleVideoElementError)
     this.audioTrackSelector.addEventListener('change', this._handleAudioTrackChange)
 
     this.videoElement.onended = () => {
@@ -1147,6 +1201,16 @@ export class VideoPlayer extends HTMLElement {
           this.hls.loadSource(src)
           this.hls.on(Hls.Events.MANIFEST_PARSED, () => this._playVideoElement())
         })
+        this.hls.on(Hls.Events.ERROR, (_event, data) => {
+          const status = data?.response?.code ?? data?.response?.status ?? null
+          if (status === 401 || status === 403) {
+            this._retryPlaybackAfterFailure()
+            return
+          }
+          if (data?.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            this._retryPlaybackAfterFailure()
+          }
+        })
       } else {
         displayError('HLS is not supported in this browser for .m3u8 files.')
         this.videoElement.src = src
@@ -1192,6 +1256,8 @@ export class VideoPlayer extends HTMLElement {
         date: new Date()
       }
       if (this.videoElement.duration !== this.videoElement.currentTime && save) {
+        // persist watching state server-side so "continue watching" stays accurate
+        saveWatchingTitle(payload).catch(err => console.error("Failed to save watching state", err))
         Backend.publish('stop_video_player_evt_', payload, true)
       } else {
         Backend.publish('remove_video_player_evt_', payload, true)

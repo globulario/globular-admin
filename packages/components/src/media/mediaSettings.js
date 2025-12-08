@@ -19,6 +19,7 @@ import {
   convertVideoToHls,
   convertVideoToMpeg4H264,
   getMediaConversionSettings,
+  rebuildTitleIndexFromStore,
 } from "@globular/backend";
 
 class MediaSettings extends HTMLElement {
@@ -408,6 +409,21 @@ class MediaSettings extends HTMLElement {
             </div>
           </div>
 
+          <!-- Title search index tools -->
+          <div class="section">
+            <div class="section-title">
+              <span>Title Search Index</span>
+              <div class="row">
+                <button id="btn-rebuild-title-index" class="btn-small">Rebuild Index</button>
+              </div>
+            </div>
+            <div class="section-body">
+              <div class="row" style="font-size:0.75rem; opacity:0.8;">
+                <span>Rebuilds Bleve indices from the persisted KV store.</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Media files scan -->
           <div class="section">
             <div class="section-title">
@@ -469,6 +485,7 @@ class MediaSettings extends HTMLElement {
     const maxDelay = $("max-delay");
     const btnWorkerStart = $("btn-worker-start");
     const btnWorkerStop = $("btn-worker-stop");
+    const btnRebuildTitleIndex = $("btn-rebuild-title-index");
 
     autoConvert?.addEventListener("change", async () => {
       const enabled = !!autoConvert.checked;
@@ -542,6 +559,8 @@ class MediaSettings extends HTMLElement {
       }
     });
 
+    btnRebuildTitleIndex?.addEventListener("click", () => this.rebuildTitleIndex());
+
     // media files scan
     $("btn-scan-media").onclick = () => this.scanMediaFiles();
 
@@ -573,6 +592,26 @@ class MediaSettings extends HTMLElement {
     const el = this.shadowRoot.getElementById("conversion-details");
     if (!el) return;
     el.style.display = show ? "block" : "none";
+  }
+
+  async rebuildTitleIndex() {
+    const btn = this.shadowRoot.getElementById("btn-rebuild-title-index");
+    const originalLabel = btn?.textContent || "Rebuild Index";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Rebuilding…";
+    }
+    try {
+      await rebuildTitleIndexFromStore();
+      displayMessage("Title search indices rebuilt from store.", 3000);
+    } catch (err) {
+      displayError(err?.message || err, 4000);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
+    }
   }
 
   async loadConversionSettings() {

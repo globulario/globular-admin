@@ -4,7 +4,7 @@ import { playVideo } from "../video";
 import { InformationsManager } from "../informationManager/informationsManager";
 
 // ✅ New backend wrappers (cluster-transparent)
-import { getTitleFiles, deleteVideo } from "@globular/backend";
+import { getTitleFiles } from "@globular/backend";
 import { getBaseUrl } from "@globular/backend";
 
 // Polymer component imports
@@ -61,6 +61,8 @@ export function showGlobalVideoInfo(video) {
 export class SearchVideoCard extends HTMLElement {
   _video = null;
   _editable = false;
+  _domInitialized = false;
+  _indexPath = "/search/videos";
 
   _closeButton = null;
   _videoPreviewElement = null;
@@ -69,6 +71,7 @@ export class SearchVideoCard extends HTMLElement {
   _ratingSpan = null;
   _videoInfoButton = null;
   _cardContainer = null;
+  _listenersBound = false;
 
   onclose = null;
 
@@ -79,13 +82,13 @@ export class SearchVideoCard extends HTMLElement {
   }
 
   connectedCallback() {
-    this._renderInitialStructure();
-    this._getDomReferences();
-    this._bindEventListeners();
+    this._ensureDomReady();
+    this._populateCard();
     this._loadVideoPreviewSource();
   }
 
   _renderInitialStructure() {
+    if (this._domInitialized) return;
     this.shadowRoot.innerHTML = `
       <style>
         .video-card {
@@ -168,7 +171,10 @@ export class SearchVideoCard extends HTMLElement {
           align-items: center;
           padding: 5px 10px;
         }
-        .bottom-actions paper-icon-button { color: var(--primary-color); }
+        .bottom-actions paper-icon-button {
+          color: var(--video-card-action-color, var(--palette-primary-light, var(--primary-color)));
+          --iron-icon-fill-color: var(--video-card-action-color, var(--palette-primary-light, var(--primary-color)));
+        }
 
         @container videocard (max-width: 225px) {
           .title-rating-div { font-size: .85rem; }
@@ -203,6 +209,7 @@ export class SearchVideoCard extends HTMLElement {
         </div>
       </div>
     `;
+    this._domInitialized = true;
   }
 
   _getDomReferences() {
@@ -216,6 +223,7 @@ export class SearchVideoCard extends HTMLElement {
   }
 
   _bindEventListeners() {
+    if (this._listenersBound) return;
     if (this._closeButton) this._closeButton.addEventListener('click', this._handleCloseClick.bind(this));
     if (this._videoInfoButton) this._videoInfoButton.addEventListener('click', this._handleVideoInfoClick.bind(this));
 
@@ -226,9 +234,23 @@ export class SearchVideoCard extends HTMLElement {
 
     if (this._videoPreviewElement) this._videoPreviewElement.addEventListener('click', this._handlePlayVideoClick.bind(this));
     if (this._thumbnailImageElement) this._thumbnailImageElement.addEventListener('click', this._handlePlayVideoClick.bind(this));
+    this._listenersBound = true;
+  }
+
+  _ensureDomReady() {
+    if (!this._domInitialized) {
+      this._renderInitialStructure();
+    }
+    if (!this._thumbnailImageElement) {
+      this._getDomReferences();
+    }
+    if (!this._listenersBound) {
+      this._bindEventListeners();
+    }
   }
 
   setVideo(video) {
+    this._ensureDomReady();
     if (this._video !== video) {
       this._video = video;
       this._populateCard();
@@ -237,7 +259,15 @@ export class SearchVideoCard extends HTMLElement {
     }
   }
 
+  setIndexPath(indexPath) {
+    if (typeof indexPath === "string" && indexPath.trim().length > 0 && this._indexPath !== indexPath) {
+      this._indexPath = indexPath;
+      this._loadVideoPreviewSource();
+    }
+  }
+
   _populateCard() {
+    this._ensureDomReady();
     if (!this._video) return;
 
     this._thumbnailImageElement.src = this._video.getPoster()
@@ -261,26 +291,34 @@ export class SearchVideoCard extends HTMLElement {
     if (!this._video || !this._videoPreviewElement) return;
 
     const videoId = this._video.getId();
+    const indexPath = this._indexPath || "/search/videos";
 
     try {
-      // Cluster-transparent: no indexPath or globule needed
-      const filePaths = await getTitleFiles(videoId); // expects an array of file paths
-      if (Array.isArray(filePaths) && filePaths.length > 0) {
-        const mainVideoPath = filePaths[0];
-        const previewUrl = this._buildPreviewUrl(mainVideoPath); // derive preview clip URL
-        this._videoPreviewElement.src = previewUrl;
-        this._videoPreviewElement.style.display = "block";
+      console.log(`Loading preview for video ${videoId} (index ${indexPath})...`);
+      const filePaths = await getTitleFiles(videoId, indexPath).catch(err => {
+        console.warn(`getTitleFiles failed for ${videoId} (${indexPath}): ${err?.message || err}`);
+        return [];
+      });
 
-        this._videoPreviewElement.onclick = () => {
-          playVideo(mainVideoPath, null, null, this._video); // no globule
-        };
-      } else {
-        console.warn(`No file found for video ${videoId}. Attempting to delete stale entry.`);
-        await this._deleteStaleVideoEntry(videoId);
+      if (!Array.isArray(filePaths) || filePaths.length === 0) {
+        // Nothing associated yet; fall back to poster only.
+        this._videoPreviewElement.removeAttribute("src");
+        this._videoPreviewElement.style.display = "none";
+        return;
       }
+
+      const mainVideoPath = filePaths[0];
+      const previewUrl = this._buildPreviewUrl(mainVideoPath); // derive preview clip URL
+      this._videoPreviewElement.src = previewUrl;
+      this._videoPreviewElement.style.display = "none";
+
+      this._videoPreviewElement.onclick = () => {
+        playVideo(mainVideoPath, null, null, this._video); // no globule
+      };
     } catch (err) {
       console.error(`Failed to load video preview for ${videoId}: ${err?.message || err}`);
-      await this._deleteStaleVideoEntry(videoId);
+      this._videoPreviewElement.removeAttribute("src");
+      this._videoPreviewElement.style.display = "none";
     }
   }
 
@@ -305,15 +343,6 @@ export class SearchVideoCard extends HTMLElement {
       if (c.length > 0) url += `/${c}`;
     });
     return url;
-  }
-
-  async _deleteStaleVideoEntry(videoId) {
-    try {
-      await deleteVideo(videoId); // cluster-transparent deletion
-      displayMessage(`Stale video entry "${videoId}" was deleted.`, 3000);
-    } catch (err) {
-      displayError(`Failed to delete stale video entry ${videoId}: ${err?.message || err}`, 3000);
-    }
   }
 
   setEditable(editable) {
@@ -382,7 +411,8 @@ export class SearchVideoCard extends HTMLElement {
     if (!this._video) return;
 
     try {
-      const filePaths = await getTitleFiles(this._video.getId());
+      const indexPath = this._indexPath || "/search/videos";
+      const filePaths = await getTitleFiles(this._video.getId(), indexPath);
       if (Array.isArray(filePaths) && filePaths.length > 0) {
         const mainVideoPath = filePaths[0];
         await playVideo(mainVideoPath, null, null, this._video);
@@ -399,15 +429,23 @@ export class SearchVideoCard extends HTMLElement {
   }
 
   _handleCardMouseEnter() {
-    if (this._videoPreviewElement && this._videoPreviewElement.src) {
-      this._videoPreviewElement.style.display = "block";
-      this._videoPreviewElement.play().catch(() => {});
+    if (!this._videoPreviewElement || !this._videoPreviewElement.src) return;
+    if (this._thumbnailImageElement) {
+      this._thumbnailImageElement.style.display = "none";
     }
+    this._videoPreviewElement.style.display = "block";
+    this._videoPreviewElement.currentTime = 0;
+    this._videoPreviewElement.play().catch(() => {});
   }
 
   _handleCardMouseLeave() {
-    if (this._videoPreviewElement) {
+    if (this._videoPreviewElement && this._videoPreviewElement.src) {
       this._videoPreviewElement.pause();
+      this._videoPreviewElement.currentTime = 0;
+      this._videoPreviewElement.style.display = "none";
+    }
+    if (this._thumbnailImageElement) {
+      this._thumbnailImageElement.style.display = "";
     }
   }
 }

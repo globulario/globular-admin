@@ -2,11 +2,6 @@
 import { getBaseUrl } from "../core/endpoints";
 import { stream, unary } from "../core/rpc";
 import { decodeJwtPayload } from "../core/session";
-import {
-  findDocuments,
-  replaceOneDocument,
-  deleteOneDocument,
-} from "../persistence/persistence";
 
 // ---- stubs ----
 import { TitleServiceClient } from "globular-web-client/title/title_grpc_web_pb";
@@ -73,6 +68,12 @@ function isRpcNotFoundError(err: any): boolean {
   return false;
 }
 
+function isBadgerNotFoundError(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err?.message || err?.grpcMessage || err || "").toLowerCase();
+  return msg.includes("badger") && msg.includes("key") && msg.includes("not found");
+}
+
 /* =====================================================================================
  * Defaults
  * ===================================================================================== */
@@ -85,19 +86,11 @@ const DEFAULT_INDEXES = {
 
 // --- add with other defaults (re-use titles index for people) ---
 const DEFAULT_PERSONS_INDEX = DEFAULT_INDEXES.titles;
-const COLLECTION_WATCHING = "watching";
-const DATABASE_SUFFIX = "_db";
-
 type WatchingContext = {
   token: string;
   username: string;
   domain: string;
-  dbId: string;
 };
-
-function sanitizeIdentifierPart(value: string): string {
-  return (value || "").split("@").join("_").split(".").join("_");
-}
 
 function currentWatchingContext(): WatchingContext | null {
   try {
@@ -125,13 +118,10 @@ function currentWatchingContext(): WatchingContext | null {
         : "") ||
       "";
 
-    const dbId = `${sanitizeIdentifierPart(username)}${DATABASE_SUFFIX}`;
-
     return {
       token,
       username,
       domain,
-      dbId,
     };
   } catch {
     return null;
@@ -255,6 +245,32 @@ export async function refreshTitleMetadata(
   }
 }
 
+/**
+ * Rebuild the Bleve indices for titles/videos/audios from the persisted KV store.
+ * Optionally narrow the rebuild to specific collections, or run it incrementally.
+ */
+export async function rebuildTitleIndexFromStore(
+  collections?: string[],
+  incremental = false
+): Promise<void> {
+  const md = await meta();
+  const rq = new titlepb.RebuildIndexRequest();
+  if (collections && collections.length > 0) {
+    rq.setCollectionsList(collections);
+  }
+  rq.setIncremental(!!incremental);
+
+  await unary(clientFactory, "rebuildIndexFromStore", rq, undefined, md);
+
+  // Clear caches so subsequent reads reflect the rebuilt indices.
+  videosCache.clear();
+  audiosCache.clear();
+  titlesCache.clear();
+  fileVideosCache.clear();
+  fileAudiosCache.clear();
+  fileTitlesCache.clear();
+}
+
 export async function getVideoInfo(
   id: string,
   indexPath = DEFAULT_INDEXES.videos
@@ -353,7 +369,7 @@ export async function getFileVideosInfo(
   const safeFilePath = normalize(filePath, "filePath");
   const safeIndexPath = normalize(indexPath, "indexPath");
 
- //  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
+  //  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
 
   const md = await meta();
 
@@ -842,18 +858,36 @@ export async function createOrUpdateVideo(
 
 
 // STREAMING search over titles/videos/audios/persons
+type SearchTitlesOptions = {
+  query: string;
+  indexPath?: string;
+  fields?: string[];
+  size?: number;
+  offset?: number;
+};
+
 export async function searchTitles(
-  query: string,
-  indexPath = DEFAULT_INDEXES.titles,
-  fields: string[] = [],
-  size = 100,
-  offset = 0
+  input: string | SearchTitlesOptions,
+  onMessage?: (rsp: titlepb.SearchTitlesResponse) => void,
+  onEnd?: () => void,
+  onError?: (err: any) => void
 ): Promise<{
   summary?: titlepb.SearchSummary;
   facets?: titlepb.SearchFacets;
   hits: titlepb.SearchHit[];
-}> {
-  if (!query || query.trim().length === 0) {
+} | void> {
+  const opts: SearchTitlesOptions =
+    typeof input === "string"
+      ? { query: input }
+      : input || { query: "" };
+
+  const query = typeof opts.query === "string" ? opts.query : "";
+  const indexPath = opts.indexPath ?? DEFAULT_INDEXES.titles;
+  const fields = opts.fields ?? [];
+  const size = typeof opts.size === "number" ? opts.size : 100;
+  const offset = typeof opts.offset === "number" ? opts.offset : 0;
+
+  if (!query || typeof query !== "string" || query.trim().length === 0) {
     throw new Error("Query must be a non-empty string.");
   }
 
@@ -862,8 +896,27 @@ export async function searchTitles(
   rq.setIndexpath(indexPath);
   rq.setSize(size);
   rq.setOffset(offset);
-  if (fields?.length) rq.setFieldsList(fields);
+  if (fields.length) rq.setFieldsList(fields);
 
+  // Streaming mode for callbacks (legacy behavior)
+  if (typeof onMessage === "function") {
+    try {
+      await stream(
+        clientFactory,
+        "searchTitles",
+        rq,
+        (rsp: titlepb.SearchTitlesResponse) => onMessage?.(rsp),
+        SERVICE_NAME
+      );
+      onEnd?.();
+    } catch (err) {
+      onError?.(err);
+      throw err;
+    }
+    return;
+  }
+
+  // Collector mode (no callbacks provided)
   const result: {
     summary?: titlepb.SearchSummary;
     facets?: titlepb.SearchFacets;
@@ -880,6 +933,7 @@ export async function searchTitles(
       } else if (rsp.hasFacets && rsp.hasFacets()) {
         result.facets = rsp.getFacets()!;
       } else if (rsp.hasHit && rsp.hasHit()) {
+        console.log("Received hit:", rsp.getHit());
         result.hits.push(rsp.getHit()!);
       }
     },
@@ -890,18 +944,36 @@ export async function searchTitles(
 }
 
 // Todo Implement similar streaming searchVideos, searchAudios if needed
+function watchingEntryToPlain(entry?: titlepb.WatchingEntry | null) {
+  if (!entry) return undefined;
+  const id = entry.getId?.() || entry.getTitleId?.() || "";
+  const positionMs = typeof entry.getPositionMs === "function" ? entry.getPositionMs() : 0;
+  return {
+    _id: id,
+    id,
+    titleId: entry.getTitleId?.() || id,
+    title_id: entry.getTitleId?.() || id,
+    userId: entry.getUserId?.() || "",
+    domain: entry.getDomain?.() || "",
+    mediaType: entry.getMediaType?.() || "",
+    position_ms: positionMs,
+    duration_ms: typeof entry.getDurationMs === "function" ? entry.getDurationMs() : 0,
+    currentTime: positionMs ? positionMs / 1000 : 0,
+    date: entry.getUpdatedAt?.() || "",
+    updated_at: entry.getUpdatedAt?.() || "",
+  };
+}
+
 export async function getWatchingTitles(): Promise<any[]> {
   const ctx = currentWatchingContext();
   if (!ctx) return [];
 
   try {
-    const docs = await findDocuments({
-      connectionId: ctx.dbId,
-      database: ctx.dbId,
-      collection: COLLECTION_WATCHING,
-      query: "{}",
-    });
-    return Array.isArray(docs) ? docs : [];
+    const md = await meta();
+    const rq = new titlepb.ListWatchingRequest();
+    const rsp = await unary(clientFactory, "listWatching", rq, undefined, md) as titlepb.ListWatchingResponse;
+    const items = rsp?.getItemsList?.() ?? [];
+    return items.map((entry) => watchingEntryToPlain(entry)).filter((entry): entry is ReturnType<typeof watchingEntryToPlain> => !!entry);
   } catch (err: any) {
     console.error("Failed to fetch watching titles:", err);
     throw err;
@@ -927,16 +999,18 @@ export async function getWatchingTitle(
       throw err;
     }
 
-    const docs = await findDocuments({
-      connectionId: ctx.dbId,
-      database: ctx.dbId,
-      collection: COLLECTION_WATCHING,
-      query: `{"_id":"${titleId}"}`,
-    });
-    const entry = Array.isArray(docs) && docs.length > 0 ? docs[0] : undefined;
-    if (onSuccess) onSuccess(entry);
-    return entry;
+    const md = await meta();
+    const rq = new titlepb.GetWatchingRequest();
+    rq.setTitleId(titleId);
+    const entry = await unary(clientFactory, "getWatching", rq, undefined, md) as titlepb.WatchingEntry;
+    const plain = watchingEntryToPlain(entry);
+    if (onSuccess) onSuccess(plain);
+    return plain;
   } catch (err) {
+    if (isBadgerNotFoundError(err) || isRpcNotFoundError(err)) {
+      if (onSuccess) onSuccess(undefined);
+      return undefined;
+    }
     if (onError) onError(err);
     throw err;
   }
@@ -949,12 +1023,10 @@ export async function removeWatchingTitle(title: { _id?: string } | string): Pro
   const id = typeof title === "string" ? title : title?._id;
   if (!id) throw new Error("Missing watching title identifier.");
 
-  await deleteOneDocument({
-    connectionId: ctx.dbId,
-    database: ctx.dbId,
-    collection: COLLECTION_WATCHING,
-    query: `{"_id":"${id}"}`,
-  });
+  const md = await meta();
+  const rq = new titlepb.RemoveWatchingRequest();
+  rq.setTitleId(id);
+  await unary(clientFactory, "removeWatching", rq, undefined, md);
 }
 
 export async function saveWatchingTitle(entry: any): Promise<void> {
@@ -965,18 +1037,31 @@ export async function saveWatchingTitle(entry: any): Promise<void> {
     throw new Error("Missing title identifier.");
   }
 
-  const payload = {
-    ...entry,
-    domain: entry.domain || ctx.domain,
-    date: entry.date || new Date().toISOString(),
-  };
+  const md = await meta();
+  const watchingEntry = new titlepb.WatchingEntry();
+  const titleId = entry.titleId || entry.title_id || entry._id;
+  watchingEntry.setId(entry._id);
+  watchingEntry.setTitleId(titleId);
+  watchingEntry.setUserId(ctx.username);
+  watchingEntry.setDomain(entry.domain || ctx.domain || "");
+  const currentTimeSec = typeof entry.currentTime === "number" ? entry.currentTime : 0;
+  const positionMs =
+    typeof entry.position_ms === "number" ? entry.position_ms : Math.round(currentTimeSec * 1000);
+  watchingEntry.setPositionMs(positionMs);
+  if (typeof entry.duration_ms === "number") {
+    watchingEntry.setDurationMs(entry.duration_ms);
+  } else if (typeof entry.duration === "number") {
+    watchingEntry.setDurationMs(Math.round(entry.duration * 1000));
+  }
+  const mediaType =
+    entry.mediaType ||
+    (entry.isVideo === false ? "audio" : "video");
+  if (mediaType) {
+    watchingEntry.setMediaType(mediaType);
+  }
+  watchingEntry.setUpdatedAt(entry.date ? new Date(entry.date).toISOString() : new Date().toISOString());
 
-  await replaceOneDocument({
-    connectionId: ctx.dbId,
-    database: ctx.dbId,
-    collection: COLLECTION_WATCHING,
-    query: `{"_id":"${payload._id}"}`,
-    value: JSON.stringify(payload),
-    options: `[{"upsert": true}]`,
-  });
+  const rq = new titlepb.SaveWatchingRequest();
+  rq.setEntry(watchingEntry);
+  await unary(clientFactory, "saveWatching", rq, undefined, md);
 }

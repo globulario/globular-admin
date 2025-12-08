@@ -4,12 +4,13 @@ import { Backend } from "@globular/backend";
 import { displayError, displaySuccess, displayMessage} from "@globular/backend";
 import { VideoInfoEditor } from "./videoInformationsEditor.js";
 import getUuidByString from "uuid-by-string";
-import { getTitleFilePaths } from "./titleInfo.js";
+import { getTitleFilePaths, GetTitleFiles } from "./titleInfo.js";
 import { PersonEditor } from "./personEditor.js";
 import "./castPersonPanel.js";
 
 import "@polymer/paper-button/paper-button.js";
 import "@polymer/iron-icon/iron-icon.js";
+import "@polymer/paper-progress/paper-progress.js";
 
 // ✅ Use centralized backend helpers (keep path consistent with your project)
 import { deleteVideo as deleteVideoHelper, invalidateFileCaches } from "@globular/backend";
@@ -17,7 +18,7 @@ import { deleteVideo as deleteVideoHelper, invalidateFileCaches } from "@globula
 const VIDEO_INFO_GLOBAL_STYLE = `
 .title-div { display:flex; }
 .title-poster-div { padding-right:20px; }
-.title-informations-div { font-size:1em; min-width:350px; flex:1; }
+.title-informations-div { font-size:1em; flex:1; }
 .title-poster-div img { max-width:320px; max-height:350px; object-fit:cover; width:auto; height:auto; }
 .title-genre-span { border:1px solid var(--palette-divider); padding:1px 5px; margin-right:5px; user-select:none; border-radius:4px; background-color:var(--surface-color-dark, var(--surface-elevated-color)); }
 .rating-star { --iron-icon-fill-color: rgb(245 197 24); padding-right:10px; height:30px; width:30px; }
@@ -159,7 +160,9 @@ export class VideoInfo extends HTMLElement {
         <div class="title-div">
           <div class="title-poster-div">
             <img class="title-poster-img" />
-            <div class="title-files-div"></div>
+            <div class="title-files-div">
+              <paper-progress indeterminate></paper-progress>
+            </div>
           </div>
           <div class="title-informations-div">
             <p class="title-synopsis-div"></p>
@@ -205,7 +208,7 @@ export class VideoInfo extends HTMLElement {
     this._deleteButton?.addEventListener("click", this._handleDeleteClick.bind(this));
   }
 
-  _renderVideoContent() {
+  async _renderVideoContent() {
     if (!this._video) return;
 
     // Poster
@@ -243,8 +246,8 @@ export class VideoInfo extends HTMLElement {
       this._actorsTitleDiv.parentNode.style.display = "flex";
     }
 
-    // Files (kept as placeholder hook)
-    this._filesDiv.innerHTML = "";
+    // Files
+    await this._renderAssociatedFiles();
 
     // Header (publisher, genres, duration)
     this._updateHeader();
@@ -255,6 +258,16 @@ export class VideoInfo extends HTMLElement {
     // Hide action row in short mode
     if (this._actionDiv) {
       this._actionDiv.style.display = this._isShortMode ? "none" : "";
+    }
+  }
+
+  async _renderAssociatedFiles() {
+    if (!this._video || !this._filesDiv) return;
+    try {
+      await GetTitleFiles("/search/videos", this._video, this._filesDiv);
+    } catch (err) {
+      console.warn("VideoInfo: failed to load associated files", err);
+      this._filesDiv.innerHTML = `<p style="font-size:.9rem;color:var(--secondary-text-color);">Unable to load associated files.</p>`;
     }
   }
 

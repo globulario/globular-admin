@@ -4,8 +4,7 @@ import WaveSurfer from "wavesurfer.js"
 import { secondsToTime, fireResize } from "./utility"
 
 // UI bus + helpers
-import { displayError } from "@globular/backend"
-import { Backend } from "@globular/backend"
+import { Backend, displayError, saveWatchingTitle } from "@globular/backend"
 
 // New function-style backends
 import * as Title from "@globular/backend"
@@ -826,12 +825,14 @@ export class AudioPlayer extends HTMLElement {
     if (this._audioData?.getId) {
       const currentTime = (this._wavesurfer && this._wavesurfer.getCurrentTime()) || 0
       if (saveState && this._wavesurfer && this._wavesurfer.getDuration() !== currentTime) {
-        Backend.publish("stop_video_player_evt_", {
+        const payload = {
           _id: this._audioData.getId(),
           isVideo: false,
           currentTime,
           date: new Date()
-        }, true)
+        }
+        saveWatchingTitle(payload).catch(err => console.error("Failed to save audio watching state", err))
+        Backend.publish("stop_video_player_evt_", payload, true)
       } else {
         Backend.publish("remove_video_player_evt_", {
           _id: this._audioData.getId(),

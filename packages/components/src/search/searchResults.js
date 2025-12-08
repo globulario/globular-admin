@@ -78,8 +78,8 @@ export class SearchResults extends HTMLElement {
                     display: flex;
                     width: 100%;
                     align-items: center;
-                    background-color: var(--palette-primary-accent); /* Header background */
-                    color: var(--on-primary-color); /* Header text color */
+                    background: color-mix(in srgb, var(--palette-primary-accent) 75%, transparent);
+                    color: var(--primary-text-color);
                     padding: 5px 0; /* Vertical padding */
                 }
 
@@ -142,6 +142,9 @@ export class SearchResults extends HTMLElement {
         this._tabsContainer = this.shadowRoot.querySelector("#search-results-tabs");
         this._closeAllBtn = this.shadowRoot.querySelector("#close-all-btn");
         this._emptySearchMessage = this.shadowRoot.querySelector("#empty-search-msg");
+        if (this._closeAllBtn && this.hasAttribute("persistent")) {
+            this._closeAllBtn.style.display = "none";
+        }
     }
 
     /**
@@ -149,10 +152,28 @@ export class SearchResults extends HTMLElement {
      * @private
      */
     _bindEventListeners() {
-        if (this._closeAllBtn) {
+        if (this._closeAllBtn && !this._isPersistent()) {
             this._closeAllBtn.addEventListener('click', this._handleCloseAllClick.bind(this));
         }
         // Listener for click on tabs is handled dynamically when tabs are created
+    }
+
+    _isPersistent() {
+        return this.hasAttribute("persistent");
+    }
+
+    _showEmptyState(message = "No search results to display...") {
+        if (this._emptySearchMessage) {
+            this._emptySearchMessage.textContent = message;
+            this._emptySearchMessage.style.display = "block";
+        }
+    }
+
+    _hideEmptyState() {
+        if (this._emptySearchMessage) {
+            this._emptySearchMessage.textContent = "No search results to display...";
+            this._emptySearchMessage.style.display = "none";
+        }
     }
 
     /**
@@ -189,6 +210,11 @@ export class SearchResults extends HTMLElement {
     _handleHideSearchResultsEvent(evt) {
         // Only hide if the event is for this specific SearchResults instance (if id is provided)
         // or if it's a general hide all.
+        if (this._isPersistent()) {
+            this._showEmptyState();
+            return;
+        }
+
         if (!evt || !evt.id || evt.id === this.id) { // Assuming this component also has an 'id'
             if (this.parentNode) {
                 this.parentNode.removeChild(this);
@@ -207,9 +233,6 @@ export class SearchResults extends HTMLElement {
      * @private
      */
     _handleNewSearchEvent(evt) {
-        // Ensure the main container is visible
-        if (this._emptySearchMessage) this._emptySearchMessage.style.display = "none"; // Hide empty message
-
         const queryId = `_${getUuidByString(evt.query)}`; // Unique ID for this search query
         let tab = this._tabsContainer.querySelector(`#${queryId}-tab`);
 
@@ -221,6 +244,14 @@ export class SearchResults extends HTMLElement {
             .replaceAll(" -TVSerie", "")
             .replaceAll(" -Movie", "")
             .trim();
+
+        const totalResults = typeof evt.summary?.getTotal === "function" ? evt.summary.getTotal() : null;
+        if (totalResults === 0) {
+            const label = displayQuery.length > 0 ? displayQuery : evt.query;
+            this._showEmptyState(`No results found for "${label}".`);
+        } else {
+            this._hideEmptyState();
+        }
 
         if (tab === null) {
             // Create new tab if it doesn't exist
@@ -315,8 +346,10 @@ export class SearchResults extends HTMLElement {
             page.parentNode.removeChild(page); // Remove the page element itself
         });
 
-        this._emptySearchMessage.style.display = "block"; // Show empty message
-        Backend.eventHub.publish("_hide_search_results_", { "id": this.id }, true); // Publish global hide event
+        this._showEmptyState();
+        if (!this._isPersistent()) {
+            Backend.eventHub.publish("_hide_search_results_", { "id": this.id }, true); // Publish global hide event
+        }
     }
 
     /**
@@ -352,8 +385,10 @@ export class SearchResults extends HTMLElement {
             this._tabsContainer.querySelector("paper-tab")?.click();
         } else {
             // If no tabs left, hide the entire search results panel
-            this._emptySearchMessage.style.display = "block";
-            Backend.eventHub.publish("_hide_search_results_", { "id": this.id }, true);
+            this._showEmptyState();
+            if (!this._isPersistent()) {
+                Backend.eventHub.publish("_hide_search_results_", { "id": this.id }, true);
+            }
         }
     }
 }

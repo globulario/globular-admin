@@ -30,7 +30,7 @@ export class InformationsManager extends HTMLElement {
   _activeInfoComponent = null;
 
   static get observedAttributes() {
-    return ["short"];
+    return ["short", "show-synopsis", "hide-genres", "hide-header", "compact-synopsis"];
   }
 
   constructor() {
@@ -58,11 +58,13 @@ export class InformationsManager extends HTMLElement {
   }
 
   attributeChangedCallback(name, _old, val) {
-    if (name === "short") {
+    if (name === "short" || name === "hide-header") {
       this._isShortMode = this.hasAttribute("short")
         ? (val === "" || val === "true" || val === "1")
         : false;
       this._updateHeaderVisibility();
+    } else if (name === "show-synopsis" || name === "hide-genres" || name === "compact-synopsis") {
+      this._applyChildPreferences(this._activeInfoComponent);
     }
   }
 
@@ -180,11 +182,19 @@ export class InformationsManager extends HTMLElement {
   }
 
   _updateHeaderVisibility() {
+    const hideHeader = this.hasAttribute("hide-header");
     if (this._closeButton) {
       this._closeButton.style.display = this._isShortMode ? "none" : "";
+      if (hideHeader) {
+        this._closeButton.style.display = "none";
+      }
     }
     if (this._refreshButton) {
       this._updateRefreshButtonVisibility(this._activeInfoComponent);
+    }
+    const header = this.shadowRoot.querySelector("#header");
+    if (header) {
+      header.style.display = hideHeader ? "none" : "";
     }
   }
 
@@ -290,6 +300,22 @@ export class InformationsManager extends HTMLElement {
   /* -------------------------------------------------------------
    * Child plumbing
    * ----------------------------------------------------------- */
+  _applyChildPreferences(component) {
+    if (!component) return;
+    const map = [
+      ["show-synopsis", "show-synopsis"],
+      ["hide-genres", "hide-genres"],
+      ["compact-synopsis", "compact-synopsis"],
+    ];
+    map.forEach(([attr, forward]) => {
+      if (this.hasAttribute(attr)) {
+        component.setAttribute(forward, "true");
+      } else {
+        component.removeAttribute(forward);
+      }
+    });
+  }
+
   _appendInfo(component, data, dataId) {
     // Track by deterministic id for delete-event matching
     if (dataId) component.id = `_${getUuidByString(dataId)}`;
@@ -297,6 +323,8 @@ export class InformationsManager extends HTMLElement {
     // Pass "short" mode as attribute (most of your info widgets observe 'short')
     if (this._isShortMode) component.setAttribute("short", "true");
     else component.removeAttribute("short");
+
+    this._applyChildPreferences(component);
 
     // Some of your widgets expect a `.globule` on the data; preserve if present
     if (data && data.globule) component.globule = data.globule;

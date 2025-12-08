@@ -174,6 +174,7 @@ export class FileExplorer extends HTMLElement {
 
   // 🔧 NEW: progressive directory loading handle
   _currentReadHandle = null;
+  _boundWindowResizeHandler = null;
 
   constructor() {
     super();
@@ -316,6 +317,11 @@ export class FileExplorer extends HTMLElement {
 
     if (FileExplorer.fileUploader && FileExplorer.fileUploader.parentNode === this) {
       this.removeChild(FileExplorer.fileUploader);
+    }
+
+    if (this._boundWindowResizeHandler) {
+      window.removeEventListener("resize", this._boundWindowResizeHandler);
+      this._boundWindowResizeHandler = null;
     }
 
     this._persistSessionState();
@@ -670,8 +676,14 @@ export class FileExplorer extends HTMLElement {
     this._dialog.onmove = () => {
       this._filesIconView.hideMenu();
       this._filesListView.hideMenu();
+      this._keepDialogInViewport();
     };
     this._ensureDefaultDialogSize();
+    this._keepDialogInViewport();
+    if (!this._boundWindowResizeHandler) {
+      this._boundWindowResizeHandler = () => this._keepDialogInViewport();
+      window.addEventListener("resize", this._boundWindowResizeHandler);
+    }
 
     this._refreshBtn = this.shadowRoot.querySelector("#navigation-refresh-btn");
     this._createDirectoryBtn = this.shadowRoot.querySelector("#navigation-create-dir-btn");
@@ -1049,9 +1061,47 @@ export class FileExplorer extends HTMLElement {
     this._currentReadToken++;
   }
 
+  _keepDialogInViewport() {
+    const dialog = this._dialog;
+    if (!dialog || typeof dialog.getCoords !== "function" || typeof dialog.setPosition !== "function") {
+      return;
+    }
+    const dialogHost = dialog.shadowRoot?.querySelector(".dialog");
+    if (dialogHost?.classList.contains("maximized")) {
+      return; // let maximized dialogs span the viewport naturally
+    }
+    const coords = dialog.getCoords();
+    if (!coords) return;
+    const width = typeof dialog.getWidth === "function" ? dialog.getWidth() : dialogHost?.offsetWidth || 0;
+    const height = typeof dialog.getHeight === "function" ? dialog.getHeight() : dialogHost?.offsetHeight || 0;
+    if (!width || !height) return;
+
+    const margin = 16;
+    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft || 0;
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+
+    const minLeft = scrollLeft + margin;
+    const minTop = scrollTop + margin;
+    const maxLeftCandidate = scrollLeft + viewportWidth - width - margin;
+    const maxTopCandidate = scrollTop + viewportHeight - height - margin;
+    const maxLeft = Math.max(minLeft, maxLeftCandidate);
+    const maxTop = Math.max(minTop, maxTopCandidate);
+
+    let newLeft = Math.min(Math.max(coords.left, minLeft), maxLeft);
+    let newTop = Math.min(Math.max(coords.top, minTop), maxTop);
+
+    if (Math.abs(newLeft - coords.left) > 1 || Math.abs(newTop - coords.top) > 1) {
+      dialog.setPosition(newLeft, newTop);
+    }
+  }
+
   _ensureDefaultDialogSize() {
     const dialog = this._dialog;
     if (!dialog) return;
+    const MIN_WIDTH = 640;
+    const MIN_HEIGHT = 480;
     const ensure = () => {
       if (!dialog) return;
       const getter = typeof dialog.getWidth === "function" ? dialog.getWidth.bind(dialog) : null;
@@ -1059,13 +1109,20 @@ export class FileExplorer extends HTMLElement {
       const width = getter ? getter() : dialog.offsetWidth;
       const height = heightGetter ? heightGetter() : dialog.offsetHeight;
       if (!width || width <= 0) {
-        if (typeof dialog.setWidth === "function") dialog.setWidth(1024);
-        else dialog.style.width = "1024px";
+        if (typeof dialog.setWidth === "function") dialog.setWidth(Math.max(1024, MIN_WIDTH));
+        else dialog.style.width = `${Math.max(1024, MIN_WIDTH)}px`;
+      } else if (width < MIN_WIDTH) {
+        if (typeof dialog.setWidth === "function") dialog.setWidth(MIN_WIDTH);
+        else dialog.style.width = `${MIN_WIDTH}px`;
       }
       if (!height || height <= 0) {
-        if (typeof dialog.setHeight === "function") dialog.setHeight(768);
-        else dialog.style.height = "768px";
+        if (typeof dialog.setHeight === "function") dialog.setHeight(Math.max(768, MIN_HEIGHT));
+        else dialog.style.height = `${Math.max(768, MIN_HEIGHT)}px`;
+      } else if (height < MIN_HEIGHT) {
+        if (typeof dialog.setHeight === "function") dialog.setHeight(MIN_HEIGHT);
+        else dialog.style.height = `${MIN_HEIGHT}px`;
       }
+      this._keepDialogInViewport();
     };
     ensure();
     requestAnimationFrame(ensure);

@@ -20,6 +20,8 @@ export class SearchAudioCard extends HTMLElement {
   // Private instance properties
   _audio = null;            // The audio object displayed by the card
   _editable = false;        // Flag to enable/disable edit/delete features
+  _domInitialized = false;
+  _listenersBound = false;
   _closeButton = null;      // Reference to the close/remove button
   _playAlbumButton = null;
   _playTitleButton = null;
@@ -42,9 +44,11 @@ export class SearchAudioCard extends HTMLElement {
    * Performs initial rendering and sets up event listeners.
    */
   connectedCallback() {
-    this._renderInitialStructure();
-    this._getDomReferences();
-    this._bindEventListeners();
+    this._ensureDomReady();
+    if (this._audio) {
+      this._populateCard();
+      this._updateEditableState();
+    }
   }
 
   /**
@@ -52,6 +56,7 @@ export class SearchAudioCard extends HTMLElement {
    * @private
    */
   _renderInitialStructure() {
+    if (this._domInitialized) return;
     this.shadowRoot.innerHTML = `
       <style>
         #container {
@@ -219,13 +224,14 @@ export class SearchAudioCard extends HTMLElement {
             <span id="album"></span>
             <paper-icon-button id="play-album-btn" title="Play Album" icon="av:play-arrow"></paper-icon-button>
           </div>
+          <span id="title"></span>
           <div class="play-buttons-row">
-            <span id="title"></span>
             <paper-icon-button id="play-title-btn" title="Play Track" icon="av:play-arrow"></paper-icon-button>
           </div>
         </div>
       </div>
     `;
+    this._domInitialized = true;
   }
 
   /**
@@ -248,6 +254,7 @@ export class SearchAudioCard extends HTMLElement {
    * @private
    */
   _bindEventListeners() {
+    if (this._listenersBound) return;
     if (this._closeButton) {
       this._closeButton.addEventListener("click", this._handleCloseClick.bind(this));
     }
@@ -260,6 +267,19 @@ export class SearchAudioCard extends HTMLElement {
     if (this._playAlbumButton) {
       this._playAlbumButton.addEventListener("click", this._handlePlayAlbumClick.bind(this));
     }
+    this._listenersBound = true;
+  }
+
+  _ensureDomReady() {
+    if (!this._domInitialized) {
+      this._renderInitialStructure();
+    }
+    if (!this._imageElement) {
+      this._getDomReferences();
+    }
+    if (!this._listenersBound) {
+      this._bindEventListeners();
+    }
   }
 
   /**
@@ -267,6 +287,7 @@ export class SearchAudioCard extends HTMLElement {
    * @param {Object} audio - The audio object containing information.
    */
   setAudio(audio) {
+    this._ensureDomReady();
     if (this._audio !== audio) {
       this._audio = audio;
       this._populateCard();
@@ -413,7 +434,7 @@ export class SearchAudioCard extends HTMLElement {
       const titleId = this._audio.getId?.();
       if (!titleId) throw new Error("Missing audio title id.");
 
-      const filePaths = await getTitleFiles(indexPath, titleId);
+      const filePaths = await getTitleFiles(titleId, indexPath); // expects an array of file paths
       if (Array.isArray(filePaths) && filePaths.length > 0) {
         const path = filePaths[0]; // Play only the first file
         // playAudio can ignore unknown tail args; pass what your player expects
