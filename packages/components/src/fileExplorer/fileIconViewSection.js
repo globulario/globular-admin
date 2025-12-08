@@ -223,7 +223,6 @@ export class FileIconViewSection extends HTMLElement {
     }
 
     this._dom.playlistActionsDiv.innerHTML = `
-      ${isAudio ? "" : '<globular-watching-menu style="padding:0;height:24px;width:24px;"></globular-watching-menu>'}
       <iron-icon id="refresh-btn" icon="icons:refresh" title="Refresh ${this._fileType} infos and playlist"></iron-icon>
       <iron-icon id="download-btn" icon="av:playlist-add-check" title="Download new ${this._fileType} from channel" style="display:none;"></iron-icon>
       <iron-icon id="play-btn" icon="${isAudio ? "av:queue-music" : "av:playlist-play"}" title="Play ${this._fileType} files"></iron-icon>
@@ -234,7 +233,6 @@ export class FileIconViewSection extends HTMLElement {
     const downloadBtn = this.shadowRoot.querySelector("#download-btn");
     const playBtn = this.shadowRoot.querySelector("#play-btn");
     const copyLnkBtn = this.shadowRoot.querySelector("#copy-playlist-lnk-btn");
-    const watchingMenu = this.shadowRoot.querySelector("globular-watching-menu");
 
     let playlist = null;
 
@@ -249,9 +247,6 @@ export class FileIconViewSection extends HTMLElement {
     playBtn?.addEventListener("click", () => this._handlePlayAllMedia());
     copyLnkBtn?.addEventListener("click", () => this._handleCopyPlaylistLink(playlist));
 
-    watchingMenu?.addEventListener("open-media-watching", (evt) => {
-      this._fileExplorer?.openMediaWatching?.(evt.detail.mediaWatching);
-    });
   }
 
   // DRY: one loader that uses backend wrappers

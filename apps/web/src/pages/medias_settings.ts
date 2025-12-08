@@ -23,8 +23,6 @@ class PageMediaSettings extends HTMLElement {
         }
       </style>
       <section class="wrap">
-        <h2>Media Settings</h2>
-        <p>Configure media processing and conversion policies here.</p>
         <globular-media-settings style="display:block;height:100%;"></globular-media-settings>
       </section>
     `;

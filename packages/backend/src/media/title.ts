@@ -86,6 +86,7 @@ const DEFAULT_INDEXES = {
 
 // --- add with other defaults (re-use titles index for people) ---
 const DEFAULT_PERSONS_INDEX = DEFAULT_INDEXES.titles;
+const TITLE_ID_PATTERN = /^tt\d+/i;
 type WatchingContext = {
   token: string;
   username: string;
@@ -944,23 +945,62 @@ export async function searchTitles(
 }
 
 // Todo Implement similar streaming searchVideos, searchAudios if needed
+function inferMediaType(entry: any): "video" | "audio" | "title" {
+  const id = entry?.titleId || entry?.title_id || entry?._id || entry?.id || "";
+  const looksLikeTitle = TITLE_ID_PATTERN.test(String(id || "").toLowerCase());
+  const hint =
+    typeof entry?.mediaType === "string"
+      ? entry.mediaType.toLowerCase()
+      : typeof entry?.type === "string"
+        ? entry.type.toLowerCase()
+        : typeof entry?.kind === "string"
+          ? entry.kind.toLowerCase()
+          : "";
+
+  if (hint === "title") return "title";
+  if (hint === "audio" || entry?.isAudio === true) return "audio";
+  if (hint === "video") return looksLikeTitle ? "title" : "video";
+  if (["movie", "film", "episode", "series"].includes(hint)) return "title";
+
+  if (entry?.isVideo === false) return "audio";
+  if (entry?.isVideo === true && !looksLikeTitle) return "video";
+
+  if (typeof entry?.mimeType === "string") {
+    const m = entry.mimeType.toLowerCase();
+    if (m.startsWith("audio/")) return "audio";
+    if (m.startsWith("video/")) return looksLikeTitle ? "title" : "video";
+  }
+
+  if (entry?.album || entry?.artist || entry?.track || entry?.trackNumber != null) {
+    return "audio";
+  }
+
+  if (looksLikeTitle) return "title";
+  return "video";
+}
+
 function watchingEntryToPlain(entry?: titlepb.WatchingEntry | null) {
   if (!entry) return undefined;
-  const id = entry.getId?.() || entry.getTitleId?.() || "";
+  const rawId = entry.getId?.() || "";
+  const rawTitleId = entry.getTitleId?.() || rawId;
   const positionMs = typeof entry.getPositionMs === "function" ? entry.getPositionMs() : 0;
+  const durationMs = typeof entry.getDurationMs === "function" ? entry.getDurationMs() : 0;
+  const updatedAt = entry.getUpdatedAt?.() || "";
+  const id = rawTitleId || rawId.split(":").at(-1) || rawId;
+
   return {
     _id: id,
-    id,
-    titleId: entry.getTitleId?.() || id,
-    title_id: entry.getTitleId?.() || id,
+    id: rawId || id,
+    titleId: rawTitleId || id,
+    title_id: rawTitleId || id,
     userId: entry.getUserId?.() || "",
     domain: entry.getDomain?.() || "",
     mediaType: entry.getMediaType?.() || "",
     position_ms: positionMs,
-    duration_ms: typeof entry.getDurationMs === "function" ? entry.getDurationMs() : 0,
+    duration_ms: durationMs,
     currentTime: positionMs ? positionMs / 1000 : 0,
-    date: entry.getUpdatedAt?.() || "",
-    updated_at: entry.getUpdatedAt?.() || "",
+    date: updatedAt,
+    updated_at: updatedAt,
   };
 }
 
@@ -1033,33 +1073,44 @@ export async function saveWatchingTitle(entry: any): Promise<void> {
   const ctx = currentWatchingContext();
   if (!ctx) throw new Error("Not authenticated.");
 
-  if (!entry || !entry._id) {
+  if (!entry || (!entry._id && !entry.titleId && !entry.title_id && !entry.id)) {
     throw new Error("Missing title identifier.");
   }
 
   const md = await meta();
   const watchingEntry = new titlepb.WatchingEntry();
-  const titleId = entry.titleId || entry.title_id || entry._id;
-  watchingEntry.setId(entry._id);
+
+  const titleId = entry.titleId || entry.title_id || entry.id || entry._id;
+  if (!titleId) {
+    throw new Error("Unable to determine titleId for watching entry.");
+  }
+
+  const entryId = `${ctx.username}:${titleId}`;
+
+  watchingEntry.setId(entryId);
   watchingEntry.setTitleId(titleId);
   watchingEntry.setUserId(ctx.username);
   watchingEntry.setDomain(entry.domain || ctx.domain || "");
+
   const currentTimeSec = typeof entry.currentTime === "number" ? entry.currentTime : 0;
   const positionMs =
-    typeof entry.position_ms === "number" ? entry.position_ms : Math.round(currentTimeSec * 1000);
+    typeof entry.position_ms === "number" ? entry.position_ms : Math.round(Math.max(0, currentTimeSec) * 1000);
   watchingEntry.setPositionMs(positionMs);
+
   if (typeof entry.duration_ms === "number") {
     watchingEntry.setDurationMs(entry.duration_ms);
   } else if (typeof entry.duration === "number") {
     watchingEntry.setDurationMs(Math.round(entry.duration * 1000));
   }
-  const mediaType =
-    entry.mediaType ||
-    (entry.isVideo === false ? "audio" : "video");
-  if (mediaType) {
-    watchingEntry.setMediaType(mediaType);
-  }
-  watchingEntry.setUpdatedAt(entry.date ? new Date(entry.date).toISOString() : new Date().toISOString());
+
+  const mediaType = inferMediaType(entry);
+  watchingEntry.setMediaType(mediaType);
+
+  const updatedAt =
+    typeof entry.date === "string" && entry.date
+      ? new Date(entry.date).toISOString()
+      : new Date().toISOString();
+  watchingEntry.setUpdatedAt(updatedAt);
 
   const rq = new titlepb.SaveWatchingRequest();
   rq.setEntry(watchingEntry);

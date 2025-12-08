@@ -88,7 +88,9 @@ export class DialogHandle extends HTMLElement {
   }
 
   undock() {
-    if (this._dialog) {
+    if (this._dialog?.restoreFromDockbar) {
+      this._dialog.restoreFromDockbar();
+    } else if (this._dialog) {
       this._dialog.style.display = "";
       this._dialog.classList.remove("minimized");
       this._dialog.focus();

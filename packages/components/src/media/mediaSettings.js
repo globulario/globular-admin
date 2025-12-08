@@ -247,7 +247,7 @@ class MediaSettings extends HTMLElement {
         }
 
         .logs-list, .errors-list {
-          max-height: 240px;
+          max-height: 360px;
           overflow: auto;
           border-radius: 4px;
           border: 1px solid var(--palette-divider);

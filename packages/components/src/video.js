@@ -23,7 +23,8 @@ import {
   getTitleFiles,
   getVideoInfo,
   getWatchingTitle,
-  saveWatchingTitle
+  saveWatchingTitle,
+  removeWatchingTitle
 } from '@globular/backend'
 import { getBaseUrl } from '@globular/backend'
 
@@ -163,9 +164,6 @@ export function playVideo(path, onplay, onclose, title) {
   vp.titleInfo = title || null
   if (vp.playlist) vp.playlist.clear()
 
-  const watching = document.querySelector('globular-media-watching')
-  if (watching && watching.parentNode) watching.parentNode.removeChild(watching)
-
   if ((playlistPayload || '').endsWith('video.m3u') || (playlistPayload || '').startsWith('#EXTM3U')) {
     vp.loadPlaylist(playlistPayload, path?.filePaths)
   } else {
@@ -216,6 +214,8 @@ export class VideoPlayer extends HTMLElement {
     this._loadingOverlayLabel = null
     this._dialogReady = false
     this._loadingName = ''
+    this._playbackCompleted = false
+    this._watchingRemovedAfterCompletion = false
 
     // refs
     this.skipPreviousBtn = null
@@ -268,7 +268,6 @@ export class VideoPlayer extends HTMLElement {
         <img slot="icon" src="${youtubeLogoUrl}"/>
         <select slot="header" id="audio-track-selector" style="display:none"></select>
         <paper-icon-button slot="header" id="title-info-button" icon="icons:arrow-drop-down-circle"></paper-icon-button>
-        <globular-watching-menu slot="header"></globular-watching-menu>
         <div id="content"><slot name="playlist"></slot><slot name="watching"></slot><slot></slot></div>
       </globular-dialog>
       <slot name="tracks" style="display:none;"></slot>
@@ -289,21 +288,8 @@ export class VideoPlayer extends HTMLElement {
 
     this.titleSpan = this.shadowRoot.querySelector('#title-span')
     this.audioTrackSelector = this.shadowRoot.querySelector('#audio-track-selector')
-    this.watchingMenu = this.shadowRoot.querySelector('globular-watching-menu')
     this.titleInfoButton = this.shadowRoot.querySelector('#title-info-button')
     if (this.titleInfoButton) this.titleInfoButton.addEventListener('click', this._handleTitleInfoClick)
-
-    // Hide watching menu if not logged
-    if (!getAuthToken()) {
-      if (this.watchingMenu && this.watchingMenu.remove) this.watchingMenu.remove()
-    } else {
-      this.watchingMenu?.addEventListener('open-media-watching', (evt) => {
-        evt.stopPropagation()
-        evt.detail.mediaWatching.slot = 'watching'
-        evt.detail.mediaWatching.style.zIndex = '1000'
-        this.appendChild(evt.detail.mediaWatching)
-      })
-    }
 
     this.videoElement = document.createElement('video')
     this.videoElement.id = 'player'
@@ -455,6 +441,7 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _handleVideoPlaying = () => {
+    this._watchingRemovedAfterCompletion = false
     // Only auto-resize once per load; after that user can resize manually
     if (!this.resized) {
       const { width } = this._getFittedVideoSize()
@@ -653,17 +640,17 @@ export class VideoPlayer extends HTMLElement {
 
   _deriveInfoDisplayName() {
     if (this.titleInfo) {
-      if (typeof this.titleInfo.getDescription === 'function') {
-        const desc = this.titleInfo.getDescription()
-        if (desc) return desc.replace(/<\/?br\s*\/?>/gi, ' ')
+      if (typeof this.titleInfo.getName === 'function') {
+        const name = this.titleInfo.getName()
+        if (name) return name
       }
       if (typeof this.titleInfo.getTitle === 'function') {
         const title = this.titleInfo.getTitle()
         if (title) return title
       }
-      if (typeof this.titleInfo.getName === 'function') {
-        const name = this.titleInfo.getName()
-        if (name) return name
+      if (typeof this.titleInfo.getDescription === 'function') {
+        const desc = this.titleInfo.getDescription()
+        if (desc) return desc.replace(/<\/?br\s*\/?>/gi, ' ')
       }
       if (typeof this.titleInfo.getId === 'function') {
         const id = this.titleInfo.getId()
@@ -685,10 +672,10 @@ export class VideoPlayer extends HTMLElement {
     if (!info || !this.titleSpan) return
     let display = ''
 
-    if (info.getTitle && info.getTitle()) {
-      display = info.getTitle()
-    } else if (info.getName && info.getName()) {
+    if (info.getName && info.getName()) {
       display = info.getName()
+    } else if (info.getTitle && info.getTitle()) {
+      display = info.getTitle()
     } else if (info.getDescription && info.getDescription()) {
       display = info.getDescription().replace(/<\/?br\s*\/?>/gi, ' ')
     } else if (info.getId && info.getId()) {
@@ -699,8 +686,12 @@ export class VideoPlayer extends HTMLElement {
       display += ` (${info.getYear()})`
     }
 
-    if (info.getType && info.getType() === 'TVEpisode' && info.getSeason && info.getEpisode) {
-      display += ` S${info.getSeason()}E${info.getEpisode()}`
+    const hasEpisode = info.getEpisode && typeof info.getEpisode === 'function' && Number(info.getEpisode()) > 0
+    const hasSeason = info.getSeason && typeof info.getSeason === 'function' && Number(info.getSeason()) > 0
+    if ((info.getType && info.getType() === 'TVEpisode') || hasEpisode) {
+      const season = hasSeason ? String(info.getSeason()).padStart(2, '0') : '01'
+      const episode = hasEpisode ? String(info.getEpisode()).padStart(2, '0') : '01'
+      display += ` S${season}E${episode}`
     }
 
     this.titleSpan.innerHTML = display || ''
@@ -757,6 +748,7 @@ export class VideoPlayer extends HTMLElement {
     this.audioTrackSelector.addEventListener('change', this._handleAudioTrackChange)
 
     this.videoElement.onended = () => {
+      this._playbackCompleted = true
       this.resume = false
       if (this.titleInfo) localStorage.removeItem(this.titleInfo.getId())
 
@@ -999,7 +991,6 @@ export class VideoPlayer extends HTMLElement {
 
     const titleSpan = document.createElement('span')
     titleSpan.style.cssText = 'color:white;padding:2px;font-size:.8rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;position:absolute;bottom:0;'
-    titleSpan.innerHTML = description
     preview._title = titleSpan
     preview.appendChild(titleSpan)
 
@@ -1159,7 +1150,7 @@ export class VideoPlayer extends HTMLElement {
           'play_video_player_evt_',
           {
             _id: this.titleInfo.getId(),
-            isVideo: this.titleInfo.isVideo,
+            isVideo: true,
             currentTime: this.videoElement.currentTime,
             date: new Date()
           },
@@ -1247,22 +1238,37 @@ export class VideoPlayer extends HTMLElement {
     this.resized = false
     this._dialogReady = false
     this._hideLoadingOverlay()
+    const completed = this._playbackCompleted
+    this._playbackCompleted = false
 
     if (this.titleInfo && this.titleInfo.getId) {
       const payload = {
         _id: this.titleInfo.getId(),
-        isVideo: this.titleInfo.isVideo,
+        isVideo: true,
         currentTime: this.videoElement.currentTime,
+        duration: this.videoElement.duration || 0,
+        duration_ms: Number.isFinite(this.videoElement.duration)
+          ? Math.round(this.videoElement.duration * 1000)
+          : undefined,
         date: new Date()
       }
-      if (this.videoElement.duration !== this.videoElement.currentTime && save) {
+      const currentTime = Number(this.videoElement.currentTime)
+      if (completed) {
+        Backend.publish('remove_video_player_evt_', payload, true)
+        removeWatchingTitle(this.titleInfo.getId()).catch(err => console.error("Failed to remove watching entry", err))
+        localStorage.removeItem(this.titleInfo.getId())
+        this._watchingRemovedAfterCompletion = true
+      } else if (this._watchingRemovedAfterCompletion) {
+        // Playback already reached the end recently; closing the player shouldn't re-save progress.
+        this._watchingRemovedAfterCompletion = false
+      } else if (save && currentTime > 0) {
         // persist watching state server-side so "continue watching" stays accurate
         saveWatchingTitle(payload).catch(err => console.error("Failed to save watching state", err))
         Backend.publish('stop_video_player_evt_', payload, true)
-      } else {
-        Backend.publish('remove_video_player_evt_', payload, true)
+        localStorage.setItem(this.titleInfo.getId(), String(this.videoElement.currentTime))
+      } else if (currentTime > 0) {
+        localStorage.setItem(this.titleInfo.getId(), String(this.videoElement.currentTime))
       }
-      localStorage.setItem(this.titleInfo.getId(), String(this.videoElement.currentTime))
     }
   }
 

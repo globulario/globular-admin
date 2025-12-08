@@ -78,10 +78,23 @@ export async function playTitleListener(player, currentEpisode, indexPath = INDE
 }
 
 function _exitFullscreen() {
-  if (document.exitFullscreen) document.exitFullscreen();
-  else if (document.msExitFullscreen) document.msExitFullscreen();
-  else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
-  else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  try {
+    const doc = document;
+    if (!doc) return;
+    const fullscreenElement =
+      doc.fullscreenElement ||
+      doc.msFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.webkitFullscreenElement;
+    if (!fullscreenElement) return;
+
+    if (doc.exitFullscreen) doc.exitFullscreen();
+    else if (doc.msExitFullscreen) doc.msExitFullscreen();
+    else if (doc.mozCancelFullScreen) doc.mozCancelFullScreen();
+    else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+  } catch (err) {
+    console.warn("Failed to exit fullscreen:", err);
+  }
 }
 
 async function _promptPlayNextEpisode(nextEpisode, indexPath = INDEX_TITLES) {

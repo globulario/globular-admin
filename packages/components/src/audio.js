@@ -4,7 +4,7 @@ import WaveSurfer from "wavesurfer.js"
 import { secondsToTime, fireResize } from "./utility"
 
 // UI bus + helpers
-import { Backend, displayError, saveWatchingTitle } from "@globular/backend"
+import { Backend, displayError, saveWatchingTitle, removeWatchingTitle } from "@globular/backend"
 
 // New function-style backends
 import * as Title from "@globular/backend"
@@ -824,24 +824,36 @@ export class AudioPlayer extends HTMLElement {
     // Persist last position keyed by title id (if available)
     if (this._audioData?.getId) {
       const currentTime = (this._wavesurfer && this._wavesurfer.getCurrentTime()) || 0
-      if (saveState && this._wavesurfer && this._wavesurfer.getDuration() !== currentTime) {
-        const payload = {
-          _id: this._audioData.getId(),
-          isVideo: false,
-          currentTime,
-          date: new Date()
-        }
-        saveWatchingTitle(payload).catch(err => console.error("Failed to save audio watching state", err))
-        Backend.publish("stop_video_player_evt_", payload, true)
-      } else {
+      const duration = this._wavesurfer?.getDuration?.() || 0
+      const nearEnd =
+        Number.isFinite(duration) && duration > 0 && Math.abs(duration - currentTime) <= 1
+
+      if (nearEnd) {
         Backend.publish("remove_video_player_evt_", {
           _id: this._audioData.getId(),
           isVideo: false,
           currentTime,
+          duration,
+          duration_ms: Math.round(duration * 1000),
           date: new Date()
         }, true)
+        removeWatchingTitle(this._audioData.getId()).catch(err => console.error("Failed to remove audio watching entry", err))
+        localStorage.removeItem(this._audioData.getId())
+      } else if (saveState && currentTime > 0) {
+        const payload = {
+          _id: this._audioData.getId(),
+          isVideo: false,
+          currentTime,
+          duration,
+          duration_ms: Math.round(duration * 1000),
+          date: new Date()
+        }
+        saveWatchingTitle(payload).catch(err => console.error("Failed to save audio watching state", err))
+        Backend.publish("stop_video_player_evt_", payload, true)
+        localStorage.setItem(this._audioData.getId(), String(currentTime))
+      } else if (currentTime > 0) {
+        localStorage.setItem(this._audioData.getId(), String(currentTime))
       }
-      localStorage.setItem(this._audioData.getId(), String(currentTime))
     }
   }
 

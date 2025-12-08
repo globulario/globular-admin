@@ -48,6 +48,10 @@ export class Dialog extends HTMLElement {
     _originalHeight = 0;
     _originalTop = 0;
     _originalLeft = 0;
+    _dockRestoreWidth = 0;
+    _dockRestoreHeight = 0;
+    _dockRestoreTop = null;
+    _dockRestoreLeft = null;
 
     onok = null;
     oncancel = null;
@@ -476,6 +480,12 @@ export class Dialog extends HTMLElement {
 
     _handleMinimizeClick = (e) => {
         e.stopPropagation();
+        if (this._dialogElement) {
+            this._dockRestoreWidth = this._dialogElement.offsetWidth || this._dockRestoreWidth;
+            this._dockRestoreHeight = this._dialogElement.offsetHeight || this._dockRestoreHeight;
+            this._dockRestoreLeft = this._dialogElement.offsetLeft;
+            this._dockRestoreTop = this._dialogElement.offsetTop;
+        }
         const dockbarCoords = dockbar.getCoords();
         const dialogCoords = getCoords(this._dialogElement);
 
@@ -488,6 +498,34 @@ export class Dialog extends HTMLElement {
         this._dialogElement.classList.add('minimizing');
         this._onMinimize?.();
     };
+
+    restoreFromDockbar() {
+        if (!this._dialogElement) return;
+        this._dialogElement.style.display = "";
+        this._dialogElement.classList.remove("minimized");
+
+        const minWidth = Math.max(this._dockRestoreWidth || 480, 200);
+        const minHeight = Math.max(this._dockRestoreHeight || 360, 180);
+
+        if ((this._dialogElement.offsetWidth || 0) < 50) {
+            this._dialogElement.style.width = `${minWidth}px`;
+        }
+        if ((this._dialogElement.offsetHeight || 0) < 50) {
+            this._dialogElement.style.height = `${minHeight}px`;
+        }
+
+        if (Number.isFinite(this._dockRestoreLeft) && Number.isFinite(this._dockRestoreTop)) {
+            this._dialogElement.style.left = `${this._dockRestoreLeft}px`;
+            this._dialogElement.style.top = `${this._dockRestoreTop}px`;
+        } else {
+            this.setCentered();
+        }
+
+        requestAnimationFrame(() => {
+            fireResize();
+            this.focus();
+        });
+    }
 
     setBackGroundColor(color) { if (this._dialogElement) this._dialogElement.style.backgroundColor = color; }
     setColor(color) { if (this._dialogElement) this._dialogElement.style.color = color; }
