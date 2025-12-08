@@ -1099,8 +1099,8 @@ export class FileExplorer extends HTMLElement {
   _ensureDefaultDialogSize() {
     const dialog = this._dialog;
     if (!dialog) return;
-    const MIN_WIDTH = 640;
-    const MIN_HEIGHT = 480;
+    const MIN_WIDTH = 1024;
+    const MIN_HEIGHT = 768;
     const ensure = () => {
       if (!dialog) return;
       const getter = typeof dialog.getWidth === "function" ? dialog.getWidth.bind(dialog) : null;

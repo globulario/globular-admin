@@ -499,8 +499,10 @@ export class Dialog extends HTMLElement {
         this._onMinimize?.();
     };
 
-    restoreFromDockbar() {
+  restoreFromDockbar() {
         if (!this._dialogElement) return;
+        this.style.display = "";
+        this.classList.remove("minimized");
         this._dialogElement.style.display = "";
         this._dialogElement.classList.remove("minimized");
 

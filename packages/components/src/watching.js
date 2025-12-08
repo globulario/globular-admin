@@ -758,6 +758,7 @@ export class MediaWatchingCard extends HTMLElement {
                 gap: 10px;
                 height: 100%;
                 box-sizing: border-box;
+                max-width: 300px;
             }
 
             #header-line {

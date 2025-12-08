@@ -444,8 +444,9 @@ export class VideoPlayer extends HTMLElement {
     this._watchingRemovedAfterCompletion = false
     // Only auto-resize once per load; after that user can resize manually
     if (!this.resized) {
-      const { width } = this._getFittedVideoSize()
-      this.resize(width) // height will be computed in resize()
+    const { width } = this._getFittedVideoSize()
+    const playlistWidth = this._playlistIsVisible() ? this._getPlaylistWidth() : 0
+    this.resize(width + playlistWidth) // height will be computed in resize()
     }
 
     if (this.onplay && !this._onPlayFired) {
@@ -467,8 +468,9 @@ export class VideoPlayer extends HTMLElement {
   _handleVideoLoadedData = async () => {
     // On first load, size the dialog to fit within viewport (both W & H)
     if (!this.resized) {
-      const { width, height } = this._getFittedVideoSize()
-      this.resize(width, height)
+      const { width } = this._getFittedVideoSize()
+      const playlistWidth = this._playlistIsVisible() ? this._getPlaylistWidth() : 0
+      this.resize(width + playlistWidth)
     }
     if (typeof this._pendingSeekTime === 'number' && !Number.isNaN(this._pendingSeekTime)) {
       try {
@@ -1292,13 +1294,18 @@ export class VideoPlayer extends HTMLElement {
       screen.height ||
       nativeH
 
-    const maxW = viewportW * 0.8
-    const maxH = viewportH * 0.8
+    const playlistWidth = this._playlistIsVisible() ? this._getPlaylistWidth() : 0
 
+    // Available space for the entire player (video + playlist)
+    const maxContainerW = viewportW * 0.9
+    const maxVideoW = Math.max(240, maxContainerW - playlistWidth)
+    const maxVideoH = viewportH * 0.85
+
+    // Determine scale that keeps video within the available region
     let scale = 1
-    if (nativeW > maxW || nativeH > maxH) {
-      const scaleW = maxW / nativeW
-      const scaleH = maxH / nativeH
+    if (nativeW > maxVideoW || nativeH > maxVideoH) {
+      const scaleW = maxVideoW / nativeW
+      const scaleH = maxVideoH / nativeH
       scale = Math.min(scaleW, scaleH)
     }
 
