@@ -17,6 +17,7 @@ export class SearchResults extends HTMLElement {
     _closeAllBtn = null; // Reference to the close button for the entire panel
     _emptySearchMessage = null; // Reference to the "No results" message
     _listeners = {}; // To store UUIDs for event hub subscriptions
+    _pagesWithResults = new Set(); // Track queries that already produced hits
 
     /**
      * Constructor for the SearchResults custom element.
@@ -36,6 +37,7 @@ export class SearchResults extends HTMLElement {
         this._getDomReferences();
         this._bindEventListeners();
         this._setupBackendSubscriptions(); // Setup backend event listeners
+        this.addEventListener("search-results-page-has-results", this._handlePageHasResults);
     }
 
     /**
@@ -43,6 +45,7 @@ export class SearchResults extends HTMLElement {
      * Cleans up event hub subscriptions.
      */
     disconnectedCallback() {
+        this.removeEventListener("search-results-page-has-results", this._handlePageHasResults);
         for (const uuid in this._listeners) {
             Backend.eventHub.unsubscribe(uuid);
         }
@@ -158,6 +161,14 @@ export class SearchResults extends HTMLElement {
         // Listener for click on tabs is handled dynamically when tabs are created
     }
 
+    _handlePageHasResults = (evt) => {
+        evt.stopPropagation();
+        this._hideEmptyState();
+        if (evt?.detail?.uuid) {
+            this._pagesWithResults.add(evt.detail.uuid);
+        }
+    };
+
     _isPersistent() {
         return this.hasAttribute("persistent");
     }
@@ -224,6 +235,7 @@ export class SearchResults extends HTMLElement {
         if (this._emptySearchMessage.style.display !== "none") {
             this._emptySearchMessage.style.display = "none";
         }
+        this._pagesWithResults.clear();
     }
 
     /**
@@ -248,7 +260,11 @@ export class SearchResults extends HTMLElement {
         const totalResults = typeof evt.summary?.getTotal === "function" ? evt.summary.getTotal() : null;
         if (totalResults === 0) {
             const label = displayQuery.length > 0 ? displayQuery : evt.query;
-            this._showEmptyState(`No results found for "${label}".`);
+            if (!this._pagesWithResults.has(queryId)) {
+                this._showEmptyState(`No results found for "${label}".`);
+            } else {
+                this._hideEmptyState();
+            }
         } else {
             this._hideEmptyState();
         }
@@ -350,6 +366,7 @@ export class SearchResults extends HTMLElement {
         if (!this._isPersistent()) {
             Backend.eventHub.publish("_hide_search_results_", { "id": this.id }, true); // Publish global hide event
         }
+        this._pagesWithResults.clear();
     }
 
     /**
@@ -373,11 +390,13 @@ export class SearchResults extends HTMLElement {
             if (pageToDelete.facetFilter && pageToDelete.facetFilter.parentNode) {
                 pageToDelete.facetFilter.parentNode.removeChild(pageToDelete.facetFilter);
             }
-            pageToDelete.parentNode.removeChild(pageToDelete);
-        }
-        if (tabToDelete && tabToDelete.parentNode) {
-            tabToDelete.parentNode.removeChild(tabToDelete);
-        }
+        pageToDelete.parentNode.removeChild(pageToDelete);
+    }
+    if (tabToDelete && tabToDelete.parentNode) {
+        tabToDelete.parentNode.removeChild(tabToDelete);
+    }
+
+        this._pagesWithResults.delete(queryId);
 
         // After deletion, switch to another tab or hide the whole panel
         if (this._tabsContainer.querySelectorAll("paper-tab").length > 0) {

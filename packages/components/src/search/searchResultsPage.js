@@ -319,6 +319,7 @@ export class SearchResultsPage extends HTMLElement {
     _hits = {}; // Map of all search hits by their UUID: {uuid: hitObject}
     _hitsByContext = {}; // Map of hits organized by context: {contextName: [hit1, hit2]}
     _hitsByClassName = {}; // Map of hit UUIDs by filter class name: {className: [uuid1, uuid2]}
+    _hasReportedResults = false;
 
     _webpageSearchResultsDiv = null;
     _webpageSearchResultsCountSpan = null;
@@ -859,6 +860,17 @@ export class SearchResultsPage extends HTMLElement {
                 this._updateMosaicSectionsVisibility();
             }
             this.refreshNavigatorAndContextSelector(); // Update pagination and context totals
+
+            if (!this._hasReportedResults && this.getTotal() > 0) {
+                this._hasReportedResults = true;
+                this.dispatchEvent(
+                    new CustomEvent("search-results-page-has-results", {
+                        detail: { uuid: this._uuid, total: this.getTotal() },
+                        bubbles: true,
+                        composed: true,
+                    })
+                );
+            }
         }
     }
 

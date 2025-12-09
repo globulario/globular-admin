@@ -302,6 +302,8 @@ export class VideoPlayer extends HTMLElement {
     this.container.name = 'video_player'
     this._retryingPlayback = false
     this._pendingSeekTime = null
+    this._closingRequested = false
+    this._pendingCloseSaveState = undefined
   }
 
   _handleVideoPlayError = (err) => {
@@ -1270,13 +1272,30 @@ export class VideoPlayer extends HTMLElement {
   }
 
   close(saveState = true) {
+    const containerStillMounted = !!(this.container && this.container.parentNode)
+    if (!this._closingRequested && containerStillMounted) {
+      this._closingRequested = true
+      this._pendingCloseSaveState = saveState
+      this.container.close()
+      return
+    }
+
+    if (this._closingRequested && containerStillMounted) {
+      return
+    }
+
+    const finalSaveState =
+      this._pendingCloseSaveState !== undefined ? this._pendingCloseSaveState : saveState
+    this._closingRequested = false
+    this._pendingCloseSaveState = undefined
+
     if (!this.isMinimized) {
       const pv = this.querySelector('.plyr--video')
       const width = pv ? pv.offsetWidth + 355 : 720
       const height = this.container.getHeight ? this.container.getHeight() : undefined
       localStorage.setItem('__video_player_dimension__', JSON.stringify({ width, height }))
     }
-    this.stop(saveState)
+    this.stop(finalSaveState)
     if (this.parentElement) this.parentElement.removeChild(this)
     if (this.onclose) this.onclose()
   }

@@ -843,6 +843,7 @@ export class MediaWatchingCard extends HTMLElement {
   _mediaObject = null;
   _indexPath = INDEX_VIDEOS;
   _completionNotified = false;
+  _lastBackendProgressSave = 0;
 
   // DOM Element References
   titleDateElement = null;
@@ -1723,6 +1724,88 @@ export class MediaWatchingCard extends HTMLElement {
 
     const metrics = this._getProgressMetrics();
     this._updateProgress(metrics);
+    this._maybeNotifyCompletion(metrics);
+    this._maybeAutosaveProgress(metrics);
+  }
+
+  _maybeNotifyCompletion(metrics) {
+    if (this._completionNotified) return;
+    if (!metrics || !this.titleData) return;
+
+    const {
+      durationMs = 0,
+      positionMs = 0,
+      percent = 0,
+    } = metrics;
+
+    if (durationMs <= 0) return;
+
+    const epsilonMs = Math.max(5000, Math.round(durationMs * 0.02));
+
+    const isAtEnd =
+      positionMs >= durationMs ||
+      positionMs + epsilonMs >= durationMs ||
+      percent >= 99;
+
+    if (!isAtEnd) return;
+
+    this._completionNotified = true;
+
+    const clampedPos = Math.min(positionMs, durationMs);
+    const payload = {
+      _id: this.titleData._id,
+      currentTime: clampedPos / 1000,
+      duration: durationMs / 1000,
+      duration_ms: durationMs,
+      position_ms: clampedPos,
+      completed: true,
+      date: new Date().toISOString(),
+    };
+
+    this.dispatchEvent(
+      new CustomEvent("globular-media-watching-card-completed", {
+        detail: { payload },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  _maybeAutosaveProgress(metrics) {
+    if (this._completionNotified) return;
+    if (!metrics || !this.titleData || !this.titleData._id) return;
+
+    const { durationMs = 0, positionMs = 0 } = metrics;
+    if (durationMs <= 0 || positionMs <= 0) return;
+
+    const now = Date.now();
+    if (now - this._lastBackendProgressSave < 15000) return;
+    this._lastBackendProgressSave = now;
+
+    const clampedPos = Math.min(positionMs, durationMs);
+    const payload = {
+      _id: this.titleData._id,
+      titleId: this.titleData.titleId || this.titleData._id,
+      entryType: this.titleData.entryType || this.titleData.mediaType || "video",
+      mediaType: this.titleData.mediaType || this.titleData.entryType || "video",
+      currentTime: clampedPos / 1000,
+      duration: durationMs / 1000,
+      duration_ms: durationMs,
+      position_ms: clampedPos,
+      date: new Date().toISOString(),
+    };
+
+    persistWatchingTitle(payload)
+      .catch((err) => {
+        console.warn("Failed to autosave watching progress:", err);
+      })
+      .finally(() => {
+        try {
+          localStorage.setItem(payload._id, String(payload.currentTime || 0));
+        } catch {
+          // ignore storage errors
+        }
+      });
   }
 }
 
