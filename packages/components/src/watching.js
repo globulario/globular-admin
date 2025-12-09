@@ -735,6 +735,14 @@ export class MediaWatchingCard extends HTMLElement {
   infoButton = null;
   progressBar = null;
   progressLabel = null;
+  seriesNameEl = null;
+  serieBadge = null;
+  serieBadgeImg = null;
+
+  _serieInfoRequestId = 0;
+  _currentSeasonNumber = 0;
+  _currentEpisodeNumber = 0;
+  _serieInfo = null;
 
   constructor() {
     super();
@@ -800,6 +808,32 @@ export class MediaWatchingCard extends HTMLElement {
                 pointer-events: none;
             }
 
+            #serie-badge {
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                z-index: 4;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                width: 44px;
+                height: 44px;
+                border-radius: 12px;
+                background-color: color-mix(in srgb, #000000 68%, transparent);
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+                padding: 4px;
+                pointer-events: auto;
+                cursor: pointer;
+            }
+
+            #serie-badge img {
+                height: 100%;
+                width: auto;
+                max-width: 100%;
+                object-fit: contain;
+                border-radius: 8px;
+            }
+
             #info-block {
                 display: flex;
                 flex-direction: column;
@@ -832,6 +866,15 @@ export class MediaWatchingCard extends HTMLElement {
             #meta-text {
                 font-size: 0.8rem;
                 color: var(--secondary-text-color, var(--palette-text-secondary));
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            #series-name {
+                font-size: 0.75rem;
+                color: var(--secondary-text-color, var(--palette-text-secondary));
+                font-weight: 500;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
@@ -876,12 +919,15 @@ export class MediaWatchingCard extends HTMLElement {
                 <paper-icon-button id="close-card-btn" icon="icons:close"></paper-icon-button>
             </div>
 
-            <div id="thumb-wrapper">
-                <img id="thumbnail" alt="thumbnail" />
-                <video id="preview" muted loop playsinline preload="metadata"></video>
-            </div>
+                <div id="thumb-wrapper">
+                    <img id="thumbnail" alt="thumbnail" />
+                    <video id="preview" muted loop playsinline preload="metadata"></video>
+                    <div id="serie-badge" hidden>
+                        <img id="serie-badge-img" alt="Series poster" />
+                    </div>
+                </div>
 
-            <div id="info-block">
+                <div id="info-block">
                 <div id="primary-row">
                     <div id="title-text"></div>
                     <div id="buttons-row">
@@ -890,6 +936,7 @@ export class MediaWatchingCard extends HTMLElement {
                     </div>
                 </div>
                 <div id="meta-text"></div>
+                <div id="series-name" hidden></div>
                 <paper-progress id="progress-bar" hidden min="0" max="100" value="0"></paper-progress>
                 <span id="progress-label" hidden>Progress • 0%</span>
             </div>
@@ -907,6 +954,9 @@ export class MediaWatchingCard extends HTMLElement {
     this.infoButton = this.shadowRoot.querySelector("#info-btn");
     this.progressBar = this.shadowRoot.querySelector("#progress-bar");
     this.progressLabel = this.shadowRoot.querySelector("#progress-label");
+    this.seriesNameEl = this.shadowRoot.querySelector("#series-name");
+    this.serieBadge = this.shadowRoot.querySelector("#serie-badge");
+    this.serieBadgeImg = this.shadowRoot.querySelector("#serie-badge-img");
 
     // Setup event listeners
     this.closeButton.addEventListener("click", this._handleCloseClick);
@@ -916,6 +966,9 @@ export class MediaWatchingCard extends HTMLElement {
       this.thumbnailImg.addEventListener("click", this._handlePlayClick);
       this.thumbnailImg.addEventListener("mouseenter", this._handleThumbEnter);
       this.thumbnailImg.addEventListener("mouseleave", this._handleThumbLeave);
+    }
+    if (this.serieBadge) {
+      this.serieBadge.addEventListener("click", this._handleSerieBadgeClick);
     }
   }
 
@@ -929,6 +982,9 @@ export class MediaWatchingCard extends HTMLElement {
       this.thumbnailImg.removeEventListener("click", this._handlePlayClick);
       this.thumbnailImg.removeEventListener("mouseenter", this._handleThumbEnter);
       this.thumbnailImg.removeEventListener("mouseleave", this._handleThumbLeave);
+    }
+    if (this.serieBadge) {
+      this.serieBadge.removeEventListener("click", this._handleSerieBadgeClick);
     }
 
     if (this.titleData) {
@@ -997,6 +1053,16 @@ export class MediaWatchingCard extends HTMLElement {
     this.previewVideo.style.opacity = "0";
   };
 
+  _handleSerieBadgeClick = (evt) => {
+    evt.stopPropagation();
+    if (!this._serieInfo) return;
+    try {
+      showGlobalTitleInfo(this._serieInfo);
+    } catch (err) {
+      console.warn("Failed to show series info:", err);
+    }
+  };
+
   /**
    * Sets the title/video data for the card and populates basic info + progress.
    * @param {object} titleData - normalized watching entry.
@@ -1035,6 +1101,7 @@ export class MediaWatchingCard extends HTMLElement {
       this._indexPath = indexPath;
 
       this._populateBasicInfo(entryType);
+      this._updateEpisodeSeriesInfo();
       this._loadPreviewSource(entryType, id);
       this._updateProgress();
 
@@ -1056,6 +1123,9 @@ export class MediaWatchingCard extends HTMLElement {
   _populateBasicInfo(entryType) {
     const obj = this._mediaObject || {};
     const td = this.titleData || {};
+
+    this._setSeriesName("");
+    this._setSerieBadge(null);
 
     // thumbnail
     let thumb =
@@ -1124,14 +1194,284 @@ export class MediaWatchingCard extends HTMLElement {
     const durSec = durMs > 0 ? Math.round(durMs / 1000) : 0;
     const posSec = posMs > 0 ? Math.round(posMs / 1000) : 0;
 
+    const seasonNumber =
+      this._resolveNumberValue(obj, "getSeason", ["season", "seasonNumber", "season_number"]) ||
+      this._resolveNumberValue(td, null, ["season", "seasonNumber", "season_number"]);
+    const episodeNumber =
+      this._resolveNumberValue(obj, "getEpisode", ["episode", "episodeNumber", "episode_number"]) ||
+      this._resolveNumberValue(td, null, ["episode", "episodeNumber", "episode_number"]);
+
+    this._currentSeasonNumber = seasonNumber;
+    this._currentEpisodeNumber = episodeNumber;
+
     const parts = [];
     parts.push(entryType === "audio" ? "Audio" : entryType === "title" ? "Title" : "Video");
     if (durSec > 0) parts.push(`Duration ${formatTime(durSec)}`);
     if (posSec > 0) parts.push(`Resume at ${formatTime(posSec)}`);
-
     if (this.metaTextEl) {
       this.metaTextEl.textContent = parts.join(" • ");
     }
+  }
+
+  async _updateEpisodeSeriesInfo() {
+    const obj = this._mediaObject || {};
+    const td = this.titleData || {};
+    const typeName =
+      this._resolveStringValue(obj, "getType", ["type", "kind", "mediaType"]) ||
+      this._resolveStringValue(td, null, ["type", "kind", "mediaType"]);
+    const seasonNumber = this._currentSeasonNumber || 0;
+    const episodeNumber = this._currentEpisodeNumber || 0;
+
+    this._serieInfo = null;
+
+    this._setSeriesName("", seasonNumber, episodeNumber);
+    this._setSerieBadge(null);
+
+    if (typeName !== "TVEpisode") {
+      return;
+    }
+
+    const fallbackName = this._guessSeriesDisplayName();
+    const serieId = this._extractSeriesIdentifier();
+    if (!serieId) {
+      if (fallbackName) {
+        this._setSeriesName(fallbackName, seasonNumber, episodeNumber);
+      }
+      return;
+    }
+
+    const requestId = ++this._serieInfoRequestId;
+    try {
+      const serieInfo = await getTitleInfo(serieId, INDEX_TITLES);
+      if (this._serieInfoRequestId !== requestId) return;
+
+      const serieNameFromInfo = this._resolveStringValue(serieInfo, "getName", [
+        "name",
+        "title",
+        "primarytitle",
+      ]);
+      const displayName = serieNameFromInfo || fallbackName || serieId;
+      this._serieInfo = serieInfo;
+      if (!displayName) {
+        this._setSeriesName("", seasonNumber, episodeNumber);
+        this._setSerieBadge(null);
+        return;
+      }
+
+      this._setSeriesName(displayName, seasonNumber, episodeNumber);
+      const posterUrl = this._extractPosterUrl(serieInfo);
+      const hasSeriesTitle = Boolean(serieNameFromInfo);
+      const badgeUrl = hasSeriesTitle && posterUrl ? posterUrl : "";
+      this._setSerieBadge(badgeUrl);
+
+    } catch (err) {
+      if (this._serieInfoRequestId !== requestId) return;
+      console.warn(`Failed to load series info for ${serieId}:`, err);
+      if (fallbackName) {
+        this._setSeriesName(fallbackName, seasonNumber, episodeNumber);
+      } else {
+        this._setSeriesName(serieId, seasonNumber, episodeNumber);
+      }
+      this._setSerieBadge(null);
+    }
+  }
+
+  _setSeriesName(name = "", season = 0, episode = 0) {
+    if (!this.seriesNameEl) return;
+    const normalized = name ? name.toString().trim() : "";
+    if (!normalized) {
+      this.seriesNameEl.textContent = "";
+      this.seriesNameEl.hidden = true;
+      return;
+    }
+
+    const metadataParts = [];
+    if (season > 0) metadataParts.push(`Season ${season}`);
+    if (episode > 0) metadataParts.push(`Episode ${episode}`);
+
+    this.seriesNameEl.textContent =
+      metadataParts.length > 0 ? `${normalized} • ${metadataParts.join(" ")}` : normalized;
+    this.seriesNameEl.hidden = false;
+  }
+
+  _setSerieBadge(posterUrl) {
+    if (!this.serieBadge || !this.serieBadgeImg) return;
+    if (posterUrl) {
+      const normalized = posterUrl.toString().trim();
+      this.serieBadgeImg.src = normalized;
+      this.serieBadge.hidden = false;
+      this.serieBadge.style.display = "flex";
+    } else {
+      this.serieBadgeImg.removeAttribute("src");
+      this.serieBadge.hidden = true;
+    }
+  }
+
+  _extractSeriesIdentifier() {
+    const obj = this._mediaObject || {};
+    const td = this.titleData || {};
+
+    const candidates = [
+      { source: obj, getter: "getSerie", props: ["serie", "series", "serieId", "seriesId", "serie_id", "series_id"] },
+      { source: obj, getter: "getSeries", props: ["serie", "series", "serieId", "seriesId"] },
+      { source: td, getter: null, props: ["serie", "series", "serieId", "seriesId", "serie_id", "series_id"] },
+    ];
+
+    for (const entry of candidates) {
+      const value = this._resolveCandidateValue(entry.source, entry.getter, entry.props);
+      const candidate = this._candidateToString(value);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return "";
+  }
+
+  _guessSeriesDisplayName() {
+    const objName = this._resolveStringValue(this._mediaObject, "getSerieName", [
+      "serieName",
+      "seriesName",
+      "serieTitle",
+      "seriesTitle",
+    ]);
+    if (objName) return objName;
+    return this._resolveStringValue(this.titleData, null, [
+      "serieName",
+      "seriesName",
+      "serieTitle",
+      "seriesTitle",
+    ]);
+  }
+
+  _resolveStringValue(source, getter, props = []) {
+    if (!source) return "";
+    const convert = (value) => {
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : "";
+      }
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return String(value);
+      }
+      return "";
+    };
+
+    if (getter && typeof source[getter] === "function") {
+      try {
+        const result = source[getter]();
+        const converted = convert(result);
+        if (converted) return converted;
+      } catch {
+        // ignore getter failures
+      }
+    }
+
+    for (const prop of props) {
+      if (Object.prototype.hasOwnProperty.call(source, prop)) {
+        const result = source[prop];
+        const converted = convert(result);
+        if (converted) return converted;
+      }
+    }
+
+    return "";
+  }
+
+  _resolveNumberValue(source, getter, props = []) {
+    const textValue = this._resolveStringValue(source, getter, props);
+    const num = Number(textValue);
+    if (Number.isFinite(num)) {
+      return Math.max(0, Math.round(num));
+    }
+    return 0;
+  }
+
+  _resolveCandidateValue(source, getter, props = []) {
+    if (!source) return null;
+    if (getter && typeof source[getter] === "function") {
+      try {
+        const value = source[getter]();
+        if (value != null) return value;
+      } catch {
+        // ignore
+      }
+    }
+
+    for (const prop of props) {
+      if (Object.prototype.hasOwnProperty.call(source, prop)) {
+        const value = source[prop];
+        if (value != null) return value;
+      }
+    }
+
+    return null;
+  }
+
+  _candidateToString(value) {
+    if (!value && value !== 0) return "";
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : "";
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+    if (typeof value === "object") {
+      if (typeof value.getId === "function") {
+        return this._candidateToString(value.getId());
+      }
+      if (typeof value.getSerie === "function") {
+        return this._candidateToString(value.getSerie());
+      }
+      if (typeof value.getSeries === "function") {
+        return this._candidateToString(value.getSeries());
+      }
+      if (value._id) {
+        return this._candidateToString(value._id);
+      }
+      if (value.id) {
+        return this._candidateToString(value.id);
+      }
+      if (value.titleId) {
+        return this._candidateToString(value.titleId);
+      }
+      if (value.serie) {
+        return this._candidateToString(value.serie);
+      }
+    }
+    return "";
+  }
+
+  _extractPosterUrl(source) {
+    if (!source) return "";
+    const posterObject =
+      typeof source.getPoster === "function"
+        ? source.getPoster()
+        : source.poster || source.Poster || source.posterUrl || source.thumbnail;
+
+    if (posterObject) {
+      if (typeof posterObject === "string") {
+        const trimmed = posterObject.trim();
+        if (trimmed) return trimmed;
+      } else if (typeof posterObject === "object") {
+        const url =
+          posterObject?.getContenturl?.() ||
+          posterObject?.getUrl?.() ||
+          posterObject?.Url ||
+          posterObject?.url ||
+          posterObject?.contentUrl ||
+          posterObject?.contenturl;
+        if (url) return url;
+      }
+    }
+
+    const alternative =
+      source.posterUrl ||
+      source.poster ||
+      source.thumbnail ||
+      source.poster_path ||
+      source.posterUrlPath;
+    return typeof alternative === "string" ? alternative : "";
   }
 
   async _loadPreviewSource(entryType, id) {
