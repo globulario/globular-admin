@@ -419,32 +419,7 @@ export class FileIconView extends HTMLElement {
 
   async _renderFolder(f) {
     const folderIconEl = this._appendIcon(FOLDER_ICON);
-    try {
-      const path = pathOf(f);
-      const hiddenDir = path ? await getHiddenFiles(path, "") : null;
-      if (!hiddenDir) return;
-      const metadataPath = `${hiddenDir.path}/metadata.json`;
-      const text = await readText(metadataPath);
-      const titleInfos = JSON.parse(text || "{}");
-      if (!titleInfos?.ID) return;
 
-      const title = await getTitleInfo(titleInfos.ID);
-      if (!title) return;
-
-      const poster = title.getPoster?.() || title.poster || null;
-      const posterUrl = poster?.getContenturl?.() || poster?.contenturl || poster?.URL || null;
-      const titleName = title.getName?.() || title?.name || null;
-
-      if (posterUrl) {
-        this._clear(this._dom.iconDisplay);
-        this._appendImg(posterUrl);
-      } else {
-        folderIconEl?.setAttribute?.("icon", FOLDER_ICON);
-      }
-      if (titleName) this._setDisplayName(titleName);
-    } catch {
-      /* keep default folder icon */
-    }
   }
 
   _setDisplayName(name) {
