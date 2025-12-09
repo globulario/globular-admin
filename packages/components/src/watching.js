@@ -23,6 +23,8 @@ import {
 import { playVideo } from "./video";
 import { showGlobalVideoInfo } from "./search/searchVideoCard.js";
 import { showGlobalTitleInfo } from "./search/searchTitleCard.js";
+import { searchEpisodes } from "./informationManager/titleInfo.js";
+import { playTitleListener } from "./search/search.js";
 
 // --- Constants ---
 const MEDIA_WATCHING_VIDEO_SLOT = "video";
@@ -156,6 +158,7 @@ export class MediaWatching extends HTMLElement {
   emptyMessage = null;
   _listeners = Object.create(null);
   _initialized = false;
+  _recentRemovalTimestamps = new Map();
 
   // DOM Element References (cached in constructor/connectedCallback)
   videoDiv = null;
@@ -278,6 +281,7 @@ export class MediaWatching extends HTMLElement {
     this.emptyMessage = this.shadowRoot.getElementById("empty-message");
     this.videoCardsContainer = this.shadowRoot.getElementById("video-cards");
     this.titleCardsContainer = this.shadowRoot.getElementById("title-cards");
+    this.addEventListener("globular-media-watching-card-completed", this._handleCardCompleted);
 
     if (!this._closable) {
       this.closeBtn.style.display = "none";
@@ -298,6 +302,7 @@ export class MediaWatching extends HTMLElement {
       this.closeBtn?.removeEventListener("click", this._handleCloseClick);
     }
     this._teardownWatchingSubscriptions();
+    this.removeEventListener("globular-media-watching-card-completed", this._handleCardCompleted);
   }
 
   // --- Private Event Handlers ---
@@ -378,7 +383,7 @@ export class MediaWatching extends HTMLElement {
 
   _handlePlayVideoEvent = async (eventData) => {
     const payload = this._normalizeEventPayload(eventData);
-    if (!payload || typeof payload.currentTime !== "number" || payload.currentTime <= 0) {
+    if (!payload || typeof payload.currentTime !== "number") {
       return;
     }
     try {
@@ -386,10 +391,27 @@ export class MediaWatching extends HTMLElement {
     } catch {
       // ignore storage errors
     }
+
+    const existingCard = this._getCardElementForId(payload._id);
+    if (existingCard && typeof existingCard.updateProgressFromPayload === "function") {
+      existingCard.updateProgressFromPayload(payload);
+      return;
+    }
+
+    try {
+      const saved = await this.saveWatchingTitle(payload);
+      const entry = saved || payload;
+      await this.appendTitle(entry);
+    } catch (err) {
+      console.warn("Failed to register playing title in watching history:", err);
+    }
   };
 
   _handleStopVideoEvent = async (eventData) => {
     const payload = this._normalizeEventPayload(eventData);
+    if (payload?.completed) {
+      return;
+    }
     const saved = await this.saveWatchingTitle(payload);
     const entry = saved || payload;
     await this.appendTitle(entry);
@@ -397,9 +419,26 @@ export class MediaWatching extends HTMLElement {
 
   _handleRemoveVideoEvent = async (eventData) => {
     const payload = this._normalizeEventPayload(eventData);
+    await this._processRemovalPayload(payload);
+  };
+
+  _handleCardCompleted = async (event) => {
+    event.stopPropagation();
+    const payload = this._normalizeEventPayload(event.detail?.payload || {});
+    await this._processRemovalPayload(payload);
+  };
+
+  async _processRemovalPayload(payload) {
     if (!payload?._id) {
       return;
     }
+
+    const now = Date.now();
+    const lastTimestamp = this._recentRemovalTimestamps.get(payload._id) || 0;
+    if (now - lastTimestamp < 2500) {
+      return;
+    }
+    this._recentRemovalTimestamps.set(payload._id, now);
 
     let existingEntry = null;
     try {
@@ -425,7 +464,86 @@ export class MediaWatching extends HTMLElement {
 
     await this.removeWatchingTitle(payload);
     this._removeCardElement(payload._id);
+    await this._addNextEpisodeToWatching(payload);
   };
+
+  _getCardElementForId(id) {
+    if (!id) return null;
+    const selector = `#_${id}`;
+    return (
+      this.videoCardsContainer?.querySelector?.(selector) ||
+      this.titleCardsContainer?.querySelector?.(selector) ||
+      null
+    );
+  }
+
+  async _addNextEpisodeToWatching(payload) {
+    if (!payload?.completed) return;
+    const id = payload._id || payload.titleId;
+    if (!id) return;
+
+    try {
+      const currentTitle = await getTitleInfo(id, INDEX_TITLES);
+      if (!currentTitle) return;
+      if (typeof currentTitle.getType === "function" && currentTitle.getType() !== "TVEpisode") {
+        return;
+      }
+
+      const serieId = typeof currentTitle.getSerie === "function" ? currentTitle.getSerie() : null;
+      if (!serieId) return;
+
+      const episodes = await searchEpisodes(serieId, INDEX_TITLES);
+      if (!Array.isArray(episodes) || episodes.length === 0) return;
+      const currentIndex = episodes.findIndex((episode) => {
+        const episodeId =
+          (typeof episode.getId === "function" ? episode.getId() : null) ||
+          episode?.id ||
+          episode?._id;
+        return episodeId === id;
+      });
+      if (currentIndex < 0) return;
+      const nextEpisode = episodes[currentIndex + 1];
+      if (!nextEpisode) return;
+
+      const nextId =
+        typeof nextEpisode.getId === "function"
+          ? nextEpisode.getId()
+          : nextEpisode?.id || nextEpisode?._id;
+      if (!nextId) return;
+
+      const existingCard =
+        this.videoCardsContainer?.querySelector?.(`#_${nextId}`) ||
+        this.titleCardsContainer?.querySelector?.(`#_${nextId}`);
+      if (existingCard) return;
+
+      const nextEntry = {
+        titleId: nextId,
+        _id: nextId,
+        entryType: "title",
+        mediaType: "title",
+        date: new Date().toISOString(),
+        currentTime: 0,
+      };
+
+      const duration =
+        typeof nextEpisode.getDuration === "function" ? nextEpisode.getDuration() : undefined;
+      if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
+        nextEntry.duration = duration;
+        nextEntry.duration_ms = Math.round(duration * 1000);
+      }
+
+      await persistWatchingTitle(nextEntry);
+      await this.appendTitle(nextEntry);
+      const episodeDisplayName =
+        (typeof nextEpisode.getName === "function" && nextEpisode.getName()) ||
+        nextEpisode?.name ||
+        nextEpisode?.title ||
+        "Next episode";
+      displayMessage(`"${episodeDisplayName}" was added to Continue Watching.`, 4000);
+    } catch (err) {
+      console.warn("Failed to queue next episode in watching history:", err);
+    }
+  }
 
   _normalizeEventPayload(eventData = {}) {
     const payload = { ...eventData };
@@ -724,6 +842,7 @@ export class MediaWatchingCard extends HTMLElement {
   titleData = null;
   _mediaObject = null;
   _indexPath = INDEX_VIDEOS;
+  _completionNotified = false;
 
   // DOM Element References
   titleDateElement = null;
@@ -1031,7 +1150,12 @@ export class MediaWatchingCard extends HTMLElement {
       const filePaths = await getTitleFiles(id, indexPath);
       if (Array.isArray(filePaths) && filePaths.length > 0) {
         const mainVideoPath = filePaths[0];
-        await playVideo(mainVideoPath, null, null, this._mediaObject || this.titleData);
+        await playVideo(
+          mainVideoPath,
+          (playerInstance) => playTitleListener(playerInstance, this._mediaObject || this.titleData, indexPath),
+          null,
+          this._mediaObject || this.titleData
+        );
       } else {
         displayMessage(`No main video file found for "${this.titleTextEl?.textContent || id}".`, 3000);
       }
@@ -1069,6 +1193,7 @@ export class MediaWatchingCard extends HTMLElement {
    */
   async setTitle(titleData, callback, errorCallback) {
     this.titleData = normalizeWatchingEntry(titleData) || titleData;
+    this._completionNotified = false;
 
     // Display last view date
     try {
@@ -1525,29 +1650,20 @@ export class MediaWatchingCard extends HTMLElement {
     return url;
   }
 
-  _updateProgress() {
-    if (!this.progressBar || !this.progressLabel || !this.titleData) return;
-
-    const td = this.titleData;
-
+  _getProgressMetrics() {
+    const td = this.titleData || {};
     let durationMs = 0;
     if (td.duration_ms != null) {
       durationMs = Math.max(0, Math.round(Number(td.duration_ms) || 0));
     } else if (td.duration != null) {
-      durationMs = Math.max(
-        0,
-        Math.round((Number(td.duration) || 0) * 1000)
-      );
+      durationMs = Math.max(0, Math.round((Number(td.duration) || 0) * 1000));
     }
 
     let positionMs = 0;
     if (td.position_ms != null) {
       positionMs = Math.max(0, Math.round(Number(td.position_ms) || 0));
     } else if (td.currentTime != null) {
-      positionMs = Math.max(
-        0,
-        Math.round((Number(td.currentTime) || 0) * 1000)
-      );
+      positionMs = Math.max(0, Math.round((Number(td.currentTime) || 0) * 1000));
     } else {
       const id = td._id || td.titleId;
       if (id) {
@@ -1564,6 +1680,13 @@ export class MediaWatchingCard extends HTMLElement {
         ? Math.min(100, Math.max(0, Math.round((positionMs / durationMs) * 100)))
         : 0;
 
+    return { durationMs, positionMs, percent };
+  }
+
+  _updateProgress(metrics = null) {
+    if (!this.progressBar || !this.progressLabel || !this.titleData) return;
+    const { durationMs, percent } = metrics || this._getProgressMetrics();
+
     if (durationMs <= 0 || percent <= 0) {
       this.progressBar.hidden = true;
       this.progressLabel.hidden = true;
@@ -1575,6 +1698,31 @@ export class MediaWatchingCard extends HTMLElement {
     this.progressBar.value = percent;
     this.progressBar.setAttribute("value", String(percent));
     this.progressLabel.textContent = `Progress • ${percent}%`;
+  }
+
+  updateProgressFromPayload(payload) {
+    if (!payload || !this.titleData) return;
+    const td = this.titleData;
+
+    if (payload.duration_ms != null) {
+      td.duration_ms = Math.max(0, Number(payload.duration_ms) || 0);
+    } else if (payload.duration != null) {
+      td.duration = Math.max(0, Number(payload.duration) || 0);
+      td.duration_ms = Math.round(td.duration * 1000);
+    }
+
+    if (payload.position_ms != null) {
+      td.position_ms = Math.max(0, Number(payload.position_ms) || 0);
+    } else if (payload.currentTime != null) {
+      const pos = Math.max(0, Number(payload.currentTime) || 0);
+      td.position_ms = Math.round(pos * 1000);
+    }
+
+    td.currentTime =
+      payload.currentTime != null ? Math.max(0, Number(payload.currentTime) || 0) : td.currentTime;
+
+    const metrics = this._getProgressMetrics();
+    this._updateProgress(metrics);
   }
 }
 

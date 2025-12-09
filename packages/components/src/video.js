@@ -214,6 +214,7 @@ export class VideoPlayer extends HTMLElement {
     this._dialogReady = false
     this._loadingName = ''
     this._playbackCompleted = false
+    this._lastProgressEvent = 0
     this._watchingRemovedAfterCompletion = false
 
     // refs
@@ -376,6 +377,7 @@ export class VideoPlayer extends HTMLElement {
     this.titleInfoButton?.removeEventListener('click', this._handleTitleInfoClick)
     this.videoElement?.removeEventListener('playing', this._handleVideoPlaying)
     this.videoElement?.removeEventListener('loadeddata', this._handleVideoLoadedData)
+    this.videoElement?.removeEventListener('timeupdate', this._handleVideoTimeUpdate)
     this.videoElement?.removeEventListener('error', this._handleVideoElementError)
     this.audioTrackSelector?.removeEventListener('change', this._handleAudioTrackChange)
 
@@ -453,6 +455,22 @@ export class VideoPlayer extends HTMLElement {
       this.onplay(this.player, this.titleInfo)
     }
     
+  }
+
+  _handleVideoTimeUpdate = () => {
+    if (!this.titleInfo || typeof this.titleInfo.getId !== "function") return
+    if (!this.videoElement?.playing) return
+    const now = Date.now()
+    if (now - this._lastProgressEvent < 1000) return
+    this._lastProgressEvent = now
+    const payload = {
+      _id: this.titleInfo.getId(),
+      isVideo: true,
+      currentTime: this.videoElement.currentTime,
+      duration: this.videoElement.duration || 0,
+      date: new Date()
+    }
+    Backend.publish("play_video_player_evt_", payload, true)
   }
 
   _handleVideoElementError = () => {
@@ -745,6 +763,7 @@ export class VideoPlayer extends HTMLElement {
 
     this.videoElement.addEventListener('loadeddata', this._handleVideoLoadedData)
     this.videoElement.addEventListener('playing', this._handleVideoPlaying)
+    this.videoElement.addEventListener('timeupdate', this._handleVideoTimeUpdate)
     this.videoElement.addEventListener('error', this._handleVideoElementError)
     this.audioTrackSelector.addEventListener('change', this._handleAudioTrackChange)
 
@@ -1267,36 +1286,43 @@ export class VideoPlayer extends HTMLElement {
     this.resized = false
     this._dialogReady = false
     this._hideLoadingOverlay()
-    const completed = this._playbackCompleted
+
+    const duration = Number(this.videoElement.duration || 0)
+    const currentTime = Number(this.videoElement.currentTime || 0)
+
+    const nearEnd =
+      duration > 0 &&
+      currentTime >= duration - Math.max(5, duration * 0.02)
+
+    const completed = this._playbackCompleted || nearEnd
     this._playbackCompleted = false
 
     if (this.titleInfo && this.titleInfo.getId) {
       const payload = {
         _id: this.titleInfo.getId(),
         isVideo: true,
-        currentTime: this.videoElement.currentTime,
-        duration: this.videoElement.duration || 0,
-        duration_ms: Number.isFinite(this.videoElement.duration)
-          ? Math.round(this.videoElement.duration * 1000)
+        currentTime,
+        duration,
+        duration_ms: Number.isFinite(duration)
+          ? Math.round(duration * 1000)
           : undefined,
         date: new Date()
       }
-      const currentTime = Number(this.videoElement.currentTime)
+
       if (completed) {
+        payload.completed = true
         Backend.publish('remove_video_player_evt_', payload, true)
         removeWatchingTitle(this.titleInfo.getId()).catch(err => console.error("Failed to remove watching entry", err))
         localStorage.removeItem(this.titleInfo.getId())
         this._watchingRemovedAfterCompletion = true
       } else if (this._watchingRemovedAfterCompletion) {
-        // Playback already reached the end recently; closing the player shouldn't re-save progress.
         this._watchingRemovedAfterCompletion = false
       } else if (save && currentTime > 0) {
-        // persist watching state server-side so "continue watching" stays accurate
         saveWatchingTitle(payload).catch(err => console.error("Failed to save watching state", err))
         Backend.publish('stop_video_player_evt_', payload, true)
-        localStorage.setItem(this.titleInfo.getId(), String(this.videoElement.currentTime))
+        localStorage.setItem(this.titleInfo.getId(), String(currentTime))
       } else if (currentTime > 0) {
-        localStorage.setItem(this.titleInfo.getId(), String(this.videoElement.currentTime))
+        localStorage.setItem(this.titleInfo.getId(), String(currentTime))
       }
     }
   }
