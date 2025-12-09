@@ -370,12 +370,12 @@ export class FilesUploader extends HTMLElement {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: var(--palette-action-disabled, rgba(150,150,150,0.7));
-          box-shadow: 0 0 0 0 rgba(0,0,0,0.15);
+          background: color-mix(in srgb, var(--palette-success, #22c55e) 70%, rgba(255,255,255,0.3));
+          box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.2);
         }
 
         #status-bar.busy #status-indicator {
-          background: var(--primary-color, #ff9800);
+          background: color-mix(in srgb, var(--palette-primary, #3b82f6) 75%, rgba(255,255,255,0.2));
           animation: pulse 1.2s ease-in-out infinite;
         }
 

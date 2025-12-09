@@ -5,8 +5,7 @@ import "./plyr.css"
 import Hls from 'hls.js'
 
 // App bus + helpers (no raw RPC calls)
-import { displayError } from '@globular/backend'
-import { Backend } from '@globular/backend'
+import { Backend, displayError, getFreshToken, forceRefresh } from '@globular/backend'
 
 // Controllers / unified wrappers
 import { readDir, buildHiddenTimelineDir } from '@globular/backend'
@@ -1047,8 +1046,9 @@ export class VideoPlayer extends HTMLElement {
       this.titleInfo = null
     }
 
+    await getFreshToken(60_000)
     let urlToPlay = path
-    const token = getAuthToken()
+    let token = getAuthToken()
     const isHttpSource = /^https?:\/\//i.test(urlToPlay)
     const isHlsSource = /\.m3u8($|\?)/i.test(urlToPlay)
 
@@ -1084,12 +1084,39 @@ export class VideoPlayer extends HTMLElement {
     this._onPlayFired = false
 
     try {
-      const headHeaders = {}
-      if (token && (!urlToPlay.includes('token=') || isHlsSource)) {
-        headHeaders['Authorization'] = `Bearer ${token}`
-        headHeaders['token'] = token
+      const doHead = async () => {
+        const headers = {}
+        if (token && (!urlToPlay.includes('token=') || isHlsSource)) {
+          headers['Authorization'] = `Bearer ${token}`
+          headers['token'] = token
+        }
+        return fetch(urlToPlay, { method: 'HEAD', headers })
       }
-      const head = await fetch(urlToPlay, { method: 'HEAD', headers: headHeaders })
+
+      let head = await doHead()
+      if (head.status === 401) {
+        try {
+          const next = await forceRefresh()
+          if (next) {
+            token = next
+            if (!isHttpSource) {
+              urlToPlay = isHlsSource
+                ? buildFileUrl(path, { includeToken: false })
+                : buildFileUrl(path, next)
+            } else if (!isHlsSource) {
+              const u = new URL(urlToPlay)
+              const p = new URLSearchParams(u.search)
+              p.set('token', next)
+              u.search = p.toString()
+              urlToPlay = u.toString()
+            }
+            head = await doHead()
+          }
+        } catch {
+          // fallthrough
+        }
+      }
+
       if (head.status === 401) {
         displayError(`Unable to read the file ${path}. Check your access privilege.`)
         this.close()

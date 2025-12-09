@@ -8,6 +8,7 @@ export {
   tokenExpMs,
   isExpiringSoon,
   ensureFreshToken,
+  getFreshToken,
   enableVisibilityAutoRefresh,
   setToken,
   metadata,

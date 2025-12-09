@@ -4,7 +4,7 @@ import WaveSurfer from "wavesurfer.js"
 import { secondsToTime, fireResize } from "./utility"
 
 // UI bus + helpers
-import { Backend, displayError, saveWatchingTitle, removeWatchingTitle } from "@globular/backend"
+import { Backend, displayError, saveWatchingTitle, removeWatchingTitle, getFreshToken, forceRefresh } from "@globular/backend"
 
 // New function-style backends
 import * as Title from "@globular/backend"
@@ -77,11 +77,31 @@ async function getTitleFiles(titleId, indexPath) {
   return []
 }
 
-/** HEAD probe to confirm URL reachability. */
+/** HEAD probe to confirm URL reachability, with one refresh retry. */
 async function assertReachable(url) {
-  const res = await fetch(url, { method: "HEAD" })
-  if (res.status === 401) throw new Error("401 Unauthorized")
+  let res = await fetch(url, { method: "HEAD" })
+  if (res.status === 401) {
+    try {
+      const next = await forceRefresh()
+      if (next) {
+        try {
+          const rebuilt = new URL(url, window.location.origin)
+          rebuilt.searchParams.set("token", next)
+          const retryUrl = rebuilt.toString()
+          res = await fetch(retryUrl, { method: "HEAD" })
+          if (res.ok) return retryUrl
+          if (res.status === 401) throw new Error("401 Unauthorized")
+          throw new Error(`HTTP ${res.status}`)
+        } catch {
+          throw new Error("401 Unauthorized")
+        }
+      }
+    } catch {
+      throw new Error("401 Unauthorized")
+    }
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return url
 }
 
 // ---------- public API ----------
@@ -947,11 +967,12 @@ export class AudioPlayer extends HTMLElement {
     }
     this._currentPath = path
 
+    await getFreshToken(60_000)
     const token = getAuthToken()
     let urlToPlay = buildFileUrl(path, token)
 
     try {
-      await assertReachable(urlToPlay)
+      urlToPlay = await assertReachable(urlToPlay)
     } catch (e) {
       displayError(`Unable to access ${urlToPlay}: ${e.message}`)
       this.close()

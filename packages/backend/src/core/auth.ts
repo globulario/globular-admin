@@ -46,6 +46,15 @@ export function isExpiringSoon(padMs = 60_000): boolean {
   return Date.now() >= exp - padMs; // within pad window or expired
 }
 
+export async function getFreshToken(padMs = 60_000): Promise<string | undefined> {
+  try {
+    await ensureFreshToken(padMs);
+  } catch {
+    // best-effort
+  }
+  return _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
+}
+
 // Ensure a fresh token (rpc.unary will call this before each call)
 export async function ensureFreshToken(minTtlMs = 60_000): Promise<void> {
   

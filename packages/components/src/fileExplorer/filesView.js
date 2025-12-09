@@ -1578,11 +1578,22 @@ export class FilesView extends HTMLElement {
     const toast = displayMessage(
       `
       <div id="select-media-dialog">
-        <span>What kind of file do you want to create?</span>
+        <style>
+          #select-media-dialog {
+            --media-accent-color: color-mix(in srgb, var(--palette-primary, #3b82f6) 70%, var(--on-surface-color, #f2f2f2));
+          }
+          #select-media-dialog paper-radio-button {
+            --paper-radio-button-checked-color: var(--media-accent-color);
+            --paper-radio-button-unchecked-color: color-mix(in srgb, var(--on-surface-color, #888) 60%, transparent);
+            --paper-radio-button-label-color: var(--on-surface-color, inherit);
+            transition: color 0.2s ease;
+          }
+        </style>
+        <span style="display:block;margin-bottom:10px;">What kind of file do you want to create?</span>
         <div style="display:flex;justify-content:center;">
-          <paper-radio-group selected="media-type-mp4">
-            <paper-radio-button id="media-type-mp4" name="media-type">Video (mp4)</paper-radio-button>
-            <paper-radio-button id="media-type-mp3" name="media-type">Audio (mp3)</paper-radio-button>
+          <paper-radio-group id="media-type-group" selected="mp4">
+            <paper-radio-button id="media-type-mp4" name="mp4">Video (mp4)</paper-radio-button>
+            <paper-radio-button id="media-type-mp3" name="mp3">Audio (mp3)</paper-radio-button>
           </paper-radio-group>
         </div>
         <div style="display:flex;justify-content:flex-end;">
@@ -1594,19 +1605,41 @@ export class FilesView extends HTMLElement {
       60 * 1000
     );
 
+    const radioGroup = toast.toastElement.querySelector("#media-type-group");
     const mp4Radio = toast.toastElement.querySelector("#media-type-mp4");
     const mp3Radio = toast.toastElement.querySelector("#media-type-mp3");
     const okBtn = toast.toastElement.querySelector("#upload-lnk-ok-button");
     const cancelBtn = toast.toastElement.querySelector("#upload-lnk-cancel-button");
 
-    mp4Radio.addEventListener("change", () => (mp3Radio.checked = !mp4Radio.checked));
-    mp3Radio.addEventListener("change", () => (mp4Radio.checked = !mp3Radio.checked));
+    const syncSelectionStyles = () => {
+      const selectedName = radioGroup?.selected;
+      [mp4Radio, mp3Radio].forEach((btn) => {
+        if (!btn) return;
+        const selected = btn.name === selectedName;
+        btn.toggleAttribute("selected", selected);
+        const label = btn.shadowRoot?.querySelector("#radioLabel");
+        if (label) {
+          label.style.color = selected
+            ? "var(--media-accent-color)"
+            : "var(--on-surface-color, inherit)";
+          label.style.fontWeight = selected ? "600" : "400";
+        }
+      });
+    };
+    if (radioGroup) {
+      radioGroup.selected = "mp4";
+      syncSelectionStyles();
+      radioGroup.addEventListener("selected-changed", (evt) => {
+        evt.stopPropagation();
+        syncSelectionStyles();
+      });
+    }
 
     return new Promise((resolve, reject) => {
       okBtn.onclick = async () => {
         toast.hideToast();
         try {
-          const format = mp3Radio.checked ? "mp3" : "mp4";
+          const format = radioGroup?.selected === "mp3" ? "mp3" : "mp4";
           let pid = -1;
           await uploadVideoByUrl(destDir, url, format, (rsp) => {
             if (rsp?.getPid?.() != null) pid = rsp.getPid();
