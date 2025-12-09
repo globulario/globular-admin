@@ -53,6 +53,26 @@ export async function getTorrentLinks(): Promise<any> {
   return unary(clientFactory, method, rq, undefined, md)
 }
 
+export async function downloadTorrent(
+  link: string,
+  dest?: string,
+  seed = false
+): Promise<void> {
+  if (!link) throw new Error("Missing torrent link.");
+  const md = await meta();
+  const rq = newRq(["DownloadTorrentRequest"]);
+  if (typeof rq.setLink === "function") rq.setLink(link);
+  else (rq as any).link = link;
+  if (dest) {
+    if (typeof rq.setDest === "function") rq.setDest(dest);
+    else (rq as any).dest = dest;
+  }
+  if (typeof rq.setSeed === "function") rq.setSeed(!!seed);
+  else (rq as any).seed = !!seed;
+  const method = pickMethod(clientFactory(), ["downloadTorrent"]);
+  await unary(clientFactory, method, rq, undefined, md);
+}
+
 /**
  * Stream torrent infos (progress). Returns a cancel function.
  * onBatch is called with the protobuf response (use rsp.getInfosList()).
@@ -112,4 +132,3 @@ export async function dropTorrent(name: string): Promise<void> {
   const method = pickMethod(clientFactory(), ["dropTorrent"])
   await unary(clientFactory, method, rq, undefined, md)
 }
-

@@ -47,6 +47,7 @@ import {
   thumbOf,
 } from "./filevm-helpers.js";
 import { getFileVideosInfo, getFileTitlesInfo, getFileAudiosInfo } from "@globular/backend";
+import { downloadTorrent } from "@globular/backend";
 
 // UI deps
 import "@polymer/paper-input/paper-input.js";
@@ -1369,10 +1370,10 @@ export class FilesView extends HTMLElement {
     const destDir = this._currentDir ? pathOf(this._currentDir) : "/";
     try {
       if (url.endsWith(".torrent") || url.startsWith("magnet:")) {
-        displayError(
-          "Torrent/magnet handling not yet wired to the new torrent wrapper. Add a wrapper (e.g., `downloadTorrent`) and call it here.",
-          6000
-        );
+        const targetDir = toAbsoluteFsPath(destDir, DATA_ROOT) || "/";
+        await downloadTorrent(url, targetDir, true);
+        this._ensureUploaderVisible();
+        displayMessage("Torrent added to download queue.", 3000);
         return;
       }
 
@@ -1391,6 +1392,17 @@ export class FilesView extends HTMLElement {
     } catch (err) {
       displayError(`Failed to process link: ${err?.message || err}`, 3000);
     }
+  }
+
+  _ensureUploaderVisible() {
+    if (!this._fileExplorer) return;
+    const uploader = FileExplorer.fileUploader;
+    if (!uploader) return;
+    const host = this._fileExplorer._fileExplorerContent || this._fileExplorer;
+    if (host && uploader.parentNode !== host) {
+      host.appendChild(uploader);
+    }
+    this._fileExplorer._setUploaderVisibility?.(true);
   }
 
   async _handleImdbDrop(url, file) {
