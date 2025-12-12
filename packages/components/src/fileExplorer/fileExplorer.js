@@ -2165,9 +2165,24 @@ export class FileExplorer extends HTMLElement {
       const messageDiv = this._progressDiv.querySelector("#progress-message");
       messageDiv.innerHTML = message;
     }
+    const textMessage = this._sanitizeProgressMessage(message);
+    this._dialog?.setBackgroundActivity(textMessage, true);
   }
 
-  resume() { if (this._progressDiv) this._progressDiv.style.display = "none"; }
+  resume() {
+    if (this._progressDiv) this._progressDiv.style.display = "none";
+    this._dialog?.setBackgroundActivity("", false);
+  }
+
+  _sanitizeProgressMessage(message) {
+    if (typeof message === "string") {
+      return message.replace(/<[^>]+>/g, "").trim();
+    }
+    if (message === undefined || message === null) {
+      return "";
+    }
+    return String(message);
+  }
 
   _buildMediaWaitMessage(kind, file, info) {
     const pick = (obj, keys) => {

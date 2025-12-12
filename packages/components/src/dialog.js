@@ -610,9 +610,21 @@ export class Dialog extends HTMLElement {
             this._headerElement.style.backgroundColor = "var(--primary-color)";
         }
 
-        this.dispatchEvent(new CustomEvent("dialog-focused", { bubbles: true, composed: true }));
-        this._headerElement?.click();
+    this.dispatchEvent(new CustomEvent("dialog-focused", { bubbles: true, composed: true }));
+    this._headerElement?.click();
+  }
+
+  setBackgroundActivity(message, active = true) {
+    const detail = { active: Boolean(active) };
+    if (message !== undefined && message !== null) {
+      detail.message = String(message);
     }
+    this.dispatchEvent(new CustomEvent("dialog-background-activity", {
+      detail,
+      bubbles: true,
+      composed: true
+    }));
+  }
 }
 
 customElements.define('globular-dialog', Dialog);

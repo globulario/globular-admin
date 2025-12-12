@@ -144,11 +144,13 @@ export class DialogHandle extends HTMLElement {
             }
 
             #close-btn, #minimize-btn {
-                width: 24px;
-                height: 24px;
-                margin-right: 2px;
+                width: 28px;
+                height: 28px;
+                margin-right: 4px;
                 color: var(--on-primary-color);
-                padding: 5px;
+                padding: 4px;
+                flex: 0 0 auto;
+                align-self: center;
             }
 
             #title-span {
@@ -207,6 +209,7 @@ export class DialogHandle extends HTMLElement {
     this._dialog.addEventListener("dialog-focused", this._handleDialogFocused);
     this._dialog.addEventListener("refresh-preview", this._handleRefreshPreview);
     this._dialog.addEventListener("dialog-closing", this._handleDialogClosing);
+    this._dialog.addEventListener("dialog-background-activity", this._handleDialogBackgroundActivity);
   }
 
   _cleanupEventListeners() {
@@ -217,6 +220,7 @@ export class DialogHandle extends HTMLElement {
     this._dialog.removeEventListener("dialog-focused", this._handleDialogFocused);
     this._dialog.removeEventListener("refresh-preview", this._handleRefreshPreview);
     this._dialog.removeEventListener("dialog-closing", this._handleDialogClosing);
+    this._dialog.removeEventListener("dialog-background-activity", this._handleDialogBackgroundActivity);
   }
 
   _handleCloseClick = (evt) => {
@@ -247,6 +251,16 @@ export class DialogHandle extends HTMLElement {
       this._dialog.style.display = "";
     }
   };
+
+  _handleDialogBackgroundActivity = (evt) => {
+    const handlesGroup = this.parentNode;
+    if (!handlesGroup || typeof handlesGroup.setBackgroundActivity !== "function") return;
+    const detail = evt?.detail || {};
+    const rawMessage = detail?.message;
+    const message = typeof rawMessage === "string" ? rawMessage : (rawMessage ? String(rawMessage) : "");
+    const active = Boolean(detail?.active);
+    handlesGroup.setBackgroundActivity(message, active);
+  };
 }
 
 customElements.define('globular-dialog-handle', DialogHandle);
@@ -256,6 +270,8 @@ export class DialogHandles extends HTMLElement {
   _countSpan = null;
   _handlesContainer = null;
   _container = null;
+  _statusSpan = null;
+  _statusTimeout = null;
 
   // hover state
   _hoverInside = false;
@@ -324,16 +340,87 @@ export class DialogHandles extends HTMLElement {
         #container {
           position: relative;
           display: flex;
-          justify-content: center;
+          flex-direction: column;
           align-items: center;
+          justify-content: center;
           margin-right: 10px;
           display: none;
+          padding-top: 6px;
+          height: 50px;
+          box-sizing: border-box;
+          gap: 2px;
+          overflow: visible;
+        }
+
+        #icon-wrapper {
+          position: relative;
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         #main-icon {
           width: 40px;
           height: 40px;
-          object-fit: contain;
+          object-fit: cover;
+          border-radius: 50%;
+          border: 1px solid var(--divider-color);
+        }
+
+        #loading-ring {
+          position: absolute;
+          top: -6px;
+          left: -6px;
+          right: -6px;
+          bottom: -6px;
+          border: 3px solid rgba(33, 150, 243, 0.35);
+          border-top-color: var(--primary-color, #2196f3);
+          border-radius: 50%;
+          animation: globular-handle-spin 1s linear infinite;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 180ms ease;
+          box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
+        }
+
+        #container.loading #loading-ring {
+          opacity: 1;
+        }
+
+        @keyframes globular-handle-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        #status-message {
+          position: absolute;
+          bottom: -26px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 0.68rem;
+          color: #ffffff;
+          text-align: center;
+          max-width: 120px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          height: 18px;
+          width: 120px;
+          visibility: hidden;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 200ms ease;
+          padding: 0 8px;
+          border-radius: 8px;
+          background: var(--dialog-handle-status-bg, rgba(0, 0, 0, 0.8));
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+        }
+
+        #status-message.visible {
+          visibility: visible;
+          opacity: 1;
         }
 
         #count-badge {
@@ -373,13 +460,17 @@ export class DialogHandles extends HTMLElement {
         }
       </style>
      
-      <div id="container">
-        <img id="main-icon"></img>
-        <span id="count-badge"></span>
-        <div class="handles">
-          <slot></slot>
+        <div id="container">
+          <div id="icon-wrapper">
+            <img id="main-icon"></img>
+            <span id="loading-ring" aria-hidden="true"></span>
+          </div>
+          <span id="status-message"></span>
+          <span id="count-badge"></span>
+          <div class="handles">
+            <slot></slot>
+          </div>
         </div>
-      </div>
     `;
   }
 
@@ -388,6 +479,7 @@ export class DialogHandles extends HTMLElement {
     this._iconElement = this.shadowRoot.getElementById('main-icon');
     this._countSpan = this.shadowRoot.getElementById('count-badge');
     this._handlesContainer = this.shadowRoot.querySelector('.handles');
+    this._statusSpan = this.shadowRoot.getElementById("status-message");
   }
 
   _setupEventListeners() {
@@ -400,6 +492,7 @@ export class DialogHandles extends HTMLElement {
     // Hover on handles popup
     this._handlesContainer.addEventListener('pointerenter', this._handleHandlesEnter);
     this._handlesContainer.addEventListener('pointerleave', this._handleHandlesLeave);
+
   }
 
   _cleanupEventListeners() {
@@ -410,6 +503,7 @@ export class DialogHandles extends HTMLElement {
 
     this._handlesContainer.removeEventListener('pointerenter', this._handleHandlesEnter);
     this._handlesContainer.removeEventListener('pointerleave', this._handleHandlesLeave);
+
   }
 
   // --- hover logic -------------------------------------------------------
@@ -540,6 +634,45 @@ export class DialogHandles extends HTMLElement {
 
     this._handlesContainer.style.left = `${left}px`;
     this._handlesContainer.style.top = `${top}px`;
+  }
+
+  setBackgroundActivity(message, active) {
+    const hasMessage = Boolean(message);
+    if (active && hasMessage) {
+      this._showStatusMessage(message);
+    } else {
+      this._hideStatusMessage(true);
+    }
+    if (this._container) {
+      this._container.classList.toggle("loading", Boolean(active));
+    }
+  }
+
+  _clearStatusTimeout() {
+    if (this._statusTimeout) {
+      clearTimeout(this._statusTimeout);
+      this._statusTimeout = null;
+    }
+  }
+
+  _showStatusMessage(message) {
+    if (!this._statusSpan) return;
+    this._statusSpan.textContent = message;
+    this._statusSpan.classList.add("visible");
+    this._clearStatusTimeout();
+    this._statusTimeout = window.setTimeout(() => {
+      this._hideStatusMessage(false);
+      this._statusTimeout = null;
+    }, 10_000);
+  }
+
+  _hideStatusMessage(clearText) {
+    if (!this._statusSpan) return;
+    this._statusSpan.classList.remove("visible");
+    if (clearText) {
+      this._statusSpan.textContent = "";
+    }
+    this._clearStatusTimeout();
   }
 
   _updateDockbarVisibility() {

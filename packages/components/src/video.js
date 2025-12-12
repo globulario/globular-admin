@@ -5,7 +5,7 @@ import "./plyr.css"
 import Hls from 'hls.js'
 
 // App bus + helpers (no raw RPC calls)
-import { Backend, displayError, getFreshToken, forceRefresh } from '@globular/backend'
+import { Backend, displayError, getFreshToken, forceRefresh, isExpiringSoon } from '@globular/backend'
 
 // Controllers / unified wrappers
 import { readDir, buildHiddenTimelineDir } from '@globular/backend'
@@ -90,6 +90,9 @@ function propMaybe(obj, prop) {
   if (!obj) return undefined
   return obj[prop]
 }
+
+const MP4_TOKEN_REFRESH_INTERVAL_MS = 30_000;
+const MP4_TOKEN_EXPIRY_PAD_MS = 120_000;
 
 // --------- playlist helper ---------
 
@@ -304,6 +307,9 @@ export class VideoPlayer extends HTMLElement {
     this._pendingSeekTime = null
     this._closingRequested = false
     this._pendingCloseSaveState = undefined
+    this._mp4TokenMaintenanceTimer = undefined
+    this._mp4TokenPath = ""
+    this._mp4TokenIsHttpSource = false
   }
 
   _handleVideoPlayError = (err) => {
@@ -363,6 +369,7 @@ export class VideoPlayer extends HTMLElement {
     this.player = null
     if (this.hls) this.hls.destroy()
     this.hls = null
+    this._stopMp4TokenMaintenance()
 
     this.container.removeEventListener('dialog-resized', this._handleDialogResized)
     this.playlist.removeEventListener('hide', this._handlePlaylistHide)
@@ -457,6 +464,93 @@ export class VideoPlayer extends HTMLElement {
       this.onplay(this.player, this.titleInfo)
     }
     
+  }
+
+  _startMp4TokenMaintenance(path, isHttpSource) {
+    this._stopMp4TokenMaintenance()
+    if (!path) return
+    this._mp4TokenPath = path
+    this._mp4TokenIsHttpSource = Boolean(isHttpSource)
+    this._mp4TokenMaintenanceTimer = window.setInterval(() => {
+      void this._mp4TokenRefreshTick()
+    }, MP4_TOKEN_REFRESH_INTERVAL_MS)
+  }
+
+  _stopMp4TokenMaintenance() {
+    if (this._mp4TokenMaintenanceTimer) {
+      clearInterval(this._mp4TokenMaintenanceTimer)
+      this._mp4TokenMaintenanceTimer = undefined
+    }
+    this._mp4TokenPath = ""
+    this._mp4TokenIsHttpSource = false
+  }
+
+  async _mp4TokenRefreshTick() {
+    if (!this._mp4TokenPath || !this.videoElement) return
+    if (!isExpiringSoon(MP4_TOKEN_EXPIRY_PAD_MS)) return
+
+    try {
+      const newToken = await forceRefresh()
+      if (!newToken) return
+
+      const wasPaused = this.videoElement.paused
+      const preservedTime = this.videoElement.currentTime || 0
+      const newUrl = this._buildMp4UrlWithToken(newToken)
+      if (!newUrl) return
+
+      this.videoElement.src = newUrl
+      await this._waitForLoadedMetadata()
+
+      if (!this.videoElement) return
+      const targetTime = Math.min(preservedTime, this.videoElement.duration || preservedTime)
+      if (targetTime > 0) {
+        this.videoElement.currentTime = targetTime
+      }
+      if (!wasPaused) {
+        this.videoElement.play().catch(() => {})
+      }
+    } catch (err) {
+      console.warn("[video] mp4 token refresh failed:", err)
+    }
+  }
+
+  _buildMp4UrlWithToken(token) {
+    if (!this._mp4TokenPath) return ""
+    if (this._mp4TokenIsHttpSource) {
+      try {
+        const u = new URL(this._mp4TokenPath)
+        const params = new URLSearchParams(u.search)
+        if (token) {
+          params.set("token", token)
+        } else {
+          params.delete("token")
+        }
+        u.search = params.toString()
+        return u.toString()
+      } catch (err) {
+        console.warn("[video] invalid HTTP media URL for mp4 maintenance:", err)
+        return this._mp4TokenPath
+      }
+    }
+    return buildFileUrl(this._mp4TokenPath, token)
+  }
+
+  _waitForLoadedMetadata() {
+    return new Promise((resolve) => {
+      if (!this.videoElement) {
+        resolve()
+        return
+      }
+      if (this.videoElement.readyState >= 1) {
+        resolve()
+        return
+      }
+      const handler = () => {
+        this.videoElement?.removeEventListener("loadedmetadata", handler)
+        resolve()
+      }
+      this.videoElement.addEventListener("loadedmetadata", handler, { once: true })
+    })
   }
 
   _handleVideoTimeUpdate = () => {
@@ -645,18 +739,22 @@ export class VideoPlayer extends HTMLElement {
     this._createLoadingOverlay()
     if (!this._loadingOverlay) return
     this._loadingOverlay.style.display = 'flex'
-    this._updateLoadingOverlayText()
+    const overlayText = this._updateLoadingOverlayText() || ''
+    this.container?.setBackgroundActivity(overlayText, true)
   }
 
   _hideLoadingOverlay() {
     if (!this._loadingOverlay) return
     this._loadingOverlay.style.display = 'none'
+    this.container?.setBackgroundActivity('', false)
   }
 
   _updateLoadingOverlayText() {
-    if (!this._loadingOverlayLabel) return
+    if (!this._loadingOverlayLabel) return ''
     const title = this._loadingName || this._deriveInfoDisplayName()
-    this._loadingOverlayLabel.textContent = title ? `Loading ${title}…` : 'Loading video…'
+    const text = title ? `Loading ${title}…` : 'Loading video…'
+    this._loadingOverlayLabel.textContent = text
+    return text
   }
 
   _deriveInfoDisplayName() {
@@ -1072,6 +1170,12 @@ export class VideoPlayer extends HTMLElement {
     let token = getAuthToken()
     const isHttpSource = /^https?:\/\//i.test(urlToPlay)
     const isHlsSource = /\.m3u8($|\?)/i.test(urlToPlay)
+
+    if (!isHlsSource) {
+      this._startMp4TokenMaintenance(path, isHttpSource);
+    } else {
+      this._stopMp4TokenMaintenance();
+    }
 
     if (!isHttpSource) {
       urlToPlay = isHlsSource
