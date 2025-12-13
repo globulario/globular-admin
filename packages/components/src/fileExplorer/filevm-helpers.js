@@ -84,7 +84,7 @@ export function mimeRootOf(v) {
 }
 
 export function isPlaylistManifest(v) {
-  if (!v) return false;
+  if (!v || isDir(v)) return false;
   const name = (nameOf(v) || "").toLowerCase();
   if (name.endsWith(".m3u8")) return true;
   const mime = (mimeOf(v) || "").toLowerCase();
@@ -232,8 +232,5 @@ export function playlistPathFor(v) {
   const manifest = findPlaylistManifest(v);
   if (manifest && manifest.path) return manifest.path;
   if (v?.__playlistManifestPath) return v.__playlistManifestPath;
-  if (!isDir(v)) return "";
-  const base = pathOf(v);
-  if (!base) return "";
-  return `${base.replace(/\/$/, "")}/playlist.m3u8`;
+  return "";
 }

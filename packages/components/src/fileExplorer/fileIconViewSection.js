@@ -251,7 +251,6 @@ export class FileIconViewSection extends HTMLElement {
     refreshBtn?.addEventListener("click", () => this._handleRefreshMedia());
     downloadBtn?.addEventListener("click", () => this._handleDownloadMedia(playlist));
     playBtn?.addEventListener("click", () => this._handlePlayAllMedia());
-    copyLnkBtn?.addEventListener("click", () => this._handleCopyPlaylistLink(playlist));
 
   }
 
@@ -310,50 +309,7 @@ export class FileIconViewSection extends HTMLElement {
     }
   }
 
-  async _handleCopyPlaylistLink(playlist) {
-    const url = await this._buildPlaylistCopyUrl(playlist);
-    if (url) {
-      copyToClipboard(url);
-      displayMessage("URL was copied to clipboard.", 3000);
-    } else {
-      displayMessage("No valid playlist URL found to copy.", 3000);
-    }
-  }
 
-  // DRY: central place to figure out a playlist path/url
-  async _buildPlaylistCopyUrl(playlist) {
-    // Prefer explicit paths provided by dirVM (if any)
-    let playlistPath =
-      this._dir?.videoPlaylistPath ||
-      this._dir?.audioPlaylistPath ||
-      this._dir?.__videoPlaylist__?.path ||
-      this._dir?.__audioPlaylist__?.path;
-
-    // Fallback: derive from files (e.g., HLS)
-    if (!playlistPath && this._fileType === "video") {
-      const hls = filesOf(this._dir).find(
-        (f) => (mimeRootOf(f) === "video") && f.mime === "video/hls-stream"
-      );
-      if (hls?.path) playlistPath = `${hls.path}/playlist.m3u8`;
-    }
-    if (!playlistPath && playlist?.path) {
-      playlistPath = playlist.path;
-    }
-    if (!playlistPath) return "";
-
-    let url = buildFileHttpUrl(playlistPath);
-    const token = await tryGetAccessToken();
-    if (token) {
-      url += (url.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
-    }
-
-    const layout = document.querySelector("globular-app-layout");
-    const app = layout?.getAttribute("application");
-    if (app) {
-      url += (url.includes("?") ? "&" : "?") + `application=${encodeURIComponent(app)}`;
-    }
-    return url;
-  }
 
   _handlePlayAllMedia() {
     const files = filesOf(this._dir) || [];

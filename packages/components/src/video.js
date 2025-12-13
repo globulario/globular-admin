@@ -593,7 +593,7 @@ export class VideoPlayer extends HTMLElement {
 
   _destroyHls() {
     if (!this.hls) return
-    try { this.hls.destroy() } catch {}
+    try { this.hls.destroy() } catch { }
     this.hls = null
   }
 
@@ -705,7 +705,7 @@ export class VideoPlayer extends HTMLElement {
       const targetTime = Math.min(preservedTime, this.videoElement.duration || preservedTime)
       if (targetTime > 0) this.videoElement.currentTime = targetTime
 
-      if (!wasPaused) this.videoElement.play().catch(() => {})
+      if (!wasPaused) this.videoElement.play().catch(() => { })
     } catch (err) {
       console.warn('[video] mp4 token refresh failed:', err)
     }
@@ -777,7 +777,7 @@ export class VideoPlayer extends HTMLElement {
     }
 
     if (typeof this._pendingSeekTime === 'number' && !Number.isNaN(this._pendingSeekTime)) {
-      try { this.videoElement.currentTime = this._pendingSeekTime } catch {}
+      try { this.videoElement.currentTime = this._pendingSeekTime } catch { }
       this._pendingSeekTime = null
     }
 
@@ -1501,52 +1501,6 @@ export class VideoPlayer extends HTMLElement {
         return
       }
 
-      // 502 fallback: try playlist.m3u8
-      if (head.status === 502 && !isHlsSource) {
-        const fallback = getPlaylistUrl()
-        if (fallback) {
-          const playlistHead = await fetchHeadWithToken(fallback, token, true, true)
-          if (playlistHead.status === 200) {
-            isHlsSource = true
-            urlToPlay = fallback
-            head = playlistHead
-          } else {
-            throw new Error(`HTTP status ${playlistHead.status}`)
-          }
-        }
-      } else if (head.status !== 200) {
-        throw new Error(`HTTP status ${head.status}`)
-      }
-
-      // If mp4 path but playlist exists and looks like HLS: switch
-      if (!isHlsSource) {
-        const fallback = getPlaylistUrl()
-        if (fallback) {
-          try {
-            const playlistHead = await fetchHeadWithToken(fallback, token, true, true)
-            if (playlistHead.status === 200) {
-              const ct = (playlistHead.headers?.get('content-type') || '').toLowerCase()
-              if (/m3u8|mpegurl/.test(ct)) {
-                isHlsSource = true
-                urlToPlay = fallback
-                head = playlistHead
-              }
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      // Content-type indicates HLS
-      const contentType = (head.headers?.get('content-type') || '').toLowerCase()
-      const isHlsContent = /m3u8|mpegurl/.test(contentType)
-      if (!isHlsSource && isHlsContent && !httpSource) {
-        isHlsSource = true
-        urlToPlay = buildFileUrl(path, { includeToken: false })
-      }
-
-      this._forceHlsSource = isHlsSource
       this.playContent(path, token, urlToPlay)
     } catch (e) {
       displayError(`Failed to access video URL ${urlToPlay}: ${e.message}`)
@@ -1600,7 +1554,7 @@ export class VideoPlayer extends HTMLElement {
               this.videoElement.currentTime = watching.currentTime
             }
           },
-          () => {}
+          () => { }
         )
       }
 
@@ -1688,7 +1642,7 @@ export class VideoPlayer extends HTMLElement {
         const reason = data?.details || data?.type || 'unknown'
         displayError(`HLS fatal error: ${reason}`, 6000)
         this._hideLoadingOverlay()
-        try { this.hls?.destroy() } catch {}
+        try { this.hls?.destroy() } catch { }
         this.hls = null
         return
       }
@@ -1842,7 +1796,7 @@ export class VideoPlayer extends HTMLElement {
       if (this._playlistIsVisible()) {
         playlistWidth = this._getPlaylistWidth() || this.playlist?.offsetWidth || 0
       }
-    } catch {}
+    } catch { }
     playlistWidth = Math.max(0, playlistWidth)
 
     const viewportMaxContainerWidth = window.innerWidth * 0.95
