@@ -5,7 +5,13 @@ import { displayMessage, displayError } from "@globular/backend";
 import { copyToClipboard } from "../utility.js";
 
 // ✅ Use the shared FileVM helpers (DRY)
-import { pathOf, nameOf, filesOf, mimeRootOf } from "./filevm-helpers";
+import {
+  pathOf,
+  nameOf,
+  filesOf,
+  mimeRootOf,
+  findPlaylistManifest,
+} from "./filevm-helpers";
 
 // Proper backend wrappers (no direct HTTP fetch)
 import { readText } from "@globular/backend";
@@ -356,7 +362,13 @@ export class FileIconViewSection extends HTMLElement {
     // Collect media objects already attached by your backend (videos/audios/titles arrays)
     const toPlay = [];
     for (const f of files) {
-      if ((f?.mime || "").startsWith(wantedRoot)) {
+      const mime = (f?.mime || "").toLowerCase();
+      const playlistTarget = wantedRoot === "video" ? findPlaylistManifest(f) : null;
+      if (playlistTarget) {
+        toPlay.push(playlistTarget);
+        continue;
+      }
+      if (mime.startsWith(wantedRoot)) {
         if (wantedRoot === "video" && Array.isArray(f.videos)) toPlay.push(...f.videos);
         else if (wantedRoot === "audio" && Array.isArray(f.audios)) toPlay.push(...f.audios);
         else if (Array.isArray(f.titles)) toPlay.push(...f.titles);

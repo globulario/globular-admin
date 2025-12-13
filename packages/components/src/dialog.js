@@ -568,10 +568,10 @@ export class Dialog extends HTMLElement {
     }
 
     setCentered() {
-        if (!this._dialogElement || !this._parent) {
-            console.warn("Dialog or parent not ready for centering.");
-            return;
-        }
+    if (!this._dialogElement || !this._parent || typeof this._parent.getBoundingClientRect !== "function") {
+        console.warn("Dialog or parent not ready for centering.");
+        return;
+    }
         const parentRect = this._parent.getBoundingClientRect();
         const dialogWidth = this._dialogElement.offsetWidth;
         const dialogHeight = this._dialogElement.offsetHeight;

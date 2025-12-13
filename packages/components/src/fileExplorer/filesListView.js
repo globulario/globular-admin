@@ -29,6 +29,7 @@ import {
   filesOf,
   thumbOf,
   modTimeOf,
+  playlistPathFor,
 } from "./filevm-helpers.js";
 
 /** Human-readable size formatter (no floating bugs) */
@@ -352,6 +353,8 @@ export class FilesListView extends FilesView {
     const mime = (mimeOf(file) || "").toLowerCase();
     const isDir = isDirOf(file);
     const mimeRoot = (mime || "").split("/")[0];
+    const playlistPath = playlistPathFor(file);
+    const isPlaylist = !!playlistPath;
     const isLink = isLinkFile(file);
 
     const rowId = `row-${getUuidByString(path)}`;
@@ -369,12 +372,18 @@ export class FilesListView extends FilesView {
     if (isDir) {
       const items = filesOf(file);
       sizeDisplay = Array.isArray(items) ? `${items.length} items` : "";
-      mimeDisplay = "Folder";
-      icon = "icons:folder";
+      if (isPlaylist) {
+        mimeDisplay = "VIDEO";
+        icon = "av:movie";
+      } else {
+        mimeDisplay = "Folder";
+        icon = "icons:folder";
+      }
     } else {
       sizeDisplay = getFileSizeString(sizeOf(file) || 0);
-      mimeDisplay = (mimeRoot || "").toUpperCase();
-      icon = iconForMime(mime);
+      const effectiveRoot = isPlaylist ? "video" : mimeRoot;
+      mimeDisplay = (effectiveRoot || "").toUpperCase();
+      icon = isPlaylist ? "av:movie" : iconForMime(mime);
 
       // Use thumb if given, regardless of type; otherwise we'll show icon
       const t = thumbOf(file);
@@ -738,6 +747,14 @@ export class FilesListView extends FilesView {
     if (!explorer) return;
 
     const effective = file?.linkTarget || file;
+    const playlistPath = playlistPathFor(effective);
+    if (playlistPath) {
+      (explorer.playVideo || explorer._playMedia)?.call(explorer, playlistPath, "video");
+      this.menu?.close?.();
+      if (this.menu?.parentNode) this.menu.parentNode.removeChild(this.menu);
+      return;
+    }
+
     const dir = isDirOf(effective);
     const kind = (mimeOf(effective) || "").split("/")[0]?.toLowerCase();
 

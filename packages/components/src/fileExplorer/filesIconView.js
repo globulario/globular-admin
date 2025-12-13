@@ -13,6 +13,8 @@ import {
   nameOf,
   mimeOf,
   isDir as isDirOf,
+  hasPlaylistManifest,
+  findPlaylistManifest,
 } from "./filevm-helpers.js";
 
 
@@ -214,11 +216,16 @@ export class FilesIconView extends FilesView {
 
       const targetFile = (f && typeof f.linkTarget === "object" && f.linkTarget) ? f.linkTarget : f;
       const mime = mimeOf(targetFile) || "";
+      const hasPlaylist = hasPlaylistManifest(targetFile);
+      if (hasPlaylist && targetFile) {
+        const manifest = findPlaylistManifest(targetFile) || targetFile;
+        if (manifest?.path) targetFile.__playlistManifestPath = manifest.path;
+      }
 
       const [type, sub] = mime.split("/");
 
-      if (isDirOf(targetFile)) byType.folder.push(f);
-      else if (type === "video") byType.video.push(f);
+      if (isDirOf(targetFile) && !hasPlaylist) byType.folder.push(f);
+      else if (type === "video" || hasPlaylist) byType.video.push(f);
       else if (type === "audio") byType.audio.push(f);
       else if (type === "image") byType.image.push(f);
       else if (type === "text") byType.text.push(f);

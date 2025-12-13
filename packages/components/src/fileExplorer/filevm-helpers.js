@@ -83,6 +83,25 @@ export function mimeRootOf(v) {
   return (mimeOf(v) || "").split("/")[0] || "";
 }
 
+export function isPlaylistManifest(v) {
+  if (!v) return false;
+  const name = (nameOf(v) || "").toLowerCase();
+  if (name.endsWith(".m3u8")) return true;
+  const mime = (mimeOf(v) || "").toLowerCase();
+  if (mime === "video/hls-stream") return true;
+  if (mime.includes("mpegurl")) return true;
+  return false;
+}
+
+export function findPlaylistManifest(v) {
+  if (!v) return null;
+  if (isPlaylistManifest(v)) return v;
+  if (!isDir(v)) return null;
+  const children = filesOf(v);
+  if (!Array.isArray(children)) return null;
+  return children.find((child) => isPlaylistManifest(child)) || null;
+}
+
 export function isDir(v) {
   if (!v) return false;
   if (typeof v.getIsDir === "function") return !!v.getIsDir();
@@ -196,4 +215,25 @@ export function adaptDirVM(dirVM) {
     files: filesList
   };
   return obj;
+}
+
+export function hasPlaylistManifest(v) {
+  if (!v) return false;
+  if (isPlaylistManifest(v)) return true;
+  if (!isDir(v)) return false;
+  if (findPlaylistManifest(v)) return true;
+  const mime = (mimeOf(v) || "").toLowerCase();
+  return mime === "video/hls-stream" || mime === "video/hls";
+}
+
+export function playlistPathFor(v) {
+  if (!v) return "";
+  if (isPlaylistManifest(v)) return pathOf(v);
+  const manifest = findPlaylistManifest(v);
+  if (manifest && manifest.path) return manifest.path;
+  if (v?.__playlistManifestPath) return v.__playlistManifestPath;
+  if (!isDir(v)) return "";
+  const base = pathOf(v);
+  if (!base) return "";
+  return `${base.replace(/\/$/, "")}/playlist.m3u8`;
 }

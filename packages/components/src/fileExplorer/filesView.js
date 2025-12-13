@@ -45,6 +45,7 @@ import {
   mimeOf,
   isDir as isDirOf,
   thumbOf,
+  hasPlaylistManifest,
 } from "./filevm-helpers.js";
 import { getFileVideosInfo, getFileTitlesInfo, getFileAudiosInfo } from "@globular/backend";
 import { downloadTorrent } from "@globular/backend";
@@ -471,6 +472,8 @@ export class FilesView extends HTMLElement {
       this._contextMenu.file = file;
       const mime = (mimeOf(file) || "").toLowerCase();
       const name = nameOf(file) || "";
+      const isPlaylist = hasPlaylistManifest(file);
+      const mimeRoot = isPlaylist ? "video" : (mime.split("/")[0] || "");
 
       // Hide by default
       this._videoMenuItem.style.display = "none";
@@ -482,7 +485,7 @@ export class FilesView extends HTMLElement {
       this._openInNewTabItem.style.display = "none";
       this._refreshInfoMenuItem.style.display = "none";
 
-      if (mime.startsWith("video")) {
+      if (mimeRoot === "video") {
         this._titleInfosMenuItem.style.display = "block";
         this._videoMenuItem.style.display = "block";
         this._openInNewTabItem.style.display = "block";
@@ -490,7 +493,7 @@ export class FilesView extends HTMLElement {
         this._generatePreviewItem.style.display = "block";
         if (name.toLowerCase().endsWith(".mp4")) {
           this._toHlsMenuItem.style.display = "block";
-        } else if (mime !== "video/hls-stream") {
+        } else if (!isPlaylist && mime !== "video/hls-stream") {
           this._toMp4MenuItem.style.display = "block";
         }
       } else if (mime.startsWith("audio") || file.videos || file.titles) {

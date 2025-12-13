@@ -15,6 +15,8 @@ import {
   mimeOf,
   isDir as isDirVM,
   thumbOf,
+  playlistPathFor,
+  hasPlaylistManifest,
 } from "./filevm-helpers";
 
 // UI deps
@@ -51,6 +53,7 @@ export class FileIconView extends HTMLElement {
   _fileExplorer = null;
   _dom = {};
   _displayFile = null;
+  _playlistTarget = null;
 
   constructor() {
     super();
@@ -356,9 +359,19 @@ export class FileIconView extends HTMLElement {
     const isShortcut = hasLinkFlag(baseFile);
     this._setShortcutBadge(isShortcut);
 
-    const kind = mimeRootOf(displayFile);
+    const playlistPath = playlistPathFor(displayFile);
+    this._playlistPath = playlistPath;
+    const kind = playlistPath ? "video" : mimeRootOf(displayFile);
     if (kind === "video") {
-      await this._renderVideo(displayFile);
+      const previewSource = playlistPath
+        ? {
+            path: playlistPath,
+            getPath: () => playlistPath,
+            getName: () => playlistPath.split("/").pop() || "",
+            getMime: () => "video/hls-stream",
+          }
+        : displayFile;
+      await this._renderVideo(previewSource);
       return;
     }
 
@@ -433,26 +446,35 @@ export class FileIconView extends HTMLElement {
 
   /* ---------- Private: Actions ---------- */
   _handleOpen() {
+    const explorer = this._fileExplorer || this._fileExplorer;
+    if (!explorer) return;
+
     const effective = this._file?.linkTarget || this._displayFile || this._file;
-    if (isDirVM(effective)) {
-      if (this._fileExplorer?.publishSetDirEvent) {
-        this._fileExplorer.publishSetDirEvent(pathOf(effective));
-      } else {
-        const feId = this._fileExplorer?._id || this._fileExplorer?.id;
-        Backend.eventHub.publish(
-          "__set_dir_event__",
-          { dir: effective, file_explorer_id: feId },
-          true
-        );
-      }
+    const playlistPath = hasPlaylistManifest(effective) ? playlistPathFor(effective) : "";
+    if (playlistPath) {
+      (explorer.playVideo || explorer._playMedia)?.call(explorer, playlistPath, "video");
+      const menu = this._activeMenu();
+      menu?.close?.();
+      if (menu?.parentNode) menu.parentNode.removeChild(menu);
       return;
     }
 
+    const dir = isDirVM(effective);
     const kind = mimeRootOf(effective);
-    if (kind === "video") this._fileExplorer?.playVideo?.(effective);
-    else if (kind === "audio") this._fileExplorer?.playAudio?.(effective);
-    else if (kind === "image") this._fileExplorer?.showImage?.(effective);
-    else this._fileExplorer?.readFile?.(effective);
+
+    if (dir) {
+      explorer.publishSetDirEvent?.(pathOf(effective));
+    } else {
+      if (kind === "video") {
+        (explorer.playVideo || explorer._playMedia)?.call(explorer, effective, "video");
+      } else if (kind === "audio") {
+        (explorer.playAudio || explorer._playMedia)?.call(explorer, effective, "audio");
+      } else if (kind === "image") {
+        (explorer.showImage || explorer._showImage)?.call(explorer, effective);
+      } else {
+        (explorer.readFile || explorer._readFile)?.call(explorer, effective);
+      }
+    }
 
     const menu = this._activeMenu();
     menu?.close?.();
@@ -604,6 +626,7 @@ function hasLinkFlag(v) { return isLinkFile(v); }
 
 function sectionNameForFile(file) {
   if (!file) return "other";
+  if (hasPlaylistManifest(file)) return "video";
   if (isDirVM(file)) return "folder";
   const root = (mimeRootOf(file) || "").toLowerCase();
   if (root === "video") return "video";
