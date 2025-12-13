@@ -359,24 +359,24 @@ export class FileIconView extends HTMLElement {
     const isShortcut = hasLinkFlag(baseFile);
     this._setShortcutBadge(isShortcut);
 
+    const isDir = isDirVM(displayFile);
     const playlistPath = playlistPathFor(displayFile);
-    this._playlistPath = playlistPath;
-    const kind = playlistPath ? "video" : mimeRootOf(displayFile);
-    if (kind === "video") {
-      const previewSource = playlistPath
-        ? {
-            path: playlistPath,
-            getPath: () => playlistPath,
-            getName: () => playlistPath.split("/").pop() || "",
-            getMime: () => "video/hls-stream",
-          }
-        : displayFile;
-      await this._renderVideo(previewSource);
+    const isHlsDir = isDir && playlistPath && hasPlaylistManifest(displayFile);
+
+    if (isHlsDir) {
+      await this._renderVideo(this._file);
       return;
     }
 
-    if (isDirVM(displayFile)) {
+
+    if (isDir) {
       await this._renderFolder(displayFile);
+      return;
+    }
+
+    const kind = mimeRootOf(displayFile);
+    if (kind === "video") {
+      await this._renderVideo(displayFile);
       return;
     }
 
@@ -399,6 +399,7 @@ export class FileIconView extends HTMLElement {
   }
 
   async _renderVideo(f) {
+
     const preview = new VideoPreview();
     this._preview = preview;
     const cleanup = () => {
@@ -432,7 +433,6 @@ export class FileIconView extends HTMLElement {
 
   async _renderFolder(f) {
     const folderIconEl = this._appendIcon(FOLDER_ICON);
-
   }
 
   _setDisplayName(name) {

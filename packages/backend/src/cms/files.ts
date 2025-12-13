@@ -1043,16 +1043,32 @@ export async function readBinary(path: string): Promise<Uint8Array> {
   let o = 0; for (const c of chunks) { buf.set(c, o); o += c.byteLength; }
   return buf;
 }
-
 export async function getHiddenFiles(path: string, subDirName: string): Promise<DirVM | null> {
+
   try {
+    if (!path) return null;
+    // 1) normalize: remove trailing slashes except for root
     let basePath = path;
+    while (basePath.length > 1 && basePath.endsWith("/")) {
+      basePath = basePath.slice(0, -1);
+    }
+
+    // 2) If it's a media file, strip extension (your original intent)
     if (/\.(mp3|mp4|mkv|avi|webm|flac|mov|wav|ogg|aac|flv|wmv|3gp|m4v|mpg|mpeg)$/i.test(basePath)) {
       basePath = basePath.substring(0, basePath.lastIndexOf("."));
     }
-    const dir = basePath.substring(0, basePath.lastIndexOf("/") + 1);
-    const leaf = basePath.substring(basePath.lastIndexOf("/"));
-    const hiddenDirPath = `${dir}.hidden${leaf}/${subDirName}`;
+
+    // 3) Split into parent dir + leaf name safely
+    const lastSlash = basePath.lastIndexOf("/");
+    if (lastSlash < 0) return null;
+
+    const dir = basePath.substring(0, lastSlash + 1);      // includes trailing "/"
+    const leafName = basePath.substring(lastSlash + 1);    // no leading "/"
+    if (!leafName) return null;
+
+    // 4) Compose: <parent>/.hidden/<leaf>/<subdir>
+    const hiddenDirPath = `${dir}.hidden/${leafName}/${subDirName}`;
+
     return await readDirFresh(hiddenDirPath, { recursive: false }).promise.catch(() => null);
   } catch (e) {
     console.warn(`getHiddenFiles failed for ${path}:`, e);

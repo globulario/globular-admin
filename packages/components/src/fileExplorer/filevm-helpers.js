@@ -5,9 +5,18 @@ import { metadata } from "@globular/backend";
 
 export function pathOf(v) {
   if (!v) return "";
-  if (typeof v === "string") return v;
-  if (typeof v.getPath === "function") return v.getPath() || "";
-  return v.path || "";
+  let p = "";
+
+  if (typeof v === "string") p = v;
+  else if (typeof v.getPath === "function") p = v.getPath() || "";
+  else p = v.path || "";
+
+  // normalize: remove trailing slashes except for root "/"
+  if (p.length > 1) {
+    while (p.endsWith("/")) p = p.slice(0, -1);
+  }
+
+  return p;
 }
 
 export function nameOf(v) {

@@ -226,17 +226,36 @@ export class VideoPreview extends HTMLElement {
   // Internals
   // ---------------------------------------------------------------------------
 
+  // src/components/video/videoPreview.js
+
   _getPath() {
     if (!this._file) return "";
-    const target =
-      (typeof this._file.getLinkTarget === "function" && this._file.getLinkTarget()) ||
-      this._file.linkTarget;
-    if (target) {
-      const targetPath = pathOf(target);
-      if (targetPath) return targetPath;
+
+    const previewPathGetter =
+      (typeof this._file.getPreviewPath === "function" && this._file.getPreviewPath()) ||
+      this._file.previewPath;
+
+    let p = previewPathGetter || "";
+
+    if (!p) {
+      const target =
+        (typeof this._file.getLinkTarget === "function" && this._file.getLinkTarget()) ||
+        this._file.linkTarget;
+
+      if (target) {
+        const targetPath = pathOf(target);
+        if (targetPath) p = targetPath;
+      }
     }
-    return pathOf(this._file);
+
+    if (!p) p = pathOf(this._file);
+
+    // normalize here as well (defensive)
+    if (p.length > 1) while (p.endsWith("/")) p = p.slice(0, -1);
+
+    return p;
   }
+
 
   _getPrimaryThumbnail() {
     if (!this._file) return "";
@@ -327,6 +346,7 @@ export class VideoPreview extends HTMLElement {
     try {
       // .hidden/<basename>/__preview__
       const dir = await getHiddenFiles(path, "__preview__");
+
       const list = (dir && dir.files) || [];
       if (list.length === 0) {
         this._emitTimelineLoaded(false);
