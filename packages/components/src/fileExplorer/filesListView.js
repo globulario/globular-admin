@@ -742,21 +742,44 @@ export class FilesListView extends FilesView {
     if (menuBtn) menuBtn.style.visibility = "hidden";
   }
 
-  _handleFileOpen(file) {
+  async _handleFileOpen(file) {
     const explorer = this._fileExplorer || this._fileExplorer;
     if (!explorer) return;
 
-    const effective = file?.linkTarget || file;
+    let effective = file;
+    if (isLinkFile(file)) {
+      effective = file.linkTarget || file;
+      if (!file.linkTarget) {
+        try {
+          const target = await loadLinkTarget(file);
+          if (target) effective = target;
+        } catch (err) {
+          console.warn("Failed to resolve link target before opening file", err);
+        }
+      }
+    } else if (file?.linkTarget) {
+      effective = file.linkTarget;
+    }
+
     const playlistPath = playlistPathFor(effective);
-    if (playlistPath) {
-      (explorer.playVideo || explorer._playMedia)?.call(explorer, playlistPath, "video");
+    const mime = (mimeOf(effective) || "").toLowerCase();
+    const dir = isDirOf(effective);
+    const kind = mime.split("/")[0]?.toLowerCase();
+    const isHlsDir = dir && (mime === "video/hls-stream" || mime === "video/hls");
+    const dirPath = pathOf(effective) || "";
+    const normalizedDirPath = dirPath.replace(/\/$/, "");
+    const fallbackPlaylist =
+      isHlsDir && dirPath
+        ? `${normalizedDirPath || ""}/playlist.m3u8` // assume standard playlist name when only MIME hint is available
+        : "";
+
+    const playlistUrl = playlistPath || fallbackPlaylist;
+    if (playlistUrl) {
+      (explorer.playVideo || explorer._playMedia)?.call(explorer, playlistUrl, "video");
       this.menu?.close?.();
       if (this.menu?.parentNode) this.menu.parentNode.removeChild(this.menu);
       return;
     }
-
-    const dir = isDirOf(effective);
-    const kind = (mimeOf(effective) || "").split("/")[0]?.toLowerCase();
 
     if (dir) {
       explorer.publishSetDirEvent?.(pathOf(effective));

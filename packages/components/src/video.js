@@ -238,7 +238,8 @@ function computePlaylistSourcePath(path) {
 }
 
 /**
- * HEAD helper (preserves your headers behavior).
+ * Fetch a tiny chunk from the target URL so we can read status + auth headers.
+ * We use a ranged GET instead of HEAD to avoid servers that reject HEAD requests.
  */
 async function fetchHeadWithToken(url, token, forceHlsHeaders = false, isHlsSource = false) {
   const headers = {}
@@ -246,7 +247,17 @@ async function fetchHeadWithToken(url, token, forceHlsHeaders = false, isHlsSour
     headers['Authorization'] = `Bearer ${token}`
     headers['token'] = token
   }
-  return fetch(url, { method: 'HEAD', headers })
+
+  const rangedHeaders = { ...headers, Range: 'bytes=0-0' }
+  const doPlainFetch = () => fetch(url, { method: 'GET', headers })
+
+  try {
+    const res = await fetch(url, { method: 'GET', headers: rangedHeaders })
+    if (res.status === 416) return doPlainFetch()
+    return res
+  } catch {
+    return doPlainFetch()
+  }
 }
 
 /** Locate subtitles next to a video file using readDir (no globule). */
@@ -1604,10 +1615,10 @@ export class VideoPlayer extends HTMLElement {
     this.hls = new Hls({
       loader: makeTokenLoader(),
       xhrSetup: (xhr) => {
-        const freshToken = getAuthToken()
-        if (freshToken) {
-          xhr.setRequestHeader('Authorization', `Bearer ${freshToken}`)
-          xhr.setRequestHeader('token', freshToken)
+        const authToken = token || getAuthToken()
+        if (authToken) {
+          xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+          xhr.setRequestHeader('token', authToken)
         }
       }
     })

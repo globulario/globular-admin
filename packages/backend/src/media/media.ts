@@ -122,6 +122,37 @@ export async function listMediaFiles(
   if (typeof onComplete === "function") onComplete();
 }
 
+// -------------------------- Channel sync ---------------------------
+
+export async function syncChannelFromPlaylist(playlistJson: string): Promise<mediapb.Channel | null> {
+  const md = await meta();
+  const rq = new mediapb.SyncChannelFromPlaylistRequest();
+  rq.setPlaylistJson(playlistJson);
+  const rsp: any = await unary(clientFactory, "syncChannelFromPlaylist", rq, undefined, md);
+  return (rsp && typeof rsp.getChannel === "function") ? rsp.getChannel() : null;
+}
+
+export async function getChannel(id: string, path?: string): Promise<mediapb.Channel | null> {
+  const md = await meta();
+  const rq = new mediapb.GetChannelRequest();
+  rq.setId(id);
+  if (path) rq.setPath(path);
+  const rsp: any = await unary(clientFactory, "getChannel", rq, undefined, md);
+  return (rsp && typeof rsp.getChannel === "function") ? rsp.getChannel() : null;
+}
+
+export async function listChannels(path?: string, extractor?: string): Promise<mediapb.Channel[]> {
+  const md = await meta();
+  const rq = new mediapb.ListChannelsRequest();
+  if (path) rq.setPath(path);
+  if (extractor) rq.setExtractor(extractor);
+  const rsp: any = await unary(clientFactory, "listChannels", rq, undefined, md);
+  if (rsp && typeof rsp.getChannelsList === "function") {
+    return rsp.getChannelsList();
+  }
+  return [];
+}
+
 // ----------------------- Video worker (global) -----------------------
 
 /** Start the background video processing worker (no specific path). */

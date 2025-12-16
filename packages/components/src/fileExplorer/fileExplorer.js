@@ -54,7 +54,17 @@ import "../menu.js";
 import { FilesUploader } from './fileUploader';
 
 // ✅ helpers centralize VM/proto normalization
-import { adaptFileVM, adaptDirVM, extractPath, mimeOf, pathOf, nameOf, thumbOf } from "./filevm-helpers.js";
+import {
+  adaptFileVM,
+  adaptDirVM,
+  extractPath,
+  mimeOf,
+  pathOf,
+  nameOf,
+  thumbOf,
+  isDir,
+  findPlaylistManifest,
+} from "./filevm-helpers.js";
 
 function getElementIndex(element) {
   return Array.from(element.parentNode.children).indexOf(element);
@@ -2232,7 +2242,25 @@ export class FileExplorer extends HTMLElement {
     let videoInfo = null;
     if (file?.videos?.length > 0) videoInfo = file.videos[0];
     else if (file?.titles?.length > 0) videoInfo = file.titles[0];
-    const path = extractPath(file);
+    const rawPath = extractPath(file);
+    if (!rawPath) {
+      displayError("Invalid file path.", 3000);
+      this.resume();
+      return;
+    }
+    const path = (() => {
+      if (!rawPath) return rawPath;
+      if (!isDir(file)) return rawPath;
+
+      const manifest = findPlaylistManifest(file);
+      if (manifest) {
+        const manifestPath = extractPath(manifest);
+        if (manifestPath) return manifestPath;
+      }
+
+      return `${rawPath}/playlist.m3u8`;
+    })();
+
     if (!path) {
       displayError("Invalid file path.", 3000);
       this.resume();
