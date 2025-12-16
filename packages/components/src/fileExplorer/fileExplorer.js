@@ -764,9 +764,12 @@ export class FileExplorer extends HTMLElement {
           if (!file) throw new Error("File not found.");
           const f = adaptFileVM(file);
           this._closeSharePanel();
-          const isDir = f.getIsDir();
+          console.log("Following link to file:", f);
+
           const mime = f.getMime();
           const p = f.getPath();
+          const isDir = f.getIsDir() && !mime.startsWith("video");
+
           if (isDir) this.publishSetDirEvent(p);
           else if ((mime || "").startsWith("video")) { this.playVideo(f); }
           else if ((mime || "").startsWith("audio")) { this.playAudio(f); }
@@ -962,7 +965,7 @@ export class FileExplorer extends HTMLElement {
       true,
       this
     )
-    
+
     Backend.eventHub.subscribe("__refresh_media_request__",
       (uuid) => { this._listeners["__refresh_media_request__"] = uuid; },
       async (evt) => {
@@ -2607,7 +2610,7 @@ export class FileExplorer extends HTMLElement {
     if (event && uuid) {
       try {
         Backend.eventHub.unsubscribe(event, uuid);
-      } catch {}
+      } catch { }
     }
     this._currentInfoInvalidationSub = { event: null, uuid: null };
   }

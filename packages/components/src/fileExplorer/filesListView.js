@@ -762,10 +762,15 @@ export class FilesListView extends FilesView {
     }
 
     const playlistPath = playlistPathFor(effective);
-    const mime = (mimeOf(effective) || "").toLowerCase();
+    const rawEffectiveMime = (mimeOf(effective) || "").toLowerCase();
+    const originalMime = (mimeOf(file) || "").toLowerCase();
+    const effectiveMime = rawEffectiveMime || originalMime;
     const dir = isDirOf(effective);
-    const kind = mime.split("/")[0]?.toLowerCase();
-    const isHlsDir = dir && (mime === "video/hls-stream" || mime === "video/hls");
+    const kind = effectiveMime.split("/")[0]?.toLowerCase();
+    const isHlsMime = (v) => v === "video/hls-stream" || v === "video/hls";
+    const isHlsDir =
+      dir &&
+      (isHlsMime(rawEffectiveMime) || isHlsMime(originalMime) || isHlsMime(effectiveMime));
     const dirPath = pathOf(effective) || "";
     const normalizedDirPath = dirPath.replace(/\/$/, "");
     const fallbackPlaylist =
