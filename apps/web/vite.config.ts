@@ -44,7 +44,41 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/admin.AdminService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/services_manager.ServicesManagerService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/applications_manager.ApplicationManagerService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/persistence.PersistenceService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/media.MediaService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
       },
+    },
+    // Force Vite to pre-bundle (CJS→ESM) modules from the symlinked
+    // globular-web-client package that Vite would otherwise skip.
+    optimizeDeps: {
+      include: [
+        'globular-web-client/clustercontroller/clustercontroller_pb',
+        'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb',
+        'globular-web-client/clustercontroller/plan_pb',
+      ],
     },
     build: {
       outDir: 'dist',
