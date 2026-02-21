@@ -1,4 +1,4 @@
-import { getBaseUrl } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 import { PersistenceServiceClient } from "globular-web-client/persistence/persistence_grpc_web_pb";
@@ -8,7 +8,7 @@ const SERVICE_NAME = "persistence.PersistenceService";
 type ByteArray = Uint8Array<ArrayBufferLike>;
 
 function clientFactory(base?: string): PersistenceServiceClient {
-  const url = base ?? getBaseUrl() ?? "";
+  const url = serviceSubdomainUrl('persistence.PersistenceService', base);
   return new PersistenceServiceClient(url, null, { withCredentials: true });
 }
 

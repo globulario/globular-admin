@@ -1,6 +1,6 @@
 // backend/event.ts
 import { EventServicePromiseClient } from "globular-web-client/event/event_grpc_web_pb";
-import { getBaseUrl } from "../core/endpoints"
+import { serviceSubdomainUrl } from "../core/endpoints"
 import {
   OnEventRequest,
   PublishRequest,
@@ -42,7 +42,7 @@ type EventClientOptions = {
  * - If a token is provided, adds Authorization/Token headers to every call via interceptors
  */
 export function getEventClient(opts: EventClientOptions = {}): EventServicePromiseClient {
-  const base = opts.baseUrl ?? getBaseUrl() ?? ""
+  const base = serviceSubdomainUrl('event.EventService', opts.baseUrl)
 
   // Minimal options: send cookies for domains using cookie auth
   const options: any = { withCredentials: true }

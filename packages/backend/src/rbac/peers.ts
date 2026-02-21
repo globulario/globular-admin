@@ -1,5 +1,5 @@
 // src/backend/peers.ts
-import { getBaseUrl } from '../core/endpoints'
+import { getBaseUrl, serviceSubdomainUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 
 // ---- Generated stubs (adjust import paths if needed) ----
@@ -33,11 +33,11 @@ export type DiscoveredHost = {
 
 // ------------------------------ clients / meta ------------------------------
 function resourceClient(): ResourceServiceClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('resource.ResourceService')
   return new ResourceServiceClient(base, null, { withCredentials: true })
 }
 function adminClient(): AdminServiceClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('admin.AdminService')
   return new AdminServiceClient(base, null, { withCredentials: true })
 }
 

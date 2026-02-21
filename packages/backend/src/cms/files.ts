@@ -2,7 +2,7 @@
 // Unified, typed backend wrapper for the File service.
 // Proto alignment: FileInfo { name,size,mode,mode_time,is_dir,path,mime,thumbnail,checksum,metadata,files[] }
 
-import { getBaseUrl } from "../core/endpoints";
+import { getBaseUrl, serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- Generated stubs (adjust paths if needed) ----
@@ -327,7 +327,7 @@ export function getFilesCache(): FilesCache | null { return _cache; }
 
 /* ------------------------------ helpers ------------------------------ */
 function clientFactory(): FileServiceClient {
-  const base = getBaseUrl() ?? '';
+  const base = serviceSubdomainUrl('file.FileService');
   return new FileServiceClient(base, null, { withCredentials: true });
 }
 

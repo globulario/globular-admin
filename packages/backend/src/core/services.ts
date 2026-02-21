@@ -3,14 +3,14 @@
 // Mirrors the style used in backend/rbac/* modules.
 
 import { unary } from "./rpc";
-import { getBaseUrl } from "./endpoints";
+import { serviceSubdomainUrl } from "./endpoints";
 
 // ---- Generated stubs (adjust paths if needed) ----
 import { ServicesManagerServiceClient } from "globular-web-client/services_manager/services_manager_grpc_web_pb";
 import * as sm from "globular-web-client/services_manager/services_manager_pb";
 
 function clientFactory(): ServicesManagerServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('services_manager.ServicesManagerService');
   return new ServicesManagerServiceClient(base, null, { withCredentials: true });
 }
 

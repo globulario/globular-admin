@@ -1,11 +1,9 @@
 // src/backend/core/network.ts
-import { getBaseUrl } from './endpoints'
+import { getConfig, requireBaseUrl, serviceSubdomainUrl } from './endpoints'
 import { unary } from './rpc'
 
-// Adjust these imports to your actual generated packages
-// (examples shown; replace with your real service)
 import { AdminServiceClient } from 'globular-web-client/admin/admin_grpc_web_pb'
-import * as adminpb from 'globular-web-client/admin/admin_pb'
+import * as clustercontrollerpb from 'globular-web-client/clustercontroller/clustercontroller_pb'
 
 export type Iface = {
   name: string
@@ -24,7 +22,7 @@ export type NetworkSummary = {
 }
 
 function client(): AdminServiceClient {
-  const addr = getBaseUrl() ?? ''
+  const addr = serviceSubdomainUrl('admin.AdminService')
   return new AdminServiceClient(addr, null, { withCredentials: true })
 }
 
@@ -36,42 +34,50 @@ async function metadata(): Promise<Record<string, string>> {
 }
 
 /**
- * Fetch a summary of network settings from backend.
- * TODO: Replace request/response with your exact proto classes.
+ * Fetch a summary of network settings from the backend.
+ *
+ * Hostname comes from AdminService.listNodes → first node's NodeIdentity.
+ * IPs from NodeIdentity.ips are mapped to Iface entries.
+ * Falls back to /config for hostname when listNodes is unavailable.
+ * DNS servers and default gateway are not exposed by the current API.
  */
 export async function fetchNetworkSummary(): Promise<NetworkSummary> {
   const c = client()
   const md = await metadata()
 
-  // Support two common generator names (adjust to your build)
-  const Rq = (adminpb as any).GetNetworkInfoRqst || (adminpb as any).getNetworkInfoRequest
-  const rq = Rq ? new Rq() : {}
+  let hostname: string = location.hostname
+  let interfaces: Iface[] = []
 
-  const rsp: any = await unary(() => c, 'getNetworkInfo', rq, undefined, md)
+  try {
+    const rq = new clustercontrollerpb.ListNodesRequest()
+    const rsp = await unary<
+      clustercontrollerpb.ListNodesRequest,
+      clustercontrollerpb.ListNodesResponse
+    >(() => c, 'listNodes', rq, undefined, md)
 
-  // Try both accessor styles
-  const hostname: string =
-    typeof rsp.getHostname === 'function' ? rsp.getHostname() : (rsp.hostname || location.hostname)
+    const nodes = rsp.getNodesList()
+    if (nodes.length > 0) {
+      const identity = nodes[0].getIdentity()
+      if (identity) {
+        hostname = identity.getHostname() || hostname
+        const ips = identity.getIpsList()
+        interfaces = ips
+          .filter(ip => !!ip)
+          .map(ip => ({
+            name: ip,
+            ipv4: !ip.includes(':') ? [ip] : [],
+            ipv6: ip.includes(':') ? [ip] : [],
+          } satisfies Iface))
+      }
+    }
+  } catch {
+    // listNodes failing is non-fatal; fall back to /config for hostname
+    const cfg = await getConfig()
+    if (cfg) hostname = (cfg as any).Name || hostname
+  }
 
-  const dns: string[] =
-    typeof rsp.getDnsServersList === 'function' ? rsp.getDnsServersList() : (rsp.dnsServers || [])
-
-  const gw: string | undefined =
-    typeof rsp.getDefaultGateway === 'function' ? rsp.getDefaultGateway() : rsp.defaultGateway
-
-  const list: any[] =
-    typeof rsp.getInterfacesList === 'function' ? rsp.getInterfacesList() : (rsp.interfaces || [])
-
-  const interfaces: Iface[] = list.map((i: any) => ({
-    name: call(i, 'getName') ?? '',
-    mac: call(i, 'getMac'),
-    ipv4: callArr(i, 'getIpv4List'),
-    ipv6: callArr(i, 'getIpv6List'),
-    up: callBool(i, 'getUp'),
-    mtu: callNum(i, 'getMtu'),
-  }))
-
-  return { hostname, interfaces, dnsServers: dns, defaultGateway: gw }
+  // DNS servers and default gateway are not available from the current API
+  return { hostname, interfaces, dnsServers: [] }
 }
 
 // Apply changes. Keep small and composable so you can gate each call with RBAC.
@@ -81,35 +87,13 @@ export type NetworkUpdate = Partial<{
 }>
 
 /**
- * Persist a subset of network settings.
- * TODO: Replace with your real proto/method(s) or split per-field as needed.
+ * Persist network settings.
+ *
+ * Note: the current AdminService API does not expose hostname or DNS
+ * as writable fields. This function is a stub — implement once the
+ * backend provides an appropriate RPC (e.g. UpdateClusterNetwork).
  */
-export async function applyNetworkUpdate(update: NetworkUpdate): Promise<void> {
-  const c = client()
-  const md = await metadata()
-
-  const Rq = (adminpb as any).UpdateNetworkInfoRqst || (adminpb as any).updateNetworkInfoRequest
-  const rq: any = Rq ? new Rq() : {}
-
-  if (update.hostname && typeof rq.setHostname === 'function') rq.setHostname(update.hostname)
-  if (update.dnsServers && typeof rq.setDnsServersList === 'function') rq.setDnsServersList(update.dnsServers)
-
-  await unary(() => c, 'updateNetworkInfo', rq, '', md)
-}
-
-/* ----------------- small helpers to read optional getters ----------------- */
-function call(obj: any, getter: string): string | undefined {
-  return typeof obj?.[getter] === 'function' ? obj[getter]() : obj?.[getter.replace(/^get/i, '')]
-}
-function callArr(obj: any, getter: string): string[] {
-  const v = typeof obj?.[getter] === 'function' ? obj[getter]() : obj?.[getter.replace(/^get/i, '')]
-  return Array.isArray(v) ? v : (v ? [String(v)] : [])
-}
-function callBool(obj: any, getter: string): boolean | undefined {
-  const v = typeof obj?.[getter] === 'function' ? obj[getter]() : obj?.[getter.replace(/^get/i, '')]
-  return typeof v === 'boolean' ? v : undefined
-}
-function callNum(obj: any, getter: string): number | undefined {
-  const v = typeof obj?.[getter] === 'function' ? obj[getter]() : obj?.[getter.replace(/^get/i, '')]
-  return typeof v === 'number' ? v : (typeof v === 'string' ? Number(v) : undefined)
+export async function applyNetworkUpdate(_update: NetworkUpdate): Promise<void> {
+  // TODO: implement when backend exposes UpdateClusterNetwork or equivalent
+  throw new Error('applyNetworkUpdate: not yet implemented — no backend RPC available')
 }

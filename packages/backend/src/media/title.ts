@@ -1,5 +1,5 @@
 // src/backend/media/title.ts
-import { getBaseUrl } from "../core/endpoints";
+import { getBaseUrl, serviceSubdomainUrl } from "../core/endpoints";
 import { stream, unary } from "../core/rpc";
 import { decodeJwtPayload } from "../core/session";
 
@@ -19,7 +19,7 @@ const SERVICE_NAME = "title.TitleService";   // gRPC fully-qualified service nam
  * ===================================================================================== */
 
 function clientFactory(): TitleServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('title.TitleService');
   return new TitleServiceClient(base, null, { withCredentials: true });
 }
 

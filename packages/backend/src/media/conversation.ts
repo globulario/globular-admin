@@ -1,5 +1,5 @@
 // src/backend/conversation.ts
-import { getBaseUrl } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- stubs (adjust paths if needed) ----
@@ -11,7 +11,7 @@ import * as convpb from "globular-web-client/conversation/conversation_pb";
  * ===================================================================================== */
 
 function clientFactory(): ConversationServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('conversation.ConversationService');
   return new ConversationServiceClient(base, null, { withCredentials: true });
 }
 

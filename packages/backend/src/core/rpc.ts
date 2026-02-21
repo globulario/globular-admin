@@ -1,5 +1,5 @@
 import { metadata, ensureFreshToken } from "./auth";
-import { serviceHost, serviceUrl } from "./endpoints";
+import { serviceHost, serviceSubdomainUrl } from "./endpoints";
 import { normalizeError } from "./errors";
 import * as grpcWeb from "grpc-web";
 
@@ -90,7 +90,7 @@ export async function stream<TReq, TMsg>(
   // Best-effort proactive refresh before opening the stream
   try { await ensureFreshToken(60_000); } catch { /* ignore */ }
 
-  const addr = serviceUrl(serviceId, opts?.base);
+  const addr = serviceSubdomainUrl(serviceId, opts?.base);
   const client = clientFactory(addr);
 
   const startOnce = (headers: Record<string, string>) =>

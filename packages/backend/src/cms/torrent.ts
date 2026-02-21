@@ -4,7 +4,7 @@
 /* ------------------------------------------------------------------
  * Core deps (same helpers used by accounts.ts/files.ts)
  * ------------------------------------------------------------------ */
-import { getBaseUrl } from "../core/endpoints"
+import { serviceSubdomainUrl } from "../core/endpoints"
 import { unary, stream } from "../core/rpc"
 
 // ---- Generated stubs (adjust paths if needed) ----
@@ -15,7 +15,7 @@ import * as tp from "globular-web-client/torrent/torrent_pb"
  * Internals
  * ------------------------------------------------------------------ */
 function clientFactory(): TorrentServiceClient {
-  const base = getBaseUrl() ?? ""
+  const base = serviceSubdomainUrl('torrent.TorrentService')
   return new TorrentServiceClient(base, null, { withCredentials: true })
 }
 

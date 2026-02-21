@@ -1,5 +1,5 @@
 // src/backend/media.ts
-import { getBaseUrl } from "../core/endpoints";
+import { getBaseUrl, serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- stubs ----
@@ -9,7 +9,7 @@ export type MediaFilePB = mediapb.MediaFile;
 
 // keep this identical to accounts.ts
 function clientFactory(): MediaServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('media.MediaService');
   return new MediaServiceClient(base, null, { withCredentials: true });
 }
 

@@ -2,7 +2,7 @@
 // Groups backend in the same style as src/backend/rbac/accounts.ts
 
 import { unary, stream } from "../core/rpc"
-import { getBaseUrl } from "../core/endpoints"
+import { serviceSubdomainUrl } from "../core/endpoints"
 
 // ---- Generated stubs (adjust paths if needed) ----
 import { ResourceServiceClient } from "globular-web-client/resource/resource_grpc_web_pb"
@@ -74,7 +74,7 @@ const SERVICE_METHODS = {
 // ---------------------------- Helpers ---------------------------
 
 function clientFactory(): ResourceServiceClient {
-  const base = getBaseUrl() ?? ""
+  const base = serviceSubdomainUrl('resource.ResourceService')
   return new ResourceServiceClient(base, null, { withCredentials: true })
 }
 

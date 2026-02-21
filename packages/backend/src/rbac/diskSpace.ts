@@ -11,11 +11,11 @@ import {
 // 🔽 Use your auth + unary helpers
 import { unary } from "../core/rpc";              // <- this is the file that exports the unary() helper you pasted
 import { RbacServiceClient } from "globular-web-client/rbac/rbac_grpc_web_pb";
-import { getBaseUrl } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 // (You don't need serviceHost/serviceUrl here because we reuse the ready client instance on globule.)
 
 function clientFactory(): RbacServiceClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('rbac.RbacService')
   return new RbacServiceClient(base, null, { withCredentials: true })
 }
 

@@ -1,5 +1,5 @@
 // src/backend/apps.ts
-import { getBaseUrl } from '../core/endpoints'
+import { serviceSubdomainUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 
 // ---- Generated stubs (adjust import paths if needed) ----
@@ -43,19 +43,19 @@ export type ApplicationVM = {
 
 // ------------------------------ clients / meta ------------------------------
 function clientFactory(): ResourceServiceClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('resource.ResourceService')
   return new ResourceServiceClient(base, null, { withCredentials: true })
 }
 function appMgrClient(): ApplicationManagerServiceClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('applications_manager.ApplicationManagerService')
   return new ApplicationManagerServiceClient(base, null, { withCredentials: true })
 }
 function discoveryClient(): PackageDiscoveryClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('discovery.PackageDiscovery')
   return new PackageDiscoveryClient(base, null, { withCredentials: true })
 }
 function repositoryClient(): PackageRepositoryClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('repository.PackageRepository')
   return new PackageRepositoryClient(base, null, { withCredentials: true })
 }
 

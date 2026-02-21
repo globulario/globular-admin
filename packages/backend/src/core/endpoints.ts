@@ -145,3 +145,41 @@ function safeJoin(base: string, path: string): string {
 export function serviceHost(base = requireBaseUrl()): string {
   return base.replace(/\/+$/, '');
 }
+
+/**
+ * Derive the gRPC-web base URL for a specific service using subdomain routing.
+ *
+ * Maps "authentication.AuthenticationService" → "https://authentication.domain.com"
+ * by extracting the package prefix (the part before the first dot) as the subdomain
+ * and stripping the first host label from the base URL to get the root domain.
+ *
+ * Examples (base = "https://www.globular.cloud"):
+ *   serviceSubdomainUrl("authentication.AuthenticationService") → "https://authentication.globular.cloud"
+ *   serviceSubdomainUrl("resource.ResourceService")            → "https://resource.globular.cloud"
+ *
+ * Falls back to the plain base URL for localhost or bare IP addresses so that
+ * the Vite dev proxy (path-based routing) keeps working unchanged in development.
+ */
+export function serviceSubdomainUrl(serviceFullName: string, base?: string): string {
+  const b = base ?? getBaseUrl() ?? ''
+  if (!b) return ''
+  try {
+    const u = new URL(b)
+    const h = u.hostname
+    // Localhost or bare IP → path-based routing (dev proxy)
+    if (h === 'localhost' || /^[\d.:]+$/.test(h)) {
+      return b.replace(/\/+$/, '')
+    }
+    // Short service key: "authentication.AuthenticationService" → "authentication"
+    const serviceKey = serviceFullName.split('.')[0].toLowerCase()
+    // Root domain: strip the outermost host label
+    //   www.globular.cloud → globular.cloud
+    //   globular.cloud     → globular.cloud  (only 2 parts, keep as-is)
+    const parts = h.split('.')
+    const domain = parts.length > 2 ? parts.slice(1).join('.') : h
+    const port = u.port ? ':' + u.port : ''
+    return `${u.protocol}//${serviceKey}.${domain}${port}`
+  } catch {
+    return b.replace(/\/+$/, '')
+  }
+}

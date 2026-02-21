@@ -1,7 +1,7 @@
 import { AuthenticationServiceClient } from "globular-web-client/authentication/authentication_grpc_web_pb";
 import * as authpb from "globular-web-client/authentication/authentication_pb";
 import { unary } from "./rpc";
-import { serviceHost } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 
 let _token: string | undefined;
 let _refreshTimer: number | undefined;
@@ -11,7 +11,7 @@ const TOKEN_KEY = "__globular_token__";
 // Service + client factory
 const SERVICE = "authentication.AuthenticationService";
 const factory = () =>
-  new AuthenticationServiceClient(serviceHost(), null, { withCredentials: false });
+  new AuthenticationServiceClient(serviceSubdomainUrl('authentication.AuthenticationService'), null, { withCredentials: false });
 
 // ---------------------------------------------------------------------
 // Helpers

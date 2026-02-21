@@ -2,7 +2,7 @@
 // Typed, resilient wrapper around the Search service (gRPC-web),
 // following the same structure/pattern as accounts.ts / files.ts.
 
-import { getBaseUrl } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- Generated stubs (adjust paths if needed) ----
@@ -14,7 +14,7 @@ import * as searchpb from "globular-web-client/search/search_pb";
  * ------------------------------------------------------------------ */
 
 function clientFactory(): SearchServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('search.SearchService');
   return new SearchServiceClient(base, null, { withCredentials: true });
 }
 

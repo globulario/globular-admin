@@ -1,5 +1,5 @@
 // src/backend/blog.ts
-import { getBaseUrl } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- stubs (adjust paths if needed) ----
@@ -11,7 +11,7 @@ import * as blogpb from "globular-web-client/blog/blog_pb";
  * ===================================================================================== */
 
 function clientFactory(): BlogServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('blog.BlogService');
   return new BlogServiceClient(base, null, { withCredentials: true });
 }
 

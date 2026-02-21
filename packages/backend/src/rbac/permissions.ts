@@ -1,5 +1,5 @@
 // src/backend/rbac/permissions.ts
-import { getBaseUrl } from '../core/endpoints'
+import { serviceSubdomainUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 
 // ---- Generated stubs (adjust import paths if needed) ----
@@ -11,7 +11,7 @@ export const SubjectType = rbac.SubjectType
 
 // ------------------------------ client / meta ------------------------------
 function clientFactory(): RbacServiceClient {
-  const base = getBaseUrl() ?? ''
+  const base = serviceSubdomainUrl('rbac.RbacService')
   return new RbacServiceClient(base, null, { withCredentials: true })
 }
 

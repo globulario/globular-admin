@@ -1,7 +1,7 @@
 // src/backend/notify/notification.ts
 // Typed wrapper for notification RPCs (ResourceService)
 
-import { getBaseUrl } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 import { ResourceServiceClient } from "globular-web-client/resource/resource_grpc_web_pb";
@@ -16,7 +16,7 @@ const SERVICE_METHODS = {
 } as const;
 
 function clientFactory(): ResourceServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('resource.ResourceService');
   return new ResourceServiceClient(base, null, { withCredentials: true });
 }
 

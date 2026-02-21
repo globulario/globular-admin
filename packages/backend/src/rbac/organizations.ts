@@ -1,5 +1,5 @@
 // /backend/rbac/organizations.ts
-import { getBaseUrl } from "../core/endpoints";
+import { serviceSubdomainUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- Generated stubs (adjust paths if needed) ----
@@ -74,7 +74,7 @@ const SERVICE_METHODS = {
 /* ------------------------------ helpers ------------------------------ */
 
 function clientFactory(): ResourceServiceClient {
-  const base = getBaseUrl() ?? "";
+  const base = serviceSubdomainUrl('resource.ResourceService');
   return new ResourceServiceClient(base, null, { withCredentials: true });
 }
 
