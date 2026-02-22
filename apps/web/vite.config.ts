@@ -69,6 +69,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/clustercontroller.ClusterControllerService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     // Force Vite to pre-bundle (CJS→ESM) all proto-generated modules from the

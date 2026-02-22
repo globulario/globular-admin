@@ -45,7 +45,8 @@ class PageDashboard extends HTMLElement {
   private _health: ClusterHealth | null = null
   private _nodes: ClusterNode[] = []
   private _loading = true
-  private _error = ''
+  private _healthError = ''
+  private _nodesError = ''
 
   connectedCallback() {
     this.style.display = 'block'
@@ -62,20 +63,27 @@ class PageDashboard extends HTMLElement {
   }
 
   private async load() {
-    try {
-      const [health, nodes] = await Promise.all([
-        getClusterHealth(),
-        listClusterNodes(),
-      ])
-      this._health = health
-      this._nodes = nodes
-      this._error = ''
-    } catch (e: any) {
-      this._error = e?.message || 'Failed to load cluster data'
-    } finally {
-      this._loading = false
-      this.render()
+    const [healthResult, nodesResult] = await Promise.allSettled([
+      getClusterHealth(),
+      listClusterNodes(),
+    ])
+
+    if (healthResult.status === 'fulfilled') {
+      this._health = healthResult.value
+      this._healthError = ''
+    } else {
+      this._healthError = (healthResult.reason as any)?.message || 'ClusterController unavailable'
     }
+
+    if (nodesResult.status === 'fulfilled') {
+      this._nodes = nodesResult.value
+      this._nodesError = ''
+    } else {
+      this._nodesError = (nodesResult.reason as any)?.message || 'Could not list nodes'
+    }
+
+    this._loading = false
+    this.render()
   }
 
   private subscribeEvents() {
@@ -115,6 +123,7 @@ class PageDashboard extends HTMLElement {
   private render() {
     const h = this._health
     const now = new Date().toLocaleTimeString()
+    const serviceUnavailable = !!this._healthError
 
     // Nodes with non-healthy status or failed checks
     const degraded = h?.nodes.filter(n =>
@@ -209,11 +218,13 @@ class PageDashboard extends HTMLElement {
         /* ── misc ── */
         .empty-msg { color:var(--secondary-text-color); font-size:.85rem;
           font-style:italic; margin:0; padding:16px; }
-        .error-banner {
-          background:color-mix(in srgb,var(--error-color) 12%,transparent);
-          border:1px solid color-mix(in srgb,var(--error-color) 30%,transparent);
-          border-radius:8px; padding:10px 14px; font-size:.85rem; color:var(--error-color);
+        .unavail-banner {
+          background:color-mix(in srgb,#f59e0b 10%,transparent);
+          border:1px solid color-mix(in srgb,#f59e0b 35%,transparent);
+          border-radius:8px; padding:12px 16px; font-size:.85rem; color:#b45309;
+          line-height:1.6;
         }
+        [data-theme="dark"] .unavail-banner { color:#fbbf24; }
         .cluster-id { font-size:.75rem; color:var(--secondary-text-color); font-family:monospace; }
         .dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
       </style>
@@ -228,10 +239,19 @@ class PageDashboard extends HTMLElement {
           <button class="btn-refresh" id="btnRefresh">↻ Refresh</button>
         </div>
 
-        ${this._error ? `<div class="error-banner">⚠ ${this._error}</div>` : ''}
-        ${this._loading && !h ? `<div class="empty-msg">Loading cluster data…</div>` : ''}
+        ${this._loading ? `<div class="empty-msg">Loading cluster data…</div>` : ''}
 
         <!-- Stat cards -->
+        ${serviceUnavailable ? `
+        <div class="unavail-banner">
+          ⚠ ClusterController service not reachable —
+          <span style="font-family:monospace;font-size:.8em">${this._healthError}</span>
+          <br><span style="font-size:.8em;opacity:.8">
+            Ensure the <code>clustercontroller.ClusterControllerService</code> subdomain is
+            registered in the Envoy/xDS routing on your cluster.
+          </span>
+        </div>
+        ` : ''}
         ${h ? `
         <div class="stat-grid">
           <div class="stat-card">
@@ -270,7 +290,7 @@ class PageDashboard extends HTMLElement {
                 Node Health
               </div>
               <div class="panel-body no-pad">
-                ${h && h.nodes.length > 0 ? `
+                ${h && h.nodes.length > 0 && !serviceUnavailable ? `
                 <table>
                   <thead>
                     <tr>
@@ -295,7 +315,9 @@ class PageDashboard extends HTMLElement {
                     `).join('')}
                   </tbody>
                 </table>
-                ` : `<p class="empty-msg">No node health data available.</p>`}
+                ` : serviceUnavailable
+                  ? `<p class="empty-msg">ClusterController service not available.</p>`
+                  : `<p class="empty-msg">No node health data available.</p>`}
               </div>
             </div>
 
