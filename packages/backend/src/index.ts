@@ -54,3 +54,4 @@ export * from "./rbac/applications";
 export * from "./rbac/diskSpace";
 export * from "./rbac/peers";
 export * from "./persistence/persistence";
+export * from "./cluster/cluster";
