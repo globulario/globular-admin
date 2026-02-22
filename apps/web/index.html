@@ -13,50 +13,55 @@
     <globular-sidebar slot="app-side-menu" header-title="Globular" header-subtitle="© 2025 Globular Project">
 
       <globular-sidebar-menu>
-        <globular-sidebar-menu-item text="Dashboard" route="#/dashboard"></globular-sidebar-menu-item>
+
+        <globular-sidebar-menu-item text="Overview" route="#/dashboard"></globular-sidebar-menu-item>
 
         <globular-sidebar-menu-item text="Cluster">
-          <globular-sidebar-menu-item text="Nodes" route="#/cluster/nodes"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Join Requests" route="#/cluster/join"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Topology" route="#/cluster/topology"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Nodes"          route="#/cluster/nodes"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Reconciliation" route="#/cluster/reconciliation"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Join Requests"  route="#/cluster/join"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Topology"       route="#/cluster/topology"></globular-sidebar-menu-item>
         </globular-sidebar-menu-item>
 
         <globular-sidebar-menu-item text="Services">
-          <globular-sidebar-menu-item text="Catalog" route="#/services/catalog"></globular-sidebar-menu-item>
           <globular-sidebar-menu-item text="Instances" route="#/services/instances"></globular-sidebar-menu-item>
-        </globular-sidebar-menu-item>
-
-        <globular-sidebar-menu-item text="Networking">
-          <globular-sidebar-menu-item text="DNS" route="#/networking/dns"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Gateway (Envoy)" route="#/networking/gateway"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Certificates" route="#/networking/certificates"></globular-sidebar-menu-item>
-        </globular-sidebar-menu-item>
-
-        <globular-sidebar-menu-item text="Storage">
-          <globular-sidebar-menu-item text="Volumes" route="#/storage/volumes"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="MinIO" route="#/storage/minio"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="ScyllaDB" route="#/storage/scylla"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="etcd" route="#/storage/etcd"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Catalog"   route="#/services/catalog"></globular-sidebar-menu-item>
         </globular-sidebar-menu-item>
 
         <globular-sidebar-menu-item text="Security">
-          <globular-sidebar-menu-item text="Policies" route="#/security/policies"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Secrets" route="#/security/secrets"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Certificates" route="#/security/certificates"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Secrets"      route="#/security/secrets"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="RBAC">
+            <globular-sidebar-menu-item text="Accounts"      route="#/security/rbac/accounts"></globular-sidebar-menu-item>
+            <globular-sidebar-menu-item text="Organizations" route="#/security/rbac/organizations"></globular-sidebar-menu-item>
+            <globular-sidebar-menu-item text="Groups"        route="#/security/rbac/groups"></globular-sidebar-menu-item>
+            <globular-sidebar-menu-item text="Roles"         route="#/security/rbac/roles"></globular-sidebar-menu-item>
+          </globular-sidebar-menu-item>
         </globular-sidebar-menu-item>
 
-        <globular-sidebar-menu-item text="RBAC">
-          <globular-sidebar-menu-item text="Accounts" route="#/rbac/accounts"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Organizations" route="#/rbac/organizations"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Groups" route="#/rbac/groups"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Roles" route="#/rbac/roles"></globular-sidebar-menu-item>
+        <globular-sidebar-menu-item text="Infrastructure">
+          <globular-sidebar-menu-item text="Storage" route="#/infrastructure/storage"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="DNS"     route="#/infrastructure/dns"></globular-sidebar-menu-item>
+        </globular-sidebar-menu-item>
+
+        <globular-sidebar-menu-item text="Observability">
+          <globular-sidebar-menu-item text="Metrics" route="#/observability/metrics"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Logs"    route="#/observability/logs"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Events"  route="#/observability/events"></globular-sidebar-menu-item>
         </globular-sidebar-menu-item>
 
         <globular-sidebar-menu-item text="Repository" route="#/repository"></globular-sidebar-menu-item>
+
+        <globular-sidebar-menu-item text="Admin Tools">
+          <globular-sidebar-menu-item text="Diagnostics" route="#/admin/diagnostics"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Upgrades"    route="#/admin/upgrades"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Backups"     route="#/admin/backups"></globular-sidebar-menu-item>
+        </globular-sidebar-menu-item>
+
       </globular-sidebar-menu>
     </globular-sidebar>
 
     <div slot="app-logo" style="display:flex;align-items:center;padding-left:8px;">
-
     </div>
     <div slot="app-title">
       <h3 style="margin:0;padding-left:8px;">Globular Admin</h3>

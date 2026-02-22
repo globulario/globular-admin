@@ -4,26 +4,34 @@ type RouteHandler = () => HTMLElement
 // --- Import page components ---
 import './pages/login'
 import './pages/dashboard'
+// Cluster
 import './pages/cluster_nodes'
+import './pages/cluster_reconciliation'
 import './pages/cluster_join'
 import './pages/cluster_topology'
-import './pages/services_catalog'
+// Services
 import './pages/services_instances'
+import './pages/services_catalog'
 import './pages/services_detail'
-import './pages/networking_dns'
-import './pages/networking_gateway'
-import './pages/networking_certificates'
-import './pages/storage_volumes'
-import './pages/storage_minio'
-import './pages/storage_scylla'
-import './pages/storage_etcd'
-import './pages/security_policies'
+// Security
+import './pages/security_certificates'
 import './pages/security_secrets'
 import './pages/rbac_accounts'
 import './pages/rbac_orgs'
 import './pages/rbac_groups'
 import './pages/rbac_roles'
+// Infrastructure
+import './pages/infrastructure_storage'
+import './pages/infrastructure_dns'
+// Observability
+import './pages/observability_metrics'
+import './pages/observability_logs'
+import './pages/observability_events'
+// Repository & Admin Tools
 import './pages/repo_market'
+import './pages/admin_diagnostics'
+import './pages/admin_upgrades'
+import './pages/admin_backups'
 // ------------------------------
 
 // --- Auth helpers (tiny & framework-agnostic) ---
@@ -51,7 +59,7 @@ function isTokenFresh(token: string | null): boolean {
   if (!token) return false
   const p = decodeJwtPayload(token)
   if (!p) return false
-  if (typeof p.exp !== 'number') return true // if no exp, assume usable; server still enforces
+  if (typeof p.exp !== 'number') return true
   const now = Math.floor(Date.now() / 1000)
   return p.exp > now
 }
@@ -95,26 +103,43 @@ const routes: Record<string, RouteHandler> = {
     return el
   },
 
+  // Overview
   '#/dashboard': () => document.createElement('page-dashboard'),
-  '#/cluster/nodes': () => document.createElement('page-cluster-nodes'),
-  '#/cluster/join': () => document.createElement('page-cluster-join'),
-  '#/cluster/topology': () => document.createElement('page-cluster-topology'),
-  '#/services/catalog': () => document.createElement('page-services-catalog'),
+
+  // Cluster
+  '#/cluster/nodes':          () => document.createElement('page-cluster-nodes'),
+  '#/cluster/reconciliation': () => document.createElement('page-cluster-reconciliation'),
+  '#/cluster/join':           () => document.createElement('page-cluster-join'),
+  '#/cluster/topology':       () => document.createElement('page-cluster-topology'),
+
+  // Services
   '#/services/instances': () => document.createElement('page-services-instances'),
-  '#/networking/dns': () => document.createElement('page-networking-dns'),
-  '#/networking/gateway': () => document.createElement('page-networking-gateway'),
-  '#/networking/certificates': () => document.createElement('page-networking-certificates'),
-  '#/storage/volumes': () => document.createElement('page-storage-volumes'),
-  '#/storage/minio': () => document.createElement('page-storage-minio'),
-  '#/storage/scylla': () => document.createElement('page-storage-scylla'),
-  '#/storage/etcd': () => document.createElement('page-storage-etcd'),
-  '#/security/policies': () => document.createElement('page-security-policies'),
-  '#/security/secrets': () => document.createElement('page-security-secrets'),
-  '#/rbac/accounts': () => document.createElement('page-rbac-accounts'),
-  '#/rbac/organizations': () => document.createElement('page-rbac-organizations'),
-  '#/rbac/groups': () => document.createElement('page-rbac-groups'),
-  '#/rbac/roles': () => document.createElement('page-rbac-roles'),
+  '#/services/catalog':   () => document.createElement('page-services-catalog'),
+
+  // Security
+  '#/security/certificates':        () => document.createElement('page-security-certificates'),
+  '#/security/secrets':             () => document.createElement('page-security-secrets'),
+  '#/security/rbac/accounts':       () => document.createElement('page-rbac-accounts'),
+  '#/security/rbac/organizations':  () => document.createElement('page-rbac-organizations'),
+  '#/security/rbac/groups':         () => document.createElement('page-rbac-groups'),
+  '#/security/rbac/roles':          () => document.createElement('page-rbac-roles'),
+
+  // Infrastructure
+  '#/infrastructure/storage': () => document.createElement('page-infrastructure-storage'),
+  '#/infrastructure/dns':     () => document.createElement('page-infrastructure-dns'),
+
+  // Observability
+  '#/observability/metrics': () => document.createElement('page-observability-metrics'),
+  '#/observability/logs':    () => document.createElement('page-observability-logs'),
+  '#/observability/events':  () => document.createElement('page-observability-events'),
+
+  // Repository
   '#/repository': () => document.createElement('page-repository'),
+
+  // Admin Tools
+  '#/admin/diagnostics': () => document.createElement('page-admin-diagnostics'),
+  '#/admin/upgrades':    () => document.createElement('page-admin-upgrades'),
+  '#/admin/backups':     () => document.createElement('page-admin-backups'),
 }
 
 const SERVICE_DETAIL_PREFIX = '#/services/'
@@ -151,13 +176,10 @@ function normalizeHash(raw?: string): string {
 function resolveRoute(raw?: string): string {
   const requested = normalizeHash(raw || window.location.hash || DEFAULT_ROUTE)
 
-  // Public routes allowed always
   if (PUBLIC_ROUTES.has(requested)) return requested
 
-  // Non-public: require fresh token AND user === 'sa'
   if (hasToken() && isSuperAdmin()) return requested
 
-  // Otherwise force login
   return LOGIN_ROUTE
 }
 
@@ -169,13 +191,11 @@ export function mountRoute(route?: string) {
   const handler = getRouteHandler(resolved)
   target.appendChild(handler())
 
-  // Reflect the resolved route in the URL bar
   if (window.location.hash !== resolved) {
     history.replaceState(null, '', resolved)
   }
 }
 
-// Small navigation helper for other modules (e.g., login.ts)
 export function navigateTo(path: string) {
   const dest = resolveRoute(path)
   if (window.location.hash !== dest) {
@@ -185,19 +205,16 @@ export function navigateTo(path: string) {
 }
 
 export function startRouter() {
-  // First render: go to login if unauthenticated
   const initial = resolveRoute(window.location.hash || DEFAULT_ROUTE)
   if (window.location.hash !== initial) {
     history.replaceState(null, '', initial)
   }
   mountRoute(initial)
 
-  // Listen to hash changes
   window.addEventListener('hashchange', () => {
     mountRoute(window.location.hash)
   })
 
-  // Sidebar event delegation (supports nested custom elements via composedPath)
   document.addEventListener('click', (ev) => {
     const path = (ev.composedPath && ev.composedPath()) as Array<EventTarget & { tagName?: string, getAttribute?: (n: string) => string | null }> || []
     const item = path.find((el) => el?.tagName?.toLowerCase?.() === 'globular-sidebar-menu-item')
@@ -209,7 +226,7 @@ export function startRouter() {
         history.pushState(null, '', dest)
         mountRoute(dest)
       } else {
-        mountRoute(dest) // ensure rerender if same hash
+        mountRoute(dest)
       }
       ev.preventDefault()
       ev.stopPropagation()
