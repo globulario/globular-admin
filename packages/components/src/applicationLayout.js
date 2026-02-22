@@ -387,6 +387,26 @@ export class SideBar extends HTMLElement {
           flex-direction: column;
         }
 
+        /* Slot styles are fine, but could be moved to host if desired */
+        ::slotted(globular-split-pane) {
+            flex: 1 1 0;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            overflow: auto;
+        }
+            
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--scroll-track, var(--surface-color));
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--scroll-thumb, var(--palette-divider));
+            border-radius: 6px;
+        }
+
         #side-bar-content {
           flex-grow: 1;
           overflow-y: auto;

@@ -764,7 +764,6 @@ export class FileExplorer extends HTMLElement {
           if (!file) throw new Error("File not found.");
           const f = adaptFileVM(file);
           this._closeSharePanel();
-          console.log("Following link to file:", f);
 
           const mime = f.getMime();
           const p = f.getPath();
@@ -2253,6 +2252,7 @@ export class FileExplorer extends HTMLElement {
     }
     const path = (() => {
       if (!rawPath) return rawPath;
+      if (rawPath.toLowerCase().endsWith(".m3u8")) return rawPath;
       if (!isDir(file)) return rawPath;
 
       const manifest = findPlaylistManifest(file);

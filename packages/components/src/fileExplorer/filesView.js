@@ -519,9 +519,17 @@ export class FilesView extends HTMLElement {
     this._renameMenuItem.action = () => {
       const file = this._contextMenu.file;
       if (!file) return;
-      let coords = getCoords(this._contextMenu.reference_element);
-      //coords.left += this._contextMenu.reference_element.offsetWidth;
-      coords.top += this._contextMenu.reference_element.offsetHeight / 2;
+      const reference = this._contextMenu.reference_element;
+      let coords;
+      if (reference && typeof reference.getBoundingClientRect === "function") {
+        coords = getCoords(reference);
+        coords.top += (reference.offsetHeight || 0) / 2;
+      } else {
+        coords = {
+          left: window.innerWidth / 2,
+          top: window.innerHeight / 2,
+        };
+      }
       this.rename(document.body, file, coords);
       this._closeContextMenu();
     };
@@ -1275,7 +1283,7 @@ export class FilesView extends HTMLElement {
       <style>
         #rename-file-dialog{
           display:flex;position:absolute;flex-direction:column;left:5px;min-width:260px;
-          z-index:100;background:var(--surface-color);color:var(--primary-text-color);
+          background:var(--surface-color);color:var(--primary-text-color);
           box-shadow:var(--shadow-elevation-2dp);border-radius:8px;overflow:hidden;
           border:1px solid var(--palette-divider);
         }
@@ -1306,9 +1314,11 @@ export class FilesView extends HTMLElement {
       dlg.addEventListener("mouseenter", (e) => e.stopPropagation());
     }
 
+    dlg.style.zIndex = 1000000;
+
 
     const left = (rect.left || 0) + 5;
-    const top = (rect.top || 0) + 5;
+    const top = (rect.top || 0) + 55;
     dlg.style.left = `${left}px`;
     dlg.style.top = `${top}px`;
 

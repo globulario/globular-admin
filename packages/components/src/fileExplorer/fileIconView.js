@@ -450,9 +450,13 @@ export class FileIconView extends HTMLElement {
     if (!explorer) return;
 
     const effective = this._file?.linkTarget || this._displayFile || this._file;
-    const playlistPath = hasPlaylistManifest(effective) ? playlistPathFor(effective) : "";
-    if (playlistPath) {
-      (explorer.playVideo || explorer._playMedia)?.call(explorer, playlistPath, "video");
+    const playlistPath = playlistPathFor(effective);
+    const mime = (mimeOf(effective) || "").toLowerCase();
+    const isHlsCandidate =
+      !!playlistPath || mime === "video/hls-stream" || mime === "video/hls";
+
+    if (isHlsCandidate) {
+      (explorer.playVideo || explorer._playMedia)?.call(explorer, effective, "video");
       const menu = this._activeMenu();
       menu?.close?.();
       if (menu?.parentNode) menu.parentNode.removeChild(menu);

@@ -744,64 +744,62 @@ export class FilesListView extends FilesView {
 
   async _handleFileOpen(file) {
     const explorer = this._fileExplorer || this._fileExplorer;
-    if (!explorer) return;
+    if (!explorer || !file) return;
 
-    let effective = file;
-    if (isLinkFile(file)) {
-      effective = file.linkTarget || file;
-      if (!file.linkTarget) {
-        try {
-          const target = await loadLinkTarget(file);
-          if (target) effective = target;
-        } catch (err) {
-          console.warn("Failed to resolve link target before opening file", err);
-        }
-      }
-    } else if (file?.linkTarget) {
-      effective = file.linkTarget;
-    }
-
+    const effective = await this._resolveLinkTarget(file);
+    const mime = (mimeOf(effective) || "").toLowerCase();
     const playlistPath = playlistPathFor(effective);
-    const rawEffectiveMime = (mimeOf(effective) || "").toLowerCase();
-    const originalMime = (mimeOf(file) || "").toLowerCase();
-    const effectiveMime = rawEffectiveMime || originalMime;
+    const isHlsCandidate = playlistPath || this._isHlsMime(mime);
     const dir = isDirOf(effective);
-    const kind = effectiveMime.split("/")[0]?.toLowerCase();
-    const isHlsMime = (v) => v === "video/hls-stream" || v === "video/hls";
-    const isHlsDir =
-      dir &&
-      (isHlsMime(rawEffectiveMime) || isHlsMime(originalMime) || isHlsMime(effectiveMime));
-    const dirPath = pathOf(effective) || "";
-    const normalizedDirPath = dirPath.replace(/\/$/, "");
-    const fallbackPlaylist =
-      isHlsDir && dirPath
-        ? `${normalizedDirPath || ""}/playlist.m3u8` // assume standard playlist name when only MIME hint is available
-        : "";
 
-    const playlistUrl = playlistPath || fallbackPlaylist;
-    if (playlistUrl) {
-      (explorer.playVideo || explorer._playMedia)?.call(explorer, playlistUrl, "video");
-      this.menu?.close?.();
-      if (this.menu?.parentNode) this.menu.parentNode.removeChild(this.menu);
+    if (isHlsCandidate) {
+      (explorer.playVideo || explorer._playMedia)?.call(explorer, effective, "video");
+      this._closeMenu();
       return;
     }
 
     if (dir) {
       explorer.publishSetDirEvent?.(pathOf(effective));
-    } else {
-      if (kind === "video") {
-        (explorer.playVideo || explorer._playMedia)?.call(explorer, effective, "video");
-      } else if (kind === "audio") {
-        (explorer.playAudio || explorer._playMedia)?.call(explorer, effective, "audio");
-      } else if (kind === "image") {
-        (explorer.showImage || explorer._showImage)?.call(explorer, effective);
-      } else {
-        (explorer.readFile || explorer._readFile)?.call(explorer, effective);
-      }
+      return;
     }
-    // close shared menu if any
+
+    const kind = mime.split("/")[0]?.toLowerCase();
+    if (kind === "video") {
+      (explorer.playVideo || explorer._playMedia)?.call(explorer, effective, "video");
+    } else if (kind === "audio") {
+      (explorer.playAudio || explorer._playMedia)?.call(explorer, effective, "audio");
+    } else if (kind === "image") {
+      (explorer.showImage || explorer._showImage)?.call(explorer, effective);
+    } else {
+      (explorer.readFile || explorer._readFile)?.call(explorer, effective);
+    }
+    this._closeMenu();
+  }
+
+  _closeMenu() {
     this.menu?.close?.();
     if (this.menu?.parentNode) this.menu.parentNode.removeChild(this.menu);
+  }
+
+  async _resolveLinkTarget(file) {
+    if (!file) return file;
+    if (isLinkFile(file)) {
+      const cached = file.linkTarget || null;
+      if (cached) return cached;
+      try {
+        const target = await loadLinkTarget(file);
+        if (target) return target;
+      } catch (err) {
+        console.warn("Failed to resolve link target before opening file", err);
+      }
+      return file;
+    }
+    return file.linkTarget || file;
+  }
+
+  _isHlsMime(mime) {
+    const value = (mime || "").toLowerCase();
+    return value === "video/hls-stream" || value === "video/hls";
   }
 
   _updateSelectionState(row, checked) {

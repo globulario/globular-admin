@@ -41,8 +41,9 @@ type EventClientOptions = {
  * - Sends cookies (withCredentials: true)
  * - If a token is provided, adds Authorization/Token headers to every call via interceptors
  */
-export function getEventClient(opts: EventClientOptions = {}): EventServicePromiseClient {
+export function getEventClient(opts: EventClientOptions = {}): EventServicePromiseClient | undefined {
   const base = serviceSubdomainUrl('event.EventService', opts.baseUrl)
+  if (!base) return undefined
 
   // Minimal options: send cookies for domains using cookie auth
   const options: any = { withCredentials: true }
@@ -84,6 +85,9 @@ export class EventHub {
 
   /** Handle to KA timeout for reconnection. */
   private keepAliveTimer: number | null = null;
+
+  /** Exponential backoff delay (ms) for reconnects; resets to 1s on successful data. */
+  private reconnectDelay = 1_000;
 
   constructor(getEventClient: GetEventClient) {
     this.getEventClient = getEventClient;
@@ -127,21 +131,34 @@ export class EventHub {
     subscribeNext();
   }
 
+  /** Schedule a reconnect with the current backoff delay, then increase it. */
+  private scheduleReconnect(): void {
+    const delay = this.reconnectDelay;
+    // Cap at 60s; double each attempt
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 60_000);
+    setTimeout(() => this.connect(), delay);
+  }
+
   /** Open/maintain the OnEvent stream. */
   private connect(): void {
     const client = this.getEventClient();
-    if (!client) return;
+    if (!client) {
+      // No base URL yet (e.g. DNS not configured); retry quietly with backoff.
+      this.scheduleReconnect();
+      return;
+    }
 
     const rq = new OnEventRequest();
     rq.setUuid(this.uuid);
 
     const stream = client.onEvent(rq, {});
     this.stream = stream;
-
-    let lastKa: number | null = null;
+    this.reinitRemoteListeners();
 
     stream.on("data", (rsp: any) => {
       if (rsp.hasEvt && rsp.hasEvt()) {
+        // Successful data — reset backoff
+        this.reconnectDelay = 1_000;
         const evt = rsp.getEvt();
         const name: string = evt.getName();
         const bytes: Uint8Array | null = evt.getData();
@@ -157,6 +174,8 @@ export class EventHub {
         }
         this.dispatch(name, data);
       } else if (rsp.hasKa && rsp.hasKa()) {
+        // Keep-alive received — reset backoff and arm the dead-stream detector
+        this.reconnectDelay = 1_000;
         if (this.keepAliveTimer) {
           clearTimeout(this.keepAliveTimer);
           this.keepAliveTimer = null;
@@ -169,29 +188,33 @@ export class EventHub {
             /* noop */
           }
           this.stream = null;
-          // Force client re-creation upstream if your factory rotates clients on demand.
           this.connect();
-          this.reinitRemoteListeners();
         }, 25_000);
-        lastKa = Date.now();
       }
     });
 
     stream.on("status", (_status: any) => {
-      // ignore non-zero codes; reconnect logic handled by KA timer
+      // ignore non-zero codes; reconnect logic handled by KA timer / end event
     });
 
-    stream.on("end", () => {
-      // Stream ended unexpectedly; try to reconnect.
+    stream.on("error", (_err: any) => {
+      // Network / DNS error — back off before retrying
       if (this.keepAliveTimer) {
         clearTimeout(this.keepAliveTimer);
         this.keepAliveTimer = null;
       }
       this.stream = null;
-      setTimeout(() => {
-        this.connect();
-        this.reinitRemoteListeners();
-      }, 1000);
+      this.scheduleReconnect();
+    });
+
+    stream.on("end", () => {
+      // Stream ended; try to reconnect with backoff.
+      if (this.keepAliveTimer) {
+        clearTimeout(this.keepAliveTimer);
+        this.keepAliveTimer = null;
+      }
+      this.stream = null;
+      this.scheduleReconnect();
     });
   }
 

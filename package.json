@@ -3,9 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "pnpm --filter @globular/admin-web dev",
-    "build": "pnpm --filter @globular/admin-web build",
-    "preview": "pnpm --filter @globular/admin-web preview"
+    "dev":           "pnpm --filter @globular/admin-web dev",
+    "build":         "pnpm --filter @globular/admin-web build",
+    "preview":       "pnpm --filter @globular/admin-web preview",
+    "dev:admin":     "pnpm --filter @globular/admin-web dev",
+    "dev:media":     "pnpm --filter @globular/media-web dev",
+    "build:admin":   "pnpm --filter @globular/admin-web build",
+    "build:media":   "pnpm --filter @globular/media-web build",
+    "preview:admin": "pnpm --filter @globular/admin-web preview",
+    "preview:media": "pnpm --filter @globular/media-web preview"
   },
   "engines": {
     "node": ">=18.0.0"

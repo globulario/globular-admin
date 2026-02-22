@@ -16,13 +16,32 @@
         <globular-sidebar-menu-item text="Dashboard" route="#/dashboard"></globular-sidebar-menu-item>
 
         <globular-sidebar-menu-item text="Cluster">
+          <globular-sidebar-menu-item text="Nodes" route="#/cluster/nodes"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Join Requests" route="#/cluster/join"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Topology" route="#/cluster/topology"></globular-sidebar-menu-item>
+        </globular-sidebar-menu-item>
 
-          <globular-sidebar-menu-item text="Overview" route="#/cluster"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Peers" route="#/cluster/peers"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Services" route="#/cluster/services"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Applications" route="#/cluster/apps"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="DNS" route="#/cluster/dns"></globular-sidebar-menu-item>
+        <globular-sidebar-menu-item text="Services">
+          <globular-sidebar-menu-item text="Catalog" route="#/services/catalog"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Instances" route="#/services/instances"></globular-sidebar-menu-item>
+        </globular-sidebar-menu-item>
 
+        <globular-sidebar-menu-item text="Networking">
+          <globular-sidebar-menu-item text="DNS" route="#/networking/dns"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Gateway (Envoy)" route="#/networking/gateway"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Certificates" route="#/networking/certificates"></globular-sidebar-menu-item>
+        </globular-sidebar-menu-item>
+
+        <globular-sidebar-menu-item text="Storage">
+          <globular-sidebar-menu-item text="Volumes" route="#/storage/volumes"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="MinIO" route="#/storage/minio"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="ScyllaDB" route="#/storage/scylla"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="etcd" route="#/storage/etcd"></globular-sidebar-menu-item>
+        </globular-sidebar-menu-item>
+
+        <globular-sidebar-menu-item text="Security">
+          <globular-sidebar-menu-item text="Policies" route="#/security/policies"></globular-sidebar-menu-item>
+          <globular-sidebar-menu-item text="Secrets" route="#/security/secrets"></globular-sidebar-menu-item>
         </globular-sidebar-menu-item>
 
         <globular-sidebar-menu-item text="RBAC">
@@ -32,14 +51,6 @@
           <globular-sidebar-menu-item text="Roles" route="#/rbac/roles"></globular-sidebar-menu-item>
         </globular-sidebar-menu-item>
 
-        <globular-sidebar-menu-item text="Media">
-          <globular-sidebar-menu-item text="Search" route="#/media/search"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Settings" route="#/media/settings"></globular-sidebar-menu-item>
-          <globular-sidebar-menu-item text="Watching" route="#/media/watching"></globular-sidebar-menu-item>
-        </globular-sidebar-menu-item>
-
-
-        <globular-sidebar-menu-item text="Console" route="#/console"></globular-sidebar-menu-item>
         <globular-sidebar-menu-item text="Repository" route="#/repository"></globular-sidebar-menu-item>
       </globular-sidebar-menu>
     </globular-sidebar>

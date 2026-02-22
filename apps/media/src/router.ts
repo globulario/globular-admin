@@ -3,27 +3,9 @@ type RouteHandler = () => HTMLElement
 
 // --- Import page components ---
 import './pages/login'
-import './pages/dashboard'
-import './pages/cluster_nodes'
-import './pages/cluster_join'
-import './pages/cluster_topology'
-import './pages/services_catalog'
-import './pages/services_instances'
-import './pages/services_detail'
-import './pages/networking_dns'
-import './pages/networking_gateway'
-import './pages/networking_certificates'
-import './pages/storage_volumes'
-import './pages/storage_minio'
-import './pages/storage_scylla'
-import './pages/storage_etcd'
-import './pages/security_policies'
-import './pages/security_secrets'
-import './pages/rbac_accounts'
-import './pages/rbac_orgs'
-import './pages/rbac_groups'
-import './pages/rbac_roles'
-import './pages/repo_market'
+import './pages/medias_search'
+import './pages/medias_settings'
+import './pages/medias_watching'
 // ------------------------------
 
 // --- Auth helpers (tiny & framework-agnostic) ---
@@ -56,91 +38,32 @@ function isTokenFresh(token: string | null): boolean {
   return p.exp > now
 }
 
-function getUsername(): string | null {
-  const t = getToken()
-  const p = t ? decodeJwtPayload(t) : null
-  let u: string | undefined =
-    p?.preferred_username ??
-    p?.username ??
-    p?.user ??
-    p?.name ??
-    p?.sub ??
-    p?.email
-
-  if (u && typeof u === 'string') {
-    if (u.includes('@')) u = u.split('@')[0]
-    return u
-  }
-  try { return localStorage.getItem('current_user') } catch { return null }
-}
-
 function hasToken(): boolean {
   return isTokenFresh(getToken())
-}
-
-function isSuperAdmin(): boolean {
-  const u = getUsername()
-  return !!u && u.toLowerCase() === 'sa'
 }
 
 // Which routes can be seen without being authenticated
 const PUBLIC_ROUTES = new Set<string>(['#/login'])
 
+const DEFAULT_ROUTE = '#/media/search'
+const LOGIN_ROUTE = '#/login'
+
 const routes: Record<string, RouteHandler> = {
   '#/login': () => {
     const el = document.createElement('page-login')
-    el.setAttribute('app-name', 'Globular Admin')
+    el.setAttribute('app-name', 'Globular Media')
     el.setAttribute('logo-src', './img/logo.png')
     el.setAttribute('version', 'v0.9.0')
     return el
   },
 
-  '#/dashboard': () => document.createElement('page-dashboard'),
-  '#/cluster/nodes': () => document.createElement('page-cluster-nodes'),
-  '#/cluster/join': () => document.createElement('page-cluster-join'),
-  '#/cluster/topology': () => document.createElement('page-cluster-topology'),
-  '#/services/catalog': () => document.createElement('page-services-catalog'),
-  '#/services/instances': () => document.createElement('page-services-instances'),
-  '#/networking/dns': () => document.createElement('page-networking-dns'),
-  '#/networking/gateway': () => document.createElement('page-networking-gateway'),
-  '#/networking/certificates': () => document.createElement('page-networking-certificates'),
-  '#/storage/volumes': () => document.createElement('page-storage-volumes'),
-  '#/storage/minio': () => document.createElement('page-storage-minio'),
-  '#/storage/scylla': () => document.createElement('page-storage-scylla'),
-  '#/storage/etcd': () => document.createElement('page-storage-etcd'),
-  '#/security/policies': () => document.createElement('page-security-policies'),
-  '#/security/secrets': () => document.createElement('page-security-secrets'),
-  '#/rbac/accounts': () => document.createElement('page-rbac-accounts'),
-  '#/rbac/organizations': () => document.createElement('page-rbac-organizations'),
-  '#/rbac/groups': () => document.createElement('page-rbac-groups'),
-  '#/rbac/roles': () => document.createElement('page-rbac-roles'),
-  '#/repository': () => document.createElement('page-repository'),
-}
-
-const SERVICE_DETAIL_PREFIX = '#/services/'
-const SERVICE_DETAIL_EXCLUSIONS = new Set<string>([
-  '#/services/catalog',
-  '#/services/instances',
-])
-
-const DEFAULT_ROUTE = '#/dashboard'
-const LOGIN_ROUTE = '#/login'
-
-function createServiceDetailHandler(route: string): RouteHandler | null {
-  if (!route.startsWith(SERVICE_DETAIL_PREFIX)) return null
-  if (SERVICE_DETAIL_EXCLUSIONS.has(route)) return null
-  const raw = route.slice(SERVICE_DETAIL_PREFIX.length)
-  if (!raw) return null
-  const serviceName = decodeURIComponent(raw)
-  return () => {
-    const el = document.createElement('page-service-detail')
-    el.setAttribute('service-name', serviceName)
-    return el
-  }
+  '#/media/search':   () => document.createElement('page-media-search'),
+  '#/media/settings': () => document.createElement('page-media-settings'),
+  '#/media/watching': () => document.createElement('page-media-watching'),
 }
 
 function getRouteHandler(route: string): RouteHandler {
-  return createServiceDetailHandler(route) ?? routes[route] ?? routes[DEFAULT_ROUTE]
+  return routes[route] ?? routes[DEFAULT_ROUTE]
 }
 
 function normalizeHash(raw?: string): string {
@@ -154,8 +77,8 @@ function resolveRoute(raw?: string): string {
   // Public routes allowed always
   if (PUBLIC_ROUTES.has(requested)) return requested
 
-  // Non-public: require fresh token AND user === 'sa'
-  if (hasToken() && isSuperAdmin()) return requested
+  // Non-public: require fresh token only (any logged-in user can access media)
+  if (hasToken()) return requested
 
   // Otherwise force login
   return LOGIN_ROUTE

@@ -1,0 +1,25 @@
+{
+  "name": "@globular/media-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4174"
+  },
+  "dependencies": {
+    "@globular/backend": "workspace:*",
+    "@globular/components": "workspace:*",
+    "@fortawesome/fontawesome-free": "^7.1.0",
+    "@polymer/app-layout": "^3.1.0",
+    "@polymer/iron-collapse": "^3.0.1",
+    "@polymer/iron-icons": "^3.0.1",
+    "@polymer/paper-icon-button": "^3.0.2",
+    "toastify-js": "^1.12.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vite": "^5.0.0"
+  }
+}
