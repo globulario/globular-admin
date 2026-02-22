@@ -38,7 +38,21 @@ class PageLogin extends HTMLElement {
         this.style.display = 'block';
 
         this.innerHTML = `
-      <div class="wrap auth-page">
+      <style>
+        .media-login-page {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          height: 90vh;
+          overflow: hidden;
+          box-sizing: border-box;
+          padding: 4vh 16px 0;
+          background:
+            url('./img/media.png') bottom center / auto 42% no-repeat,
+            var(--background-color);
+        }
+      </style>
+      <div class="media-login-page">
         <div class="card auth-card" part="card">
           <div class="brand">
             <div class="brand-title">${appName}</div>
