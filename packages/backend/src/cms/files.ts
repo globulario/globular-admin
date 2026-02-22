@@ -456,11 +456,11 @@ const SERVICE_METHODS = {
 
 /** List a directory; returns a FileVM with .files children. */
 export async function readDir(path: string, recursive = false): Promise<DirVM> {
-  if (CACHE_ENABLED && _cache) {
-    return _cache.getDir(path, /*swr*/ true, recursive) as unknown as DirVM;
-  }
   const attempt = async (currentPath: string, original = true): Promise<DirVM> => {
     try {
+      if (CACHE_ENABLED && _cache) {
+        return await _cache.getDir(currentPath, /*swr*/ true, recursive) as unknown as DirVM;
+      }
       return await readDirFresh(currentPath, { recursive }).promise;
     } catch (err: any) {
       if (isMissingPathError(err)) {
