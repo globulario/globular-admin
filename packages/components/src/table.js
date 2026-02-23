@@ -196,6 +196,7 @@ export class TableFilter extends HTMLElement {
   }
 
   update() {
+    if (!this.table) return;
     const query = this.editor.innerText;
     if (query === "") {
       const id = this.table.getAttribute("id");
