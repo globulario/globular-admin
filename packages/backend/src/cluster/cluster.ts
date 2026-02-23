@@ -4,8 +4,6 @@ import { serviceSubdomainUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'
 import { ClusterControllerServiceClient } from 'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb'
 import * as cc from 'globular-web-client/clustercontroller/clustercontroller_pb'
-// @ts-ignore — google-protobuf is a transitive dep of globular-web-client; bundler resolves it at build time
-import { Timestamp } from 'google-protobuf/google/protobuf/timestamp_pb'
 
 function ccClient(): ClusterControllerServiceClient {
   const addr = serviceSubdomainUrl('clustercontroller.ClusterControllerService')
@@ -55,11 +53,14 @@ export async function getClusterHealth(): Promise<ClusterHealth> {
 
   // GetClusterInfo provides cluster_id and cluster_domain (separate RPC from health).
   // Run both calls concurrently; if ClusterInfo fails we fall back to empty strings.
-  const infoRq = new Timestamp()
+  // GetClusterInfo takes google.protobuf.Timestamp — an empty Timestamp (all-zero
+  // seconds/nanos) serializes to an empty byte array, which the server accepts.
+  // We avoid importing google-protobuf directly (not a direct dep; Vite can't resolve it).
+  const infoRq = { serializeBinary: (): Uint8Array => new Uint8Array(0) } as any
   const healthRq = new cc.GetClusterHealthRequest()
 
   const [infoRsp, rsp] = await Promise.all([
-    unary<Timestamp, cc.ClusterInfo>(ccClient, 'getClusterInfo', infoRq, undefined, md)
+    unary<any, cc.ClusterInfo>(ccClient, 'getClusterInfo', infoRq, undefined, md)
       .catch(() => null),
     unary<cc.GetClusterHealthRequest, cc.GetClusterHealthResponse>(
       ccClient, 'getClusterHealth', healthRq, undefined, md,
