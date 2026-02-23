@@ -4,6 +4,8 @@ import { serviceSubdomainUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'
 import { ClusterControllerServiceClient } from 'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb'
 import * as cc from 'globular-web-client/clustercontroller/clustercontroller_pb'
+// @ts-ignore — google-protobuf is a transitive dep of globular-web-client; bundler resolves it at build time
+import { Timestamp } from 'google-protobuf/google/protobuf/timestamp_pb'
 
 function ccClient(): ClusterControllerServiceClient {
   const addr = serviceSubdomainUrl('clustercontroller.ClusterControllerService')
@@ -50,18 +52,28 @@ export interface ClusterNode {
 
 export async function getClusterHealth(): Promise<ClusterHealth> {
   const md = metadata()
-  const rq = new cc.GetClusterHealthRequest()
-  const rsp = await unary<cc.GetClusterHealthRequest, cc.GetClusterHealthResponse>(
-    ccClient, 'getClusterHealth', rq, undefined, md,
-  )
+
+  // GetClusterInfo provides cluster_id and cluster_domain (separate RPC from health).
+  // Run both calls concurrently; if ClusterInfo fails we fall back to empty strings.
+  const infoRq = new Timestamp()
+  const healthRq = new cc.GetClusterHealthRequest()
+
+  const [infoRsp, rsp] = await Promise.all([
+    unary<Timestamp, cc.ClusterInfo>(ccClient, 'getClusterInfo', infoRq, undefined, md)
+      .catch(() => null),
+    unary<cc.GetClusterHealthRequest, cc.GetClusterHealthResponse>(
+      ccClient, 'getClusterHealth', healthRq, undefined, md,
+    ),
+  ])
+
   return {
-    clusterId: rsp.getClusterId(),
-    clusterDomain: rsp.getClusterDomain(),
-    totalNodes: rsp.getTotalNodes(),
-    healthyNodes: rsp.getHealthyNodes(),
+    clusterId:      infoRsp?.getClusterId()     ?? '',
+    clusterDomain:  infoRsp?.getClusterDomain() ?? '',
+    totalNodes:     rsp.getTotalNodes(),
+    healthyNodes:   rsp.getHealthyNodes(),
     unhealthyNodes: rsp.getUnhealthyNodes(),
-    unknownNodes: rsp.getUnknownNodes(),
-    status: rsp.getStatus(),
+    unknownNodes:   rsp.getUnknownNodes(),
+    status:         rsp.getStatus(),
     nodes: rsp.getNodeHealthList().map((n: any) => ({
       nodeId:        n.getNodeId?.()       ?? '',
       hostname:      n.getHostname?.()     ?? '',

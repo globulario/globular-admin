@@ -575,8 +575,8 @@ export class FileExplorer extends HTMLElement {
     try {
       // ✅ Build user dir from AccountVM (id + domain). Fallback to /public if missing.
       const userDir =
-        (this._account?.id && this._account?.domain)
-          ? `/users/${this._account.id}@${this._account.domain}`
+        (this._account?.id)
+          ? `/users/${this._account.id}`
           : "/public";
 
       await readAndSetRoot(userDir);

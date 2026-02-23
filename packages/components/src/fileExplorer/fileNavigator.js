@@ -413,7 +413,7 @@ export class FileNavigator extends HTMLElement {
     // Friendly name for user's root
     let displayName = nameOf(dirVM);
     const acc = getCurrentAccount();
-    if (acc && path.startsWith(`/users/${acc.id}@`)) {
+    if (acc && path.startsWith(`/users/${acc.id}`)) {
       displayName = acc.displayName || acc.name || displayName;
     }
 

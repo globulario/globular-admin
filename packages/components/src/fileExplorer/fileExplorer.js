@@ -1044,8 +1044,8 @@ export class FileExplorer extends HTMLElement {
 
     try {
       const userDir =
-        (this._account?.id && this._account?.domain)
-          ? `/users/${this._account.id}@${this._account.domain}`
+        (this._account?.id)
+          ? `/users/${this._account.id}`
           : "/public";
 
       await readAndSetRoot(userDir);
