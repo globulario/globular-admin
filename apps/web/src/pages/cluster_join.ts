@@ -195,39 +195,44 @@ an administrator approves the request here.
 
 ### Step 1 — Generate a join token
 
-Use the **Generate Token** button below, or use the CLI on the controller node:
+Use the **Generate Token** button below, or use the CLI **on the controller node**:
 
 \`\`\`bash
-globular cluster token create --controller <CONTROLLER_IP>:12000
+globular cluster token create \\
+  --controller <CONTROLLER_IP>:12000 \\
+  --ca /var/lib/globular/pki/ca.crt
 \`\`\`
 
-> **Note:** The default controller address is \`localhost:12000\`, which only
-> works when running the CLI on the same machine as the controller **and** the
-> controller is listening on the loopback interface.
+> **Note:** Globular services run TLS by default. The CLI must trust the internal
+> CA or the handshake will fail. The CA certificate is always at
+> \`/var/lib/globular/pki/ca.crt\` on the controller node.
+>
 > **Common errors:**
 >
-> - \`connection refused\` — the controller is bound to its LAN IP, not loopback.
->   Find the right IP with \`ip addr show\` on the controller node, then use it explicitly.
+> - \`connection refused\` — wrong IP. Use \`ip addr show\` on the controller node
+>   to find its LAN IP, then pass it with \`--controller <LAN_IP>:12000\`.
 >
-> - \`unknown service clustercontroller.ClusterControllerService\` — the IP is correct
->   but the **port is wrong**. Another gRPC service is answering on that port.
->   The ClusterController always listens on port **12000**. Double-check:
+> - \`unknown service clustercontroller.ClusterControllerService\` — right IP but
+>   wrong port. The ClusterController listens on port **12000**.
+>   Verify: \`ss -tlnp | grep 12000\`.
+>
+> - \`tls: first record does not look like a TLS handshake\` — TLS mismatch.
+>   Always pass \`--ca /var/lib/globular/pki/ca.crt\` so the CLI trusts the
+>   internal CA. If running a dev setup without TLS, use \`--insecure\` instead.
+>
+> Full example with explicit LAN IP:
 >
 > \`\`\`bash
-> # Confirm the controller is on port 12000
-> ss -tlnp | grep 12000
+> globular cluster token create \\
+>   --controller 192.168.1.10:12000 \\
+>   --ca /var/lib/globular/pki/ca.crt
 > \`\`\`
 >
-> Correct usage with an explicit LAN IP:
->
-> \`\`\`bash
-> globular cluster token create --controller 192.168.1.10:12000
-> \`\`\`
->
-> You can set it permanently to avoid repeating \`--controller\` on every command:
+> Set permanently to avoid repeating flags on every command:
 >
 > \`\`\`bash
 > export GLOBULAR_CONTROLLER=192.168.1.10:12000
+> export GLOBULAR_CA=/var/lib/globular/pki/ca.crt
 > \`\`\`
 
 Copy the token that is printed. It is single-use and expires after 24 hours (pass \`--expires 48h\` to extend).
