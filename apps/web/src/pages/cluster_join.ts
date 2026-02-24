@@ -1,4 +1,8 @@
 // src/pages/cluster_join.ts
+import "@globular/components/markdown.js"
+import '@polymer/iron-icons/iron-icons.js'
+import '@polymer/paper-icon-button/paper-icon-button.js'
+import '@polymer/iron-collapse/iron-collapse.js'
 import {
   listJoinRequests, approveJoin, rejectJoin, createJoinToken,
   type JoinRequest,
@@ -38,98 +42,12 @@ class PageClusterJoin extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
-  }
 
-  disconnectedCallback() {
-    if (this._refreshTimer) clearInterval(this._refreshTimer)
-  }
-
-  // ─── Data ─────────────────────────────────────────────────────────────────
-
-  private async load() {
-    try {
-      this._requests = await listJoinRequests()
-      this._loadError = ''
-    } catch (e: any) {
-      this._loadError = e?.message || 'ClusterController unavailable'
-    }
-    this._loading = false
-    this.render()
-  }
-
-  private async doApprove(requestId: string) {
-    const input = this.querySelector<HTMLInputElement>('#profiles-input')
-    const profiles = (input?.value ?? '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-
-    this._actionPending = true
-    this._actionError = ''
-    this.render()
-
-    try {
-      await approveJoin(requestId, profiles)
-      this._expandedId = ''
-      this._actionPending = false
-      await this.load()
-    } catch (e: any) {
-      this._actionError = e?.message || 'Approval failed'
-      this._actionPending = false
-      this.render()
-    }
-  }
-
-  private async doReject(requestId: string) {
-    const input = this.querySelector<HTMLInputElement>('#reject-reason')
-    const reason = input?.value?.trim() ?? ''
-
-    this._actionPending = true
-    this._actionError = ''
-    this.render()
-
-    try {
-      await rejectJoin(requestId, reason)
-      this._expandedId = ''
-      this._actionPending = false
-      await this.load()
-    } catch (e: any) {
-      this._actionError = e?.message || 'Rejection failed'
-      this._actionPending = false
-      this.render()
-    }
-  }
-
-  private async doCreateToken() {
-    this._tokenLoading = true
-    this._tokenError = ''
-    this._token = ''
-    this._tokenExpiry = ''
-    this.render()
-
-    try {
-      const result = await createJoinToken()
-      this._token = result.token
-      this._tokenExpiry = result.expiresAt
-    } catch (e: any) {
-      this._tokenError = e?.message || 'Failed to create join token'
-    }
-    this._tokenLoading = false
-    this.render()
-  }
-
-  // ─── Render ───────────────────────────────────────────────────────────────
-
-  private render() {
-    const pending = this._requests.filter(r => r.status.toLowerCase() === 'pending')
-    const other   = this._requests.filter(r => r.status.toLowerCase() !== 'pending')
-
+    // Static shell — info panel lives here so collapse state survives re-renders
     this.innerHTML = `
       <style>
         .cj-wrap { padding: 16px; }
-        .cj-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+        .cj-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
         .cj-header h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
         .cj-subtitle { margin: 0.25rem 0 1.25rem; opacity: .85; font-size: .88rem; }
         .cj-panel {
@@ -246,12 +164,7 @@ class PageClusterJoin extends HTMLElement {
           gap: 10px;
           flex-wrap: wrap;
         }
-        .cj-token-code {
-          font-family: monospace;
-          font-size: .84rem;
-          word-break: break-all;
-          flex: 1;
-        }
+        .cj-token-code { font-family: monospace; font-size: .84rem; word-break: break-all; flex: 1; }
         .cj-ips { font-size: .75rem; color: var(--secondary-text-color); }
       </style>
 
@@ -260,100 +173,283 @@ class PageClusterJoin extends HTMLElement {
           <h2>Join Requests</h2>
           <div style="flex:1"></div>
           <button class="cj-btn" id="btnRefresh">↻ Refresh</button>
+          <paper-icon-button id="infoBtn" icon="icons:help-outline" title="How to join a node"></paper-icon-button>
         </div>
         <p class="cj-subtitle">Approve or reject nodes requesting to join the cluster.</p>
 
-        ${this._loadError ? `<div class="cj-warn">⚠ ${this._loadError}</div>` : ''}
+        <iron-collapse id="infoPanel" class="info">
+          <globular-markdown
+            style="
+              --content-bg-color: var(--surface-color);
+              --content-text-color: var(--on-surface-color);
+              --md-code-bg: color-mix(in srgb, var(--on-surface-color) 6%, var(--surface-color));
+              --md-code-fg: var(--on-surface-color);
+              --divider-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+            "
+          >
+## How to register a node with Globular
 
-        <!-- Pending requests -->
-        <div class="cj-panel">
-          <div class="cj-panel-hdr">
-            <span>Pending (${pending.length})</span>
-          </div>
-          ${this._loading ? `<p class="cj-empty">Loading…</p>` : pending.length === 0
+Nodes do not register themselves automatically. Each node must go through an
+explicit join flow: the node agent requests to join using a **join token**, and
+an administrator approves the request here.
+
+### Step 1 — Generate a join token
+
+Use the **Generate Token** button below, or use the CLI on the controller node:
+
+\`\`\`bash
+globular cluster token create
+\`\`\`
+
+Copy the token that is printed. It is single-use and expires after 24 hours.
+
+### Step 2 — Install and start the node agent on the new node
+
+On the machine you want to add to the cluster, install the Globular node agent
+and point it at the controller:
+
+\`\`\`bash
+# Install the agent (adjust path to your distribution)
+sudo globular install node-agent
+
+# Start the agent with the join token and controller address
+sudo globular node join \
+  --token  <JOIN_TOKEN> \
+  --controller <CONTROLLER_HOST>:443
+\`\`\`
+
+The agent will contact the controller, send its identity (hostname, IPs, OS,
+architecture, agent version), and wait for approval.
+
+### Step 3 — Approve the request here
+
+Once the agent has sent its request, it appears in the **Pending** table above.
+Click **✓ Approve**, optionally assign one or more profiles
+(e.g. `worker`, `control-plane`), and confirm.
+
+The node agent will receive its assigned node ID and begin converging toward
+the desired state defined by its profiles.
+
+### Step 4 — Verify
+
+After approval, the node will appear on the **Nodes** page and in the
+**Overview** health summary within one heartbeat interval (~30 s).
+
+You can also verify from the CLI:
+
+\`\`\`bash
+globular cluster nodes list
+\`\`\`
+
+### Profiles
+
+Profiles define which services a node should run. Leave the field empty to use
+the cluster default. Common values:
+
+| Profile | Purpose |
+|---|---|
+| `worker` | Runs workload services |
+| `control-plane` | Runs etcd, scheduler, controller |
+| `storage` | Runs persistence and object-store services |
+          </globular-markdown>
+        </iron-collapse>
+
+        <div id="content"></div>
+      </div>
+    `
+
+    const infoBtn   = this.querySelector('#infoBtn')
+    const infoPanel = this.querySelector('#infoPanel') as any
+    infoBtn?.addEventListener('click', () => infoPanel?.toggle())
+
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+
+    this.load()
+    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+  }
+
+  disconnectedCallback() {
+    if (this._refreshTimer) clearInterval(this._refreshTimer)
+  }
+
+  // ─── Data ─────────────────────────────────────────────────────────────────
+
+  private async load() {
+    try {
+      this._requests = await listJoinRequests()
+      this._loadError = ''
+    } catch (e: any) {
+      this._loadError = e?.message || 'ClusterController unavailable'
+    }
+    this._loading = false
+    this.render()
+  }
+
+  private async doApprove(requestId: string) {
+    const input = this.querySelector<HTMLInputElement>('#profiles-input')
+    const profiles = (input?.value ?? '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+
+    this._actionPending = true
+    this._actionError = ''
+    this.render()
+
+    try {
+      await approveJoin(requestId, profiles)
+      this._expandedId = ''
+      this._actionPending = false
+      await this.load()
+    } catch (e: any) {
+      this._actionError = e?.message || 'Approval failed'
+      this._actionPending = false
+      this.render()
+    }
+  }
+
+  private async doReject(requestId: string) {
+    const input = this.querySelector<HTMLInputElement>('#reject-reason')
+    const reason = input?.value?.trim() ?? ''
+
+    this._actionPending = true
+    this._actionError = ''
+    this.render()
+
+    try {
+      await rejectJoin(requestId, reason)
+      this._expandedId = ''
+      this._actionPending = false
+      await this.load()
+    } catch (e: any) {
+      this._actionError = e?.message || 'Rejection failed'
+      this._actionPending = false
+      this.render()
+    }
+  }
+
+  private async doCreateToken() {
+    this._tokenLoading = true
+    this._tokenError = ''
+    this._token = ''
+    this._tokenExpiry = ''
+    this.render()
+
+    try {
+      const result = await createJoinToken()
+      this._token = result.token
+      this._tokenExpiry = result.expiresAt
+    } catch (e: any) {
+      this._tokenError = e?.message || 'Failed to create join token'
+    }
+    this._tokenLoading = false
+    this.render()
+  }
+
+  // ─── Render (dynamic content only) ────────────────────────────────────────
+
+  private render() {
+    const el = this.querySelector('#content') as HTMLElement
+    if (!el) return
+
+    const pending = this._requests.filter(r => r.status.toLowerCase() === 'pending')
+    const other   = this._requests.filter(r => r.status.toLowerCase() !== 'pending')
+
+    el.innerHTML = `
+      ${this._loadError ? `<div class="cj-warn">⚠ ${this._loadError}</div>` : ''}
+
+      <!-- Pending requests -->
+      <div class="cj-panel">
+        <div class="cj-panel-hdr">
+          <span>Pending (${pending.length})</span>
+        </div>
+        ${this._loading
+          ? `<p class="cj-empty">Loading…</p>`
+          : pending.length === 0
             ? `<p class="cj-empty">No pending join requests.</p>`
             : `<table class="cj-table">
-              <thead>
-                <tr>
-                  <th>Hostname</th>
-                  <th>Node Name</th>
-                  <th>IPs</th>
-                  <th>OS / Arch</th>
-                  <th>Agent</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${pending.map(r => this.renderRequestRow(r)).join('')}
-              </tbody>
-            </table>`
-          }
+                <thead>
+                  <tr>
+                    <th>Hostname</th>
+                    <th>Node Name</th>
+                    <th>IPs</th>
+                    <th>OS / Arch</th>
+                    <th>Agent</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${pending.map(r => this.renderRequestRow(r)).join('')}
+                </tbody>
+              </table>`
+        }
+      </div>
+
+      <!-- Recent (approved / rejected) -->
+      ${other.length > 0 ? `
+      <div class="cj-panel">
+        <div class="cj-panel-hdr">
+          <span>Recent (${other.length})</span>
         </div>
+        <table class="cj-table">
+          <thead>
+            <tr>
+              <th>Hostname</th>
+              <th>Node Name</th>
+              <th>IPs</th>
+              <th>Status</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${other.map(r => `
+            <tr>
+              <td><strong>${r.hostname || '—'}</strong>${r.domain ? `<br><span class="cj-mono">${r.domain}</span>` : ''}</td>
+              <td class="cj-mono">${r.nodeName || '—'}</td>
+              <td class="cj-ips">${r.ips.join('<br>') || '—'}</td>
+              <td>${statusBadge(r.status)}</td>
+              <td style="color:var(--secondary-text-color);font-size:.82rem">${r.message || '—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
 
-        <!-- Recent (approved/rejected) -->
-        ${other.length > 0 ? `
-        <div class="cj-panel">
-          <div class="cj-panel-hdr">
-            <span>Recent (${other.length})</span>
+      <!-- Join token generator -->
+      <div class="cj-panel">
+        <div class="cj-panel-hdr">
+          <span>Join Token</span>
+          <button class="cj-btn" id="btnCreateToken" ${this._tokenLoading ? 'disabled' : ''}>
+            ${this._tokenLoading ? 'Generating…' : '+ Generate Token'}
+          </button>
+        </div>
+        <div style="padding:14px">
+          <p style="margin:0 0 10px;font-size:.84rem;color:var(--secondary-text-color);line-height:1.6">
+            Generate a one-time token to give to a node operator. The node agent uses this token
+            when calling <code>globular node join --token &lt;TOKEN&gt;</code>. Once submitted,
+            the request will appear in the Pending list above.
+          </p>
+          ${this._tokenError ? `<div class="cj-error">${this._tokenError}</div>` : ''}
+          ${this._token ? `
+          <div class="cj-token-box">
+            <span class="cj-token-code">${this._token}</span>
+            <button class="cj-btn" id="btnCopyToken">Copy</button>
           </div>
-          <table class="cj-table">
-            <thead>
-              <tr>
-                <th>Hostname</th>
-                <th>Node Name</th>
-                <th>IPs</th>
-                <th>Status</th>
-                <th>Message</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${other.map(r => `
-              <tr>
-                <td><strong>${r.hostname || '—'}</strong>${r.domain ? `<br><span class="cj-mono">${r.domain}</span>` : ''}</td>
-                <td class="cj-mono">${r.nodeName || '—'}</td>
-                <td class="cj-ips">${r.ips.join('<br>') || '—'}</td>
-                <td>${statusBadge(r.status)}</td>
-                <td style="color:var(--secondary-text-color);font-size:.82rem">${r.message || '—'}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>` : ''}
-
-        <!-- Join token -->
-        <div class="cj-panel">
-          <div class="cj-panel-hdr">
-            <span>Join Token</span>
-            <button class="cj-btn" id="btnCreateToken" ${this._tokenLoading ? 'disabled' : ''}>
-              ${this._tokenLoading ? 'Generating…' : '+ Generate Token'}
-            </button>
-          </div>
-          <div style="padding:14px">
-            <p style="margin:0 0 10px;font-size:.84rem;color:var(--secondary-text-color);line-height:1.6">
-              Generate a one-time token to give to a node operator. The node agent uses this token when calling <code>RequestJoin</code>. Once a node submits its request, it will appear above for approval.
-            </p>
-            ${this._tokenError ? `<div class="cj-error">${this._tokenError}</div>` : ''}
-            ${this._token ? `
-            <div class="cj-token-box">
-              <span class="cj-token-code" id="tokenText">${this._token}</span>
-              <button class="cj-btn" id="btnCopyToken">Copy</button>
-            </div>
-            ${this._tokenExpiry ? `<p style="margin:6px 0 0;font-size:.75rem;color:var(--secondary-text-color)">Expires: ${this._tokenExpiry}</p>` : ''}
-            ` : ''}
-          </div>
+          ${this._tokenExpiry ? `<p style="margin:6px 0 0;font-size:.75rem;color:var(--secondary-text-color)">Expires: ${this._tokenExpiry}</p>` : ''}
+          ` : ''}
         </div>
       </div>
     `
 
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
-    this.querySelector('#btnCreateToken')?.addEventListener('click', () => this.doCreateToken())
-    this.querySelector('#btnCopyToken')?.addEventListener('click', () => {
+    // Token actions
+    el.querySelector('#btnCreateToken')?.addEventListener('click', () => this.doCreateToken())
+    el.querySelector('#btnCopyToken')?.addEventListener('click', () => {
       navigator.clipboard.writeText(this._token).catch(() => {})
-      const btn = this.querySelector('#btnCopyToken') as HTMLButtonElement
+      const btn = el.querySelector('#btnCopyToken') as HTMLButtonElement
       if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy' }, 2000) }
     })
 
-    // Wire up approve/reject toggle buttons
-    this.querySelectorAll<HTMLButtonElement>('[data-approve]').forEach(btn => {
+    // Approve / reject toggle buttons
+    el.querySelectorAll<HTMLButtonElement>('[data-approve]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.approve!
         if (this._expandedId === id && this._actionMode === 'approve') {
@@ -364,7 +460,7 @@ class PageClusterJoin extends HTMLElement {
       })
     })
 
-    this.querySelectorAll<HTMLButtonElement>('[data-reject]').forEach(btn => {
+    el.querySelectorAll<HTMLButtonElement>('[data-reject]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.reject!
         if (this._expandedId === id && this._actionMode === 'reject') {
@@ -375,14 +471,9 @@ class PageClusterJoin extends HTMLElement {
       })
     })
 
-    // Wire up confirm buttons inside the expanded action row
-    this.querySelector<HTMLButtonElement>('#btnConfirmApprove')?.addEventListener('click', () => {
-      this.doApprove(this._expandedId)
-    })
-    this.querySelector<HTMLButtonElement>('#btnConfirmReject')?.addEventListener('click', () => {
-      this.doReject(this._expandedId)
-    })
-    this.querySelector<HTMLButtonElement>('#btnCancelAction')?.addEventListener('click', () => {
+    el.querySelector<HTMLButtonElement>('#btnConfirmApprove')?.addEventListener('click', () => this.doApprove(this._expandedId))
+    el.querySelector<HTMLButtonElement>('#btnConfirmReject')?.addEventListener('click', () => this.doReject(this._expandedId))
+    el.querySelector<HTMLButtonElement>('#btnCancelAction')?.addEventListener('click', () => {
       this._expandedId = ''; this._actionError = ''; this.render()
     })
   }
@@ -424,7 +515,7 @@ class PageClusterJoin extends HTMLElement {
                 <button class="cj-btn" id="btnCancelAction">Cancel</button>
               </div>
               <p style="margin:6px 0 0;font-size:.75rem;color:var(--secondary-text-color)">
-                Profiles define what services this node should run. Leave empty for the default profile.
+                Profiles define what services this node should run. Leave empty for the cluster default.
               </p>
             </div>` : `
             <div>

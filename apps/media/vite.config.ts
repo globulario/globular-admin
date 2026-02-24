@@ -74,6 +74,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/clusterdoctor.ClusterDoctorService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     // Force Vite to pre-bundle (CJS→ESM) all proto-generated modules from the
@@ -91,6 +96,8 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb',
         'globular-web-client/clustercontroller/clustercontroller_pb',
         'globular-web-client/clustercontroller/plan_pb',
+        'globular-web-client/clusterdoctor/clusterdoctor_grpc_web_pb',
+        'globular-web-client/clusterdoctor/clusterdoctor_pb',
         'globular-web-client/conversation/conversation_grpc_web_pb',
         'globular-web-client/conversation/conversation_pb',
         'globular-web-client/discovery/discovery_grpc_web_pb',
