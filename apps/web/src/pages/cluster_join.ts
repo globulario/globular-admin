@@ -220,6 +220,21 @@ globular cluster token create \\
 >   Pass \`--ca /var/lib/globular/pki/ca.crt\` so the CLI trusts the internal CA.
 >   If running a dev setup without TLS, use \`--insecure\` instead.
 >
+> - \`context deadline exceeded while waiting for connections to become ready\` —
+>   TLS succeeded but the ClusterController is not accepting requests. The service
+>   may not be running or may still be starting up. Check its status:
+>
+> \`\`\`bash
+> sudo systemctl status globular-clustercontroller
+> sudo journalctl -u globular-clustercontroller -n 50
+> \`\`\`
+>
+>   If the service is stopped, start it:
+>
+> \`\`\`bash
+> sudo systemctl start globular-clustercontroller
+> \`\`\`
+>
 > - \`stat /var/lib/globular/pki/ca.crt: permission denied\` — the CA file is
 >   root-owned. Run the command with \`sudo\`, or copy the cert to a readable location first:
 >
