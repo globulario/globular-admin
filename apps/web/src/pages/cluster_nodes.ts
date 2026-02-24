@@ -1,5 +1,5 @@
 // src/pages/cluster_nodes.ts
-import { listClusterNodes, getNodeReport, type ClusterNode, type NodeReport, type Finding, type NodeCapabilities } from '@globular/backend'
+import { listClusterNodes, setNodeProfiles, getNodeReport, type ClusterNode, type NodeReport, type Finding, type NodeCapabilities } from '@globular/backend'
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return '—'
@@ -90,6 +90,9 @@ class PageClusterNodes extends HTMLElement {
   private _loading = true
   private _selectedNodeId = ''
   private _refreshTimer: number | null = null
+  private _editingProfiles = false
+  private _savingProfiles = false
+  private _saveError = ''
 
   connectedCallback() {
     this.style.display = 'block'
@@ -298,6 +301,8 @@ class PageClusterNodes extends HTMLElement {
       tr.addEventListener('click', () => {
         const nodeId = (tr as HTMLElement).dataset.nodeId ?? ''
         this._selectedNodeId = this._selectedNodeId === nodeId ? '' : nodeId
+        this._editingProfiles = false
+        this._saveError = ''
         this.renderDetail()
         // Update selected highlight without full re-render
         this.querySelectorAll('.cn-table tbody tr[data-node-id]').forEach(r => {
@@ -331,6 +336,26 @@ class PageClusterNodes extends HTMLElement {
       return
     }
 
+    const profilesSection = this._editingProfiles
+      ? `<form id="profileEditForm" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+           <input id="profileInput" type="text"
+             value="${row.node.profiles.join(', ')}"
+             placeholder="core, control-plane, storage, gateway"
+             style="flex:1;min-width:200px;padding:4px 8px;border:1px solid var(--border-subtle-color);border-radius:6px;background:var(--surface-color);color:var(--on-surface-color);font-size:.84rem;"
+           >
+           <button type="submit" id="btnSaveProfiles" style="padding:3px 10px;border-radius:6px;border:none;background:var(--primary-color);color:#fff;font-size:.78rem;cursor:pointer;${this._savingProfiles ? 'opacity:.6;' : ''}">
+             ${this._savingProfiles ? 'Saving…' : 'Save'}
+           </button>
+           <button type="button" id="btnCancelProfiles" style="padding:3px 10px;border-radius:6px;border:1px solid var(--border-subtle-color);background:transparent;color:var(--on-surface-color);font-size:.78rem;cursor:pointer;">
+             Cancel
+           </button>
+           ${this._saveError ? `<span style="font-size:.78rem;color:var(--error-color)">${this._saveError}</span>` : ''}
+         </form>`
+      : `${profileTags(row.node.profiles)}
+         <button id="btnEditProfiles" style="margin-left:8px;padding:2px 8px;border-radius:6px;border:1px solid var(--border-subtle-color);background:transparent;color:var(--secondary-text-color);font-size:.72rem;cursor:pointer;">
+           Edit
+         </button>`
+
     el.innerHTML = `
       <div class="cn-detail-panel">
         <div class="cn-panel-header">
@@ -340,7 +365,7 @@ class PageClusterNodes extends HTMLElement {
         <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--border-subtle-color);">
           <div style="display:flex;align-items:baseline;gap:12px;font-size:.83rem;">
             <span style="min-width:80px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--secondary-text-color);">Profiles</span>
-            ${profileTags(row.node.profiles)}
+            ${profilesSection}
           </div>
           <div style="display:flex;align-items:baseline;gap:12px;font-size:.83rem;">
             <span style="min-width:80px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--secondary-text-color);">Hardware</span>
@@ -374,6 +399,41 @@ class PageClusterNodes extends HTMLElement {
         ` : `<p class="cn-empty">✓ No findings for this node.</p>`}
       </div>
     `
+
+    // Wire profile edit controls
+    el.querySelector('#btnEditProfiles')?.addEventListener('click', () => {
+      this._editingProfiles = true
+      this._saveError = ''
+      this.renderDetail()
+    })
+
+    el.querySelector('#btnCancelProfiles')?.addEventListener('click', () => {
+      this._editingProfiles = false
+      this._saveError = ''
+      this.renderDetail()
+    })
+
+    el.querySelector('#profileEditForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const input = (el.querySelector('#profileInput') as HTMLInputElement)?.value ?? ''
+      const profiles = input.split(',').map(s => s.trim()).filter(Boolean)
+      this._savingProfiles = true
+      this._saveError = ''
+      this.renderDetail()
+      try {
+        await setNodeProfiles(this._selectedNodeId, profiles)
+        this._editingProfiles = false
+        this._savingProfiles = false
+        // Update the local row so the table reflects the change immediately
+        const rowIdx = this._rows.findIndex(r => r.node.nodeId === this._selectedNodeId)
+        if (rowIdx >= 0) this._rows[rowIdx].node.profiles = profiles
+        this.render()
+      } catch (err: any) {
+        this._savingProfiles = false
+        this._saveError = err?.message || 'Failed to save profiles'
+        this.renderDetail()
+      }
+    })
   }
 }
 

@@ -177,6 +177,16 @@ export async function createJoinToken(): Promise<{ token: string; expiresAt: str
   return { token: rsp.getJoinToken?.() ?? '', expiresAt }
 }
 
+export async function setNodeProfiles(nodeId: string, profiles: string[]): Promise<void> {
+  const md = metadata()
+  const rq = new cc.SetNodeProfilesRequest()
+  rq.setNodeId(nodeId)
+  rq.setProfilesList(profiles)
+  await unary<cc.SetNodeProfilesRequest, cc.SetNodeProfilesResponse>(
+    ccClient, 'setNodeProfiles', rq, undefined, md,
+  )
+}
+
 export async function listClusterNodes(): Promise<ClusterNode[]> {
   const md = metadata()
   const rq = new cc.ListNodesRequest()
