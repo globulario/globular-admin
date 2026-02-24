@@ -17,7 +17,7 @@ export interface NodeHealth {
   hostname: string
   /** Raw status string from the proto, e.g. "HEALTHY", "DEGRADED", "UNREACHABLE" */
   status: string
-  failedChecks: string[]
+  failedChecks: number
   lastSeen: number
   lastError: string
 }
@@ -93,8 +93,8 @@ export async function getClusterHealth(): Promise<ClusterHealth> {
       nodeId:        n.getNodeId?.()       ?? '',
       hostname:      n.getHostname?.()     ?? '',
       status:        n.getStatus?.()       ?? '',
-      failedChecks:  n.getFailedChecks?.() ?? [],
-      lastSeen:      n.getLastSeen?.()     ?? 0,
+      failedChecks:  n.getFailedChecks?.() ?? 0,
+      lastSeen:      n.getLastSeen?.()?.getSeconds?.() ?? 0,
       lastError:     n.getLastError?.()    ?? '',
     } satisfies NodeHealth)),
   }
@@ -173,7 +173,7 @@ export async function listClusterNodes(): Promise<ClusterNode[]> {
       status:               n.getStatus?.()               ?? '',
       appliedServicesHash:  n.getAppliedServicesHash?.()  ?? '',
       inventoryComplete:    n.getInventoryComplete?.()    ?? true,
-      lastSeen:             n.getLastSeen?.()             ?? 0,
+      lastSeen:             n.getLastSeen?.()?.getSeconds?.() ?? 0,
       lastError:            n.getLastError?.()            ?? '',
     } satisfies ClusterNode
   })

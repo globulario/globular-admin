@@ -127,7 +127,7 @@ class PageDashboard extends HTMLElement {
 
     // Nodes with non-healthy status or failed checks
     const degraded = h?.nodes.filter(n =>
-      !n.status.toUpperCase().includes('HEALTHY') || (n.failedChecks?.length ?? 0) > 0
+      !n.status.toUpperCase().includes('HEALTHY') || (n.failedChecks ?? 0) > 0
     ) ?? []
 
     // Nodes with incomplete inventory
@@ -306,8 +306,8 @@ class PageDashboard extends HTMLElement {
                       <td class="hostname">${n.hostname || n.nodeId}</td>
                       <td>${statusBadge(n.status)}</td>
                       <td>
-                        ${n.failedChecks && n.failedChecks.length > 0
-                          ? `<span class="failed-checks">${n.failedChecks.join(', ')}</span>`
+                        ${n.failedChecks > 0
+                          ? `<span class="failed-checks">${n.failedChecks} failed</span>`
                           : '<span style="color:var(--secondary-text-color)">—</span>'}
                       </td>
                       <td style="color:var(--secondary-text-color)">${relativeTime(n.lastSeen)}</td>
@@ -336,7 +336,7 @@ class PageDashboard extends HTMLElement {
                     <tr>
                       <td class="hostname">${n.hostname || n.nodeId}</td>
                       <td>${statusBadge(n.status)}</td>
-                      <td class="failed-checks">${n.failedChecks?.join(', ') || n.lastError || '—'}</td>
+                      <td class="failed-checks">${n.failedChecks ? `${n.failedChecks} failed checks` : n.lastError || '—'}</td>
                     </tr>
                     `).join('')}
                     ${inventoryIssues.map(n => `
