@@ -16,6 +16,7 @@ import './pages/services_detail'
 // Security
 import './pages/security_certificates'
 import './pages/security_secrets'
+import './pages/security_cors'
 import './pages/rbac_accounts'
 import './pages/rbac_orgs'
 import './pages/rbac_groups'
@@ -119,6 +120,7 @@ const routes: Record<string, RouteHandler> = {
   // Security
   '#/security/certificates':        () => document.createElement('page-security-certificates'),
   '#/security/secrets':             () => document.createElement('page-security-secrets'),
+  '#/security/cors':                () => document.createElement('page-security-cors'),
   '#/security/rbac/accounts':       () => document.createElement('page-rbac-accounts'),
   '#/security/rbac/organizations':  () => document.createElement('page-rbac-organizations'),
   '#/security/rbac/groups':         () => document.createElement('page-rbac-groups'),

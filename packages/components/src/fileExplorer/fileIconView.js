@@ -353,7 +353,7 @@ export class FileIconView extends HTMLElement {
     }
 
     this._displayFile = displayFile;
-    this._setDisplayName(nameOf(displayFile));
+    this._setDisplayName(this._displayLabelFor(displayFile));
     this._clear(this._dom.iconDisplay);
 
     const isShortcut = hasLinkFlag(baseFile);
@@ -442,6 +442,37 @@ export class FileIconView extends HTMLElement {
       this._dom.fileName.setAttribute("title", text);
     }
     this._dom.content?.setAttribute("title", text);
+  }
+
+  /**
+   * Prefer human-friendly labels from attached media infos when present.
+   * Order: video description > audio title > title name > file name.
+   */
+  _displayLabelFor(file) {
+    const pickFirst = (arr) => (Array.isArray(arr) && arr.length ? arr[0] : null);
+    const valFrom = (obj, keys) => {
+      if (!obj) return "";
+      for (const k of keys) {
+        const v = (typeof obj[k] === "function") ? obj[k]() : obj[k];
+        if (v) return v;
+      }
+      return "";
+    };
+
+    const videoInfo = pickFirst(file?.videos);
+    const audioInfo = pickFirst(file?.audios);
+    const titleInfo = pickFirst(file?.titles);
+
+    const videoLabel = valFrom(videoInfo, ["getDescription", "description", "getTitle", "title", "getName", "name"]);
+    if (videoLabel) return videoLabel;
+
+    const audioLabel = valFrom(audioInfo, ["getTitle", "title", "getName", "name", "getDescription", "description"]);
+    if (audioLabel) return audioLabel;
+
+    const titleLabel = valFrom(titleInfo, ["getName", "name", "getTitle", "title"]);
+    if (titleLabel) return titleLabel;
+
+    return nameOf(file);
   }
 
   /* ---------- Private: Actions ---------- */

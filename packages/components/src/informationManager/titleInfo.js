@@ -17,7 +17,7 @@ import { playAudio } from "../audio";
 import { playVideo } from "../video";
 
 // ✅ Backend wrappers
-import { getFile } from "@globular/backend";
+import { getFile, buildFileUrl, readDir } from "@globular/backend";
 import {
   deleteTitle,
   dissociateFileWithTitle,
@@ -588,6 +588,7 @@ export class TitleInfo extends HTMLElement {
   _titleDivContainer = null;
   _titleHeaderDiv = null;
   _posterImg = null;
+  _posterRenderToken = 0;
   _filesProgress = null;
   _genresDiv = null;
   _synopsisDiv = null;
@@ -913,11 +914,149 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
       `;
     }
 
-    // Poster
-    const posterUrl = this._title.getPoster() ? this._title.getPoster().getContenturl() : "";
+    // Poster (prefer embedded poster, then remote URL, then first file thumbnail)
+    const myPosterToken = ++this._posterRenderToken;
+
+    const resolvePosterUrl = async () => {
+      const poster = this._title?.getPoster?.();
+      let url = "";
+
+      // 1) Preferred: embedded content URL
+      url = poster?.getContenturl?.() || "";
+
+      // 2) Optional: remote URL if http(s)
+      if (!url) {
+        const rawUrl = poster?.getUrl?.() || "";
+        if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+          url = rawUrl;
+        }
+      }
+
+      // 3) Fallback: first associated file poster image sitting next to the media file (higher resolution than data_url.txt)
+      if (!url) {
+        try {
+          const titleId = this._title?.getId?.() || this._title?.getImdbid?.() || "";
+          const indexPath = titleId.startsWith("tt") ? "/search/titles" : "/search/videos";
+
+          const files = await getTitleFiles(titleId, indexPath);
+          const filePaths = Array.isArray(files)
+            ? files.map(f => (typeof f === "string" ? f : (f?.path || f?.getPath?.() || ""))).filter(Boolean)
+            : [];
+
+          const asImgSrc = (path) => {
+            if (!path) return "";
+            // If already an http(s) URL or contains percent-encodings, avoid double-encoding
+            const looksEncoded = path.includes("%");
+            const isHttp = path.startsWith("http://") || path.startsWith("https://");
+            try {
+              if (isHttp) return path;
+              if (looksEncoded) {
+                const base = (buildFileUrl("/").url || "").replace(/\/$/, "");
+                const tokenHeader = buildFileUrl("/").headers?.token;
+                const glue = path.includes("?") ? "&" : "?";
+                return tokenHeader ? `${base}${path}${glue}token=${encodeURIComponent(tokenHeader)}` : `${base}${path}`;
+              }
+              const { url: builtUrl, headers } = buildFileUrl(path);
+              const token = headers?.token;
+              if (builtUrl) {
+                const glue = builtUrl.includes("?") ? "&" : "?";
+                return token ? `${builtUrl}${glue}token=${encodeURIComponent(token)}` : builtUrl;
+              }
+            } catch { /* ignore */ }
+            return "";
+          };
+
+          const listDirSafe = async (path) => {
+            try {
+              const dirListing = await readDir(path);
+              const candidates = (dirListing?.files || dirListing?.getFilesList?.() || []);
+              return Array.isArray(candidates) ? candidates : [];
+            } catch { return []; }
+          };
+
+          let firstThumbnailFallback = "";
+
+          for (const mediaPath of filePaths) {
+
+            const f = await getFile(mediaPath);
+            if (!f) continue;
+
+            const baseDir = mediaPath.substring(0, mediaPath.lastIndexOf("/") + 1);
+            const fileStem = (() => {
+              const leaf = mediaPath.substring(mediaPath.lastIndexOf("/") + 1);
+              const dot = leaf.lastIndexOf(".");
+              return dot > 0 ? leaf.substring(0, dot) : leaf;
+            })();
+
+            let foundPoster = "";
+
+            // 3a) Look inside hidden thumbnail folder for this file: .hidden/<stem>/__thumbnail__/
+            const hiddenThumbDir = `${baseDir}.hidden/${fileStem}/__thumbnail__/`;
+            const hiddenEntries = await listDirSafe(hiddenThumbDir);
+            for (const item of hiddenEntries) {
+              const name = item?.name || item?.getName?.();
+              const path = item?.path || item?.getPath?.();
+              if (!name || !path) continue;
+              const lower = name.toLowerCase();
+              const isImage = lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png");
+              if (!isImage) continue;
+              const u = asImgSrc(path);
+              if (u) { foundPoster = u; break; }
+            }
+
+            // 3b) Look in the media directory for poster-like names that actually exist
+            if (!foundPoster) {
+              const pickFrom = await listDirSafe(baseDir);
+              for (const item of pickFrom) {
+                const name = item?.name || item?.getName?.();
+                const path = item?.path || item?.getPath?.();
+                if (!name || !path) continue;
+                const lower = name.toLowerCase();
+                const looksLikePoster =
+                  (lower.includes("_v1_") || lower.includes("poster") || lower.includes("cover")) &&
+                  (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png"));
+                if (looksLikePoster) {
+                  const u = asImgSrc(path);
+                  if (u) { foundPoster = u; break; }
+                }
+              }
+            }
+
+            if (foundPoster) {
+              url = foundPoster;
+              break;
+            }
+
+            // 3c) Fallback to stored thumbnail/data URL for this media file
+            const thumb = f?.getThumbnail?.() || f?.thumbnail || "";
+            if (!firstThumbnailFallback && thumb) firstThumbnailFallback = thumb;
+          }
+
+          if (!url && firstThumbnailFallback) {
+            url = firstThumbnailFallback;
+          }
+        } catch (err) {
+          // Non-fatal: leave url empty if thumbnail lookup fails
+        }
+      }
+
+      return url;
+    };
+
+    const posterUrl = await resolvePosterUrl();
+
+    // Only apply if this render is still current
+    if (myPosterToken !== this._posterRenderToken) return;
+
     if (this._posterImg) {
-      this._posterImg.src = posterUrl;
-      this._posterImg.style.display = posterUrl ? "block" : "none";
+      if (posterUrl) {
+        this._posterImg.src = posterUrl;
+        this._posterImg.style.display = "block";
+      } else {
+        this._posterImg.src = "";
+        this._posterImg.style.display = "none";
+      }
+
       this._posterImg.onload = () => {
         if (this._posterImg.naturalWidth && this._posterImg.naturalHeight) {
           this._posterImg.style.aspectRatio = `${this._posterImg.naturalWidth} / ${this._posterImg.naturalHeight}`;
