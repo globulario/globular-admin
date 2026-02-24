@@ -46,6 +46,20 @@ export interface ClusterNode {
   lastError: string
 }
 
+export interface JoinRequest {
+  requestId: string
+  hostname: string
+  domain: string
+  ips: string[]
+  os: string
+  arch: string
+  agentVersion: string
+  nodeName: string
+  status: string
+  message: string
+  profiles: string[]
+}
+
 // ─── API functions ───────────────────────────────────────────────────────────
 
 export async function getClusterHealth(): Promise<ClusterHealth> {
@@ -84,6 +98,64 @@ export async function getClusterHealth(): Promise<ClusterHealth> {
       lastError:     n.getLastError?.()    ?? '',
     } satisfies NodeHealth)),
   }
+}
+
+export async function listJoinRequests(): Promise<JoinRequest[]> {
+  const md = metadata()
+  const rq = new cc.ListJoinRequestsRequest()
+  const rsp = await unary<cc.ListJoinRequestsRequest, cc.ListJoinRequestsResponse>(
+    ccClient, 'listJoinRequests', rq, undefined, md,
+  )
+  return rsp.getPendingList().map((r: any) => {
+    const id = r.getIdentity?.()
+    return {
+      requestId:    r.getRequestId?.()      ?? '',
+      hostname:     id?.getHostname?.()     ?? '',
+      domain:       id?.getDomain?.()       ?? '',
+      ips:          id?.getIpsList?.()      ?? [],
+      os:           id?.getOs?.()           ?? '',
+      arch:         id?.getArch?.()         ?? '',
+      agentVersion: id?.getAgentVersion?.() ?? '',
+      nodeName:     id?.getNodeName?.()     ?? '',
+      status:       r.getStatus?.()         ?? '',
+      message:      r.getMessage?.()        ?? '',
+      profiles:     r.getProfilesList?.()   ?? [],
+    } satisfies JoinRequest
+  })
+}
+
+export async function approveJoin(requestId: string, profiles: string[]): Promise<string> {
+  const md = metadata()
+  const rq = new cc.ApproveJoinRequest()
+  rq.setRequestId(requestId)
+  rq.setProfilesList(profiles)
+  const rsp = await unary<cc.ApproveJoinRequest, cc.ApproveJoinResponse>(
+    ccClient, 'approveJoin', rq, undefined, md,
+  )
+  return rsp.getNodeId?.() ?? ''
+}
+
+export async function rejectJoin(requestId: string, reason: string): Promise<void> {
+  const md = metadata()
+  const rq = new cc.RejectJoinRequest()
+  rq.setRequestId(requestId)
+  rq.setReason(reason)
+  await unary<cc.RejectJoinRequest, cc.RejectJoinResponse>(
+    ccClient, 'rejectJoin', rq, undefined, md,
+  )
+}
+
+export async function createJoinToken(): Promise<{ token: string; expiresAt: string }> {
+  const md = metadata()
+  const rq = new cc.CreateJoinTokenRequest()
+  const rsp = await unary<cc.CreateJoinTokenRequest, cc.CreateJoinTokenResponse>(
+    ccClient, 'createJoinToken', rq, undefined, md,
+  )
+  const ts = rsp.getExpiresAt?.()
+  const expiresAt = ts
+    ? new Date(ts.getSeconds() * 1000).toLocaleString()
+    : ''
+  return { token: rsp.getJoinToken?.() ?? '', expiresAt }
 }
 
 export async function listClusterNodes(): Promise<ClusterNode[]> {
