@@ -198,10 +198,10 @@ an administrator approves the request here.
 Use the **Generate Token** button below, or use the CLI on the controller node:
 
 \`\`\`bash
-globular cluster token create --controller <CONTROLLER_IP>:10000
+globular cluster token create --controller <CONTROLLER_IP>:12000
 \`\`\`
 
-> **Note:** The default controller address is \`localhost:10000\`, which only
+> **Note:** The default controller address is \`localhost:12000\`, which only
 > works when running the CLI on the same machine as the controller **and** the
 > controller is listening on the loopback interface.
 > **Common errors:**
@@ -211,23 +211,23 @@ globular cluster token create --controller <CONTROLLER_IP>:10000
 >
 > - \`unknown service clustercontroller.ClusterControllerService\` — the IP is correct
 >   but the **port is wrong**. Another gRPC service is answering on that port.
->   The ClusterController always listens on port **10000**. Double-check:
+>   The ClusterController always listens on port **12000**. Double-check:
 >
 > \`\`\`bash
-> # Confirm the controller is on port 10000
-> ss -tlnp | grep 10000
+> # Confirm the controller is on port 12000
+> ss -tlnp | grep 12000
 > \`\`\`
 >
 > Correct usage with an explicit LAN IP:
 >
 > \`\`\`bash
-> globular cluster token create --controller 192.168.1.10:10000
+> globular cluster token create --controller 192.168.1.10:12000
 > \`\`\`
 >
 > You can set it permanently to avoid repeating \`--controller\` on every command:
 >
 > \`\`\`bash
-> export GLOBULAR_CONTROLLER=192.168.1.10:10000
+> export GLOBULAR_CONTROLLER=192.168.1.10:12000
 > \`\`\`
 
 Copy the token that is printed. It is single-use and expires after 24 hours (pass \`--expires 48h\` to extend).
