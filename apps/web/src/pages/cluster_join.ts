@@ -225,7 +225,7 @@ architecture, agent version), and wait for approval.
 
 Once the agent has sent its request, it appears in the **Pending** table above.
 Click **✓ Approve**, optionally assign one or more profiles
-(e.g. `worker`, `control-plane`), and confirm.
+(e.g. \`worker\`, \`control-plane\`), and confirm.
 
 The node agent will receive its assigned node ID and begin converging toward
 the desired state defined by its profiles.
@@ -248,9 +248,9 @@ the cluster default. Common values:
 
 | Profile | Purpose |
 |---|---|
-| `worker` | Runs workload services |
-| `control-plane` | Runs etcd, scheduler, controller |
-| `storage` | Runs persistence and object-store services |
+| \`worker\` | Runs workload services |
+| \`control-plane\` | Runs etcd, scheduler, controller |
+| \`storage\` | Runs persistence and object-store services |
           </globular-markdown>
         </iron-collapse>
 
