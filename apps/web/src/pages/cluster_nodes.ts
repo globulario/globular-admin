@@ -11,13 +11,7 @@ function fmtBytes(bytes: number): string {
 
 function profileTags(profiles: string[]): string {
   if (!profiles.length) return '<span style="color:var(--secondary-text-color)">—</span>'
-  return profiles.map(p => `<span style="
-    display:inline-block;padding:1px 7px;border-radius:999px;font-size:.68rem;font-weight:700;
-    letter-spacing:.04em;text-transform:uppercase;margin-right:3px;
-    background:color-mix(in srgb,var(--accent-color) 15%,transparent);
-    color:var(--accent-color);
-    border:1px solid color-mix(in srgb,var(--accent-color) 30%,transparent);
-  ">${p}</span>`).join('')
+  return profiles.map(p => `<span class="md-chip md-chip-tonal" style="margin-right:3px">${p}</span>`).join('')
 }
 
 function capsLine(caps: NodeCapabilities | null): string {
@@ -62,7 +56,7 @@ function sevLabel(s: number): string {
 }
 
 function badge(label: string, color: string): string {
-  return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${color} 15%,transparent);color:${color};border:1px solid color-mix(in srgb,${color} 35%,transparent)">${label}</span>`
+  return `<span class="md-badge" style="--badge-color:${color}">${label}</span>`
 }
 
 function ageLabel(seconds: number): string {
@@ -140,87 +134,78 @@ class PageClusterNodes extends HTMLElement {
       <style>
         .cn-wrap { padding: 16px; }
         .cn-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-        .cn-header h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
-        .cn-subtitle { margin: 0.25rem 0 1rem; opacity: .85; font-size: .88rem; }
+        .cn-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
+        .cn-subtitle { margin: 0.25rem 0 1rem; opacity: .85; font: var(--md-typescale-body-medium); }
         .cn-panel {
-          background: var(--surface-color);
-          border: 1px solid var(--border-subtle-color);
-          border-radius: 12px;
-          overflow: hidden;
+          background:    var(--md-surface-container-low);
+          border:        1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md);
+          box-shadow:    var(--md-elevation-1);
+          overflow:      hidden;
           margin-bottom: 16px;
         }
         .cn-panel-header {
-          padding: 10px 14px;
-          font-size: .75rem;
-          font-weight: 700;
+          padding:        10px 14px;
+          font:           var(--md-typescale-label-medium);
           text-transform: uppercase;
           letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          border-bottom: 1px solid var(--border-subtle-color);
-          display: flex;
-          align-items: center;
+          color:          var(--secondary-text-color);
+          background:     var(--md-surface-container);
+          border-bottom:  1px solid var(--border-subtle-color);
+          display:        flex;
+          align-items:    center;
           justify-content: space-between;
         }
-        .cn-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+        .cn-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
         .cn-table th {
-          text-align: left;
-          padding: 8px 12px;
-          font-size: .71rem;
-          font-weight: 700;
+          text-align:     left;
+          padding:        8px 12px;
+          font:           var(--md-typescale-label-medium);
           text-transform: uppercase;
           letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          border-bottom: 1px solid var(--border-subtle-color);
+          color:          var(--secondary-text-color);
+          border-bottom:  1px solid var(--border-subtle-color);
         }
         .cn-table td { padding: 9px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
         .cn-table tr:last-child td { border-bottom: none; }
         .cn-table tbody tr { cursor: pointer; }
-        .cn-table tbody tr:hover td { background: color-mix(in srgb, var(--accent-color) 7%, transparent); }
-        .cn-table tbody tr.selected td { background: color-mix(in srgb, var(--accent-color) 12%, transparent); }
-        .cn-node-id { font-family: monospace; font-size: .78rem; color: var(--secondary-text-color); }
+        .cn-table tbody tr:hover   td { background: var(--md-state-hover); }
+        .cn-table tbody tr.selected td { background: var(--md-state-selected); }
+        .cn-node-id  { font-family: monospace; font-size: .78rem; color: var(--secondary-text-color); }
         .cn-hostname { font-weight: 600; }
-        .cn-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
+        .cn-empty { padding: 14px; font: var(--md-typescale-body-medium); font-style: italic; color: var(--secondary-text-color); }
         .cn-btn-refresh {
-          border: 1px solid var(--border-subtle-color);
-          background: transparent;
-          color: var(--on-surface-color);
-          border-radius: 6px;
-          padding: 3px 10px;
-          cursor: pointer;
-          font-size: .78rem;
+          border:        1px solid var(--border-subtle-color);
+          background:    transparent;
+          color:         var(--on-surface-color);
+          border-radius: var(--md-shape-sm);
+          padding:       3px 10px;
+          cursor:        pointer;
+          font:          var(--md-typescale-label-medium);
         }
+        .cn-btn-refresh:hover { background: var(--md-state-hover); }
         .cn-detail-panel {
-          background: var(--surface-color);
-          border: 1px solid var(--border-subtle-color);
-          border-radius: 12px;
-          overflow: hidden;
+          background:    var(--md-surface-container-low);
+          border:        1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md);
+          box-shadow:    var(--md-elevation-1);
+          overflow:      hidden;
           margin-bottom: 16px;
         }
-        .cn-findings-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+        .cn-findings-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
         .cn-findings-table th {
-          text-align: left;
-          padding: 7px 12px;
-          font-size: .71rem;
-          font-weight: 700;
+          text-align:     left;
+          padding:        7px 12px;
+          font:           var(--md-typescale-label-medium);
           text-transform: uppercase;
           letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          border-bottom: 1px solid var(--border-subtle-color);
+          color:          var(--secondary-text-color);
+          border-bottom:  1px solid var(--border-subtle-color);
         }
         .cn-findings-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
         .cn-findings-table tr:last-child td { border-bottom: none; }
         .cn-kv-list { font-size: .75rem; font-family: monospace; color: var(--secondary-text-color); }
-        .cn-warn-banner {
-          background: color-mix(in srgb, #f59e0b 10%, transparent);
-          border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
-          border-radius: 8px;
-          padding: 12px 16px;
-          font-size: .85rem;
-          color: #b45309;
-          margin-bottom: 16px;
-          line-height: 1.6;
-        }
-        [data-theme="dark"] .cn-warn-banner { color: #fbbf24; }
+        .cn-warn-banner { /* now use global .md-banner-warn */ }
       </style>
 
       <div class="cn-wrap">
@@ -234,7 +219,7 @@ class PageClusterNodes extends HTMLElement {
         ${this._loading ? `<p class="cn-empty">Loading nodes…</p>` : ''}
 
         ${this._loadError ? `
-        <div class="cn-warn-banner">
+        <div class="md-banner-warn">
           ⚠ Could not load nodes — ${this._loadError}
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>clustercontroller.ClusterControllerService</code> is reachable.</span>
         </div>

@@ -1,0 +1,315 @@
+/* src/styles/components.css
+ *
+ * Shared Material Design 3 component classes.
+ * All values reference tokens from theme.css.
+ *
+ * Sections:
+ *   Badge / Chip
+ *   Panel (Card)
+ *   Table
+ *   Button
+ *   Input
+ *   Banner
+ *   Page scaffold
+ *   Stat card
+ *   Empty state
+ */
+
+/* ─── Badge ───────────────────────────────────────────────────────────────── */
+/*
+ * Usage:  <span class="md-badge" style="--badge-color: var(--error-color)">CRITICAL</span>
+ * The --badge-color CSS property sets text, tinted background, and border.
+ */
+.md-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--md-shape-full);
+  font: var(--md-typescale-label-small);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  vertical-align: middle;
+  background: color-mix(in srgb, var(--badge-color, var(--accent-color)) 15%, transparent);
+  color:       var(--badge-color, var(--accent-color));
+  border: 1px solid color-mix(in srgb, var(--badge-color, var(--accent-color)) 35%, transparent);
+}
+
+
+/* ─── Chip ────────────────────────────────────────────────────────────────── */
+/*
+ * MD3 Suggestion / Filter chip.
+ * Tonal variant: accent-color tint (profile tags, labels).
+ */
+.md-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--md-shape-full);
+  font: var(--md-typescale-label-small);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Tonal: uses accent-color tint */
+.md-chip-tonal {
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  color:       var(--accent-color);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
+}
+
+/* Status variants */
+.md-chip-success {
+  background: color-mix(in srgb, var(--success-color) 15%, transparent);
+  color:       var(--success-color);
+  border: 1px solid color-mix(in srgb, var(--success-color) 30%, transparent);
+}
+.md-chip-error {
+  background: color-mix(in srgb, var(--error-color) 15%, transparent);
+  color:       var(--error-color);
+  border: 1px solid color-mix(in srgb, var(--error-color) 30%, transparent);
+}
+.md-chip-warn {
+  background: color-mix(in srgb, #f59e0b 15%, transparent);
+  color:       #f59e0b;
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+}
+.md-chip-neutral {
+  background: color-mix(in srgb, var(--on-surface-color) 10%, transparent);
+  color:       var(--secondary-text-color);
+  border: 1px solid color-mix(in srgb, var(--on-surface-color) 18%, transparent);
+}
+
+
+/* ─── Panel (Card) ────────────────────────────────────────────────────────── */
+/*
+ * MD3 Filled Card / Elevated Card.
+ * .md-panel         – standard card
+ * .md-panel-header  – panel title bar (slightly elevated surface)
+ */
+.md-panel {
+  background:    var(--md-surface-container-low);
+  border:        1px solid var(--border-subtle-color);
+  border-radius: var(--md-shape-md);
+  box-shadow:    var(--md-elevation-1);
+  overflow:      hidden;
+  margin-bottom: 16px;
+}
+
+.md-panel-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         10px 14px;
+  background:      var(--md-surface-container);
+  border-bottom:   1px solid var(--border-subtle-color);
+  font:            var(--md-typescale-label-medium);
+  text-transform:  uppercase;
+  letter-spacing:  .06em;
+  color:           var(--secondary-text-color);
+}
+
+
+/* ─── Table ───────────────────────────────────────────────────────────────── */
+/*
+ * MD3 Data Table.
+ * Add .md-table-interactive to tbody to enable hover/selection state layers.
+ */
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--md-typescale-body-small);
+}
+
+.md-table th {
+  text-align:     left;
+  padding:        8px 12px;
+  font:           var(--md-typescale-label-medium);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color:          var(--secondary-text-color);
+  border-bottom:  1px solid var(--border-subtle-color);
+}
+
+.md-table td {
+  padding:        9px 12px;
+  border-bottom:  1px solid var(--border-subtle-color);
+  vertical-align: middle;
+}
+
+.md-table tr:last-child td { border-bottom: none; }
+
+/* Interactive rows */
+.md-table tbody.md-interactive tr            { cursor: pointer; }
+.md-table tbody.md-interactive tr:hover   td { background: var(--md-state-hover); }
+.md-table tbody.md-interactive tr.selected td { background: var(--md-state-selected); }
+
+
+/* ─── Button ──────────────────────────────────────────────────────────────── */
+/*
+ * MD3 Button variants.
+ * Base:      .md-btn
+ * Variants:  -filled  -tonal  -outlined  -text
+ * Modifiers: -sm  -danger  -success
+ */
+.md-btn {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             6px;
+  padding:         6px 16px;
+  border-radius:   var(--md-shape-full);
+  font:            var(--md-typescale-label-large);
+  cursor:          pointer;
+  white-space:     nowrap;
+  transition:      background .12s, box-shadow .12s, opacity .12s;
+  border:          none;
+  outline:         none;
+}
+.md-btn:focus-visible { box-shadow: var(--md-focus-ring); }
+.md-btn:disabled      { opacity: .38; cursor: not-allowed; }
+
+.md-btn-filled {
+  background: var(--accent-color);
+  color:      #fff;
+}
+.md-btn-filled:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-color) 88%, #000);
+}
+
+.md-btn-tonal {
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  color:      var(--accent-color);
+}
+.md-btn-tonal:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-color) 22%, transparent);
+}
+
+.md-btn-outlined {
+  background: transparent;
+  color:      var(--accent-color);
+  border:     1px solid var(--accent-color);
+}
+.md-btn-outlined:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-color) 8%, transparent);
+}
+
+.md-btn-text {
+  background: transparent;
+  color:      var(--on-surface-color);
+  border:     1px solid var(--border-subtle-color);
+}
+.md-btn-text:hover:not(:disabled) { background: var(--md-state-hover); }
+
+/* Semantic variants */
+.md-btn-success { background: var(--success-color); color: #fff; }
+.md-btn-success:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--success-color) 88%, #000);
+}
+.md-btn-danger  { background: var(--error-color); color: #fff; }
+.md-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error-color) 88%, #000);
+}
+
+/* Size modifier */
+.md-btn-sm { padding: 3px 10px; font-size: .72rem; }
+
+
+/* ─── Input ───────────────────────────────────────────────────────────────── */
+.md-input {
+  padding:      8px 12px;
+  border:       1px solid var(--border-strong-color);
+  border-radius: var(--md-shape-sm);
+  background:   var(--md-surface-container-lowest);
+  color:        var(--on-surface-color);
+  font:         var(--md-typescale-body-medium);
+  outline:      none;
+  transition:   border-color .12s, box-shadow .12s;
+}
+.md-input:focus {
+  border-color: var(--accent-color);
+  box-shadow:   var(--md-focus-ring);
+}
+
+
+/* ─── Banner ──────────────────────────────────────────────────────────────── */
+/* MD3-style informational banner strips */
+.md-banner-warn {
+  background:    color-mix(in srgb, #f59e0b 12%, transparent);
+  border:        1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+  border-radius: var(--md-shape-sm);
+  padding:       12px 16px;
+  font:          var(--md-typescale-body-small);
+  color:         #92400e;
+  line-height:   1.6;
+  margin-bottom: 16px;
+}
+[data-theme="dark"] .md-banner-warn { color: #fbbf24; }
+
+.md-banner-error {
+  background:    color-mix(in srgb, var(--error-color) 10%, transparent);
+  border:        1px solid color-mix(in srgb, var(--error-color) 30%, transparent);
+  border-radius: var(--md-shape-sm);
+  padding:       12px 16px;
+  font:          var(--md-typescale-body-small);
+  color:         var(--error-color);
+  line-height:   1.6;
+  margin-bottom: 16px;
+}
+
+
+/* ─── Stat card ───────────────────────────────────────────────────────────── */
+.md-stat-card {
+  background:    var(--md-surface-container-low);
+  border:        1px solid var(--border-subtle-color);
+  border-radius: var(--md-shape-md);
+  box-shadow:    var(--md-elevation-1);
+  padding:       16px 20px;
+}
+.md-stat-label {
+  font:           var(--md-typescale-label-medium);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color:          var(--secondary-text-color);
+}
+.md-stat-value {
+  font:       var(--md-typescale-headline-medium);
+  color:      var(--on-surface-color);
+  line-height: 1.2;
+  margin-top:  4px;
+}
+
+
+/* ─── Empty state ─────────────────────────────────────────────────────────── */
+.md-empty {
+  padding:    14px;
+  font:       var(--md-typescale-body-medium);
+  font-style: italic;
+  color:      var(--secondary-text-color);
+}
+
+
+/* ─── Page scaffold ───────────────────────────────────────────────────────── */
+.md-page-wrap {
+  padding: 16px;
+}
+.md-page-header {
+  display:     flex;
+  align-items: center;
+  gap:         12px;
+  margin-bottom: 4px;
+}
+.md-page-title {
+  margin: 0;
+  font:   var(--md-typescale-headline-small);
+  color:  var(--on-surface-color);
+}
+.md-page-subtitle {
+  margin:  .25rem 0 1rem;
+  font:    var(--md-typescale-body-medium);
+  color:   var(--secondary-text-color);
+  opacity: .9;
+}

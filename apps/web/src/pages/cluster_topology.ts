@@ -54,7 +54,7 @@ function statusBadge(s: string): string {
   const color = statusColor(s)
   const label = s || 'UNKNOWN'
   return `<span style="
-    display:inline-block; padding:2px 8px; border-radius:999px; font-size:.72rem;
+    display:inline-block; padding:2px 8px; border-radius: var(--md-shape-full); font-size:.72rem;
     font-weight:700; letter-spacing:.04em; text-transform:uppercase;
     background:color-mix(in srgb,${color} 15%,transparent);
     color:${color}; border:1px solid color-mix(in srgb,${color} 35%,transparent);
@@ -147,7 +147,7 @@ class PageClusterTopology extends HTMLElement {
     const expanded = this._expandedNode === node.nodeId
 
     const profileTags = node.profiles.length > 0
-      ? node.profiles.map(p => `<span class="profile-tag">${p}</span>`).join('')
+      ? node.profiles.map(p => `<span class="md-chip md-chip-tonal">${p}</span>`).join('')
       : ''
 
     return `
@@ -237,11 +237,11 @@ class PageClusterTopology extends HTMLElement {
 
         /* header */
         .topo-header { display:flex; align-items:center; gap:12px; }
-        .topo-header h2 { margin:0; font-size:1.3rem; font-weight:800; }
+        .topo-header h2 { margin:0; font: var(--md-typescale-headline-small); }
         .topo-ts { font-size:.8rem; color:var(--secondary-text-color); margin-left:auto; }
         .btn-refresh {
           border:1px solid var(--border-subtle-color); background:transparent;
-          color:var(--on-surface-color); border-radius:8px; padding:5px 12px;
+          color:var(--on-surface-color); border-radius: var(--md-shape-sm); padding:5px 12px;
           cursor:pointer; font-size:.85rem; font-weight:600;
         }
         .btn-refresh:hover { background:var(--surface-elevated-color); }
@@ -250,8 +250,9 @@ class PageClusterTopology extends HTMLElement {
         .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
         @media(max-width:700px) { .stat-grid { grid-template-columns:repeat(2,1fr); } }
         .stat-card {
-          background:var(--surface-color); border:1px solid var(--border-subtle-color);
-          border-radius:12px; padding:16px 20px;
+          background: var(--md-surface-container-low); border:1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md); padding:16px 20px;
+          box-shadow: var(--md-elevation-1);
         }
         .stat-card .label { font-size:.75rem; font-weight:600; text-transform:uppercase;
           letter-spacing:.06em; color:var(--secondary-text-color); margin-bottom:6px; }
@@ -267,8 +268,9 @@ class PageClusterTopology extends HTMLElement {
 
         /* node card */
         .node-card {
-          background:var(--surface-color); border:1px solid var(--border-subtle-color);
-          border-radius:12px; overflow:hidden; cursor:pointer;
+          background: var(--md-surface-container-low); border:1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md); overflow:hidden; cursor:pointer;
+          box-shadow: var(--md-elevation-1);
           transition: box-shadow .15s;
         }
         .node-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.1); }
@@ -280,18 +282,10 @@ class PageClusterTopology extends HTMLElement {
           border-bottom:1px solid var(--border-subtle-color);
         }
         .node-name { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
-        .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+        .dot { width:8px; height:8px; border-radius: 50%; flex-shrink:0; }
         .hostname { font-weight:700; font-size:.95rem; }
 
-        .profile-tag {
-          font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
-          padding:2px 7px; border-radius:999px;
-          background:color-mix(in srgb,var(--accent-color) 15%,transparent);
-          color:var(--accent-color);
-          border:1px solid color-mix(in srgb,var(--accent-color) 30%,transparent);
-        }
-
-        .node-card-body {
+.node-card-body {
           padding:12px 16px;
           display:flex; flex-direction:column; gap:6px;
         }
@@ -334,8 +328,8 @@ class PageClusterTopology extends HTMLElement {
         }
         code {
           font-family:monospace; font-size:.78rem;
-          background:color-mix(in srgb,var(--accent-color) 10%,transparent);
-          padding:1px 5px; border-radius:4px;
+          background: var(--md-state-selected);
+          padding:1px 5px; border-radius: var(--md-shape-xs);
           word-break:break-all;
         }
 
@@ -349,11 +343,11 @@ class PageClusterTopology extends HTMLElement {
         .caps-icon { font-size:.9em; opacity:.7; }
         .caps-disk-bar {
           display:inline-block; width:40px; height:5px;
-          background:var(--border-subtle-color); border-radius:3px;
+          background:var(--border-subtle-color); border-radius: var(--md-shape-xs);
           overflow:hidden; vertical-align:middle; margin:0 3px;
         }
         .caps-disk-used {
-          display:block; height:100%; border-radius:3px;
+          display:block; height:100%; border-radius: var(--md-shape-xs);
           background:color-mix(in srgb,var(--accent-color) 70%,transparent);
           transition:width .3s;
         }
@@ -372,12 +366,7 @@ class PageClusterTopology extends HTMLElement {
         .empty-msg {
           color:var(--secondary-text-color); font-size:.85rem; font-style:italic; margin:0;
         }
-        .unavail-banner {
-          background:color-mix(in srgb,#f59e0b 10%,transparent);
-          border:1px solid color-mix(in srgb,#f59e0b 35%,transparent);
-          border-radius:8px; padding:12px 16px; font-size:.85rem; color:#b45309; line-height:1.6;
-        }
-        [data-theme="dark"] .unavail-banner { color:#fbbf24; }
+        /* use global .md-banner-warn */
       </style>
 
       <div class="topo">
@@ -392,7 +381,7 @@ class PageClusterTopology extends HTMLElement {
         ${this._loading ? `<div class="empty-msg">Loading topology data…</div>` : ''}
 
         ${this._nodesError ? `
-        <div class="unavail-banner">
+        <div class="md-banner-warn">
           ⚠ ${this._nodesError}
         </div>` : ''}
 

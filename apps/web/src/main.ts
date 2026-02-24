@@ -1,5 +1,6 @@
-import './styles/styles.css'
 import './styles/theme.css'
+import './styles/components.css'
+import './styles/styles.css'
 
 import "@globular/components/applicationLayout.js";
 import './widgets/user_toolbar'

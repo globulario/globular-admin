@@ -25,7 +25,7 @@ function capsLine(caps: NodeCapabilities | null): string {
 }
 
 function badge(label: string, color: string): string {
-  return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${color} 15%,transparent);color:${color};border:1px solid color-mix(in srgb,${color} 35%,transparent)">${label}</span>`
+  return `<span class="md-badge" style="--badge-color:${color}">${label}</span>`
 }
 
 function statusBadge(status: string): string {
@@ -64,22 +64,23 @@ class PageClusterJoin extends HTMLElement {
       <style>
         .cj-wrap { padding: 16px; }
         .cj-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
-        .cj-header h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
+        .cj-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
         .cj-subtitle { margin: 0.25rem 0 1.25rem; opacity: .85; font-size: .88rem; }
         .cj-panel {
-          background: var(--surface-color);
+          background: var(--md-surface-container-low);
           border: 1px solid var(--border-subtle-color);
-          border-radius: 12px;
+          border-radius: var(--md-shape-md);
+          box-shadow: var(--md-elevation-1);
           overflow: hidden;
           margin-bottom: 16px;
         }
         .cj-panel-hdr {
           padding: 10px 14px;
-          font-size: .75rem;
-          font-weight: 700;
+          font: var(--md-typescale-label-medium);
           text-transform: uppercase;
           letter-spacing: .06em;
           color: var(--secondary-text-color);
+          background: var(--md-surface-container);
           border-bottom: 1px solid var(--border-subtle-color);
           display: flex;
           align-items: center;
@@ -106,16 +107,17 @@ class PageClusterJoin extends HTMLElement {
           border: 1px solid var(--border-subtle-color);
           background: transparent;
           color: var(--on-surface-color);
-          border-radius: 6px;
+          border-radius: var(--md-shape-sm);
           padding: 4px 12px;
           cursor: pointer;
           font-size: .78rem;
         }
+        .cj-btn:hover { background: var(--md-state-hover); }
         .cj-btn-approve {
           border: none;
           background: var(--success-color);
           color: #fff;
-          border-radius: 6px;
+          border-radius: var(--md-shape-sm);
           padding: 4px 12px;
           cursor: pointer;
           font-size: .78rem;
@@ -125,7 +127,7 @@ class PageClusterJoin extends HTMLElement {
           border: none;
           background: var(--error-color);
           color: #fff;
-          border-radius: 6px;
+          border-radius: var(--md-shape-sm);
           padding: 4px 12px;
           cursor: pointer;
           font-size: .78rem;
@@ -133,7 +135,7 @@ class PageClusterJoin extends HTMLElement {
         }
         .cj-btn:disabled, .cj-btn-approve:disabled, .cj-btn-reject:disabled { opacity: .5; cursor: not-allowed; }
         .cj-action-row td {
-          background: color-mix(in srgb, var(--accent-color) 5%, transparent);
+          background: var(--md-state-hover);
           padding: 12px 14px;
           border-bottom: 1px solid var(--border-subtle-color);
         }
@@ -143,37 +145,27 @@ class PageClusterJoin extends HTMLElement {
           min-width: 200px;
           padding: 6px 10px;
           border: 1px solid var(--border-subtle-color);
-          border-radius: 6px;
+          border-radius: var(--md-shape-sm);
           background: var(--background-color);
           color: var(--on-surface-color);
           font-size: .84rem;
         }
-        .cj-input:focus { outline: none; border-color: var(--accent-color); }
+        .cj-input:focus { outline: none; border-color: var(--accent-color); box-shadow: var(--md-focus-ring); }
         .cj-input-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); margin-bottom: 5px; }
         .cj-error {
           background: color-mix(in srgb, var(--error-color) 10%, transparent);
           border: 1px solid color-mix(in srgb, var(--error-color) 30%, transparent);
-          border-radius: 8px;
+          border-radius: var(--md-shape-sm);
           padding: 10px 14px;
           font-size: .84rem;
           color: var(--error-color);
           margin-bottom: 12px;
         }
-        .cj-warn {
-          background: color-mix(in srgb, #f59e0b 10%, transparent);
-          border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
-          border-radius: 8px;
-          padding: 10px 14px;
-          font-size: .84rem;
-          color: #b45309;
-          margin-bottom: 12px;
-          line-height: 1.5;
-        }
-        [data-theme="dark"] .cj-warn { color: #fbbf24; }
+        /* use global .md-banner-warn */
         .cj-token-box {
           background: color-mix(in srgb, var(--accent-color) 6%, transparent);
           border: 1px solid var(--border-subtle-color);
-          border-radius: 8px;
+          border-radius: var(--md-shape-sm);
           padding: 12px 14px;
           display: flex;
           align-items: center;
@@ -437,7 +429,7 @@ the cluster default. Common values:
     const other   = this._requests.filter(r => r.status.toLowerCase() !== 'pending')
 
     el.innerHTML = `
-      ${this._loadError ? `<div class="cj-warn">⚠ ${this._loadError}</div>` : ''}
+      ${this._loadError ? `<div class="md-banner-warn">⚠ ${this._loadError}</div>` : ''}
 
       <!-- Pending requests -->
       <div class="cj-panel">

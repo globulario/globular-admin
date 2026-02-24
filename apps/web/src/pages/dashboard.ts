@@ -20,7 +20,7 @@ function statusBadge(s: string): string {
   const color = statusColor(s)
   const label = s || 'UNKNOWN'
   return `<span style="
-    display:inline-block; padding:2px 8px; border-radius:999px; font-size:.72rem;
+    display:inline-block; padding:2px 8px; border-radius: var(--md-shape-full); font-size:.72rem;
     font-weight:700; letter-spacing:.04em; text-transform:uppercase;
     background:color-mix(in srgb,${color} 15%,transparent);
     color:${color}; border:1px solid color-mix(in srgb,${color} 35%,transparent);
@@ -139,11 +139,11 @@ class PageDashboard extends HTMLElement {
 
         /* ── header ── */
         .dash-header { display:flex; align-items:center; gap:12px; }
-        .dash-header h2 { margin:0; font-size:1.3rem; font-weight:800; }
+        .dash-header h2 { margin:0; font: var(--md-typescale-headline-small); }
         .dash-ts { font-size:.8rem; color:var(--secondary-text-color); margin-left:auto; }
         .btn-refresh {
           border:1px solid var(--border-subtle-color); background:transparent;
-          color:var(--on-surface-color); border-radius:8px; padding:5px 12px;
+          color:var(--on-surface-color); border-radius: var(--md-shape-sm); padding:5px 12px;
           cursor:pointer; font-size:.85rem; font-weight:600;
         }
         .btn-refresh:hover { background:var(--surface-elevated-color); }
@@ -152,8 +152,9 @@ class PageDashboard extends HTMLElement {
         .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
         @media(max-width:700px) { .stat-grid { grid-template-columns:repeat(2,1fr); } }
         .stat-card {
-          background:var(--surface-color); border:1px solid var(--border-subtle-color);
-          border-radius:12px; padding:16px 20px;
+          background: var(--md-surface-container-low); border:1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md); padding:16px 20px;
+          box-shadow: var(--md-elevation-1);
         }
         .stat-card .label { font-size:.75rem; font-weight:600; text-transform:uppercase;
           letter-spacing:.06em; color:var(--secondary-text-color); margin-bottom:6px; }
@@ -166,12 +167,14 @@ class PageDashboard extends HTMLElement {
 
         /* ── panels ── */
         .panel {
-          background:var(--surface-color); border:1px solid var(--border-subtle-color);
-          border-radius:12px; overflow:hidden;
+          background: var(--md-surface-container-low); border:1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md); overflow:hidden;
+          box-shadow: var(--md-elevation-1);
         }
         .panel-header {
-          padding:12px 16px; font-size:.8rem; font-weight:700; text-transform:uppercase;
+          padding:12px 16px; font: var(--md-typescale-label-medium); text-transform:uppercase;
           letter-spacing:.06em; color:var(--secondary-text-color);
+          background: var(--md-surface-container);
           border-bottom:1px solid var(--border-subtle-color);
           display:flex; align-items:center; gap:8px;
         }
@@ -185,7 +188,7 @@ class PageDashboard extends HTMLElement {
              color:var(--secondary-text-color); border-bottom:1px solid var(--border-subtle-color); }
         td { padding:9px 12px; border-bottom:1px solid var(--border-subtle-color); vertical-align:middle; }
         tr:last-child td { border-bottom:none; }
-        tr:hover td { background:color-mix(in srgb,var(--accent-color) 7%,transparent); }
+        tr:hover td { background: var(--md-state-hover); }
         .hostname { font-weight:600; }
         .failed-checks { font-size:.75rem; color:var(--error-color); }
 
@@ -193,7 +196,7 @@ class PageDashboard extends HTMLElement {
         .action-list { display:flex; flex-direction:column; gap:8px; }
         .btn-action {
           width:100%; text-align:left; padding:10px 14px;
-          border:1px solid var(--border-subtle-color); border-radius:8px;
+          border:1px solid var(--border-subtle-color); border-radius: var(--md-shape-sm);
           background:transparent; color:var(--on-surface-color); cursor:pointer;
           font-size:.88rem; font-weight:600; display:flex; align-items:center; gap:8px;
           transition: background .15s;
@@ -218,15 +221,9 @@ class PageDashboard extends HTMLElement {
         /* ── misc ── */
         .empty-msg { color:var(--secondary-text-color); font-size:.85rem;
           font-style:italic; margin:0; padding:16px; }
-        .unavail-banner {
-          background:color-mix(in srgb,#f59e0b 10%,transparent);
-          border:1px solid color-mix(in srgb,#f59e0b 35%,transparent);
-          border-radius:8px; padding:12px 16px; font-size:.85rem; color:#b45309;
-          line-height:1.6;
-        }
-        [data-theme="dark"] .unavail-banner { color:#fbbf24; }
+        /* use global .md-banner-warn */
         .cluster-id { font-size:.75rem; color:var(--secondary-text-color); font-family:monospace; }
-        .dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
+        .dot { width:8px; height:8px; border-radius: 50%; display:inline-block; flex-shrink:0; }
       </style>
 
       <div class="dash">
@@ -243,7 +240,7 @@ class PageDashboard extends HTMLElement {
 
         <!-- Stat cards -->
         ${serviceUnavailable ? `
-        <div class="unavail-banner">
+        <div class="md-banner-warn">
           ⚠ ClusterController service not reachable —
           <span style="font-family:monospace;font-size:.8em">${this._healthError}</span>
           <br><span style="font-size:.8em;opacity:.8">

@@ -1,111 +1,189 @@
-/* src/styles/theme.css */
-:root {
-  /* light defaults */
-  --background-color: #f6f7f9;
-  --surface-color: #ffffff;
-  --on-surface-color: #1d2025;
-  --primary-color: #3b82f6;
-  --primary-text-color: #1d2025;
-  --secondary-text-color: color-mix(in srgb, var(--on-surface-color) 70%, transparent);
-  --on-primary-color: #ffffff;
-  --secondary-color: #26a69a;
-  --text-primary-color: var(--primary-text-color);
+/* src/styles/theme.css
+ *
+ * Design-token layer following Material Design 3 (MD3 / Material You).
+ *
+ * Token groups (all prefixed --md-*):
+ *   Shape       – corner-radius scale
+ *   Surface     – surface-container elevation steps
+ *   State       – hover / focus / pressed / selected overlay colours
+ *   Elevation   – box-shadow levels 0-3
+ *   Focus       – focus-indicator ring
+ *   Typography  – type-scale shorthand (font: weight size/lh family)
+ *
+ * Legacy aliases (--background-color, --surface-color …) are kept so that
+ * existing component code continues to work unchanged; they now point at the
+ * appropriate MD3 tokens.
+ */
 
-  /* NEW: shared helpers */
-  --surface-elevated-color: color-mix(in srgb, var(--surface-color) 98%, #000 2%);
+/* ─── Light defaults ──────────────────────────────────────────────────────── */
+:root {
+
+  /* ── MD3 Shape Scale ──────────────────────────────────────────────────── */
+  --md-shape-xs:   4px;
+  --md-shape-sm:   8px;
+  --md-shape-md:   12px;
+  --md-shape-lg:   16px;
+  --md-shape-xl:   28px;
+  --md-shape-full: 9999px;
+
+  /* ── MD3 Surface-Container hierarchy (light) ──────────────────────────── */
+  /* Lowest → page background; Low → cards/panels; → …High → dialogs       */
+  --md-surface-container-lowest:  #fafbfc;
+  --md-surface-container-low:     #ffffff;
+  --md-surface-container:         #f3f4f7;
+  --md-surface-container-high:    #eceef2;
+  --md-surface-container-highest: #e5e8ed;
+
+  /* ── MD3 On-surface variant (muted body text) ─────────────────────────── */
+  --md-color-on-surface-variant: color-mix(in srgb, var(--on-surface-color) 65%, transparent);
+
+  /* ── MD3 State layers ─────────────────────────────────────────────────── */
+  /* Use on-surface (neutral) for most states; primary for selection        */
+  --md-state-hover:    color-mix(in srgb, var(--on-surface-color)  8%, transparent);
+  --md-state-focus:    color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+  --md-state-pressed:  color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+  --md-state-selected: color-mix(in srgb, var(--accent-color)     12%, transparent);
+
+  /* ── MD3 Elevation shadows (level 0-3) ───────────────────────────────── */
+  --md-elevation-0: none;
+  --md-elevation-1: 0 1px 2px rgba(0,0,0,.10), 0 1px 3px rgba(0,0,0,.06);
+  --md-elevation-2: 0 2px 4px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.07);
+  --md-elevation-3: 0 4px 8px rgba(0,0,0,.12), 0 2px 4px rgba(0,0,0,.08);
+
+  /* ── MD3 Focus indicator ─────────────────────────────────────────────── */
+  --md-focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent-color) 28%, transparent);
+
+  /* ── MD3 Typography scale  (CSS font shorthand: weight size/lh family) ─ */
+  --md-typescale-headline-large:  800 32px/1.25 inherit;
+  --md-typescale-headline-medium: 800 28px/1.29 inherit;
+  --md-typescale-headline-small:  700 24px/1.33 inherit;
+  --md-typescale-title-large:     600 22px/1.27 inherit;
+  --md-typescale-title-medium:    500 16px/1.5  inherit;
+  --md-typescale-title-small:     500 14px/1.43 inherit;
+  --md-typescale-body-large:      400 16px/1.5  inherit;
+  --md-typescale-body-medium:     400 14px/1.43 inherit;
+  --md-typescale-body-small:      400 12px/1.33 inherit;
+  --md-typescale-label-large:     500 14px/1.43 inherit;
+  --md-typescale-label-medium:    500 12px/1.33 inherit;
+  --md-typescale-label-small:     500 11px/1.45 inherit;
+
+  /* ── Core colour roles ────────────────────────────────────────────────── */
+  --background-color:       #f6f7f9;
+  --surface-color:          var(--md-surface-container-low);
+  --surface-elevated-color: var(--md-surface-container-high);
+  --on-surface-color:       #1d2025;
+  --primary-color:          #3b82f6;
+  --accent-color:           #3b82f6;
+  --primary-text-color:     #1d2025;
+  --secondary-text-color:   color-mix(in srgb, var(--on-surface-color) 70%, transparent);
+  --on-primary-color:       #ffffff;
+  --secondary-color:        #26a69a;
+  --text-primary-color:     var(--primary-text-color);
+
+  /* ── Border helpers ───────────────────────────────────────────────────── */
   --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 10%, transparent);
   --border-strong-color: color-mix(in srgb, var(--on-surface-color) 22%, transparent);
+  --divider-color:       var(--border-subtle-color);
 
-  --accent-color: #3b82f6;
-  --primary-light-color: color-mix(in srgb, var(--primary-color) 80%, #ffffff 20%);
-  --primary-dark-color: color-mix(in srgb, var(--primary-color) 80%, #000000 20%);
-
-  --surface-color-dark: color-mix(in srgb, var(--surface-color) 92%, #000 8%);
-  --palette-background-dark: color-mix(in srgb, var(--surface-color) 85%, #000 15%);
-  --palette-background: var(--surface-color);
-  --palette-background-paper: var(--surface-elevated-color);
-
-  --palette-primary: var(--primary-color);
-  --palette-primary-main: var(--primary-color);
-  --palette-primary-light: var(--primary-light-color);
-  --palette-primary-dark: var(--primary-dark-color);
-  --palette-primary-contrast: var(--on-primary-color);
-  --palette-primary-accent: color-mix(in srgb, var(--primary-color) 92%, var(--on-primary-color) 8%);
-
-  --palette-text-primary: var(--primary-text-color);
-  --palette-text-secondary: var(--secondary-text-color);
-  --palette-text-accent: color-mix(in srgb, var(--on-surface-color) 85%, transparent);
-
-  --error-color: #ef4444;
+  /* ── Semantic colours ─────────────────────────────────────────────────── */
+  --error-color:   #ef4444;
   --success-color: #10b981;
-  --palette-error-main: var(--error-color);
-  --palette-success-main: var(--success-color);
-  --palette-divider: var(--divider-color);
-  --palette-action-active: rgba(0, 0, 0, 0.95);
-  --palette-action-disabled: rgba(0, 0, 0, 0.25);
-  --scroll-thumb: rgba(0, 0, 0, 0.3);
-  --scroll-thumb-hover: rgba(0, 0, 0, 0.5);
-  --scroll-track: rgba(0, 0, 0, 0.05);
 
-  /* keep divider in sync with new helpers */
-  --divider-color: var(--border-subtle-color);
+  /* ── Derived palette aliases (used by legacy components) ──────────────── */
+  --primary-light-color:  color-mix(in srgb, var(--primary-color) 80%, #ffffff 20%);
+  --primary-dark-color:   color-mix(in srgb, var(--primary-color) 80%, #000000 20%);
+  --surface-color-dark:   color-mix(in srgb, var(--surface-color) 92%, #000 8%);
+
+  --palette-background-dark:   color-mix(in srgb, var(--surface-color) 85%, #000 15%);
+  --palette-background:        var(--surface-color);
+  --palette-background-paper:  var(--surface-elevated-color);
+  --palette-primary:           var(--primary-color);
+  --palette-primary-main:      var(--primary-color);
+  --palette-primary-light:     var(--primary-light-color);
+  --palette-primary-dark:      var(--primary-dark-color);
+  --palette-primary-contrast:  var(--on-primary-color);
+  --palette-primary-accent:    color-mix(in srgb, var(--primary-color) 92%, var(--on-primary-color) 8%);
+  --palette-text-primary:      var(--primary-text-color);
+  --palette-text-secondary:    var(--secondary-text-color);
+  --palette-text-accent:       color-mix(in srgb, var(--on-surface-color) 85%, transparent);
+  --palette-error-main:        var(--error-color);
+  --palette-success-main:      var(--success-color);
+  --palette-divider:           var(--border-subtle-color);
+  --palette-action-active:     rgba(0, 0, 0, 0.95);
+  --palette-action-disabled:   rgba(0, 0, 0, 0.25);
+
+  /* ── Scrollbar ────────────────────────────────────────────────────────── */
+  --scroll-thumb:       rgba(0, 0, 0, 0.3);
+  --scroll-thumb-hover: rgba(0, 0, 0, 0.5);
+  --scroll-track:       rgba(0, 0, 0, 0.05);
 }
 
 
+/* ─── Light-only overrides ────────────────────────────────────────────────── */
 :root:not([data-theme="dark"]) {
   --surface-elevated-color: #ffffff;
-  /* pure white */
-  --dialog-border-color: rgba(0, 0, 0, 0.12);
-  --dockbar-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  --dialog-border-color:    rgba(0, 0, 0, 0.12);
+  --dockbar-shadow:         0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
-/* DARK THEME OVERRIDES */
+
+/* ─── Dark theme overrides ────────────────────────────────────────────────── */
 :root[data-theme="dark"] {
-  --background-color: #0f1216;
-  --surface-color: #171b21;
-  --surface-elevated-color: #1f252f;
-  /* slightly brighter for dialogs/dockbar */
-  --on-surface-color: #e5e7eb;
-  --primary-text-color: var(--on-surface-color);
-  --secondary-text-color: color-mix(in srgb, var(--on-surface-color) 65%, transparent);
-  --secondary-color: color-mix(in srgb, #22d3ee 60%, #0f172a 40%);
-  --text-primary-color: var(--primary-text-color);
 
-  /* header is slightly lighter than primary-color */
-  --accent-color: #60a5fa;
-  --primary-color: #1f1e1e;
+  /* MD3 surface-container hierarchy (dark) */
+  --md-surface-container-lowest:  #0a0d10;
+  --md-surface-container-low:     #171b21;
+  --md-surface-container:         #1c2028;
+  --md-surface-container-high:    #1f252f;
+  --md-surface-container-highest: #252c38;
+
+  /* MD3 elevation shadows are more prominent in dark mode */
+  --md-elevation-1: 0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.22);
+  --md-elevation-2: 0 2px 4px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.25);
+  --md-elevation-3: 0 4px 8px rgba(0,0,0,.40), 0 2px 4px rgba(0,0,0,.28);
+
+  /* Core colour roles */
+  --background-color:       #0f1216;
+  --surface-color:          var(--md-surface-container-low);
+  --surface-elevated-color: var(--md-surface-container-high);
+  --on-surface-color:       #e5e7eb;
+  --primary-text-color:     var(--on-surface-color);
+  --secondary-text-color:   color-mix(in srgb, var(--on-surface-color) 65%, transparent);
+  --secondary-color:        color-mix(in srgb, #22d3ee 60%, #0f172a 40%);
+  --text-primary-color:     var(--primary-text-color);
+
+  --accent-color:      #60a5fa;
+  --primary-color:     #1f1e1e;
+  --on-primary-color:  #ffffff;
   --primary-light-color: color-mix(in srgb, var(--primary-color) 60%, #4b5563 40%);
-  --primary-dark-color: color-mix(in srgb, var(--primary-color) 80%, #020617 20%);
+  --primary-dark-color:  color-mix(in srgb, var(--primary-color) 80%, #020617 20%);
 
-  --on-primary-color: #ffffff;
-
-  --error-color: #f87171;
+  --error-color:   #f87171;
   --success-color: #34d399;
 
-  --scroll-thumb: rgba(255, 255, 255, 0.25);
-  --scroll-thumb-hover: rgba(255, 255, 255, 0.45);
-  --scroll-track: rgba(255, 255, 255, 0.05);
-
-  --palette-action-active: rgba(255, 255, 255, 0.95);
-  --palette-action-disabled: rgba(255, 255, 255, 0.25);
-  --palette-divider: rgb(83, 83, 83);
-  --surface-color-dark: color-mix(in srgb, var(--surface-color) 70%, #000 30%);
-  --palette-background: var(--surface-color);
-  --palette-background-dark: color-mix(in srgb, var(--surface-elevated-color) 75%, #000 25%);
-  --palette-background-paper: var(--surface-elevated-color);
-  --palette-primary-accent: color-mix(in srgb, var(--primary-color) 85%, var(--on-surface-color) 15%);
-
-  --palette-text-primary: var(--primary-text-color);
-  --palette-text-secondary: var(--secondary-text-color);
-  --palette-text-accent: color-mix(in srgb, var(--on-surface-color) 90%, transparent);
-  --palette-error-main: var(--error-color);
-  --palette-success-main: var(--success-color);
-
-  /* stronger border in dark so edges are visible */
+  /* Borders are slightly stronger in dark for edge visibility */
   --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 18%, transparent);
   --border-strong-color: color-mix(in srgb, var(--on-surface-color) 32%, transparent);
-  --divider-color: var(--border-subtle-color);
+  --divider-color:       var(--border-subtle-color);
+
+  --surface-color-dark:        color-mix(in srgb, var(--surface-color) 70%, #000 30%);
+  --palette-background:        var(--surface-color);
+  --palette-background-dark:   color-mix(in srgb, var(--surface-elevated-color) 75%, #000 25%);
+  --palette-background-paper:  var(--surface-elevated-color);
+  --palette-primary-accent:    color-mix(in srgb, var(--primary-color) 85%, var(--on-surface-color) 15%);
+  --palette-text-primary:      var(--primary-text-color);
+  --palette-text-secondary:    var(--secondary-text-color);
+  --palette-text-accent:       color-mix(in srgb, var(--on-surface-color) 90%, transparent);
+  --palette-error-main:        var(--error-color);
+  --palette-success-main:      var(--success-color);
+  --palette-action-active:     rgba(255, 255, 255, 0.95);
+  --palette-action-disabled:   rgba(255, 255, 255, 0.25);
+  --palette-divider:           rgb(83, 83, 83);
+
+  --scroll-thumb:       rgba(255, 255, 255, 0.25);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.45);
+  --scroll-track:       rgba(255, 255, 255, 0.05);
 
   --dialog-border-color: rgba(255, 255, 255, 0.09);
-  --dockbar-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  --dockbar-shadow:      0 12px 30px rgba(0, 0, 0, 0.55);
 }

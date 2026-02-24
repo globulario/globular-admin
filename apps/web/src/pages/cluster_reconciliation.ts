@@ -39,7 +39,7 @@ function driftCategoryColor(c: number): string {
 }
 
 function badge(label: string, color: string): string {
-  return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${color} 15%,transparent);color:${color};border:1px solid color-mix(in srgb,${color} 35%,transparent)">${label}</span>`
+  return `<span class="md-badge" style="--badge-color:${color}">${label}</span>`
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -115,14 +115,15 @@ class PageClusterReconciliation extends HTMLElement {
       <style>
         .cr-wrap { padding: 16px; }
         .cr-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-        .cr-header h2 { margin: 0; font-size: 1.25rem; font-weight: 800; }
+        .cr-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
         .cr-subtitle { margin: .25rem 0 1rem; opacity: .85; font-size: .88rem; }
         .cr-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
         @media(max-width: 540px) { .cr-stat-grid { grid-template-columns: 1fr 1fr; } }
         .cr-stat-card {
-          background: var(--surface-color);
+          background: var(--md-surface-container-low);
           border: 1px solid var(--border-subtle-color);
-          border-radius: 12px;
+          border-radius: var(--md-shape-md);
+          box-shadow: var(--md-elevation-1);
           padding: 14px 18px;
         }
         .cr-stat-label {
@@ -135,19 +136,20 @@ class PageClusterReconciliation extends HTMLElement {
         }
         .cr-stat-value { font-size: 1.8rem; font-weight: 800; line-height: 1; }
         .cr-panel {
-          background: var(--surface-color);
+          background: var(--md-surface-container-low);
           border: 1px solid var(--border-subtle-color);
-          border-radius: 12px;
+          border-radius: var(--md-shape-md);
+          box-shadow: var(--md-elevation-1);
           overflow: hidden;
           margin-bottom: 16px;
         }
         .cr-panel-header {
           padding: 10px 14px;
-          font-size: .75rem;
-          font-weight: 700;
+          font: var(--md-typescale-label-medium);
           text-transform: uppercase;
           letter-spacing: .06em;
           color: var(--secondary-text-color);
+          background: var(--md-surface-container);
           border-bottom: 1px solid var(--border-subtle-color);
           display: flex;
           align-items: center;
@@ -166,37 +168,27 @@ class PageClusterReconciliation extends HTMLElement {
         }
         .cr-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
         .cr-table tr:last-child td { border-bottom: none; }
-        .cr-table tr:hover td { background: color-mix(in srgb, var(--accent-color) 7%, transparent); }
+        .cr-table tr:hover td { background: var(--md-state-hover); }
         .cr-mono { font-family: monospace; font-size: .78rem; }
         .cr-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
         .cr-btn-refresh {
           border: 1px solid var(--border-subtle-color);
           background: transparent;
           color: var(--on-surface-color);
-          border-radius: 6px;
+          border-radius: var(--md-shape-sm);
           padding: 3px 10px;
           cursor: pointer;
           font-size: .78rem;
         }
-        .cr-warn-banner {
-          background: color-mix(in srgb, #f59e0b 10%, transparent);
-          border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
-          border-radius: 8px;
-          padding: 12px 16px;
-          font-size: .85rem;
-          color: #b45309;
-          margin-bottom: 16px;
-          line-height: 1.6;
-        }
-        [data-theme="dark"] .cr-warn-banner { color: #fbbf24; }
+        .cr-btn-refresh:hover { background: var(--md-state-hover); }
+        /* use global .md-banner-warn */
         .cr-node-panel-header {
           padding: 8px 14px;
-          font-size: .72rem;
-          font-weight: 700;
+          font: var(--md-typescale-label-medium);
           text-transform: uppercase;
           letter-spacing: .06em;
           color: var(--secondary-text-color);
-          background: color-mix(in srgb, var(--on-surface-color) 4%, transparent);
+          background: var(--md-surface-container);
           border-bottom: 1px solid var(--border-subtle-color);
         }
       </style>
@@ -212,7 +204,7 @@ class PageClusterReconciliation extends HTMLElement {
         ${this._loading ? `<p class="cr-empty">Loading drift data…</p>` : ''}
 
         ${this._loadError ? `
-        <div class="cr-warn-banner">
+        <div class="md-banner-warn">
           ⚠ Could not load nodes — ${this._loadError}
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>clustercontroller.ClusterControllerService</code> is reachable.</span>
         </div>
