@@ -166,7 +166,7 @@ class PageClusterReconciliation extends HTMLElement {
         }
         .cr-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
         .cr-table tr:last-child td { border-bottom: none; }
-        .cr-table tr:hover td { background: color-mix(in srgb, var(--primary-color) 5%, transparent); }
+        .cr-table tr:hover td { background: color-mix(in srgb, var(--accent-color) 7%, transparent); }
         .cr-mono { font-family: monospace; font-size: .78rem; }
         .cr-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
         .cr-btn-refresh {

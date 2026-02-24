@@ -298,8 +298,8 @@ class PageClusterOverview extends HTMLElement {
         .ov-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
         .ov-table tr:last-child td { border-bottom: none; }
         .ov-table tbody tr[data-fid] { cursor: pointer; }
-        .ov-table tbody tr[data-fid]:hover td { background: color-mix(in srgb,var(--primary-color) 5%,transparent); }
-        .ov-table tbody tr[data-fid].selected td { background: color-mix(in srgb,var(--primary-color) 10%,transparent); }
+        .ov-table tbody tr[data-fid]:hover td { background: color-mix(in srgb,var(--accent-color) 7%,transparent); }
+        .ov-table tbody tr[data-fid].selected td { background: color-mix(in srgb,var(--accent-color) 12%,transparent); }
         .ov-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
         .ov-btn {
           border: 1px solid var(--border-subtle-color);
@@ -505,13 +505,13 @@ class PageClusterOverview extends HTMLElement {
             ${steps.map(s => `
             <li>
               ${s.description}
-              ${s.cliCommand ? `<br><code style="font-size:.8rem;background:color-mix(in srgb,var(--primary-color) 8%,transparent);padding:2px 6px;border-radius:4px;display:inline-block;margin-top:2px">${s.cliCommand}</code>` : ''}
+              ${s.cliCommand ? `<br><code style="font-size:.8rem;background:color-mix(in srgb,var(--accent-color) 10%,transparent);padding:2px 6px;border-radius:4px;display:inline-block;margin-top:2px">${s.cliCommand}</code>` : ''}
             </li>`).join('')}
           </ol>` : ''}
 
           ${x.planDiff.length > 0 ? `
           <p style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);margin:0 0 6px">Plan Diff</p>
-          <pre style="font-size:.78rem;background:color-mix(in srgb,var(--primary-color) 5%,transparent);border:1px solid var(--border-subtle-color);border-radius:6px;padding:10px 12px;overflow-x:auto;margin:0;white-space:pre-wrap">${x.planDiff.join('\n')}</pre>` : ''}
+          <pre style="font-size:.78rem;background:color-mix(in srgb,var(--accent-color) 6%,transparent);border:1px solid var(--border-subtle-color);border-radius:6px;padding:10px 12px;overflow-x:auto;margin:0;white-space:pre-wrap">${x.planDiff.join('\n')}</pre>` : ''}
         </div>
       </div>
     `

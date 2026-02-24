@@ -286,9 +286,9 @@ class PageClusterTopology extends HTMLElement {
         .profile-tag {
           font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
           padding:2px 7px; border-radius:999px;
-          background:color-mix(in srgb,var(--primary-color) 15%,transparent);
-          color:var(--primary-color);
-          border:1px solid color-mix(in srgb,var(--primary-color) 30%,transparent);
+          background:color-mix(in srgb,var(--accent-color) 15%,transparent);
+          color:var(--accent-color);
+          border:1px solid color-mix(in srgb,var(--accent-color) 30%,transparent);
         }
 
         .node-card-body {
@@ -334,7 +334,7 @@ class PageClusterTopology extends HTMLElement {
         }
         code {
           font-family:monospace; font-size:.78rem;
-          background:color-mix(in srgb,var(--primary-color) 8%,transparent);
+          background:color-mix(in srgb,var(--accent-color) 10%,transparent);
           padding:1px 5px; border-radius:4px;
           word-break:break-all;
         }
@@ -354,7 +354,7 @@ class PageClusterTopology extends HTMLElement {
         }
         .caps-disk-used {
           display:block; height:100%; border-radius:3px;
-          background:color-mix(in srgb,var(--primary-color) 60%,transparent);
+          background:color-mix(in srgb,var(--accent-color) 70%,transparent);
           transition:width .3s;
         }
         .caps-disk-free { font-size:.72rem; }

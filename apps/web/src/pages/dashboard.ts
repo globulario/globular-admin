@@ -185,7 +185,7 @@ class PageDashboard extends HTMLElement {
              color:var(--secondary-text-color); border-bottom:1px solid var(--border-subtle-color); }
         td { padding:9px 12px; border-bottom:1px solid var(--border-subtle-color); vertical-align:middle; }
         tr:last-child td { border-bottom:none; }
-        tr:hover td { background:color-mix(in srgb,var(--primary-color) 5%,transparent); }
+        tr:hover td { background:color-mix(in srgb,var(--accent-color) 7%,transparent); }
         .hostname { font-weight:600; }
         .failed-checks { font-size:.75rem; color:var(--error-color); }
 
@@ -200,8 +200,8 @@ class PageDashboard extends HTMLElement {
         }
         .btn-action:hover { background:var(--surface-elevated-color); }
         .btn-action .icon { font-size:1rem; width:20px; text-align:center; }
-        .btn-action.primary { background:var(--primary-color); color:var(--on-primary-color);
-          border-color:var(--primary-color); }
+        .btn-action.primary { background:var(--accent-color); color:#fff;
+          border-color:var(--accent-color); }
         .btn-action.primary:hover { opacity:.9; }
 
         /* ── events feed ── */
@@ -210,7 +210,7 @@ class PageDashboard extends HTMLElement {
           border-bottom:1px solid var(--border-subtle-color); }
         .event-row:last-child { border-bottom:none; }
         .ev-time { color:var(--secondary-text-color); white-space:nowrap; }
-        .ev-name { font-weight:600; color:var(--primary-color); font-size:.72rem;
+        .ev-name { font-weight:600; color:var(--accent-color); font-size:.72rem;
           word-break:break-all; }
         .ev-data { color:var(--on-surface-color); overflow:hidden;
           text-overflow:ellipsis; white-space:nowrap; }
@@ -355,7 +355,7 @@ class PageDashboard extends HTMLElement {
             <!-- Events feed -->
             <div class="panel">
               <div class="panel-header">
-                <span class="dot" style="background:var(--primary-color)"></span>
+                <span class="dot" style="background:var(--accent-color)"></span>
                 Live Events
               </div>
               <div id="events-feed">

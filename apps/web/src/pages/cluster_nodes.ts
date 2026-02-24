@@ -14,9 +14,9 @@ function profileTags(profiles: string[]): string {
   return profiles.map(p => `<span style="
     display:inline-block;padding:1px 7px;border-radius:999px;font-size:.68rem;font-weight:700;
     letter-spacing:.04em;text-transform:uppercase;margin-right:3px;
-    background:color-mix(in srgb,var(--primary-color) 15%,transparent);
-    color:var(--primary-color);
-    border:1px solid color-mix(in srgb,var(--primary-color) 30%,transparent);
+    background:color-mix(in srgb,var(--accent-color) 15%,transparent);
+    color:var(--accent-color);
+    border:1px solid color-mix(in srgb,var(--accent-color) 30%,transparent);
   ">${p}</span>`).join('')
 }
 
@@ -32,7 +32,7 @@ function capsLine(caps: NodeCapabilities | null): string {
         <span style="display:inline-block;width:48px;height:5px;background:var(--border-subtle-color);
           border-radius:3px;overflow:hidden;vertical-align:middle;margin:0 4px;">
           <span style="display:block;height:100%;width:${diskPct}%;border-radius:3px;
-            background:color-mix(in srgb,var(--primary-color) 60%,transparent);"></span>
+            background:color-mix(in srgb,var(--accent-color) 60%,transparent);"></span>
         </span>
         ${fmtBytes(caps.diskFreeBytes)} free
       </span>
@@ -175,8 +175,8 @@ class PageClusterNodes extends HTMLElement {
         .cn-table td { padding: 9px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
         .cn-table tr:last-child td { border-bottom: none; }
         .cn-table tbody tr { cursor: pointer; }
-        .cn-table tbody tr:hover td { background: color-mix(in srgb, var(--primary-color) 5%, transparent); }
-        .cn-table tbody tr.selected td { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
+        .cn-table tbody tr:hover td { background: color-mix(in srgb, var(--accent-color) 7%, transparent); }
+        .cn-table tbody tr.selected td { background: color-mix(in srgb, var(--accent-color) 12%, transparent); }
         .cn-node-id { font-family: monospace; font-size: .78rem; color: var(--secondary-text-color); }
         .cn-hostname { font-weight: 600; }
         .cn-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
@@ -343,7 +343,7 @@ class PageClusterNodes extends HTMLElement {
              placeholder="core, control-plane, storage, gateway"
              style="flex:1;min-width:200px;padding:4px 8px;border:1px solid var(--border-subtle-color);border-radius:6px;background:var(--surface-color);color:var(--on-surface-color);font-size:.84rem;"
            >
-           <button type="submit" id="btnSaveProfiles" style="padding:3px 10px;border-radius:6px;border:none;background:var(--primary-color);color:#fff;font-size:.78rem;cursor:pointer;${this._savingProfiles ? 'opacity:.6;' : ''}">
+           <button type="submit" id="btnSaveProfiles" style="padding:3px 10px;border-radius:6px;border:none;background:var(--accent-color);color:#fff;font-size:.78rem;cursor:pointer;${this._savingProfiles ? 'opacity:.6;' : ''}">
              ${this._savingProfiles ? 'Saving…' : 'Save'}
            </button>
            <button type="button" id="btnCancelProfiles" style="padding:3px 10px;border-radius:6px;border:1px solid var(--border-subtle-color);background:transparent;color:var(--on-surface-color);font-size:.78rem;cursor:pointer;">

@@ -133,7 +133,7 @@ class PageClusterJoin extends HTMLElement {
         }
         .cj-btn:disabled, .cj-btn-approve:disabled, .cj-btn-reject:disabled { opacity: .5; cursor: not-allowed; }
         .cj-action-row td {
-          background: color-mix(in srgb, var(--primary-color) 4%, transparent);
+          background: color-mix(in srgb, var(--accent-color) 5%, transparent);
           padding: 12px 14px;
           border-bottom: 1px solid var(--border-subtle-color);
         }
@@ -148,7 +148,7 @@ class PageClusterJoin extends HTMLElement {
           color: var(--on-surface-color);
           font-size: .84rem;
         }
-        .cj-input:focus { outline: none; border-color: var(--primary-color); }
+        .cj-input:focus { outline: none; border-color: var(--accent-color); }
         .cj-input-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); margin-bottom: 5px; }
         .cj-error {
           background: color-mix(in srgb, var(--error-color) 10%, transparent);
@@ -171,7 +171,7 @@ class PageClusterJoin extends HTMLElement {
         }
         [data-theme="dark"] .cj-warn { color: #fbbf24; }
         .cj-token-box {
-          background: color-mix(in srgb, var(--primary-color) 5%, transparent);
+          background: color-mix(in srgb, var(--accent-color) 6%, transparent);
           border: 1px solid var(--border-subtle-color);
           border-radius: 8px;
           padding: 12px 14px;
@@ -587,7 +587,7 @@ the cluster default. Common values:
         ? r.profiles.join(', ')
         : r.suggestedProfiles.join(', ')
       const profileHint = r.suggestedProfiles.length > 0 && r.profiles.length === 0
-        ? `<span style="color:var(--primary-color)">Suggested based on hardware:</span> ${r.suggestedProfiles.join(', ')}`
+        ? `<span style="color:var(--accent-color)">Suggested based on hardware:</span> ${r.suggestedProfiles.join(', ')}`
           + (r.capabilities ? ` (${fmtBytes(r.capabilities.ramBytes)} RAM · ${r.capabilities.cpuCount} CPUs · ${fmtBytes(r.capabilities.diskFreeBytes)} free disk)` : '')
         : 'Profiles define what services this node should run. Leave empty for the cluster default.'
 
