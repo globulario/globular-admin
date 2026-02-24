@@ -198,10 +198,35 @@ an administrator approves the request here.
 Use the **Generate Token** button below, or use the CLI on the controller node:
 
 \`\`\`bash
-globular cluster token create
+globular cluster token create --controller <CONTROLLER_IP>:10000
 \`\`\`
 
-Copy the token that is printed. It is single-use and expires after 24 hours.
+> **Note:** The default controller address is \`localhost:10000\`, which only
+> works when running the CLI on the same machine as the controller **and** the
+> controller is listening on the loopback interface.
+> If you get `connection refused`, the controller is likely bound to its LAN IP.
+> Find the correct address with:
+>
+> \`\`\`bash
+> # On the controller node — find the IP the controller is listening on
+> ss -tlnp | grep 10000
+> # or
+> ip addr show
+> \`\`\`
+>
+> Then pass the LAN IP explicitly:
+>
+> \`\`\`bash
+> globular cluster token create --controller 192.168.1.10:10000
+> \`\`\`
+>
+> You can also set it permanently to avoid repeating \`--controller\` on every command:
+>
+> \`\`\`bash
+> export GLOBULAR_CONTROLLER=192.168.1.10:10000
+> \`\`\`
+
+Copy the token that is printed. It is single-use and expires after 24 hours (pass \`--expires 48h\` to extend).
 
 ### Step 2 — Install and start the node agent on the new node
 
