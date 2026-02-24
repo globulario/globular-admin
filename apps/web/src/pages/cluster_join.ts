@@ -217,22 +217,30 @@ globular cluster token create \\
 >   Verify: \`ss -tlnp | grep 12000\`.
 >
 > - \`tls: first record does not look like a TLS handshake\` — TLS mismatch.
->   Always pass \`--ca /var/lib/globular/pki/ca.crt\` so the CLI trusts the
->   internal CA. If running a dev setup without TLS, use \`--insecure\` instead.
+>   Pass \`--ca /var/lib/globular/pki/ca.crt\` so the CLI trusts the internal CA.
+>   If running a dev setup without TLS, use \`--insecure\` instead.
 >
-> Full example with explicit LAN IP:
+> - \`stat /var/lib/globular/pki/ca.crt: permission denied\` — the CA file is
+>   root-owned. Run the command with \`sudo\`, or copy the cert to a readable location first:
 >
 > \`\`\`bash
-> globular cluster token create \\
+> # Option 1 — run with sudo
+> sudo globular cluster token create \\
 >   --controller 192.168.1.10:12000 \\
 >   --ca /var/lib/globular/pki/ca.crt
+>
+> # Option 2 — copy the cert to your home directory first
+> sudo cp /var/lib/globular/pki/ca.crt ~/globular-ca.crt
+> globular cluster token create \\
+>   --controller 192.168.1.10:12000 \\
+>   --ca ~/globular-ca.crt
 > \`\`\`
 >
 > Set permanently to avoid repeating flags on every command:
 >
 > \`\`\`bash
 > export GLOBULAR_CONTROLLER=192.168.1.10:12000
-> export GLOBULAR_CA=/var/lib/globular/pki/ca.crt
+> export GLOBULAR_CA=~/globular-ca.crt
 > \`\`\`
 
 Copy the token that is printed. It is single-use and expires after 24 hours (pass \`--expires 48h\` to extend).
