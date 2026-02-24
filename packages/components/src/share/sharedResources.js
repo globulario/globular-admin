@@ -3,8 +3,8 @@
 import getUuidByString from "uuid-by-string"
 import { displayError, displayMessage} from "@globular/backend";
 
-// RBAC protos (only for SubjectType enum if you still want to reuse it)
-import { SubjectType } from "globular-web-client/rbac/rbac_pb"
+import * as rbacPb from "globular-web-client/rbac/rbac_pb"
+const { SubjectType } = rbacPb
 
 // ---- New backend wrappers (adjust import paths to your repo) -------------
 // Expectation:
