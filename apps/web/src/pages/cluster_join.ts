@@ -204,7 +204,7 @@ globular cluster token create --controller <CONTROLLER_IP>:10000
 > **Note:** The default controller address is \`localhost:10000\`, which only
 > works when running the CLI on the same machine as the controller **and** the
 > controller is listening on the loopback interface.
-> If you get `connection refused`, the controller is likely bound to its LAN IP.
+> If you get \`connection refused\`, the controller is likely bound to its LAN IP.
 > Find the correct address with:
 >
 > \`\`\`bash
