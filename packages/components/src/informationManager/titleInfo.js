@@ -1362,14 +1362,18 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
       });
 
       seasonEpisodes.forEach(episode => {
-        const posterUrl = episode.getPoster() ? episode.getPoster().getContenturl() : 'placeholder.png';
+        const poster = episode.getPoster?.();
+        const contentUrl = poster?.getContenturl?.() || "";
+        const remoteUrl = poster?.getUrl?.() || "";
+        const initialPosterUrl = contentUrl ||
+          ((remoteUrl.startsWith("http://") || remoteUrl.startsWith("https://")) ? remoteUrl : "");
         const episodeId = `_${getUuidByString(episode.getId())}`;
 
         const episodeHtml = `
           <div class="episode-small-div">
             <div class="episode-number-badge">${episode.getEpisode()}</div>
             <iron-icon id="play-btn-${episodeId}" class="play-episode-button" icon="av:play-circle-filled"></iron-icon>
-            <img src="${posterUrl}" alt="Episode Poster">
+            <img id="poster-img-${episodeId}" src="${initialPosterUrl}" alt="Episode Poster">
             <div class="slide-on-panel">
               <div class="slide-on-panel-title-name">${episode.getName()}</div>
               <iron-icon id="infos-btn-${episodeId}" class="info-episode-button" icon="icons:info-outline"></iron-icon>
@@ -1377,6 +1381,15 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
           </div>
         `;
         page.appendChild(document.createRange().createContextualFragment(episodeHtml));
+
+        if (!initialPosterUrl) {
+          const posterImg = page.querySelector(`#poster-img-${episodeId}`);
+          if (posterImg) {
+            this._resolveEpisodePosterUrl(episode).then(url => {
+              if (url) posterImg.src = url;
+            }).catch(() => {});
+          }
+        }
 
         const playBtn = page.querySelector(`#play-btn-${episodeId}`);
         const infosBtn = page.querySelector(`#infos-btn-${episodeId}`);
@@ -1393,6 +1406,78 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
 
       tabIndex++;
     }
+  }
+
+  async _resolveEpisodePosterUrl(episode) {
+    const id = episode?.getId?.() || "";
+    if (!id) return "";
+
+    const asImgSrc = (path) => {
+      if (!path) return "";
+      const isHttp = path.startsWith("http://") || path.startsWith("https://");
+      try {
+        if (isHttp) return path;
+        const { url: builtUrl, headers } = buildFileUrl(path);
+        const token = headers?.token;
+        if (builtUrl) {
+          const glue = builtUrl.includes("?") ? "&" : "?";
+          return token ? `${builtUrl}${glue}token=${encodeURIComponent(token)}` : builtUrl;
+        }
+      } catch { /* ignore */ }
+      return "";
+    };
+
+    const listDirSafe = async (dirPath) => {
+      try {
+        const listing = await readDir(dirPath);
+        const entries = listing?.files || listing?.getFilesList?.() || [];
+        return Array.isArray(entries) ? entries : [];
+      } catch { return []; }
+    };
+
+    const indexPath = id.startsWith("tt") ? "/search/titles" : "/search/videos";
+    const files = await getTitleFiles(id, indexPath).catch(() => []);
+    const filePaths = Array.isArray(files)
+      ? files.map(f => (typeof f === "string" ? f : (f?.path || f?.getPath?.() || ""))).filter(Boolean)
+      : [];
+
+    for (const mediaPath of filePaths) {
+      const baseDir = mediaPath.substring(0, mediaPath.lastIndexOf("/") + 1);
+      const leaf = mediaPath.substring(mediaPath.lastIndexOf("/") + 1);
+      const dot = leaf.lastIndexOf(".");
+      const stem = dot > 0 ? leaf.substring(0, dot) : leaf;
+
+      // 1) .hidden/<stem>/__thumbnail__/
+      const hiddenEntries = await listDirSafe(`${baseDir}.hidden/${stem}/__thumbnail__/`);
+      for (const item of hiddenEntries) {
+        const name = item?.name || item?.getName?.();
+        const path = item?.path || item?.getPath?.();
+        if (!name || !path) continue;
+        const lower = name.toLowerCase();
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp")) {
+          const url = asImgSrc(path);
+          if (url) return url;
+        }
+      }
+
+      // 2) Poster-like images in the media directory
+      const dirEntries = await listDirSafe(baseDir);
+      for (const item of dirEntries) {
+        const name = item?.name || item?.getName?.();
+        const path = item?.path || item?.getPath?.();
+        if (!name || !path) continue;
+        const lower = name.toLowerCase();
+        const looksLikePoster =
+          (lower.includes("_v1_") || lower.includes("poster") || lower.includes("cover")) &&
+          (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp"));
+        if (looksLikePoster) {
+          const url = asImgSrc(path);
+          if (url) return url;
+        }
+      }
+    }
+
+    return "";
   }
 
   async _playEpisodeVideo(episode) {

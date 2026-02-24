@@ -18,6 +18,8 @@ import {
   removeWatchingTitle as deleteWatchingEntry,
   getTitleFiles,
   getBaseUrl,
+  readDir,
+  buildFileUrl,
 } from "@globular/backend";
 
 import { playVideo } from "./video";
@@ -1226,7 +1228,7 @@ export class MediaWatchingCard extends HTMLElement {
       this._mediaObject = mediaObj || null;
       this._indexPath = indexPath;
 
-      this._populateBasicInfo(entryType);
+      await this._populateBasicInfo(entryType);
       this._updateEpisodeSeriesInfo();
       this._loadPreviewSource(entryType, id);
       this._updateProgress();
@@ -1246,7 +1248,7 @@ export class MediaWatchingCard extends HTMLElement {
     }
   }
 
-  _populateBasicInfo(entryType) {
+  async _populateBasicInfo(entryType) {
     const obj = this._mediaObject || {};
     const td = this.titleData || {};
 
@@ -1254,12 +1256,21 @@ export class MediaWatchingCard extends HTMLElement {
     this._setSerieBadge(null);
 
     // thumbnail
+    const _posterObj = obj.getPoster?.();
+    const _posterRemoteUrl = _posterObj?.getUrl?.() || "";
     let thumb =
-      obj.getPoster?.()?.getContenturl?.() ||
+      _posterObj?.getContenturl?.() ||
+      ((_posterRemoteUrl.startsWith("http://") || _posterRemoteUrl.startsWith("https://")) ? _posterRemoteUrl : "") ||
       obj.posterUrl ||
       td.poster ||
       td.thumbnail ||
+      this._posterFromAttachedTitle(td) ||
+      this._posterFromAttachedTitle(obj) ||
       "";
+
+    if (!thumb) {
+      thumb = await this._findLocalThumbnail(entryType).catch(() => "");
+    }
 
     if (!thumb) {
       // simple placeholder
@@ -1337,6 +1348,92 @@ export class MediaWatchingCard extends HTMLElement {
     if (this.metaTextEl) {
       this.metaTextEl.textContent = parts.join(" • ");
     }
+  }
+
+  _posterFromAttachedTitle(container) {
+    if (!container) return "";
+    const firstTitle =
+      (Array.isArray(container.titles) && container.titles.length ? container.titles[0] : null) ||
+      container.title ||
+      null;
+    if (!firstTitle) return "";
+    const poster =
+      (typeof firstTitle.getPoster === "function" ? firstTitle.getPoster() : firstTitle.poster) || {};
+    const content = poster.getContenturl?.() || poster.ContentUrl || poster.contentUrl;
+    if (content) return content;
+    const url = poster.getUrl?.() || poster.URL || poster.url;
+    return url || "";
+  }
+
+  async _findLocalThumbnail(entryType = "video") {
+    const id = this.titleData?.titleId || this.titleData?._id;
+    if (!id) return "";
+    const indexPath = entryType === "title" ? INDEX_TITLES : INDEX_VIDEOS;
+
+    const filePaths = await getTitleFiles(id, indexPath).catch(() => []);
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return "";
+
+    const asUrl = (path) => {
+      try {
+        const { url, headers } = buildFileUrl(path);
+        const token = headers?.token;
+        if (!url) return "";
+        const glue = url.includes("?") ? "&" : "?";
+        return token ? `${url}${glue}token=${encodeURIComponent(token)}` : url;
+      } catch { return ""; }
+    };
+
+    for (const fp of filePaths) {
+      const rawPath = typeof fp === "string" ? fp : fp?.path || fp?.getPath?.() || "";
+      if (!rawPath) continue;
+      const p = (() => {
+        try { return decodeURIComponent(rawPath); } catch { return rawPath; }
+      })();
+      if (!p) continue;
+
+      const lastSlash = p.lastIndexOf("/");
+      const baseDir = lastSlash >= 0 ? p.substring(0, lastSlash + 1) : "/";
+      const leaf = lastSlash >= 0 ? p.substring(lastSlash + 1) : p;
+      const dot = leaf.lastIndexOf(".");
+      const stem = dot > 0 ? leaf.substring(0, dot) : leaf;
+      const hiddenDir = `${baseDir}.hidden/${stem}/__thumbnail__/`;
+
+      const dir = await readDir(hiddenDir).catch(() => null);
+      const entries = dir?.files || dir?.getFilesList?.() || [];
+      if (Array.isArray(entries)) {
+        for (const item of entries) {
+          const name = item?.name || item?.getName?.();
+          const path = item?.path || item?.getPath?.();
+          if (!name || !path) continue;
+          const lower = name.toLowerCase();
+          if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp")) {
+            const url = asUrl(path);
+            if (url) return url;
+          }
+        }
+      }
+
+      // Also look in the media directory itself for poster-like image files
+      const baseDirListing = await readDir(baseDir).catch(() => null);
+      const baseDirEntries = baseDirListing?.files || baseDirListing?.getFilesList?.() || [];
+      if (Array.isArray(baseDirEntries)) {
+        for (const item of baseDirEntries) {
+          const name = item?.name || item?.getName?.();
+          const itemPath = item?.path || item?.getPath?.();
+          if (!name || !itemPath) continue;
+          const lower = name.toLowerCase();
+          const looksLikePoster =
+            (lower.includes("_v1_") || lower.includes("poster") || lower.includes("cover")) &&
+            (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp"));
+          if (looksLikePoster) {
+            const posterFileUrl = asUrl(itemPath);
+            if (posterFileUrl) return posterFileUrl;
+          }
+        }
+      }
+    }
+
+    return "";
   }
 
   async _updateEpisodeSeriesInfo() {
