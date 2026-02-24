@@ -155,7 +155,7 @@ class PageClusterReconciliation extends HTMLElement {
           align-items: center;
           justify-content: space-between;
         }
-        .cr-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+        .cr-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
         .cr-table th {
           text-align: left;
           padding: 8px 12px;

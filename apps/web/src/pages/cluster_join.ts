@@ -88,7 +88,7 @@ class PageClusterJoin extends HTMLElement {
           flex-wrap: wrap;
           gap: 6px;
         }
-        .cj-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+        .cj-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
         .cj-table th {
           text-align: left;
           padding: 8px 12px;

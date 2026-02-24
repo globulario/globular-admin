@@ -182,7 +182,7 @@ class PageDashboard extends HTMLElement {
         .panel-body.no-pad { padding:0; }
 
         /* ── node health table ── */
-        table { width:100%; border-collapse:collapse; font-size:.85rem; }
+        table { width:100%; border-collapse:collapse; font: var(--md-typescale-body-small); }
         th { text-align:left; padding:8px 12px; font-size:.72rem; font-weight:700;
              text-transform:uppercase; letter-spacing:.06em;
              color:var(--secondary-text-color); border-bottom:1px solid var(--border-subtle-color); }

@@ -287,7 +287,7 @@ class PageClusterOverview extends HTMLElement {
           align-items: center;
           justify-content: space-between;
         }
-        .ov-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+        .ov-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
         .ov-table th {
           text-align: left;
           padding: 8px 12px;
