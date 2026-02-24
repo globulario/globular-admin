@@ -198,107 +198,95 @@ an administrator approves the request here.
 Use the **Generate Token** button below, or use the CLI **on the controller node**:
 
 \`\`\`bash
-globular cluster token create \\
-  --controller <CONTROLLER_IP>:12000 \\
-  --ca /var/lib/globular/pki/ca.crt
+sudo globular cluster token create --controller <CONTROLLER_IP>:12000 --insecure
 \`\`\`
 
-> **Note:** Globular services run TLS by default. The CLI must trust the internal
-> CA or the handshake will fail. The CA certificate is always at
-> \`/var/lib/globular/pki/ca.crt\` on the controller node.
+> **Note:** By default the ClusterController runs **without TLS** on port 12000,
+> so \`--insecure\` is the standard flag. If your deployment explicitly enables TLS
+> on the controller, replace \`--insecure\` with \`--ca /var/lib/globular/pki/ca.crt\`.
+>
+> To find your controller's LAN IP: \`ip addr show\`
 >
 > **Common errors:**
 >
-> - \`connection refused\` — wrong IP. Use \`ip addr show\` on the controller node
->   to find its LAN IP, then pass it with \`--controller <LAN_IP>:12000\`.
+> - \`connection refused\` — wrong IP or port. Use \`ip addr show\` to find the
+>   LAN IP, and verify the controller is listening: \`ss -tlnp | grep 12000\`.
 >
-> - \`unknown service clustercontroller.ClusterControllerService\` — right IP but
->   wrong port. The ClusterController listens on port **12000**.
->   Verify: \`ss -tlnp | grep 12000\`.
+> - \`unknown service clustercontroller.ClusterControllerService\` — wrong port.
+>   The ClusterController listens on port **12000**, not 10000.
 >
-> - \`tls: first record does not look like a TLS handshake\` — the CLI is trying
->   TLS but the server is responding in plain text (no TLS). This means the
->   ClusterController is running **without TLS** on that address. Use \`--insecure\`:
+> - \`tls: first record does not look like a TLS handshake\` — the server is not
+>   using TLS. Drop \`--ca\` and use \`--insecure\` instead:
 >
 > \`\`\`bash
 > sudo globular cluster token create \\
->   --controller 10.0.0.63:12000 \\
+>   --controller <CONTROLLER_IP>:12000 \\
 >   --insecure
 > \`\`\`
 >
->   If you already passed \`--ca\` and still get this error, drop \`--ca\` and use
->   \`--insecure\` — the \`--ca\` flag only helps when the server does TLS.
->
-> - \`context deadline exceeded while waiting for connections to become ready\` —
->   TLS succeeded but the ClusterController is not accepting requests. First
->   confirm the service is running:
+> - \`context deadline exceeded\` — the controller is not accepting requests.
+>   Check the service and confirm it is not bound only to loopback:
 >
 > \`\`\`bash
 > sudo systemctl status globular-cluster-controller.service
 > sudo journalctl -u globular-cluster-controller.service -n 50
-> \`\`\`
->
->   If the service is running but you still get this error, the controller may be
->   bound only to loopback (\`127.0.0.1\`) and not reachable from other machines.
->   Check which address it is actually listening on:
->
-> \`\`\`bash
 > sudo ss -tlnp | grep 12000
 > \`\`\`
 >
->   If it shows \`127.0.0.1:12000\` instead of \`0.0.0.0:12000\`, run the CLI
->   directly **on the controller node** itself using \`localhost\` or \`127.0.0.1\`:
+>   If it shows \`127.0.0.1:12000\`, run the CLI directly **on the controller node**:
 >
 > \`\`\`bash
 > sudo globular cluster token create \\
 >   --controller 127.0.0.1:12000 \\
->   --ca /var/lib/globular/pki/ca.crt
-> \`\`\`
->
-> - \`stat /var/lib/globular/pki/ca.crt: permission denied\` — the CA file is
->   root-owned. Run the command with \`sudo\`, or copy the cert to a readable location first:
->
-> \`\`\`bash
-> # Option 1 — run with sudo
-> sudo globular cluster token create \\
->   --controller 192.168.1.10:12000 \\
->   --ca /var/lib/globular/pki/ca.crt
->
-> # Option 2 — copy the cert to your home directory first
-> sudo cp /var/lib/globular/pki/ca.crt ~/globular-ca.crt
-> globular cluster token create \\
->   --controller 192.168.1.10:12000 \\
->   --ca ~/globular-ca.crt
-> \`\`\`
->
-> Set permanently to avoid repeating flags on every command:
->
-> \`\`\`bash
-> export GLOBULAR_CONTROLLER=192.168.1.10:12000
-> export GLOBULAR_CA=~/globular-ca.crt
+>   --insecure
 > \`\`\`
 
 Copy the token that is printed. It is single-use and expires after 24 hours (pass \`--expires 48h\` to extend).
 
-### Step 2 — Install and start the node agent on the new node
+### Step 2 — Start the node agent on the new node
 
-On the machine you want to add to the cluster, install the Globular node agent
-and point it at the controller:
+On the machine you want to add to the cluster, configure the agent to connect to
+the controller without TLS (since the controller runs in plain gRPC mode by default),
+then start the service:
 
 \`\`\`bash
-# Install the agent (adjust path to your distribution)
-sudo globular install node-agent
-
-# Start the agent with the join token and controller address
-sudo globular node join \
-  --token  <JOIN_TOKEN> \
-  --controller <CONTROLLER_HOST>:443
+# Tell the agent to skip TLS when connecting to the controller
+sudo systemctl edit globular-node-agent.service
 \`\`\`
 
-The agent will contact the controller, send its identity (hostname, IPs, OS,
-architecture, agent version), and wait for approval.
+In the editor, add:
 
-### Step 3 — Approve the request here
+\`\`\`ini
+[Service]
+Environment="NODE_AGENT_INSECURE=true"
+\`\`\`
+
+Then enable and start:
+
+\`\`\`bash
+sudo systemctl enable --now globular-node-agent.service
+sudo journalctl -u globular-node-agent.service -f
+\`\`\`
+
+> If the controller uses TLS, set \`NODE_AGENT_CONTROLLER_CA=/var/lib/globular/pki/ca.crt\`
+> instead of \`NODE_AGENT_INSECURE=true\`.
+
+When running, the agent listens on port **11000**.
+
+### Step 3 — Send the join request
+
+With the agent running, trigger the join from the **new node** (or any machine that
+can reach both the agent and the controller):
+
+\`\`\`bash
+globular cluster join --node <NEW_NODE_IP>:11000 --controller <CONTROLLER_IP>:12000 --join-token <JOIN_TOKEN> --insecure
+\`\`\`
+
+The CLI calls the node agent, which forwards the request to the controller with
+the node's identity (hostname, IPs, OS, architecture, agent version).
+The join request will then appear in the **Pending** table above.
+
+### Step 4 — Approve the request here
 
 Once the agent has sent its request, it appears in the **Pending** table above.
 Click **✓ Approve**, optionally assign one or more profiles
@@ -307,7 +295,7 @@ Click **✓ Approve**, optionally assign one or more profiles
 The node agent will receive its assigned node ID and begin converging toward
 the desired state defined by its profiles.
 
-### Step 4 — Verify
+### Step 5 — Verify
 
 After approval, the node will appear on the **Nodes** page and in the
 **Overview** health summary within one heartbeat interval (~30 s).
