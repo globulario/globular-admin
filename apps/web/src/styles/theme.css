@@ -64,8 +64,8 @@
   --md-typescale-body-medium:     400 14px/1.43 inherit;
   --md-typescale-body-small:      400 12px/1.33 inherit;
   --md-typescale-label-large:     500 14px/1.43 inherit;
-  --md-typescale-label-medium:    500 12px/1.33 inherit;
-  --md-typescale-label-small:     500 11px/1.45 inherit;
+  --md-typescale-label-medium:    500 11px/1.45 inherit;
+  --md-typescale-label-small:     500 10px/1.60 inherit;
 
   /* ── Core colour roles ────────────────────────────────────────────────── */
   --background-color:       #f6f7f9;
