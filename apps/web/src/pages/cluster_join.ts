@@ -5,8 +5,24 @@ import '@polymer/paper-icon-button/paper-icon-button.js'
 import '@polymer/iron-collapse/iron-collapse.js'
 import {
   listJoinRequests, approveJoin, rejectJoin, createJoinToken,
-  type JoinRequest,
+  type JoinRequest, type NodeCapabilities,
 } from '@globular/backend'
+
+function fmtBytes(bytes: number): string {
+  if (!bytes) return '—'
+  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`
+  if (bytes >= 1e9)  return `${(bytes / 1e9).toFixed(1)} GB`
+  if (bytes >= 1e6)  return `${(bytes / 1e6).toFixed(0)} MB`
+  return `${bytes} B`
+}
+
+function capsLine(caps: NodeCapabilities | null): string {
+  if (!caps || caps.cpuCount === 0) return ''
+  const parts = [`${caps.cpuCount} CPU`]
+  if (caps.ramBytes)  parts.push(fmtBytes(caps.ramBytes) + ' RAM')
+  if (caps.diskBytes) parts.push(fmtBytes(caps.diskFreeBytes) + ' free / ' + fmtBytes(caps.diskBytes) + ' disk')
+  return `<span style="font-size:.72rem;color:var(--secondary-text-color)">${parts.join(' · ')}</span>`
+}
 
 function badge(label: string, color: string): string {
   return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:color-mix(in srgb,${color} 15%,transparent);color:${color};border:1px solid color-mix(in srgb,${color} 35%,transparent)">${label}</span>`
@@ -549,7 +565,11 @@ the cluster default. Common values:
 
     rows.push(`
       <tr>
-        <td><strong>${r.hostname || '—'}</strong>${r.domain ? `<br><span class="cj-mono">${r.domain}</span>` : ''}</td>
+        <td>
+          <strong>${r.hostname || '—'}</strong>
+          ${r.domain ? `<br><span class="cj-mono">${r.domain}</span>` : ''}
+          <br>${capsLine(r.capabilities)}
+        </td>
         <td class="cj-mono">${r.nodeName || '—'}</td>
         <td class="cj-ips">${r.ips.join('<br>') || '—'}</td>
         <td class="cj-mono">${r.os}${r.arch ? ' / ' + r.arch : ''}</td>
@@ -563,24 +583,32 @@ the cluster default. Common values:
       </tr>`)
 
     if (isExpanded) {
+      const profilePrefill = r.profiles.length > 0
+        ? r.profiles.join(', ')
+        : r.suggestedProfiles.join(', ')
+      const profileHint = r.suggestedProfiles.length > 0 && r.profiles.length === 0
+        ? `<span style="color:var(--primary-color)">Suggested based on hardware:</span> ${r.suggestedProfiles.join(', ')}`
+          + (r.capabilities ? ` (${fmtBytes(r.capabilities.ramBytes)} RAM · ${r.capabilities.cpuCount} CPUs · ${fmtBytes(r.capabilities.diskFreeBytes)} free disk)` : '')
+        : 'Profiles define what services this node should run. Leave empty for the cluster default.'
+
       rows.push(`
         <tr class="cj-action-row">
           <td colspan="6">
             ${this._actionError ? `<div class="cj-error" style="margin-bottom:10px">⚠ ${this._actionError}</div>` : ''}
             ${this._actionMode === 'approve' ? `
             <div>
-              <div class="cj-input-label">Profiles (comma-separated, optional)</div>
+              <div class="cj-input-label">Profiles (comma-separated)</div>
               <div class="cj-action-form">
                 <input id="profiles-input" class="cj-input" type="text"
-                  placeholder="e.g. worker, control-plane"
-                  value="${r.profiles.join(', ')}" />
+                  placeholder="e.g. core, control-plane, storage"
+                  value="${profilePrefill}" />
                 <button class="cj-btn-approve" id="btnConfirmApprove" ${this._actionPending ? 'disabled' : ''}>
                   ${this._actionPending ? 'Approving…' : '✓ Confirm Approve'}
                 </button>
                 <button class="cj-btn" id="btnCancelAction">Cancel</button>
               </div>
               <p style="margin:6px 0 0;font-size:.75rem;color:var(--secondary-text-color)">
-                Profiles define what services this node should run. Leave empty for the cluster default.
+                ${profileHint}
               </p>
             </div>` : `
             <div>

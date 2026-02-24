@@ -12,6 +12,13 @@ function ccClient(): ClusterControllerServiceClient {
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+export interface NodeCapabilities {
+  cpuCount: number
+  ramBytes: number
+  diskBytes: number
+  diskFreeBytes: number
+}
+
 export interface NodeHealth {
   nodeId: string
   hostname: string
@@ -38,12 +45,14 @@ export interface ClusterNode {
   nodeId: string
   hostname: string
   ips: string[]
+  profiles: string[]
   /** Reported operational status */
   status: string
   appliedServicesHash: string
   inventoryComplete: boolean
   lastSeen: number
   lastError: string
+  capabilities: NodeCapabilities | null
 }
 
 export interface JoinRequest {
@@ -58,6 +67,8 @@ export interface JoinRequest {
   status: string
   message: string
   profiles: string[]
+  suggestedProfiles: string[]
+  capabilities: NodeCapabilities | null
 }
 
 // ─── API functions ───────────────────────────────────────────────────────────
@@ -108,18 +119,26 @@ export async function listJoinRequests(): Promise<JoinRequest[]> {
   )
   return rsp.getPendingList().map((r: any) => {
     const id = r.getIdentity?.()
+    const rawCaps = r.getCapabilities?.()
     return {
-      requestId:    r.getRequestId?.()      ?? '',
-      hostname:     id?.getHostname?.()     ?? '',
-      domain:       id?.getDomain?.()       ?? '',
-      ips:          id?.getIpsList?.()      ?? [],
-      os:           id?.getOs?.()           ?? '',
-      arch:         id?.getArch?.()         ?? '',
-      agentVersion: id?.getAgentVersion?.() ?? '',
-      nodeName:     id?.getNodeName?.()     ?? '',
-      status:       r.getStatus?.()         ?? '',
-      message:      r.getMessage?.()        ?? '',
-      profiles:     r.getProfilesList?.()   ?? [],
+      requestId:         r.getRequestId?.()             ?? '',
+      hostname:          id?.getHostname?.()             ?? '',
+      domain:            id?.getDomain?.()               ?? '',
+      ips:               id?.getIpsList?.()              ?? [],
+      os:                id?.getOs?.()                   ?? '',
+      arch:              id?.getArch?.()                 ?? '',
+      agentVersion:      id?.getAgentVersion?.()         ?? '',
+      nodeName:          id?.getNodeName?.()             ?? '',
+      status:            r.getStatus?.()                 ?? '',
+      message:           r.getMessage?.()                ?? '',
+      profiles:          r.getProfilesList?.()           ?? [],
+      suggestedProfiles: r.getSuggestedProfilesList?.()  ?? [],
+      capabilities: rawCaps ? {
+        cpuCount:      rawCaps.getCpuCount?.()      ?? 0,
+        ramBytes:      rawCaps.getRamBytes?.()      ?? 0,
+        diskBytes:     rawCaps.getDiskBytes?.()     ?? 0,
+        diskFreeBytes: rawCaps.getDiskFreeBytes?.() ?? 0,
+      } : null,
     } satisfies JoinRequest
   })
 }
@@ -166,15 +185,23 @@ export async function listClusterNodes(): Promise<ClusterNode[]> {
   )
   return rsp.getNodesList().map((n: any) => {
     const identity = n.getIdentity?.()
+    const rawCaps = n.getCapabilities?.()
     return {
       nodeId:               identity?.getNodeId?.()       ?? n.getNodeId?.() ?? '',
       hostname:             identity?.getHostname?.()     ?? '',
       ips:                  identity?.getIpsList?.()      ?? [],
+      profiles:             n.getProfilesList?.()         ?? [],
       status:               n.getStatus?.()               ?? '',
       appliedServicesHash:  n.getAppliedServicesHash?.()  ?? '',
       inventoryComplete:    n.getInventoryComplete?.()    ?? true,
       lastSeen:             n.getLastSeen?.()?.getSeconds?.() ?? 0,
       lastError:            n.getLastError?.()            ?? '',
+      capabilities: rawCaps ? {
+        cpuCount:      rawCaps.getCpuCount?.()      ?? 0,
+        ramBytes:      rawCaps.getRamBytes?.()      ?? 0,
+        diskBytes:     rawCaps.getDiskBytes?.()     ?? 0,
+        diskFreeBytes: rawCaps.getDiskFreeBytes?.() ?? 0,
+      } : null,
     } satisfies ClusterNode
   })
 }
