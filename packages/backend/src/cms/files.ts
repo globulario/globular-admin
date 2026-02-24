@@ -29,7 +29,7 @@ export function buildHiddenTimelineDir(path: string): string {
   const fileNameWithSlash = lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
   const dot = fileNameWithSlash.lastIndexOf(".");
   const bareName = dot > 0 ? fileNameWithSlash.substring(0, dot) : fileNameWithSlash;
-  return `${baseDir}.hidden/${bareName}/${TIMELINE_THUMBNAILS_DIR}`;
+  return `${baseDir}.hidden/${bareName}${TIMELINE_THUMBNAILS_DIR}`;
 }
 
 /* ------------------------------------------------------------------

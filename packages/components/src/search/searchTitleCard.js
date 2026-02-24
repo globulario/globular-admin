@@ -5,7 +5,7 @@ import { GetEpisodes, searchEpisodes } from "../informationManager/titleInfo";
 import { getImdbInfo } from "./search";
 
 // ✅ backend helpers (cluster-transparent)
-import { getTitleFiles, getTitleInfo } from "@globular/backend";
+import { getTitleFiles, getTitleInfo, buildFileUrl, readDir } from "@globular/backend";
 import { getBaseUrl } from "@globular/backend";
 
 import "@polymer/paper-button/paper-button.js";
@@ -23,6 +23,76 @@ const INDEX_TITLES = "/search/titles";
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+
+async function resolveFilePosterUrl(id, indexPath) {
+  if (!id) return "";
+
+  const asImgSrc = (path) => {
+    if (!path) return "";
+    const isHttp = path.startsWith("http://") || path.startsWith("https://");
+    try {
+      if (isHttp) return path;
+      const { url: builtUrl, headers } = buildFileUrl(path);
+      const token = headers?.token;
+      if (builtUrl) {
+        const glue = builtUrl.includes("?") ? "&" : "?";
+        return token ? `${builtUrl}${glue}token=${encodeURIComponent(token)}` : builtUrl;
+      }
+    } catch { /* ignore */ }
+    return "";
+  };
+
+  const listDirSafe = async (dirPath) => {
+    try {
+      const listing = await readDir(dirPath);
+      const entries = listing?.files || listing?.getFilesList?.() || [];
+      return Array.isArray(entries) ? entries : [];
+    } catch { return []; }
+  };
+
+  const files = await getTitleFiles(id, indexPath).catch(() => []);
+  const filePaths = Array.isArray(files)
+    ? files.map(f => (typeof f === "string" ? f : (f?.path || f?.getPath?.() || ""))).filter(Boolean)
+    : [];
+
+  for (const mediaPath of filePaths) {
+    const baseDir = mediaPath.substring(0, mediaPath.lastIndexOf("/") + 1);
+    const leaf = mediaPath.substring(mediaPath.lastIndexOf("/") + 1);
+    const dot = leaf.lastIndexOf(".");
+    const stem = dot > 0 ? leaf.substring(0, dot) : leaf;
+
+    // 1) .hidden/<stem>/__thumbnail__/
+    const hiddenEntries = await listDirSafe(`${baseDir}.hidden/${stem}/__thumbnail__/`);
+    for (const item of hiddenEntries) {
+      const name = item?.name || item?.getName?.();
+      const path = item?.path || item?.getPath?.();
+      if (!name || !path) continue;
+      const lower = name.toLowerCase();
+      if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp")) {
+        const url = asImgSrc(path);
+        if (url) return url;
+      }
+    }
+
+    // 2) Poster-like images in the media directory
+    const dirEntries = await listDirSafe(baseDir);
+    for (const item of dirEntries) {
+      const name = item?.name || item?.getName?.();
+      const path = item?.path || item?.getPath?.();
+      if (!name || !path) continue;
+      const lower = name.toLowerCase();
+      const looksLikePoster =
+        (lower.includes("_v1_") || lower.includes("poster") || lower.includes("cover")) &&
+        (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp"));
+      if (looksLikePoster) {
+        const url = asImgSrc(path);
+        if (url) return url;
+      }
+    }
+  }
+
+  return "";
+}
 
 async function getTitleFilePaths(indexPath, title) {
   if (!title || !indexPath) {
@@ -98,6 +168,13 @@ function _exitFullscreen() {
 }
 
 async function _promptPlayNextEpisode(nextEpisode, indexPath = INDEX_TITLES) {
+  const _epPoster = nextEpisode.getPoster?.();
+  const _epRemoteUrl = _epPoster?.getUrl?.() || "";
+  const initialPosterUrl =
+    _epPoster?.getContenturl?.() ||
+    ((_epRemoteUrl.startsWith("http://") || _epRemoteUrl.startsWith("https://")) ? _epRemoteUrl : "") ||
+    "";
+
   return new Promise((resolve, reject) => {
     const toast = displayMessage(
       `
@@ -111,7 +188,7 @@ async function _promptPlayNextEpisode(nextEpisode, indexPath = INDEX_TITLES) {
       <div id="play-next-dialog">
         <div>Play the next episode?</div>
         <h3>Season ${nextEpisode.getSeason()} Episode ${nextEpisode.getEpisode()}: ${nextEpisode.getName()}</h3>
-        <img src="${nextEpisode.getPoster ? nextEpisode.getPoster().getContenturl() : "placeholder.png"}" alt="Episode Poster">
+        <img id="next-episode-poster-img" src="${initialPosterUrl}" alt="Episode Poster">
         <p>${nextEpisode.getDescription() || "No description available."}</p>
         <div class="dialog-actions">
           <paper-button id="dialog-cancel-btn">Close</paper-button>
@@ -121,6 +198,15 @@ async function _promptPlayNextEpisode(nextEpisode, indexPath = INDEX_TITLES) {
     `,
       60 * 1000
     );
+
+    if (!initialPosterUrl && toast?.toastElement) {
+      const posterImg = toast.toastElement.querySelector("#next-episode-poster-img");
+      if (posterImg) {
+        resolveFilePosterUrl(nextEpisode.getId(), indexPath).then(url => {
+          if (url) posterImg.src = url;
+        }).catch(() => {});
+      }
+    }
 
     if (toast && toast.toastElement) {
       toast.toastElement.style.backgroundColor = "var(--surface-color)";
@@ -345,10 +431,15 @@ export class SearchTitleCard extends HTMLElement {
           fallbackPoster?.getContenturl?.() || fallbackPoster?.getUrl?.() || "";
         if (fallbackPosterUrl) {
           applyFrontVisual(null, fallbackPosterUrl);
+        } else {
+          const titleSnapshot = this._title;
+          resolveFilePosterUrl(titleSnapshot.getId(), INDEX_TITLES).then(url => {
+            if (url && this._title === titleSnapshot) applyFrontVisual(null, url);
+          }).catch(() => {});
         }
       }
     } else {
-    
+
       this._seriesNameSpan.textContent = this._title.getName();
       this._episodeNameSpan.textContent = this._title.getYear() ? `(${this._title.getYear()})` : "";
       const poster = this._title.getPoster ? this._title.getPoster() : undefined;
@@ -356,7 +447,10 @@ export class SearchTitleCard extends HTMLElement {
       if (posterUrl) {
         applyFrontVisual(null, posterUrl);
       } else {
-        applyFrontVisual(null, "");
+        const titleSnapshot = this._title;
+        resolveFilePosterUrl(titleSnapshot.getId(), INDEX_TITLES).then(url => {
+          if (url && this._title === titleSnapshot) applyFrontVisual(null, url);
+        }).catch(() => {});
       }
     }
   }

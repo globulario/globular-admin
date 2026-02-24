@@ -410,6 +410,9 @@ export class VideoPlayer extends HTMLElement {
     this._closingRequested = false
     this._pendingCloseSaveState = undefined
 
+    // preview thumbnail blob URL (revoked when replaced or on disconnect)
+    this._previewVttBlobUrl = null
+
     // mp4 token maintenance
     this._mp4TokenMaintenanceTimer = undefined
     this._mp4TokenPath = ''
@@ -537,6 +540,7 @@ export class VideoPlayer extends HTMLElement {
     if (this.hls) this.hls.destroy()
     this.hls = null
 
+    this._revokePreviewVttBlob()
     this._stopMp4TokenMaintenance()
 
     this.container.removeEventListener('dialog-resized', this._handleDialogResized)
@@ -1520,6 +1524,85 @@ export class VideoPlayer extends HTMLElement {
   }
 
   // ---------------------------------------------------------------------------
+  // Preview thumbnails (signed VTT blob)
+  // ---------------------------------------------------------------------------
+  _revokePreviewVttBlob() {
+    if (this._previewVttBlobUrl) {
+      try { URL.revokeObjectURL(this._previewVttBlobUrl) } catch { }
+      this._previewVttBlobUrl = null
+    }
+  }
+
+  async _loadSignedPreviewThumbnails(normalizedPath, token) {
+    const timelineDir = buildHiddenTimelineDir(normalizedPath)
+    const vttUrl = appendTokenParam(buildFileUrl(`${timelineDir}/thumbnails.vtt`, token), token)
+    if (!vttUrl || !this.player) return
+
+    this._revokePreviewVttBlob()
+
+    try {
+      const resp = await fetch(vttUrl)
+      if (!resp.ok) {
+        console.warn(`[video] Preview VTT not available (${resp.status})`)
+        return
+      }
+      const vttText = await resp.text()
+      if (!vttText || !vttText.trimStart().startsWith('WEBVTT')) return
+
+      // Base URL of the VTT directory (no query string) for resolving relative paths
+      const vttDir = vttUrl.substring(0, vttUrl.lastIndexOf('/') + 1).split('?')[0]
+      const serverOrigin = vttDir.replace(/^(https?:\/\/[^/]+).*/, '$1')
+      const currentToken = getAuthToken() || token
+
+      const signedVttText = vttText.split('\n').map(line => {
+        const trimmed = line.trim()
+        // Skip blank lines, WEBVTT header, NOTE blocks, cue timings, and numeric cue IDs
+        if (!trimmed ||
+          trimmed.startsWith('WEBVTT') ||
+          trimmed.startsWith('NOTE') ||
+          trimmed.includes('-->') ||
+          /^\d+$/.test(trimmed)) {
+          return line
+        }
+
+        // Only process lines that look like image cue payloads
+        const pathPart = trimmed.split('#')[0]
+        const isImageCue = /\.(jpe?g|png|webp)/i.test(pathPart) || trimmed.includes('#xywh=')
+        if (!isImageCue) return line
+
+        const fragIdx = trimmed.indexOf('#')
+        const imgPath = fragIdx >= 0 ? trimmed.substring(0, fragIdx) : trimmed
+        const fragment = fragIdx >= 0 ? trimmed.substring(fragIdx) : ''
+
+        let fullUrl
+        if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+          fullUrl = imgPath
+        } else if (imgPath.startsWith('/')) {
+          fullUrl = serverOrigin + imgPath
+        } else {
+          fullUrl = vttDir + imgPath
+        }
+
+        if (currentToken) {
+          const sep = fullUrl.includes('?') ? '&' : '?'
+          fullUrl += `${sep}token=${encodeURIComponent(currentToken)}`
+        }
+
+        return fullUrl + fragment
+      }).join('\n')
+
+      const blob = new Blob([signedVttText], { type: 'text/vtt' })
+      this._previewVttBlobUrl = URL.createObjectURL(blob)
+
+      if (this.player?.setPreviewThumbnails) {
+        this.player.setPreviewThumbnails({ enabled: true, src: this._previewVttBlobUrl })
+      }
+    } catch (err) {
+      console.warn('[video] Failed to load preview thumbnails:', err)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // playContent: load info, previews, set source HLS or MP4, etc.
   // ---------------------------------------------------------------------------
   async playContent(path, token, urlToPlay) {
@@ -1579,14 +1662,10 @@ export class VideoPlayer extends HTMLElement {
       }
     }
 
-    // Timeline thumbnails (preserve behavior)
+    // Timeline thumbnails
     const normalized = normalizePath(path)
     if (isVideoLikePath(normalized)) {
-      const timelineDir = buildHiddenTimelineDir(normalized)
-      const previewSrc = appendTokenParam(buildFileUrl(`${timelineDir}/thumbnails.vtt`, token), token)
-      if (previewSrc && this.player?.setPreviewThumbnails) {
-        this.player.setPreviewThumbnails({ enabled: 'true', src: previewSrc })
-      }
+      this._loadSignedPreviewThumbnails(normalized, token)
     }
 
     // Reset decode state and prepare source
