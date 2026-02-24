@@ -216,9 +216,18 @@ globular cluster token create \\
 >   wrong port. The ClusterController listens on port **12000**.
 >   Verify: \`ss -tlnp | grep 12000\`.
 >
-> - \`tls: first record does not look like a TLS handshake\` — TLS mismatch.
->   Pass \`--ca /var/lib/globular/pki/ca.crt\` so the CLI trusts the internal CA.
->   If running a dev setup without TLS, use \`--insecure\` instead.
+> - \`tls: first record does not look like a TLS handshake\` — the CLI is trying
+>   TLS but the server is responding in plain text (no TLS). This means the
+>   ClusterController is running **without TLS** on that address. Use \`--insecure\`:
+>
+> \`\`\`bash
+> sudo globular cluster token create \\
+>   --controller 10.0.0.63:12000 \\
+>   --insecure
+> \`\`\`
+>
+>   If you already passed \`--ca\` and still get this error, drop \`--ca\` and use
+>   \`--insecure\` — the \`--ca\` flag only helps when the server does TLS.
 >
 > - \`context deadline exceeded while waiting for connections to become ready\` —
 >   TLS succeeded but the ClusterController is not accepting requests. First
