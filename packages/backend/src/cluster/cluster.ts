@@ -1,13 +1,14 @@
 // packages/backend/src/cluster/cluster.ts
 import { unary } from '../core/rpc'
-import { serviceSubdomainUrl } from '../core/endpoints'
+import { grpcWebHostUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'
-import { ClusterControllerServiceClient } from 'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb'
+import * as clusterGrpc from 'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb'
 import * as cc from 'globular-web-client/clustercontroller/clustercontroller_pb'
+import * as planPb from 'globular-web-client/clustercontroller/plan_pb'
 
-function ccClient(): ClusterControllerServiceClient {
-  const addr = serviceSubdomainUrl('clustercontroller.ClusterControllerService')
-  return new ClusterControllerServiceClient(addr, null, { withCredentials: true })
+function ccClient(): clusterGrpc.ClusterControllerServiceClient {
+  const addr = grpcWebHostUrl()
+  return new clusterGrpc.ClusterControllerServiceClient(addr, null, { withCredentials: true })
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -214,4 +215,46 @@ export async function listClusterNodes(): Promise<ClusterNode[]> {
       } : null,
     } satisfies ClusterNode
   })
+}
+
+// ─── Node Plan ────────────────────────────────────────────────────────────────
+
+export interface DesiredServiceVM {
+  name:    string
+  version: string
+  unit:    string
+}
+
+export interface NodeServicePlan {
+  nodeId:     string
+  planId:     string
+  generation: number
+  services:   DesiredServiceVM[]
+}
+
+/** Fetch the desired-state plan for a single node from ClusterController. */
+export async function getNodePlan(nodeId: string): Promise<NodeServicePlan | null> {
+  try {
+    const md = metadata()
+    const rq = new cc.GetNodePlanV1Request()
+    rq.setNodeId(nodeId)
+    const rsp: any = await unary<cc.GetNodePlanV1Request, cc.GetNodePlanV1Response>(
+      ccClient, 'getNodePlanV1', rq, undefined, md,
+    )
+    const plan: planPb.NodePlan | undefined = rsp?.getPlan?.()
+    const desired = plan?.getSpec?.()?.getDesired?.()
+    const services: DesiredServiceVM[] = (desired?.getServicesList?.() ?? []).map((s: any) => ({
+      name:    s.getName?.()    ?? '',
+      version: s.getVersion?.() ?? '',
+      unit:    s.getUnit?.()    ?? '',
+    }))
+    return {
+      nodeId,
+      planId:     plan?.getPlanId?.()     ?? '',
+      generation: plan?.getGeneration?.() ?? 0,
+      services,
+    }
+  } catch {
+    return null
+  }
 }
