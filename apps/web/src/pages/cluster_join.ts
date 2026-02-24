@@ -204,23 +204,27 @@ globular cluster token create --controller <CONTROLLER_IP>:10000
 > **Note:** The default controller address is \`localhost:10000\`, which only
 > works when running the CLI on the same machine as the controller **and** the
 > controller is listening on the loopback interface.
-> If you get \`connection refused\`, the controller is likely bound to its LAN IP.
-> Find the correct address with:
+> **Common errors:**
+>
+> - \`connection refused\` — the controller is bound to its LAN IP, not loopback.
+>   Find the right IP with \`ip addr show\` on the controller node, then use it explicitly.
+>
+> - \`unknown service clustercontroller.ClusterControllerService\` — the IP is correct
+>   but the **port is wrong**. Another gRPC service is answering on that port.
+>   The ClusterController always listens on port **10000**. Double-check:
 >
 > \`\`\`bash
-> # On the controller node — find the IP the controller is listening on
+> # Confirm the controller is on port 10000
 > ss -tlnp | grep 10000
-> # or
-> ip addr show
 > \`\`\`
 >
-> Then pass the LAN IP explicitly:
+> Correct usage with an explicit LAN IP:
 >
 > \`\`\`bash
 > globular cluster token create --controller 192.168.1.10:10000
 > \`\`\`
 >
-> You can also set it permanently to avoid repeating \`--controller\` on every command:
+> You can set it permanently to avoid repeating \`--controller\` on every command:
 >
 > \`\`\`bash
 > export GLOBULAR_CONTROLLER=192.168.1.10:10000
