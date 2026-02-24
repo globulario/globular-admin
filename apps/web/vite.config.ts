@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import path from 'path'
 
 // Vite automatically provides mode in the callback
 export default defineConfig(({ mode }) => {
@@ -98,6 +99,8 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb',
         'globular-web-client/clustercontroller/clustercontroller_pb',
         'globular-web-client/clustercontroller/plan_pb',
+        'globular-web-client/clusterdoctor/clusterdoctor_grpc_web_pb',
+        'globular-web-client/clusterdoctor/clusterdoctor_pb',
         'globular-web-client/conversation/conversation_grpc_web_pb',
         'globular-web-client/conversation/conversation_pb',
         'globular-web-client/discovery/discovery_grpc_web_pb',
@@ -125,6 +128,11 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/torrent/torrent_grpc_web_pb',
         'globular-web-client/torrent/torrent_pb',
       ],
+    },
+    resolve: {
+      alias: {
+        'clusterdoctor-proto': path.resolve(__dirname, '../../services/typescript/dist/clusterdoctor'),
+      },
     },
     build: {
       outDir: 'dist',
