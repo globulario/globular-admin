@@ -221,18 +221,29 @@ globular cluster token create \\
 >   If running a dev setup without TLS, use \`--insecure\` instead.
 >
 > - \`context deadline exceeded while waiting for connections to become ready\` —
->   TLS succeeded but the ClusterController is not accepting requests. The service
->   may not be running or may still be starting up. Check its status:
+>   TLS succeeded but the ClusterController is not accepting requests. First
+>   confirm the service is running:
 >
 > \`\`\`bash
-> sudo systemctl status globular-clustercontroller
-> sudo journalctl -u globular-clustercontroller -n 50
+> sudo systemctl status globular-cluster-controller.service
+> sudo journalctl -u globular-cluster-controller.service -n 50
 > \`\`\`
 >
->   If the service is stopped, start it:
+>   If the service is running but you still get this error, the controller may be
+>   bound only to loopback (\`127.0.0.1\`) and not reachable from other machines.
+>   Check which address it is actually listening on:
 >
 > \`\`\`bash
-> sudo systemctl start globular-clustercontroller
+> sudo ss -tlnp | grep 12000
+> \`\`\`
+>
+>   If it shows \`127.0.0.1:12000\` instead of \`0.0.0.0:12000\`, run the CLI
+>   directly **on the controller node** itself using \`localhost\` or \`127.0.0.1\`:
+>
+> \`\`\`bash
+> sudo globular cluster token create \\
+>   --controller 127.0.0.1:12000 \\
+>   --ca /var/lib/globular/pki/ca.crt
 > \`\`\`
 >
 > - \`stat /var/lib/globular/pki/ca.crt: permission denied\` — the CA file is
