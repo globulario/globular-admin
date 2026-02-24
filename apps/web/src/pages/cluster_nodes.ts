@@ -1,5 +1,43 @@
 // src/pages/cluster_nodes.ts
-import { listClusterNodes, getNodeReport, type ClusterNode, type NodeReport, type Finding } from '@globular/backend'
+import { listClusterNodes, getNodeReport, type ClusterNode, type NodeReport, type Finding, type NodeCapabilities } from '@globular/backend'
+
+function fmtBytes(bytes: number): string {
+  if (!bytes) return '—'
+  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`
+  if (bytes >= 1e9)  return `${(bytes / 1e9).toFixed(1)} GB`
+  if (bytes >= 1e6)  return `${(bytes / 1e6).toFixed(0)} MB`
+  return `${bytes} B`
+}
+
+function profileTags(profiles: string[]): string {
+  if (!profiles.length) return '<span style="color:var(--secondary-text-color)">—</span>'
+  return profiles.map(p => `<span style="
+    display:inline-block;padding:1px 7px;border-radius:999px;font-size:.68rem;font-weight:700;
+    letter-spacing:.04em;text-transform:uppercase;margin-right:3px;
+    background:color-mix(in srgb,var(--primary-color) 15%,transparent);
+    color:var(--primary-color);
+    border:1px solid color-mix(in srgb,var(--primary-color) 30%,transparent);
+  ">${p}</span>`).join('')
+}
+
+function capsLine(caps: NodeCapabilities | null): string {
+  if (!caps || caps.cpuCount === 0) return '<span style="color:var(--secondary-text-color)">—</span>'
+  const diskPct = caps.diskBytes > 0 ? Math.round((1 - caps.diskFreeBytes / caps.diskBytes) * 100) : 0
+  return `
+    <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:.82rem;color:var(--on-surface-color)">
+      <span><strong>${caps.cpuCount}</strong> CPU${caps.cpuCount !== 1 ? 's' : ''}</span>
+      <span><strong>${fmtBytes(caps.ramBytes)}</strong> RAM</span>
+      <span>
+        <strong>${fmtBytes(caps.diskBytes)}</strong> disk
+        <span style="display:inline-block;width:48px;height:5px;background:var(--border-subtle-color);
+          border-radius:3px;overflow:hidden;vertical-align:middle;margin:0 4px;">
+          <span style="display:block;height:100%;width:${diskPct}%;border-radius:3px;
+            background:color-mix(in srgb,var(--primary-color) 60%,transparent);"></span>
+        </span>
+        ${fmtBytes(caps.diskFreeBytes)} free
+      </span>
+    </div>`
+}
 
 // ─── Severity constants (numeric, from generated proto enums) ────────────────
 
@@ -209,6 +247,7 @@ class PageClusterNodes extends HTMLElement {
             <thead>
               <tr>
                 <th>Hostname</th>
+                <th>Profiles</th>
                 <th>Node ID</th>
                 <th>Reachable</th>
                 <th>Heartbeat Age</th>
@@ -225,6 +264,7 @@ class PageClusterNodes extends HTMLElement {
                 return `
                 <tr data-node-id="${row.node.nodeId}" class="${selected ? 'selected' : ''}">
                   <td class="cn-hostname">${row.node.hostname || row.node.nodeId}</td>
+                  <td>${profileTags(row.node.profiles)}</td>
                   <td class="cn-node-id">${row.node.nodeId}</td>
                   <td>${r
                     ? badge(r.reachable ? 'REACHABLE' : 'UNREACHABLE', r.reachable ? 'var(--success-color)' : 'var(--error-color)')
@@ -296,6 +336,16 @@ class PageClusterNodes extends HTMLElement {
         <div class="cn-panel-header">
           <span>Findings — ${row.node.hostname || this._selectedNodeId}</span>
           <span style="font-size:.78rem;font-weight:400">${r.findings.length} finding${r.findings.length !== 1 ? 's' : ''} · heartbeat ${ageLabel(r.heartbeatAgeSeconds)} ago</span>
+        </div>
+        <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--border-subtle-color);">
+          <div style="display:flex;align-items:baseline;gap:12px;font-size:.83rem;">
+            <span style="min-width:80px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--secondary-text-color);">Profiles</span>
+            ${profileTags(row.node.profiles)}
+          </div>
+          <div style="display:flex;align-items:baseline;gap:12px;font-size:.83rem;">
+            <span style="min-width:80px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--secondary-text-color);">Hardware</span>
+            ${capsLine(row.node.capabilities)}
+          </div>
         </div>
         ${r.findings.length > 0 ? `
         <table class="cn-findings-table">
