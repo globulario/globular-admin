@@ -1,0 +1,17 @@
+{
+  "name": "clusterdoctor-proto",
+  "version": "1.0.0",
+  "private": true,
+  "main": "clusterdoctor_pb.js",
+  "types": "clusterdoctor_pb.d.ts",
+  "exports": {
+    "./clusterdoctor_pb": {
+      "require": "./clusterdoctor_pb.js",
+      "default": "./clusterdoctor_pb.js"
+    },
+    "./clusterdoctor_grpc_web_pb": {
+      "require": "./clusterdoctor_grpc_web_pb.js",
+      "default": "./clusterdoctor_grpc_web_pb.js"
+    }
+  }
+}

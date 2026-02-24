@@ -74,12 +74,19 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/clusterdoctor.ClusterDoctorService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     // Force Vite to pre-bundle (CJS→ESM) all proto-generated modules from the
     // symlinked globular-web-client package that Vite would otherwise skip.
     optimizeDeps: {
       include: [
+        'clusterdoctor-proto/clusterdoctor_grpc_web_pb',
+        'clusterdoctor-proto/clusterdoctor_pb',
         'globular-web-client/admin/admin_grpc_web_pb',
         'globular-web-client/admin/admin_pb',
         'globular-web-client/applications_manager/applications_manager_grpc_web_pb',
@@ -123,6 +130,12 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       sourcemap: true,
       target: 'es2020',
+      // The clusterdoctor-proto workspace package symlinks to packages/clusterdoctor-proto,
+      // which resolves outside node_modules. Include it explicitly so Rollup's CJS plugin
+      // converts require()/module.exports to ESM, matching globular-web-client behaviour.
+      commonjsOptions: {
+        include: [/clusterdoctor-proto/, /node_modules/],
+      },
     },
   }
 })

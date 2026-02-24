@@ -55,4 +55,5 @@ export * from "./rbac/diskSpace";
 export * from "./rbac/peers";
 export * from "./persistence/persistence";
 export * from "./cluster/cluster";
+export * from "./clusterdoctor/clusterdoctor_client";
 export * from "./core/cors";
