@@ -65,7 +65,11 @@ export class FileIconView extends HTMLElement {
   }
 
   /* ---------- Public API ---------- */
-  setFile(fileVM, viewContext) {
+  async setFile(fileVM, viewContext) {
+    // Suppress visibility while the async render runs so the user never sees
+    // a blank card flash before content arrives.
+    this.classList.add("icon-pending");
+
     this._file = fileVM;
     this._viewContext = viewContext;
     this._fileExplorer = viewContext._fileExplorer;
@@ -76,10 +80,19 @@ export class FileIconView extends HTMLElement {
     this.style.setProperty("--file-icon-height", `${h}px`);
     this.style.setProperty("--file-icon-width", `${w}px`);
 
+    // Clear IntersectionObserver placeholder sizes — the component now has its
+    // own CSS-var-driven sizing so these inline min-* styles are no longer needed
+    // and would cause a layout shift once neighbouring icons also render.
+    this.style.minHeight = "";
+    this.style.minWidth = "";
+
     this._cacheDom();
     this._wireEvents();
-    this._render();
+    await this._render();
     this._hideThumbtack();
+
+    // Reveal with a short CSS fade-in (opacity 0 → 1 via transition on :host).
+    this.classList.remove("icon-pending");
   }
 
   setActive() { this.classList.add("active"); }
@@ -120,6 +133,13 @@ export class FileIconView extends HTMLElement {
       <style>
       :host {
         display: inline-flex;
+        /* Fade-in after async render to prevent blank-card flash. */
+        transition: opacity 0.12s ease;
+      }
+
+      /* Hidden while setFile() is running its async render. */
+      :host(.icon-pending) {
+        opacity: 0;
       }
 
       iron-icon {

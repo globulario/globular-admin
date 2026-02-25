@@ -346,9 +346,11 @@ export class FilesIconView extends FilesView {
         // Context menu helper
         icon.openContextMenu = (anchorEl) => this.showContextMenu?.(anchorEl, file);
 
-        // Store the file for deferred init; the observer calls setFile() once
-        // the icon enters the viewport.  Give the placeholder a min-height so
-        // the observer can detect it even before setFile() adds content.
+        // Start hidden so the empty card placeholder is never visible to the user.
+        // setFile() removes this class (with a CSS fade-in) after the async render
+        // completes.  The element still takes up layout space (minHeight ensures
+        // the IntersectionObserver can detect it) but is invisible until ready.
+        icon.classList.add("icon-pending");
         icon._pendingFile = file;
         icon.style.minHeight = `${this._imageHeight + 50}px`;
         icon.style.minWidth  = `${this._imageWidth}px`;
