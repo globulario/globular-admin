@@ -32,6 +32,9 @@ import {
   playlistPathFor,
 } from "./filevm-helpers.js";
 
+// Bounded LRU cache for per-file media metadata (replaces direct file mutation)
+import { mergeMediaInfo } from "./fileMediaCache.js";
+
 /** Human-readable size formatter (no floating bugs) */
 function getFileSizeString(bytes) {
   if (!bytes || bytes <= 0) return "0 Bytes";
@@ -58,6 +61,14 @@ function iconForMime(m) {
 export class FilesListView extends FilesView {
   _dir = null;
   _active = false; // track current active state
+
+  // Tracks EventHub event-names subscribed in the current render so they can
+  // be cleanly unsubscribed before the next _renderFiles() clears the DOM.
+  _subscribedPaths = new Set();
+
+  // IntersectionObserver that defers expensive per-row metadata RPCs until
+  // each row is near the visible viewport.
+  _rowObserver = null;
 
   setActive(isActive) {
     this._active = !!isActive;
@@ -281,6 +292,22 @@ export class FilesListView extends FilesView {
   }
 
   _renderFiles() {
+    // 1) Disconnect the previous directory's metadata observer.
+    this._rowObserver?.disconnect();
+    this._rowObserver = null;
+
+    // 2) Unsubscribe EventHub events for all rows from the previous directory.
+    //    Without this, subscriptions accumulate indefinitely across navigation.
+    for (const p of this._subscribedPaths) {
+      const eventName = `__file_select_unselect_${p}`;
+      const uuid = this[eventName];
+      if (uuid) {
+        try { Backend.eventHub.unSubscribe(eventName, uuid); } catch { }
+        delete this[eventName]; // allow re-subscription if same dir is revisited
+      }
+    }
+    this._subscribedPaths.clear();
+
     this._domRefs.fileListViewBody.innerHTML = "";
 
     const files = filesOf(this._dir);
@@ -294,6 +321,25 @@ export class FilesListView extends FilesView {
       return (nameOf(a) || "").localeCompare(nameOf(b) || "");
     });
 
+    // 3) Set up lazy metadata observer.
+    //    _createFileRow() renders immediately with basic data (name, icon,
+    //    existing thumb) but stores the expensive async work in row._pendingMeta.
+    //    The observer fires _loadRowMetadata() only when the row enters the
+    //    viewport (400px ahead), preventing hundreds of concurrent RPC calls.
+    const self = this;
+    this._rowObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const row = entry.target;
+        self._rowObserver?.unobserve(row);
+        if (row._pendingMeta) {
+          const { file, mimeRoot, isLink } = row._pendingMeta;
+          row._pendingMeta = null;
+          self._loadRowMetadata(row, file, mimeRoot, isLink);
+        }
+      });
+    }, { root: null, rootMargin: "400px 0px" });
+
     for (const file of sorted) {
       const nm = nameOf(file) || "";
       // Skip plain dotfiles except known special cases
@@ -302,6 +348,51 @@ export class FilesListView extends FilesView {
       }
       const row = this._createFileRow(file);
       this._domRefs.fileListViewBody.appendChild(row);
+      this._rowObserver.observe(row);
+    }
+  }
+
+  /**
+   * Deferred per-row metadata load triggered by IntersectionObserver.
+   * Makes the actual gRPC calls (video info, audio info, link resolution,
+   * hidden metadata) only when the row is near the viewport.
+   */
+  _loadRowMetadata(row, file, mimeRoot, isLink) {
+    const self = this;
+
+    const primeDisplayInfo = (source, mimeHint) => {
+      self._getFileDisplayInfo(row, mimeHint, source).catch(() => { /* non-fatal */ });
+    };
+
+    if (isLink) {
+      loadLinkTarget(file)
+        .then((target) => {
+          if (!target) return;
+          const linkName = nameOf(target);
+          const span = row.querySelector(".file-name");
+          if (span) {
+            span.textContent = linkName;
+            span.title = `${linkName} (${pathOf(target)})`;
+          }
+          const targetIsDir = isDirOf(target);
+          const targetMime = (mimeOf(target) || "").toLowerCase();
+          const typeCell = row.querySelector(".type-cell");
+          if (typeCell) {
+            typeCell.textContent = targetIsDir
+              ? "FOLDER"
+              : (targetMime.split(";")[0] || "").toUpperCase() || "FILE";
+          }
+          const sizeCell = row.querySelector(".size-cell");
+          if (sizeCell) sizeCell.textContent = getFileSizeString(sizeOf(target) || 0);
+          const indicator = row.querySelector(".link-indicator");
+          if (indicator) indicator.style.display = "inline-flex";
+          const updatedIcon = targetIsDir ? "icons:folder" : iconForMime(targetMime);
+          self._applyThumbOrIcon(row, updatedIcon, thumbOf(target));
+          primeDisplayInfo(target, (mimeOf(target) || "").split("/")[0]);
+        })
+        .catch((err) => console.warn("Failed to decode link target", err));
+    } else {
+      primeDisplayInfo(file, mimeRoot);
     }
   }
 
@@ -327,6 +418,8 @@ export class FilesListView extends FilesView {
 
     if (thumbUrl) {
       // Try to load the thumbnail; if it fails, show icon.
+      imgEl.loading = "lazy";
+      imgEl.decoding = "async";
       imgEl.style.display = "none"; // hide until it loads successfully
       imgEl.src = thumbUrl;
 
@@ -405,7 +498,7 @@ export class FilesListView extends FilesView {
       <td class="first-cell" data-file-path="${path}">
         <paper-checkbox id="checkbox-${rowId}"></paper-checkbox>
         <iron-icon id="icon-${rowId}" class="file-icon" icon="${icon}" style="display:none;"></iron-icon>
-        <img id="thumbnail-${rowId}" class="file-thumbnail" style="display:none;"/>
+        <img id="thumbnail-${rowId}" class="file-thumbnail" loading="lazy" decoding="async" style="display:none;"/>
         <iron-icon class="link-indicator" icon="icons:reply" style="display:${isLink ? "inline-flex" : "none"};"></iron-icon>
         <span class="file-name" title="${path}">${displayName}</span>
         <paper-icon-button id="menu-btn-${rowId}" icon="icons:more-vert" class="control-button"></paper-icon-button>
@@ -416,47 +509,13 @@ export class FilesListView extends FilesView {
       <td class="size-cell">${sizeDisplay}</td>
     `;
 
-    // Apply thumbnail or icon immediately (with load/error fallback)
+    // Apply thumbnail or icon immediately using data already in the file VM —
+    // no network call, so this is safe to do for every row up front.
     this._applyThumbOrIcon(row, icon, thumbnailSrc);
 
-    const primeDisplayInfo = (source, mimeHint) => {
-      this._getFileDisplayInfo(row, mimeHint, source)
-        .then((info) => {
-          if (info) this._updateRowDisplayInfo?.(row, mimeHint, info);
-        })
-        .catch(() => { /* non-fatal */ });
-    };
-
-    if (isLink) {
-      const indicator = row.querySelector(".link-indicator");
-      loadLinkTarget(file)
-        .then((target) => {
-          if (!target) return;
-          const linkName = nameOf(target);
-          const span = row.querySelector(".file-name");
-          if (span) {
-            span.textContent = linkName;
-            span.title = `${linkName} (${pathOf(target)})`;
-          }
-          const targetIsDir = isDirOf(target);
-          const targetMime = (mimeOf(target) || "").toLowerCase();
-          const typeCell = row.querySelector(".type-cell");
-          if (typeCell) {
-            typeCell.textContent = targetIsDir ? "FOLDER" : (targetMime.split(";")[0] || "").toUpperCase() || "FILE";
-          }
-          const sizeCell = row.querySelector(".size-cell");
-          if (sizeCell) sizeCell.textContent = getFileSizeString(sizeOf(target) || 0);
-          if (indicator) indicator.style.display = "inline-flex";
-          const updatedIcon = targetIsDir ? "icons:folder" : iconForMime(targetMime);
-          this._applyThumbOrIcon(row, updatedIcon, thumbOf(target));
-          primeDisplayInfo(target, (mimeOf(target) || "").split("/")[0]);
-        })
-        .catch((err) => {
-          console.warn("Failed to decode link target", err);
-        });
-    } else {
-      primeDisplayInfo(file, mimeRoot);
-    }
+    // Store the expensive async work (gRPC metadata + link resolution) for the
+    // IntersectionObserver in _renderFiles() to trigger when near viewport.
+    row._pendingMeta = { file, mimeRoot, isLink };
 
     // sync checkbox with global selection pub/sub
     Backend.eventHub.subscribe(
@@ -470,6 +529,8 @@ export class FilesListView extends FilesView {
       true,
       this
     );
+    // Track so _renderFiles() can unsubscribe before the next directory load.
+    this._subscribedPaths.add(path);
 
     // wire checkbox change => selection map
     const checkbox = row.querySelector(`#checkbox-${rowId}`);
@@ -510,7 +571,8 @@ export class FilesListView extends FilesView {
       if (mimeType === "video") {
         const videos = await getFileVideosInfo(pathOf(file));
         if (Array.isArray(videos) && videos.length > 0) {
-          file.videos = videos;
+          // Store in bounded cache instead of mutating the file proto object.
+          mergeMediaInfo(pathOf(file), { videos });
           displayTitle = videos[0]?.getDescription?.() || displayTitle;
           const poster = videos[0]?.getPoster?.();
           if (poster?.URL) thumbnailUrl = poster.URL;
@@ -518,7 +580,7 @@ export class FilesListView extends FilesView {
       } else if (mimeType === "audio") {
         const audios = await getFileAudiosInfo(pathOf(file));
         if (Array.isArray(audios) && audios.length > 0) {
-          file.audios = audios;
+          mergeMediaInfo(pathOf(file), { audios });
           displayTitle = audios[0]?.getTitle?.() || displayTitle;
           const poster = audios[0]?.getPoster?.();
           if (poster?.URL) thumbnailUrl = poster.URL;
@@ -537,7 +599,7 @@ export class FilesListView extends FilesView {
                 if (titleInfos?.ID) {
                   const title = await getTitleInfo(titleInfos.ID);
                   if (title) {
-                    file.titles = [title];
+                    mergeMediaInfo(pathOf(file), { titles: [title] });
                     displayTitle = title.getName?.() || displayTitle;
                     const poster = title.getPoster?.();
                     if (poster.URL) thumbnailUrl = poster.URL;

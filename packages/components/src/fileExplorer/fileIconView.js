@@ -19,6 +19,9 @@ import {
   hasPlaylistManifest,
 } from "./filevm-helpers";
 
+// Bounded LRU cache for media metadata populated by list/icon view loaders
+import { getMediaInfo } from "./fileMediaCache.js";
+
 // UI deps
 import "@polymer/paper-checkbox/paper-checkbox.js";
 import "@polymer/paper-ripple/paper-ripple.js";
@@ -84,6 +87,30 @@ export class FileIconView extends HTMLElement {
   select() { this._dom.checkbox.checked = true; this._applySelection(true); }
   unselect() { this._dom.checkbox.checked = false; this._applySelection(false); }
   stopPreview() { this._preview?.stopPreview?.(); }
+
+  disconnectedCallback() {
+    // Unsubscribe from EventHub — without this the hub holds a hard ref to the
+    // element, preventing GC even after the element is removed from the DOM.
+    const keyPath = pathOf(this._file);
+    if (keyPath) {
+      const eventName = `__file_select_unselect_${keyPath}`;
+      // EventHub.subscribe() stores the uuid as element[eventName]
+      const uuid = this[eventName];
+      if (uuid) {
+        try { Backend.eventHub.unSubscribe(eventName, uuid); } catch { }
+      }
+    }
+
+    // Release video preview resources (canvas frames, fetch requests)
+    try { this._preview?.stopPreview?.(); } catch { }
+    this._preview = null;
+
+    // Null out heavy references so GC can collect file metadata
+    this._file = null;
+    this._displayFile = null;
+    this._viewContext = null;
+    this._fileExplorer = null;
+  }
 
   /* ---------- Private: Structure / DOM ---------- */
   _template() {
@@ -459,9 +486,12 @@ export class FileIconView extends HTMLElement {
       return "";
     };
 
-    const videoInfo = pickFirst(file?.videos);
-    const audioInfo = pickFirst(file?.audios);
-    const titleInfo = pickFirst(file?.titles);
+    // Check the bounded LRU cache first (populated by deferred metadata loaders).
+    // Fall back to any data already on the file proto (server-provided at load time).
+    const cached = getMediaInfo(pathOf(file)) ?? {};
+    const videoInfo = pickFirst(cached.videos  ?? file?.videos);
+    const audioInfo = pickFirst(cached.audios  ?? file?.audios);
+    const titleInfo = pickFirst(cached.titles  ?? file?.titles);
 
     const videoLabel = valFrom(videoInfo, ["getDescription", "description", "getTitle", "title", "getName", "name"]);
     if (videoLabel) return videoLabel;
@@ -640,7 +670,10 @@ export class FileIconView extends HTMLElement {
   }
   _appendImg(src) {
     const img = document.createElement("img");
-    img.src = src; img.draggable = false;
+    img.loading = "lazy";   // don't fetch until near viewport
+    img.decoding = "async"; // don't block main thread on decode
+    img.src = src;
+    img.draggable = false;
     this._dom.iconDisplay.appendChild(img);
     return img;
   }

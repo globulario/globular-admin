@@ -48,6 +48,7 @@ import {
   hasPlaylistManifest,
 } from "./filevm-helpers.js";
 import { getFileVideosInfo, getFileTitlesInfo, getFileAudiosInfo } from "@globular/backend";
+import { mergeMediaInfo, getMediaInfo } from "./fileMediaCache.js";
 import { downloadTorrent } from "@globular/backend";
 
 // UI deps
@@ -975,17 +976,20 @@ export class FilesView extends HTMLElement {
     const isVideo = mime.startsWith("video") || isDirOf(file);
     const isAudio = mime.startsWith("audio");
 
-    const hasInfos = () =>
-      (file.videos && file.videos.length) ||
-      (file.titles && file.titles.length) ||
-      (file.audios && file.audios.length);
+    const cachedInfo = () => getMediaInfo(pathOf(file)) ?? {};
+    const hasInfos = () => {
+      const c = cachedInfo();
+      return (c.videos?.length || file.videos?.length) ||
+             (c.titles?.length || file.titles?.length) ||
+             (c.audios?.length || file.audios?.length);
+    };
 
-    if (!hasInfos() && isVideo && !file.titles?.length) {
+    if (!hasInfos() && isVideo) {
       // Legacy behaviour: try fetching titles explicitly when videos aren't present.
       try {
         const titles = await getFileTitlesInfo(pathOf(file));
         if (Array.isArray(titles) && titles.length) {
-          file.titles = titles;
+          mergeMediaInfo(pathOf(file), { titles });
         }
       } catch (err) {
         console.warn("Failed to fetch titles info fallback", err);
@@ -1016,34 +1020,40 @@ export class FilesView extends HTMLElement {
 
   async _hydrateMediaInfos(file) {
     if (!file) return file;
-    if ((file.videos?.length || file.titles?.length || file.audios?.length)) {
-      return file;
-    }
     const path = pathOf(file);
     if (!path) return file;
+
+    // Check the bounded LRU cache and the file proto before making any RPCs.
+    const cached = getMediaInfo(path) ?? {};
+    const hasVideos = (cached.videos?.length || file.videos?.length);
+    const hasTitles = (cached.titles?.length || file.titles?.length);
+    const hasAudios = (cached.audios?.length || file.audios?.length);
+
+    if (hasVideos && hasTitles && hasAudios) return file;
+
     const mime = (mimeOf(file) || "").toLowerCase();
     const isVideo = mime.startsWith("video") || isDirOf(file);
     const isAudio = mime.startsWith("audio");
     const fetches = [];
-    if (isVideo && !file.videos?.length) {
+
+    if (isVideo && !hasVideos) {
       fetches.push(
         getFileVideosInfo(path)
-          .then((list) => { if (Array.isArray(list) && list.length) file.videos = list; })
+          .then((list) => { if (Array.isArray(list) && list.length) mergeMediaInfo(path, { videos: list }); })
           .catch(() => { })
       );
     }
-    const needTitles = (isVideo || isAudio) && !file.titles?.length;
-    if (needTitles) {
+    if ((isVideo || isAudio) && !hasTitles) {
       fetches.push(
         getFileTitlesInfo(path)
-          .then((list) => { if (Array.isArray(list) && list.length) file.titles = list; })
+          .then((list) => { if (Array.isArray(list) && list.length) mergeMediaInfo(path, { titles: list }); })
           .catch(() => { })
       );
     }
-    if (isAudio && !file.audios?.length) {
+    if (isAudio && !hasAudios) {
       fetches.push(
         getFileAudiosInfo(path)
-          .then((list) => { if (Array.isArray(list) && list.length) file.audios = list; })
+          .then((list) => { if (Array.isArray(list) && list.length) mergeMediaInfo(path, { audios: list }); })
           .catch(() => { })
       );
     }
@@ -1120,10 +1130,10 @@ export class FilesView extends HTMLElement {
       try {
         if (videoOption.checked) {
           const info = await this.createVideoInformations(file);
-          file.videos = [info];
+          mergeMediaInfo(pathOf(file), { videos: [info] });
         } else if (titleOption.checked) {
           const info = await this.createTitleInformations(file);
-          file.titles = [info];
+          mergeMediaInfo(pathOf(file), { titles: [info] });
         }
         Backend.eventHub.publish(`display_media_infos_${this._fileExplorer.id}_event`, file, true);
       } catch (err) {

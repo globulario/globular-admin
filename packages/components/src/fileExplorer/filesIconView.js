@@ -192,6 +192,11 @@ export class FilesIconView extends FilesView {
     }
     if (!dir) return;
 
+    // Stop observing icons from the previous directory before clearing the DOM.
+    // disconnectedCallback() on each removed element handles EventHub cleanup.
+    this._iconObserver?.disconnect();
+    this._iconObserver = null;
+
     this._currentDir = dir;
     this._path = (typeof dir.getPath === "function" ? dir.getPath() : dir.path) || this._path;
 
@@ -294,6 +299,32 @@ export class FilesIconView extends FilesView {
 
     this.addEventListener("link-type-ready", this._linkTypeListener);
 
+    // Lazy init: call setFile() only when the icon element is close to the
+    // visible viewport.  This avoids simultaneously fetching hundreds of
+    // thumbnails and constructing VideoPreview elements for off-screen files.
+    //
+    // rootMargin '400px 0px' pre-loads one screen-height ahead so the user
+    // never sees blank placeholders while scrolling at a normal speed.
+    const self = this;
+    this._iconObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const icon = entry.target;
+        self._iconObserver?.unobserve(icon);
+        if (icon._pendingFile) {
+          const file = icon._pendingFile;
+          icon._pendingFile = null;
+          icon.setFile(file, self);
+        }
+      });
+    }, {
+      // root: null → observe relative to the browser viewport.
+      // This is simpler and more reliable than using the scroll container as
+      // root (avoids issues with nested scroll contexts).
+      root: null,
+      rootMargin: "400px 0px",
+    });
+
     order.forEach((fileType) => {
       const files = byType[fileType];
       if (!files || files.length === 0) return;
@@ -315,8 +346,15 @@ export class FilesIconView extends FilesView {
         // Context menu helper
         icon.openContextMenu = (anchorEl) => this.showContextMenu?.(anchorEl, file);
 
+        // Store the file for deferred init; the observer calls setFile() once
+        // the icon enters the viewport.  Give the placeholder a min-height so
+        // the observer can detect it even before setFile() adds content.
+        icon._pendingFile = file;
+        icon.style.minHeight = `${this._imageHeight + 50}px`;
+        icon.style.minWidth  = `${this._imageWidth}px`;
+
         section.appendChild(icon);
-        icon.setFile(file, this);
+        this._iconObserver.observe(icon);
       });
 
       section.updateCount?.();
