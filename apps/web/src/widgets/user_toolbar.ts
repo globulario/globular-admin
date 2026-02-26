@@ -37,14 +37,17 @@ class UserToolbar extends HTMLElement {
           display: inline-flex; align-items: center; justify-content: center;
           border-radius: 50%;
         }
-        .btn.icon img {
-          width: 18px; height: 18px;
-          filter: invert(1);
+        .btn.icon svg {
+          width: 20px; height: 20px;
+          fill: currentColor;
+          pointer-events: none;
         }
       </style>
       <div class="user">
         <button class="btn icon" id="fileExplorerBtn" title="Open File Explorer">
-          <img src="${this.folderIconUrl}" alt="File Explorer"/>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+          </svg>
         </button>
         <div class="avatar">${(u||'?').slice(0,1).toUpperCase()}</div>
         <span class="name">${u ?? ''}</span>
