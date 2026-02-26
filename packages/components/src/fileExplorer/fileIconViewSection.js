@@ -16,6 +16,9 @@ import {
 // Proper backend wrappers (no direct HTTP fetch)
 import { readText } from "@globular/backend";
 
+// Bounded LRU cache — media metadata lives here, NOT on the file proto
+import { getMediaInfo } from "./fileMediaCache.js";
+
 import "@polymer/iron-icon/iron-icon.js";
 import "@polymer/paper-checkbox/paper-checkbox.js";
 import "@polymer/iron-icons/image-icons";
@@ -315,7 +318,9 @@ export class FileIconViewSection extends HTMLElement {
     const files = filesOf(this._dir) || [];
     const wantedRoot = this._fileType; // "video" | "audio" | "image" | etc.
 
-    // Collect media objects already attached by your backend (videos/audios/titles arrays)
+    // Collect media objects for playback.
+    // Media metadata lives in the LRU cache (fileMediaCache), not on the file
+    // proto — always read from cache first, fall back to proto for legacy data.
     const toPlay = [];
     for (const f of files) {
       const mime = (f?.mime || "").toLowerCase();
@@ -325,9 +330,14 @@ export class FileIconViewSection extends HTMLElement {
         continue;
       }
       if (mime.startsWith(wantedRoot)) {
-        if (wantedRoot === "video" && Array.isArray(f.videos)) toPlay.push(...f.videos);
-        else if (wantedRoot === "audio" && Array.isArray(f.audios)) toPlay.push(...f.audios);
-        else if (Array.isArray(f.titles)) toPlay.push(...f.titles);
+        const cached = getMediaInfo(pathOf(f)) ?? {};
+        const videos = cached.videos?.length ? cached.videos : (f.videos ?? []);
+        const audios = cached.audios?.length ? cached.audios : (f.audios ?? []);
+        const titles = cached.titles?.length ? cached.titles : (f.titles ?? []);
+
+        if (wantedRoot === "video" && videos.length) toPlay.push(...videos);
+        else if (wantedRoot === "audio" && audios.length) toPlay.push(...audios);
+        else if (titles.length) toPlay.push(...titles);
       }
     }
 
