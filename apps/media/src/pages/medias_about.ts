@@ -119,6 +119,25 @@ class PageMediaAbout extends HTMLElement {
           font-size: 0.8rem;
           color: var(--secondary-text-color, var(--palette-text-secondary));
         }
+
+        @media (max-width: 600px) {
+          .about-wrap {
+            padding: 1.5rem 0.75rem;
+          }
+          .about-card {
+            padding: 1.5rem 1rem;
+          }
+          .meta-grid {
+            grid-template-columns: 1fr;
+          }
+          .logo {
+            width: 90px;
+            height: 90px;
+          }
+          .app-name {
+            font-size: 1.5rem;
+          }
+        }
       </style>
 
       <div class="about-wrap">

@@ -27,6 +27,10 @@ body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial;
   background: var(--background-color);
   color: var(--primary-text-color);
+  /* Honour iPhone notch / home-bar safe areas */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 #app {
@@ -266,5 +270,43 @@ paper-card globular-informations-manager {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* ── Responsive breakpoints ── */
+
+/* Tablet (≤ 960px) */
+@media (max-width: 960px) {
+  #app {
+    padding: 12px;
+  }
+  .page,
+  .wrap {
+    padding: 12px;
+  }
+  .auth-card {
+    padding: 24px 20px;
+  }
+}
+
+/* Mobile (≤ 600px) */
+@media (max-width: 600px) {
+  #app {
+    padding: 8px;
+  }
+  .page,
+  .wrap {
+    padding: 8px;
+  }
+  .auth-card {
+    padding: 20px 14px;
+    max-width: 100%;
+  }
+  .auth-page {
+    padding: 2vh 12px;
+    align-items: flex-start;
+  }
+  ::-webkit-scrollbar {
+    width: 4px;
   }
 }

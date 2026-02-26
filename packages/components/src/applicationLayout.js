@@ -176,6 +176,33 @@ export class AppLayout extends HTMLElement {
           app-drawer-layout:not([narrow]) [drawer-toggle] {
             display: none;
           }
+
+          /* ── Tablet (≤ 960px) ── */
+          @media (max-width: 960px) {
+            ::slotted([slot="app-content"]) {
+              padding: 12px;
+            }
+            #toolbar {
+              padding: 0 0.5rem;
+            }
+          }
+
+          /* ── Mobile (≤ 600px) ── */
+          @media (max-width: 600px) {
+            app-header {
+              min-height: 56px;
+            }
+            ::slotted([slot="app-content"]) {
+              padding: 8px;
+              height: calc(100vh - 56px);
+            }
+            #toolbar {
+              padding: 0 0.25rem;
+            }
+            #main-title {
+              display: none;
+            }
+          }
         
           app-header {
             width: calc(100% - var(--app-drawer-width, 256px));

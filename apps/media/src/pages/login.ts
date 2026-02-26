@@ -44,13 +44,25 @@ class PageLogin extends HTMLElement {
           display: flex;
           flex-direction: column;
           align-items: center;
-          height: 90vh;
-          overflow: hidden;
+          min-height: 100%;
           box-sizing: border-box;
           padding: 4vh 16px 0;
           background:
             url('./img/media.png') bottom center / auto 42% no-repeat,
             var(--background-color);
+        }
+        @media (max-width: 960px) {
+          .media-login-page {
+            background-size: auto 28%;
+            padding: 3vh 16px 0;
+          }
+        }
+        @media (max-width: 600px) {
+          .media-login-page {
+            background-image: none;
+            padding: 2vh 12px 12px;
+            align-items: stretch;
+          }
         }
       </style>
       <div class="media-login-page">

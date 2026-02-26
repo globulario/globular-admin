@@ -100,6 +100,7 @@ export class SearchBar extends HTMLElement {
 
         #search-bar {
           min-width: 280px;
+          width: 100%;
           display: flex;
           align-items: center;
           border-radius: 22px;
@@ -111,6 +112,20 @@ export class SearchBar extends HTMLElement {
           border: 1px solid var(--palette-divider);
           position: relative;
           transition: box-shadow 0.2s ease, background-color 0.2s ease;
+        }
+
+        @media (max-width: 600px) {
+          :host {
+            display: block;
+            width: 100%;
+          }
+          #search-bar {
+            min-width: 0;
+            border-radius: 12px;
+          }
+          input {
+            font-size: 1rem;
+          }
         }
 
         @media (max-width: 500px) {
