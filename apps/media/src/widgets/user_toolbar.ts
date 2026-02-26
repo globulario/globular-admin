@@ -1,5 +1,6 @@
 // src/widgets/user_toolbar.ts
 import { getUsername, isSa, logout } from "@globular/backend"
+import { navigateTo } from '../router'
 import "@globular/components/fileExplorer/fileExplorer.js"
 
 class UserToolbar extends HTMLElement {
@@ -56,7 +57,7 @@ class UserToolbar extends HTMLElement {
     `
     this.root = this.shadow.querySelector('.user') as HTMLElement
     const btn = this.shadow.getElementById('logoutBtn') as HTMLButtonElement
-    btn.onclick = () => logout()
+    btn.onclick = () => { logout(); navigateTo('#/login') }
     const explorerBtn = this.shadow.getElementById('fileExplorerBtn') as HTMLButtonElement
     explorerBtn.onclick = () => this.openFileExplorer()
 
