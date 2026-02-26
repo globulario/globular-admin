@@ -6,6 +6,7 @@ import './pages/login'
 import './pages/medias_search'
 import './pages/medias_settings'
 import './pages/medias_watching'
+import './pages/medias_about'
 // ------------------------------
 
 // --- Auth helpers (tiny & framework-agnostic) ---
@@ -60,6 +61,7 @@ const routes: Record<string, RouteHandler> = {
   '#/media/search':   () => document.createElement('page-media-search'),
   '#/media/settings': () => document.createElement('page-media-settings'),
   '#/media/watching': () => document.createElement('page-media-watching'),
+  '#/media/about':    () => document.createElement('page-media-about'),
 }
 
 function getRouteHandler(route: string): RouteHandler {
