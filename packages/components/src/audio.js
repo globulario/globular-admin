@@ -386,7 +386,7 @@ export class AudioPlayer extends HTMLElement {
       this._container.getPreview = this.getPreview.bind(this)
       this._container.onclose = this.close.bind(this)
       this._container.onminimize = this._handleMinimize.bind(this)
-      this._container.setAttribute("resize-direction", "horizontal")
+      this._container.setAttribute("resize-direction", "both")
       this._container.style.minWidth = "360px"
       this._container.style.minHeight = "320px"
       this._container.style.width = this._container.style.width || "640px"
@@ -888,7 +888,12 @@ export class AudioPlayer extends HTMLElement {
     if (this._container) {
       this._container.style.width = "400px"
     }
-    if (this._vizWrapper) this._vizWrapper.style.minWidth = "0px"
+    if (this._vizWrapper) {
+      this._vizWrapper.style.flex = ""
+      this._vizWrapper.style.width = ""
+      this._vizWrapper.style.minWidth = "0px"
+    }
+    if (this._content) this._content.style.justifyContent = ""
   }
 
   showPlaylist() {
@@ -901,9 +906,14 @@ export class AudioPlayer extends HTMLElement {
       this._stopBtn.style.display = ""
       this._loopBtn.style.display = ""
       if (this._container) {
-        this._container.style.width = "640px"
+        this._container.style.width = "900px"
       }
-      if (this._vizWrapper) this._vizWrapper.style.minWidth = "600px"
+      if (this._vizWrapper) {
+        this._vizWrapper.style.flex = "1"
+        this._vizWrapper.style.width = "auto"
+        this._vizWrapper.style.minWidth = "500px"
+      }
+      if (this._content) this._content.style.justifyContent = "flex-start"
     } else {
       this.hidePlaylist()
     }
