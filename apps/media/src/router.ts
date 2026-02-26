@@ -107,6 +107,13 @@ export function mountRoute(route?: string) {
   const resolved = resolveRoute(route)
 
   if (PERSISTENT_ROUTES.has(resolved)) {
+    // Remove any non-cached elements (e.g. the login page) that may still
+    // be in the container from a previous non-persistent route render.
+    const cachedEls = new Set(pageCache.values())
+    Array.from(target.children).forEach(child => {
+      if (!cachedEls.has(child as HTMLElement)) child.remove()
+    })
+
     // Hide all cached pages, show (or create) the target one
     pageCache.forEach(el => { el.style.display = 'none' })
 
