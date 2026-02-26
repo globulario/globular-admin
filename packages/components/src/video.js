@@ -1619,6 +1619,15 @@ export class VideoPlayer extends HTMLElement {
       const serverOrigin = vttDir.replace(/^(https?:\/\/[^/]+).*/, '$1')
       const currentToken = getAuthToken() || token
 
+      // Origin to rewrite absolute thumbnail URLs onto — use the address the
+      // user logged in with (stored by setBaseUrl), NOT window.location.origin
+      // which is the admin UI host (may differ, e.g. globular.internal).
+      let clusterOrigin = window.location.origin
+      try {
+        const base = getBaseUrl()
+        if (base) clusterOrigin = new URL(base).origin
+      } catch { /* keep fallback */ }
+
       const signedVttText = vttText.split('\n').map(line => {
         const trimmed = line.trim()
         // Skip blank lines, WEBVTT header, NOTE blocks, cue timings, and numeric cue IDs
@@ -1642,12 +1651,11 @@ export class VideoPlayer extends HTMLElement {
         let fullUrl
         if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
           // Normalize origin: the VTT was generated with the server's configured
-          // domain (e.g. globular.io) which may differ from the actual cluster
-          // address the browser is talking to.  Replace it with the current origin
-          // so thumbnail requests always reach the right host.
+          // domain which may differ from the cluster address the user logged in
+          // with.  Replace it with clusterOrigin (derived from getBaseUrl()).
           try {
             const parsed = new URL(imgPath)
-            fullUrl = window.location.origin + parsed.pathname + parsed.search + parsed.hash
+            fullUrl = clusterOrigin + parsed.pathname + parsed.search + parsed.hash
           } catch {
             fullUrl = imgPath
           }
