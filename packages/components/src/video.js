@@ -9,8 +9,10 @@ import {
   Backend,
   displayError,
   getFreshToken,
+  refresh,
   forceRefresh,
   isExpiringSoon,
+  tokenExpMs,
 
   // Controllers / wrappers
   readDir,
@@ -39,10 +41,14 @@ import { Poster, Video } from 'globular-web-client/title/title_pb'
 // -----------------------------------------------------------------------------
 // Constants
 // -----------------------------------------------------------------------------
-const MP4_TOKEN_REFRESH_INTERVAL_MS = 30_000
-const MP4_TOKEN_EXPIRY_PAD_MS = 120_000
+const MP4_TOKEN_REFRESH_INTERVAL_MS = 30_000   // fallback poll when expiry unknown
+const MP4_TOKEN_EXPIRY_PAD_MS = 180_000        // refresh 3 min before expiry
 const PLAY_ATTEMPT_COOLDOWN_MS = 50
 const HLS_MANIFEST_TIMEOUT_MS = 15_000
+const HLS_SERVER_COOLDOWN_MS = 1_500           // wait after destroy before requesting a new stream
+
+// Module-level: shared across VideoPlayer instances so close→reopen respects the cooldown
+let _lastHlsDestroyAt = 0
 
 // -----------------------------------------------------------------------------
 // Polyfill: HTMLMediaElement.prototype.playing
@@ -409,6 +415,9 @@ export class VideoPlayer extends HTMLElement {
     this._pendingSeekTime = null
     this._closingRequested = false
     this._pendingCloseSaveState = undefined
+    this._fallbackMp4Url = null  // set when we try HLS opportunistically for a raw MP4
+    this._mediaSetupDone = false  // subtitle/audio-track setup runs once per video load
+    this._hlsSeekTimer = null     // debounce timer for HLS seek handling
 
     // preview thumbnail blob URL (revoked when replaced or on disconnect)
     this._previewVttBlobUrl = null
@@ -537,8 +546,7 @@ export class VideoPlayer extends HTMLElement {
     if (this.player) this.player.destroy()
     this.player = null
 
-    if (this.hls) this.hls.destroy()
-    this.hls = null
+    this._destroyHls()   // stamps _lastHlsDestroyAt and cleans up seek listeners
 
     this._revokePreviewVttBlob()
     this._stopMp4TokenMaintenance()
@@ -604,10 +612,20 @@ export class VideoPlayer extends HTMLElement {
     this.videoElement.pause()
     this.videoElement.removeAttribute('src')
     this.videoElement.load()
+    this._mediaSetupDone = false
   }
 
   _destroyHls() {
+    if (this._hlsSeekTimer) {
+      clearTimeout(this._hlsSeekTimer)
+      this._hlsSeekTimer = null
+    }
+    if (this._hlsSeekCleanup) {
+      this._hlsSeekCleanup()
+      this._hlsSeekCleanup = null
+    }
     if (!this.hls) return
+    _lastHlsDestroyAt = Date.now()   // record for server-cooldown calculation
     try { this.hls.destroy() } catch { }
     this.hls = null
   }
@@ -683,46 +701,126 @@ export class VideoPlayer extends HTMLElement {
 
   // ---------------------------------------------------------------------------
   // MP4 token maintenance
+  // Schedules a single precise timer (not setInterval) so the src URL is updated
+  // with a fresh token ~3 minutes before the current token expires. This keeps
+  // a 2-hour movie playing without interruption even with a 15-minute token.
   // ---------------------------------------------------------------------------
   _startMp4TokenMaintenance(path, isHttpSource) {
     this._stopMp4TokenMaintenance()
     if (!path) return
     this._mp4TokenPath = path
     this._mp4TokenIsHttpSource = Boolean(isHttpSource)
-    this._mp4TokenMaintenanceTimer = window.setInterval(() => void this._mp4TokenRefreshTick(), MP4_TOKEN_REFRESH_INTERVAL_MS)
+    this._scheduleMp4TokenRefresh()
   }
 
   _stopMp4TokenMaintenance() {
     if (this._mp4TokenMaintenanceTimer) {
-      clearInterval(this._mp4TokenMaintenanceTimer)
+      clearTimeout(this._mp4TokenMaintenanceTimer)
       this._mp4TokenMaintenanceTimer = undefined
     }
     this._mp4TokenPath = ''
     this._mp4TokenIsHttpSource = false
   }
 
+  _scheduleMp4TokenRefresh() {
+    if (!this._mp4TokenPath) return
+
+    const expMs = tokenExpMs()
+    let delay
+    if (expMs) {
+      // Fire exactly PAD ms before the token expires
+      delay = Math.max(5_000, expMs - Date.now() - MP4_TOKEN_EXPIRY_PAD_MS)
+    } else {
+      // No expiry info (non-JWT token?) — fall back to polling
+      delay = MP4_TOKEN_REFRESH_INTERVAL_MS
+    }
+
+    this._mp4TokenMaintenanceTimer = window.setTimeout(
+      () => void this._mp4TokenRefreshTick(),
+      delay
+    )
+  }
+
   async _mp4TokenRefreshTick() {
     if (!this._mp4TokenPath || !this.videoElement) return
-    if (!isExpiringSoon(MP4_TOKEN_EXPIRY_PAD_MS)) return
 
-    try {
-      const newToken = await forceRefresh()
-      if (!newToken) return
+    // Check whether auth.ts already refreshed the token in the background.
+    // If the stored token differs from the one in the current src URL, we can
+    // use it directly without making a second RPC call.
+    let newToken = getAuthToken()
+    const srcToken = (() => {
+      try { return new URL(this.videoElement.src).searchParams.get('token') } catch { return null }
+    })()
 
-      const wasPaused = this.videoElement.paused
-      const preservedTime = this.videoElement.currentTime || 0
+    if (!newToken || newToken === srcToken) {
+      // Token hasn't been refreshed yet — trigger a refresh now.
+      // Uses the coalesced refresh() so we never fire two simultaneous RPC calls.
+      try {
+        newToken = await refresh()
+      } catch (err) {
+        console.warn('[video] mp4 token refresh failed:', err)
+        // Retry in 30s so a transient network error doesn't leave us with an expired token
+        this._mp4TokenMaintenanceTimer = window.setTimeout(
+          () => void this._mp4TokenRefreshTick(),
+          30_000
+        )
+        return
+      }
+    }
+
+    // Apply the fresh token to the video src.
+    if (newToken && this._mp4TokenPath) {
       const newUrl = this._buildMp4UrlWithToken(newToken)
-      if (!newUrl) return
+      if (newUrl) {
+        const wasPaused = this.videoElement.paused
+        const preservedTime = this.videoElement.currentTime || 0
 
-      this.videoElement.src = newUrl
-      await this._waitForLoadedMetadata()
+        this.videoElement.src = newUrl
+        // Set currentTime immediately — the browser uses it as the range-request
+        // start position so playback resumes from the same spot with minimal stall.
+        if (preservedTime > 0) this.videoElement.currentTime = preservedTime
+        if (!wasPaused) this.videoElement.play().catch(() => {})
+      }
+    }
 
-      const targetTime = Math.min(preservedTime, this.videoElement.duration || preservedTime)
-      if (targetTime > 0) this.videoElement.currentTime = targetTime
+    // Schedule the next refresh for whatever token we have now
+    this._scheduleMp4TokenRefresh()
+  }
 
-      if (!wasPaused) this.videoElement.play().catch(() => { })
-    } catch (err) {
-      console.warn('[video] mp4 token refresh failed:', err)
+  // ---------------------------------------------------------------------------
+  // HLS seek debounce
+  // Without this, scrubbing rapidly fires one segment-download per seek position,
+  // saturating the connection and causing multi-minute stalls.
+  // Strategy: stop all HLS loading as soon as seeking starts; restart from the
+  // final position 150 ms after the last seek event.
+  // ---------------------------------------------------------------------------
+  _initHlsSeekHandling() {
+    const onSeeking = () => {
+      if (!this.hls) return
+      if (this._hlsSeekTimer) {
+        clearTimeout(this._hlsSeekTimer)
+        this._hlsSeekTimer = null
+      }
+      this.hls.stopLoad()
+    }
+
+    const onSeeked = () => {
+      if (!this.hls) return
+      if (this._hlsSeekTimer) clearTimeout(this._hlsSeekTimer)
+      this._hlsSeekTimer = setTimeout(() => {
+        this._hlsSeekTimer = null
+        if (!this.hls || !this.videoElement) return
+        this.hls.startLoad(this.videoElement.currentTime)
+      }, 150)
+    }
+
+    this.videoElement.addEventListener('seeking', onSeeking)
+    this.videoElement.addEventListener('seeked', onSeeked)
+
+    // Store cleanup so _destroyHls can remove the listeners
+    this._hlsSeekCleanup = () => {
+      this.videoElement?.removeEventListener('seeking', onSeeking)
+      this.videoElement?.removeEventListener('seeked', onSeeked)
     }
   }
 
@@ -741,19 +839,6 @@ export class VideoPlayer extends HTMLElement {
       }
     }
     return buildFileUrl(this._mp4TokenPath, token)
-  }
-
-  _waitForLoadedMetadata() {
-    return new Promise((resolve) => {
-      if (!this.videoElement) return resolve()
-      if (this.videoElement.readyState >= 1) return resolve()
-
-      const handler = () => {
-        this.videoElement?.removeEventListener('loadedmetadata', handler)
-        resolve()
-      }
-      this.videoElement.addEventListener('loadedmetadata', handler, { once: true })
-    })
   }
 
   // ---------------------------------------------------------------------------
@@ -797,6 +882,12 @@ export class VideoPlayer extends HTMLElement {
     }
 
     this._finalizeVideoLoad()
+
+    // Subtitle and audio-track setup runs only once per video load.
+    // loadeddata fires again after every seek; running this code on each seek would
+    // accumulate duplicate <track> elements and make Plyr increasingly sluggish.
+    if (this._mediaSetupDone) return
+    this._mediaSetupDone = true
 
     // subtitles
     const currentPath = stripQuery(this.path)
@@ -873,14 +964,16 @@ export class VideoPlayer extends HTMLElement {
       cleanup()
     }, 10_000)
 
-    this.resume = true
-
-    const currentItem = this.playlist?._items?.[this.playlist._index]
-    if (currentItem && typeof this.playlist.setPlaying === 'function') {
-      this.playlist.setPlaying(currentItem, true, true)
-    } else {
-      this.play(this.path, titleInfo)
-    }
+    // Refresh token before retry so stale auth doesn't cause a loop
+    forceRefresh().catch(() => {}).finally(() => {
+      this.resume = true
+      const currentItem = this.playlist?._items?.[this.playlist._index]
+      if (currentItem && typeof this.playlist.setPlaying === 'function') {
+        this.playlist.setPlaying(currentItem, true, true)
+      } else {
+        this.play(this.path, titleInfo)
+      }
+    })
   }
 
   _handleAudioTrackChange = (evt) => {
@@ -1070,14 +1163,9 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _initPlyrEventListeners() {
-    const maybeRefreshToken = () => {
-      // Key contract: do not touch src token while HLS is active.
-      if (this.hls || this._forceHlsSource) return
-      this._updateVideoUrlToken(this.player?.source)
-    }
-
-    this.player.on('seeked', maybeRefreshToken)
-    this.player.on('play', maybeRefreshToken)
+    // Token updates are handled proactively by _scheduleMp4TokenRefresh, not on user events.
+    // Triggering src changes on seeked/play would cause disruptive reloads whenever
+    // auth.ts refreshes the token in the background between user interactions.
     this.player.on('exitfullscreen', () => this.container.restore && this.container.restore())
 
     this.container.addEventListener('dialog-maximized', () => {
@@ -1467,6 +1555,21 @@ export class VideoPlayer extends HTMLElement {
       }
     }
 
+    // For non-HLS file sources (raw .mp4 / .mkv), try the HLS playlist first.
+    // HLS segments start playing in ~2s regardless of moov-atom position.
+    // If the playlist doesn't exist the HLS error handler falls back to the raw MP4.
+    this._fallbackMp4Url = null
+    if (!isHlsSource && !isDirectoryPath) {
+      const tryPlaylistUrl = getPlaylistUrl()
+      if (tryPlaylistUrl) {
+        this._fallbackMp4Url = urlToPlay   // remembered for silent fallback
+        this._forceHlsSource = true
+        urlToPlay = tryPlaylistUrl
+        isHlsSource = true
+        this._stopMp4TokenMaintenance()    // HLS injects token per-segment; no maintenance needed
+      }
+    }
+
     // Same-path resume behavior preserved
     if (this.path === path) {
       this.resume = true
@@ -1481,46 +1584,7 @@ export class VideoPlayer extends HTMLElement {
     this._showLoadingOverlay()
     this._onPlayFired = false
 
-    try {
-      // HEAD checks + auth refresh logic preserved
-      let head = await fetchHeadWithToken(urlToPlay, token, false, isHlsSource)
-
-      if (head.status === 401) {
-        try {
-          const next = await forceRefresh()
-          if (next) {
-            token = next
-
-            if (!httpSource) {
-              urlToPlay = isHlsSource
-                ? buildFileUrl(path, { includeToken: false })
-                : buildFileUrl(path, next)
-            } else if (!isHlsSource) {
-              const u = new URL(urlToPlay)
-              const p = new URLSearchParams(u.search)
-              p.set('token', next)
-              u.search = p.toString()
-              urlToPlay = u.toString()
-            }
-
-            head = await fetchHeadWithToken(urlToPlay, token, false, isHlsSource)
-          }
-        } catch {
-          // fallthrough
-        }
-      }
-
-      if (head.status === 401) {
-        displayError(`Unable to read the file ${path}. Check your access privilege.`)
-        this.close()
-        return
-      }
-
-      this.playContent(path, token, urlToPlay)
-    } catch (e) {
-      displayError(`Failed to access video URL ${urlToPlay}: ${e.message}`)
-      this.stop()
-    }
+    this.playContent(path, token, urlToPlay)
   }
 
   // ---------------------------------------------------------------------------
@@ -1576,7 +1640,16 @@ export class VideoPlayer extends HTMLElement {
 
         let fullUrl
         if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
-          fullUrl = imgPath
+          // Normalize origin: the VTT was generated with the server's configured
+          // domain (e.g. globular.io) which may differ from the actual cluster
+          // address the browser is talking to.  Replace it with the current origin
+          // so thumbnail requests always reach the right host.
+          try {
+            const parsed = new URL(imgPath)
+            fullUrl = window.location.origin + parsed.pathname + parsed.search + parsed.hash
+          } catch {
+            fullUrl = imgPath
+          }
         } else if (imgPath.startsWith('/')) {
           fullUrl = serverOrigin + imgPath
         } else {
@@ -1603,72 +1676,13 @@ export class VideoPlayer extends HTMLElement {
   }
 
   // ---------------------------------------------------------------------------
-  // playContent: load info, previews, set source HLS or MP4, etc.
+  // playContent: set source immediately, fetch metadata concurrently
   // ---------------------------------------------------------------------------
-  async playContent(path, token, urlToPlay) {
+  playContent(path, token, urlToPlay) {
     this.resized = false
     this.style.zIndex = 100
 
-    // Resolve title/video info (preserve behavior)
-    let info = this.titleInfo || null
-    if (!info) {
-      try {
-        const vids = await getFileVideosInfo(path).catch(() => [])
-        if (Array.isArray(vids) && vids.length > 0) {
-          info = vids[0]
-          info.isVideo = true
-        } else {
-          const titles = await getFileTitlesInfo(path).catch(() => [])
-          if (Array.isArray(titles) && titles.length > 0) {
-            info = titles[0]
-            info.isVideo = false
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching title/video info:', err)
-      }
-    }
-
-    this.titleInfo = info
-    if (info) this._setTitleFromInfo(info)
-    else this.titleSpan.innerHTML = this._getFileNameFromPath(path)
-
-    this._updateLoadingOverlayText()
-
-    // Restore time from localStorage / watching
-    if (this.titleInfo && this.titleInfo.getId) {
-      const stored = localStorage.getItem(this.titleInfo.getId())
-      if (stored) this.videoElement.currentTime = parseFloat(stored)
-
-      if (token) {
-        getWatchingTitle(
-          this.titleInfo.getId(),
-          (watching) => {
-            if (watching && typeof watching.currentTime === 'number') {
-              this.videoElement.currentTime = watching.currentTime
-            }
-          },
-          () => { }
-        )
-      }
-
-      if (this.playlist.style.display === 'none') {
-        Backend.publish('play_video_player_evt_', {
-          _id: this.titleInfo.getId(),
-          isVideo: true,
-          currentTime: this.videoElement.currentTime,
-          date: new Date()
-        }, true)
-      }
-    }
-
-    // Timeline thumbnails
-    const normalized = normalizePath(path)
-    if (isVideoLikePath(normalized)) {
-      this._loadSignedPreviewThumbnails(normalized, token)
-    }
-
-    // Reset decode state and prepare source
+    // Reset decode state and set source IMMEDIATELY (no blocking fetches before this)
     this._resetMediaElement()
     this._destroyHls()
 
@@ -1678,73 +1692,178 @@ export class VideoPlayer extends HTMLElement {
     if (!shouldUseHls) {
       this.videoElement.src = src
       this._playVideoElement()
-      return
     }
 
-    // HLS path: same as your working version
-    const hlsSrc = withToken(buildHlsUrl(src))
-
-    if (!Hls.isSupported()) {
-      displayError('HLS is not supported in this browser for .m3u8 files.')
-      this.videoElement.src = hlsSrc
-      this._playVideoElement()
-      return
+    // Show title from whatever we already know; update when metadata arrives
+    if (this.titleInfo) {
+      this._setTitleFromInfo(this.titleInfo)
+      this._updateLoadingOverlayText()
+      this._restorePlaybackPosition(token)
+    } else {
+      this.titleSpan.innerHTML = this._getFileNameFromPath(path)
+      this._updateLoadingOverlayText()
+      // Fetch metadata in background — doesn't delay video start
+      this._loadTitleInfoAndRestorePosition(path, token)
     }
 
-    this.hls = new Hls({
-      loader: makeTokenLoader(),
-      xhrSetup: (xhr) => {
-        const authToken = token || getAuthToken()
-        if (authToken) {
-          xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
-          xhr.setRequestHeader('token', authToken)
+    // Timeline thumbnails (non-blocking)
+    const normalized = normalizePath(path)
+    if (isVideoLikePath(normalized)) {
+      this._loadSignedPreviewThumbnails(normalized, token)
+    }
+
+    if (shouldUseHls) {
+      const hlsSrc = withToken(buildHlsUrl(src))
+
+      if (!Hls.isSupported()) {
+        displayError('HLS is not supported in this browser for .m3u8 files.')
+        this.videoElement.src = hlsSrc
+        this._playVideoElement()
+        return
+      }
+
+      this.hls = new Hls({
+        loader: makeTokenLoader(),
+        xhrSetup: (xhr) => {
+          const authToken = token || getAuthToken()
+          if (authToken) {
+            xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+            xhr.setRequestHeader('token', authToken)
+          }
+        }
+      })
+
+      let manifestTimer = window.setTimeout(() => {
+        displayError('HLS manifest load timed out. Check network/auth/CORS.', 6000)
+        this._hideLoadingOverlay()
+      }, HLS_MANIFEST_TIMEOUT_MS)
+
+      const clearManifestTimer = () => {
+        if (manifestTimer) {
+          clearTimeout(manifestTimer)
+          manifestTimer = null
         }
       }
-    })
 
-    let manifestTimer = window.setTimeout(() => {
-      displayError('HLS manifest load timed out. Check network/auth/CORS.', 6000)
-      this._hideLoadingOverlay()
-    }, HLS_MANIFEST_TIMEOUT_MS)
+      this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        clearManifestTimer()
+        this._playVideoElement()
+      })
 
-    const clearManifestTimer = () => {
-      if (manifestTimer) {
-        clearTimeout(manifestTimer)
-        manifestTimer = null
+      this.hls.on(Hls.Events.ERROR, (_event, data) => {
+        const status = data?.response?.code ?? data?.response?.status ?? null
+        if (status === 401 || status === 403) {
+          clearManifestTimer()
+          this._retryPlaybackAfterFailure()
+          return
+        }
+
+        if (data?.fatal) {
+          clearManifestTimer()
+
+          // Opportunistic HLS fallback: the playlist didn't exist (404) or failed
+          // to load — silently drop back to the raw MP4 without showing an error.
+          if (this._fallbackMp4Url) {
+            const fallback = this._fallbackMp4Url
+            this._fallbackMp4Url = null
+            this._forceHlsSource = false
+            try { this.hls?.destroy() } catch {}
+            this.hls = null
+            // Re-enable token maintenance for the raw MP4
+            this._startMp4TokenMaintenance(this.path, isHttpUrl(this.path))
+            this.videoElement.src = fallback
+            this._playVideoElement()
+            return
+          }
+
+          const reason = data?.details || data?.type || 'unknown'
+          displayError(`HLS fatal error: ${reason}`, 6000)
+          this._hideLoadingOverlay()
+          try { this.hls?.destroy() } catch { }
+          this.hls = null
+          return
+        }
+
+      })
+
+      // Delay loadSource if HLS was just destroyed — gives the server time to
+      // release NFS file handles and stop the previous ffmpeg process before
+      // we request a new stream. Without this, rapid close→reopen causes the
+      // server to queue the new request behind cleanup of the old one (1+ min stall).
+      const serverWait = Math.max(0, HLS_SERVER_COOLDOWN_MS - (Date.now() - _lastHlsDestroyAt))
+      const startHls = () => {
+        if (!this.hls) return   // player was closed during the wait
+        this.hls.loadSource(hlsSrc)
+        this.hls.attachMedia(this.videoElement)
+        this._initHlsSeekHandling()
       }
+      if (serverWait > 0) setTimeout(startHls, serverWait)
+      else startHls()
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Metadata helpers (run concurrently with video loading)
+  // ---------------------------------------------------------------------------
+  async _loadTitleInfoAndRestorePosition(path, token) {
+    let info = null
+    try {
+      const vids = await getFileVideosInfo(path).catch(() => [])
+      if (Array.isArray(vids) && vids.length > 0) {
+        info = vids[0]
+        info.isVideo = true
+      } else {
+        const titles = await getFileTitlesInfo(path).catch(() => [])
+        if (Array.isArray(titles) && titles.length > 0) {
+          info = titles[0]
+          info.isVideo = false
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching title/video info:', err)
+    }
+    if (info) {
+      this.titleInfo = info
+      this._setTitleFromInfo(info)
+      this._updateLoadingOverlayText()
+    }
+    this._restorePlaybackPosition(token)
+  }
+
+  _restorePlaybackPosition(token) {
+    if (!this.titleInfo?.getId) return
+    const id = this.titleInfo.getId()
+
+    const stored = localStorage.getItem(id)
+    if (stored) {
+      const t = parseFloat(stored)
+      if (!isNaN(t) && t > 0) this._applyOrPendSeek(t)
     }
 
-    this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      clearManifestTimer()
-      this._playVideoElement()
-    })
+    if (token) {
+      getWatchingTitle(id, (watching) => {
+        if (watching && typeof watching.currentTime === 'number' && watching.currentTime > 0) {
+          this._applyOrPendSeek(watching.currentTime)
+        }
+      }, () => {})
+    }
 
-    this.hls.on(Hls.Events.ERROR, (_event, data) => {
-      const status = data?.response?.code ?? data?.response?.status ?? null
-      if (status === 401 || status === 403) {
-        clearManifestTimer()
-        this._retryPlaybackAfterFailure()
-        return
-      }
+    if (this.playlist.style.display === 'none') {
+      Backend.publish('play_video_player_evt_', {
+        _id: id,
+        isVideo: true,
+        currentTime: this.videoElement.currentTime,
+        date: new Date()
+      }, true)
+    }
+  }
 
-      if (data?.fatal) {
-        clearManifestTimer()
-        const reason = data?.details || data?.type || 'unknown'
-        displayError(`HLS fatal error: ${reason}`, 6000)
-        this._hideLoadingOverlay()
-        try { this.hls?.destroy() } catch { }
-        this.hls = null
-        return
-      }
-
-      if (data?.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-        clearManifestTimer()
-        this._retryPlaybackAfterFailure()
-      }
-    })
-
-    this.hls.loadSource(hlsSrc)
-    this.hls.attachMedia(this.videoElement)
+  _applyOrPendSeek(t) {
+    if (this.videoElement.readyState >= 2) {
+      try { this.videoElement.currentTime = t } catch {}
+    } else {
+      this._pendingSeekTime = t
+    }
   }
 
   // ---------------------------------------------------------------------------
