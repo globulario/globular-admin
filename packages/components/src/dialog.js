@@ -80,6 +80,11 @@ export class Dialog extends HTMLElement {
         this._renderHTML();
     }
 
+    // True when the viewport is phone-sized — dialog acts as a full-screen page.
+    get _isMobile() {
+        return window.matchMedia('(max-width: 600px)').matches;
+    }
+
     connectedCallback() {
         this._cacheElements();
         this._applyInitialAttributes();
@@ -89,12 +94,27 @@ export class Dialog extends HTMLElement {
         this._setupModalBehavior();
         this._positionDialog();
         this.focus();
+
+        // When the viewport shrinks to mobile, clear any inline geometry that
+        // desktop JS may have set so the CSS media-query takes full control.
+        this._onWindowResize = () => {
+            if (this._isMobile && this._dialogElement) {
+                this._dialogElement.style.top    = '';
+                this._dialogElement.style.left   = '';
+                this._dialogElement.style.width  = '';
+                this._dialogElement.style.height = '';
+            }
+        };
+        window.addEventListener('resize', this._onWindowResize);
     }
 
     disconnectedCallback() {
         this._cleanupEventListeners?.();
         if (this._modalDiv && this._modalDiv.parentNode) {
             this._modalDiv.parentNode.removeChild(this._modalDiv);
+        }
+        if (this._onWindowResize) {
+            window.removeEventListener('resize', this._onWindowResize);
         }
     }
 
@@ -123,6 +143,14 @@ export class Dialog extends HTMLElement {
         @keyframes implode {
           0% { transform: scale(1); opacity: 1; }
           100% { transform: scale(0.5); opacity: 0; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(100%); opacity: 0.85; }
+          to   { transform: translateY(0);    opacity: 1; }
+        }
+        @keyframes slideDown {
+          from { transform: translateY(0);    opacity: 1; }
+          to   { transform: translateY(100%); opacity: 0.85; }
         }
 
         .dialog {
@@ -243,6 +271,34 @@ export class Dialog extends HTMLElement {
           height: calc(100vh - var(--dialog-top-offset, 0px)) !important;
         }
 
+        /* ── Mobile: act like a full-screen page ── */
+        @media (max-width: 600px) {
+          .dialog {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100% !important;
+            border-radius: 0 !important;
+            border: none !important;
+            z-index: 9999 !important;
+            animation: slideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+          }
+          .dialog.closing {
+            animation: slideDown 0.22s ease-in forwards !important;
+          }
+          .dialog.minimizing {
+            /* minimise not used on mobile — suppress animation */
+            animation: none !important;
+          }
+          .dialog_header {
+            cursor: default !important;
+            min-height: 52px;
+          }
+          ::-webkit-scrollbar { width: 4px; }
+        }
+
       </style>
 
       <paper-card id="dialog_div" class="dialog">
@@ -337,6 +393,12 @@ export class Dialog extends HTMLElement {
     }
 
     _setupMoveableAndResizable() {
+        // On mobile the dialog is a full-screen page — no move, resize or minimize.
+        if (this._isMobile) {
+            this._minimizeBtn.style.display = 'none';
+            return;
+        }
+
         if (this._isResizable) {
             setResizeable(
                 this._dialogElement,
@@ -535,8 +597,8 @@ export class Dialog extends HTMLElement {
     showHorizontalResize() { const h = this.shadowRoot.querySelector("#resize-width-div"); if (h) h.style.display = "block"; }
     hideVerticalResize() { const h = this.shadowRoot.querySelector("#resize-height-div"); if (h) h.style.display = "none"; }
     showVerticalResize() { const h = this.shadowRoot.querySelector("#resize-height-div"); if (h) h.style.display = "block"; }
-    setHeight(height) { if (this._dialogElement) this._dialogElement.style.height = typeof height === 'number' ? `${height}px` : height; }
-    setWidth(width) { if (this._dialogElement) this._dialogElement.style.width = typeof width === 'number' ? `${width}px` : width; }
+    setHeight(height) { if (this._dialogElement && !this._isMobile) this._dialogElement.style.height = typeof height === 'number' ? `${height}px` : height; }
+    setWidth(width)  { if (this._dialogElement && !this._isMobile) this._dialogElement.style.width  = typeof width  === 'number' ? `${width}px`  : width; }
     getWidth() { return this._dialogElement ? this._dialogElement.offsetWidth : 0; }
     getHeight() { return this._dialogElement ? this._dialogElement.offsetHeight : 0; }
     setMaxWidth(maxWidth) { if (this._dialogElement) this._dialogElement.style.maxWidth = typeof maxWidth === 'number' ? `${maxWidth}px` : maxWidth; }
@@ -568,6 +630,7 @@ export class Dialog extends HTMLElement {
     }
 
     setCentered() {
+    if (this._isMobile) return;  // CSS handles full-screen layout
     if (!this._dialogElement || !this._parent || typeof this._parent.getBoundingClientRect !== "function") {
         console.warn("Dialog or parent not ready for centering.");
         return;
@@ -588,7 +651,7 @@ export class Dialog extends HTMLElement {
     }
 
     setPosition(x, y) {
-        if (this._dialogElement) {
+        if (this._dialogElement && !this._isMobile) {
             this._dialogElement.style.left = `${x}px`;
             this._dialogElement.style.top = `${y}px`;
         }
