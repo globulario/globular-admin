@@ -1,18 +1,18 @@
 // src/backend/blog.ts
-import { serviceSubdomainUrl } from "../core/endpoints";
+import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- stubs (adjust paths if needed) ----
-import { BlogServiceClient } from "globular-web-client/blog/blog_grpc_web_pb";
+import * as blogGrpc from "globular-web-client/blog/blog_grpc_web_pb";
 import * as blogpb from "globular-web-client/blog/blog_pb";
 
 /* =====================================================================================
  * Client + metadata (same as your other controllers)
  * ===================================================================================== */
 
-function clientFactory(): BlogServiceClient {
-  const base = serviceSubdomainUrl('blog.BlogService');
-  return new BlogServiceClient(base, null, { withCredentials: true });
+function clientFactory(): blogGrpc.BlogServiceClient {
+  const base = grpcWebHostUrl();
+  return new blogGrpc.BlogServiceClient(base, null, { withCredentials: true });
 }
 
 async function meta(): Promise<Record<string, string>> {

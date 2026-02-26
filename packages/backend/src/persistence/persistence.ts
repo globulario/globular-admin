@@ -1,15 +1,15 @@
-import { serviceSubdomainUrl } from "../core/endpoints";
+import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
-import { PersistenceServiceClient } from "globular-web-client/persistence/persistence_grpc_web_pb";
+import * as persistenceGrpc from "globular-web-client/persistence/persistence_grpc_web_pb";
 import * as persistencepb from "globular-web-client/persistence/persistence_pb";
 
 const SERVICE_NAME = "persistence.PersistenceService";
 type ByteArray = Uint8Array<ArrayBufferLike>;
 
-function clientFactory(base?: string): PersistenceServiceClient {
-  const url = serviceSubdomainUrl('persistence.PersistenceService', base);
-  return new PersistenceServiceClient(url, null, { withCredentials: true });
+function clientFactory(base?: string): persistenceGrpc.PersistenceServiceClient {
+  const url = grpcWebHostUrl(base);
+  return new persistenceGrpc.PersistenceServiceClient(url, null, { withCredentials: true });
 }
 
 async function meta(): Promise<Record<string, string>> {

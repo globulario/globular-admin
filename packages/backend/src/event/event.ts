@@ -1,13 +1,7 @@
 // backend/event.ts
-import { EventServicePromiseClient } from "globular-web-client/event/event_grpc_web_pb";
-import { serviceSubdomainUrl } from "../core/endpoints"
-import {
-  OnEventRequest,
-  PublishRequest,
-  SubscribeRequest,
-  UnSubscribeRequest,
-  Event as EventMsg,
-} from "globular-web-client/event/event_pb";
+import * as eventGrpc from "globular-web-client/event/event_grpc_web_pb";
+import { grpcWebHostUrl, getBaseUrl } from "../core/endpoints"
+import * as eventPb from "globular-web-client/event/event_pb";
 
 /** RFC4122 v4-ish (matches behavior of the legacy file). */
 function randomUUID(): string {
@@ -41,8 +35,10 @@ type EventClientOptions = {
  * - Sends cookies (withCredentials: true)
  * - If a token is provided, adds Authorization/Token headers to every call via interceptors
  */
-export function getEventClient(opts: EventClientOptions = {}): EventServicePromiseClient | undefined {
-  const base = serviceSubdomainUrl('event.EventService', opts.baseUrl)
+export function getEventClient(opts: EventClientOptions = {}): eventGrpc.EventServicePromiseClient | undefined {
+  const rawBase = opts.baseUrl ?? getBaseUrl()
+  if (!rawBase) return undefined
+  const base = grpcWebHostUrl(rawBase)
   if (!base) return undefined
 
   // Minimal options: send cookies for domains using cookie auth
@@ -62,10 +58,10 @@ export function getEventClient(opts: EventClientOptions = {}): EventServicePromi
     options.streamInterceptors = [injectAuth]
   }
 
-  return new EventServicePromiseClient(base, null, options)
+  return new eventGrpc.EventServicePromiseClient(base, null, options)
 }
 
-export type GetEventClient = () => EventServicePromiseClient | undefined;
+export type GetEventClient = () => eventGrpc.EventServicePromiseClient | undefined;
 
 export class EventHub {
   /** Injected accessor that returns the current EventService client (or undefined if not available). */
@@ -118,7 +114,7 @@ export class EventHub {
     const subscribeNext = () => {
       const name = names.pop();
       if (!name) return;
-      const rq = new SubscribeRequest();
+      const rq = new eventPb.SubscribeRequest();
       rq.setName(name);
       rq.setUuid(this.uuid);
       client
@@ -148,7 +144,7 @@ export class EventHub {
       return;
     }
 
-    const rq = new OnEventRequest();
+    const rq = new eventPb.OnEventRequest();
     rq.setUuid(this.uuid);
 
     const stream = client.onEvent(rq, {});
@@ -248,7 +244,7 @@ export class EventHub {
     const client = this.getEventClient();
 
     if (!local && client) {
-      const rq = new SubscribeRequest();
+    const rq = new eventPb.SubscribeRequest();
       rq.setName(name);
       rq.setUuid(this.uuid);
       client
@@ -291,7 +287,7 @@ export class EventHub {
       if (!subscription.local) {
         const client = this.getEventClient();
         if (client) {
-          const rq = new UnSubscribeRequest();
+    const rq = new eventPb.UnSubscribeRequest();
           rq.setName(name);
           rq.setUuid(this.uuid);
           client.unSubscribe(rq, {}).catch(() => {
@@ -325,8 +321,8 @@ export class EventHub {
       return;
     }
 
-    const rq = new PublishRequest();
-    const evt = new EventMsg();
+    const rq = new eventPb.PublishRequest();
+    const evt = new eventPb.Event();
     evt.setName(name);
 
     // Always serialize as JSON for symmetry with receiver.

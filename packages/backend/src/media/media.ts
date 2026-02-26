@@ -1,16 +1,16 @@
 // src/backend/media.ts
-import { getBaseUrl, serviceSubdomainUrl } from "../core/endpoints";
+import { getBaseUrl, grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- stubs ----
-import { MediaServiceClient } from "globular-web-client/media/media_grpc_web_pb";
+import * as mediaGrpc from "globular-web-client/media/media_grpc_web_pb";
 import * as mediapb from "globular-web-client/media/media_pb";
 export type MediaFilePB = mediapb.MediaFile;
 
 // keep this identical to accounts.ts
-function clientFactory(): MediaServiceClient {
-  const base = serviceSubdomainUrl('media.MediaService');
-  return new MediaServiceClient(base, null, { withCredentials: true });
+function clientFactory(): mediaGrpc.MediaServiceClient {
+  const base = grpcWebHostUrl();
+  return new mediaGrpc.MediaServiceClient(base, null, { withCredentials: true });
 }
 
 async function meta(): Promise<Record<string, string>> {

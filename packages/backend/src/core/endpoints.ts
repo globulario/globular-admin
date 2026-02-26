@@ -6,10 +6,17 @@ interface JSONArray extends Array<JSONValue> {}
 export type ServiceDesc = { Name?: string; [k: string]: any };
 export type GlobularConfig = { Services?: Record<string, ServiceDesc>; [k: string]: any };
 
-const BASE_KEY = "globular.baseUrl";
+const BASE_KEY = "globular.baseUrl";           // gateway / app listener
+const CONFIG_BASE_KEY = "globular.configBase"; // optional bootstrap/config listener
+const ROUTING_KEY = "globular.routingMode";
+
+export type RoutingMode = "path" | "subdomain";
 
 // ---------- storage shim (works in browser & desktop wrapper) ----------
 let memoryBase: string | null = null;
+let memoryRouting: RoutingMode | null = null;
+let memoryConfigBase: string | null = null;
+let warnedPathyGrpcHost = false;
 
 function readBase(): string | null {
   try {
@@ -31,6 +38,46 @@ function writeBase(url: string | null) {
   memoryBase = url;
 }
 
+function readConfigBase(): string | null {
+  try {
+    if (typeof localStorage !== "undefined") {
+      return localStorage.getItem(CONFIG_BASE_KEY);
+    }
+  } catch {}
+  return memoryConfigBase;
+}
+
+function writeConfigBase(url: string | null) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      if (url == null) localStorage.removeItem(CONFIG_BASE_KEY);
+      else localStorage.setItem(CONFIG_BASE_KEY, url);
+      return;
+    }
+  } catch {}
+  memoryConfigBase = url;
+}
+
+function readRouting(): RoutingMode | null {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const v = localStorage.getItem(ROUTING_KEY);
+      if (v === "path" || v === "subdomain") return v;
+    }
+  } catch {}
+  return memoryRouting;
+}
+
+function writeRouting(mode: RoutingMode) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(ROUTING_KEY, mode);
+      return;
+    }
+  } catch {}
+  memoryRouting = mode;
+}
+
 // ---------- base URL API ----------
 export function hasBaseUrl(): boolean {
   return !!readBase();
@@ -39,6 +86,7 @@ export function hasBaseUrl(): boolean {
 export function getBaseUrl(): string | null {
   return readBase();
 }
+export function getGatewayBaseUrl(): string | null { return getBaseUrl(); }
 
 export function requireBaseUrl(): string {
   const v = readBase();
@@ -52,14 +100,7 @@ export function requireBaseUrl(): string {
 
 export function setBaseUrl(raw: string) {
   if (!raw || typeof raw !== "string") throw new Error("Invalid base URL");
-  const url = normalizeBase(raw);
-  // Basic validation: must be http(s) scheme + host
-  try {
-    const u = new URL(url);
-    if (!/^https?:$/.test(u.protocol)) throw new Error();
-  } catch {
-    throw new Error(`Invalid base URL: ${raw}`);
-  }
+  const url = normalizeGatewayBase(raw);
   writeBase(url);
   // reset caches tied to base
   _cfgPromise = null;
@@ -72,8 +113,68 @@ export function clearBaseUrl() {
   _servicePaths = null;
 }
 
+export function setConfigBaseUrl(raw: string | null) {
+  if (raw == null || raw === "") {
+    writeConfigBase(null);
+    return;
+  }
+  const url = normalizeBase(raw);
+  writeConfigBase(url);
+}
+
+export function getConfigBaseUrl(): string | null {
+  return readConfigBase();
+}
+
 function normalizeBase(b: string): string {
   return b.replace(/\/+$/, ""); // strip trailing slash
+}
+
+function normalizeGatewayBase(raw: string): string {
+  let url = raw.trim();
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+  let u: URL;
+  try { u = new URL(url); } catch { throw new Error(`Invalid base URL: ${raw}`); }
+  if (u.protocol === "http:") u.protocol = "https:";
+  if (u.port === "80") u.port = "";
+  return normalizeBase(u.toString());
+}
+
+/**
+ * Host-only URL for grpc-web clients.
+ * Strips any path/query/fragment and warns once if a path was present.
+ */
+export function grpcWebHostUrl(base = requireBaseUrl()): string {
+  const b = base ?? '';
+  try {
+    const u = new URL(b);
+    const hadPath = u.pathname && u.pathname !== '/';
+    if (hadPath && !warnedPathyGrpcHost) {
+      console.warn("[globular-sdk] grpcWebHostUrl stripping path from base URL:", b);
+      warnedPathyGrpcHost = true;
+    }
+    u.pathname = '';
+    u.search = '';
+    u.hash = '';
+    return u.toString().replace(/\/+$/, '');
+  } catch {
+    return b.replace(/\/+$/, '');
+  }
+}
+
+// ---------- routing mode API ----------
+export function getRoutingMode(): RoutingMode {
+  const v = readRouting();
+  return v === "subdomain" ? "subdomain" : "path";
+}
+
+export function setRoutingMode(mode: RoutingMode): void {
+  if (mode !== "path" && mode !== "subdomain") {
+    throw new Error("Invalid routing mode");
+  }
+  writeRouting(mode);
 }
 
 // ---------- /config + service-paths cache ----------
@@ -81,7 +182,8 @@ let _cfgPromise: Promise<void> | null = null;
 let _servicePaths: Record<string, string> | null = null;
 
 async function loadConfigAndBuildMap(base: string) {
-  const res = await fetch(safeJoin(base, "/config"));
+  const cfgBase = getConfigBaseUrl() ?? base;
+  const res = await fetch(safeJoin(cfgBase, "/config"));
   if (!res.ok) throw new Error(`fetch /config failed: ${res.status}`);
   const cfg = (await res.json()) as GlobularConfig;
 
@@ -133,6 +235,20 @@ export function serviceUrl(serviceId: string, base = requireBaseUrl()): string {
   ensureConfigKickoff(base);
   const path = _servicePaths?.[serviceId] ?? `/${serviceId}`;
   return safeJoin(base, path);
+}
+
+/**
+ * Resolve the base URL for a service using the current routing mode.
+ * Defaults to path-based routing.
+ */
+export function serviceBaseUrl(serviceId: string, base = requireBaseUrl()): string {
+  if (base.startsWith("http://") || base.includes(":80")) {
+    throw new Error(`Insecure or bootstrap base URL not allowed for services: ${base}`);
+  }
+  const mode = getRoutingMode();
+  return mode === "subdomain"
+    ? serviceSubdomainUrl(serviceId, base)
+    : serviceUrl(serviceId, base);
 }
 
 // ---------- utils ----------

@@ -1,22 +1,17 @@
 // backend/diskSpace.ts
 // Thin adapter for disk-space RBAC calls using your grpc helpers.
 
-import {
-  GetSubjectAllocatedSpaceRqst,
-  GetSubjectAvailableSpaceRqst,
-  SetSubjectAllocatedSpaceRqst,
-  SubjectType,
-} from "globular-web-client/rbac/rbac_pb";
+import * as rbac from "globular-web-client/rbac/rbac_pb";
 
 // 🔽 Use your auth + unary helpers
 import { unary } from "../core/rpc";              // <- this is the file that exports the unary() helper you pasted
-import { RbacServiceClient } from "globular-web-client/rbac/rbac_grpc_web_pb";
-import { serviceSubdomainUrl } from "../core/endpoints";
+import * as rbacGrpc from "globular-web-client/rbac/rbac_grpc_web_pb";
+import { grpcWebHostUrl } from "../core/endpoints";
 // (You don't need serviceHost/serviceUrl here because we reuse the ready client instance on globule.)
 
-function clientFactory(): RbacServiceClient {
-  const base = serviceSubdomainUrl('rbac.RbacService')
-  return new RbacServiceClient(base, null, { withCredentials: true })
+function clientFactory(): rbacGrpc.RbacServiceClient {
+  const base = grpcWebHostUrl()
+  return new rbacGrpc.RbacServiceClient(base, null, { withCredentials: true })
 }
 
 
@@ -33,9 +28,9 @@ async function meta(): Promise<Record<string, string>> {
 /** Get allocated space (bytes) */
 export async function getAllocatedSpace(
   subjectId: string,
-  subjectType: SubjectType
+  subjectType: rbac.SubjectType
 ): Promise<number> {
-  const req = new GetSubjectAllocatedSpaceRqst();
+  const req = new rbac.GetSubjectAllocatedSpaceRqst();
   req.setSubject(subjectId);
   req.setType(subjectType);
 
@@ -53,9 +48,9 @@ export async function getAllocatedSpace(
 /** Get available space (bytes) */
 export async function getAvailableSpace(
   subjectId: string,
-  subjectType: SubjectType
+  subjectType: rbac.SubjectType
 ): Promise<number> {
-  const req = new GetSubjectAvailableSpaceRqst();
+  const req = new rbac.GetSubjectAvailableSpaceRqst();
   req.setSubject(subjectId);
   req.setType(subjectType);
 
@@ -79,10 +74,10 @@ export async function getAvailableSpace(
 /** Set allocated space (bytes) */
 export async function setAllocatedSpace(
   subjectId: string,
-  subjectType: SubjectType,
+  subjectType: rbac.SubjectType,
   bytes: number
 ): Promise<void> {
-  const req = new SetSubjectAllocatedSpaceRqst();
+  const req = new rbac.SetSubjectAllocatedSpaceRqst();
   req.setSubject(subjectId);
   req.setType(subjectType);
   req.setAllocatedSpace(bytes);

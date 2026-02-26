@@ -1,18 +1,18 @@
 // src/backend/conversation.ts
-import { serviceSubdomainUrl } from "../core/endpoints";
+import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 
 // ---- stubs (adjust paths if needed) ----
-import { ConversationServiceClient } from "globular-web-client/conversation/conversation_grpc_web_pb";
+import * as convoGrpc from "globular-web-client/conversation/conversation_grpc_web_pb";
 import * as convpb from "globular-web-client/conversation/conversation_pb";
 
 /* =====================================================================================
  * Client + metadata
  * ===================================================================================== */
 
-function clientFactory(): ConversationServiceClient {
-  const base = serviceSubdomainUrl('conversation.ConversationService');
-  return new ConversationServiceClient(base, null, { withCredentials: true });
+function clientFactory(): convoGrpc.ConversationServiceClient {
+  const base = grpcWebHostUrl();
+  return new convoGrpc.ConversationServiceClient(base, null, { withCredentials: true });
 }
 
 async function meta(): Promise<Record<string, string>> {

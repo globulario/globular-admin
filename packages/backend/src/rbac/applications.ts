@@ -1,21 +1,21 @@
 // src/backend/apps.ts
-import { serviceSubdomainUrl } from '../core/endpoints'
+import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 
 // ---- Generated stubs (adjust import paths if needed) ----
-import { ResourceServiceClient } from "globular-web-client/resource/resource_grpc_web_pb"
+import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb"
 import * as resource from "globular-web-client/resource/resource_pb"
 
 // + Applications Manager
-import { ApplicationManagerServiceClient } from "globular-web-client/applications_manager/applications_manager_grpc_web_pb"
+import * as appMgrGrpc from "globular-web-client/applications_manager/applications_manager_grpc_web_pb"
 import * as appmgr from "globular-web-client/applications_manager/applications_manager_pb"
 
 // + Discovery (install/uninstall)
-import { PackageDiscoveryClient } from "globular-web-client/discovery/discovery_grpc_web_pb"
+import * as discoveryGrpc from "globular-web-client/discovery/discovery_grpc_web_pb"
 import * as discovery from "globular-web-client/discovery/discovery_pb"
 
 // + Repository (publish, bundles)
-import { PackageRepositoryClient } from "globular-web-client/repository/repository_grpc_web_pb"
+import * as repoGrpc from "globular-web-client/repository/repository_grpc_web_pb"
 import * as repo from "globular-web-client/repository/repository_pb"
 
 // View-model aligned to resource.Application with a couple UI niceties
@@ -42,21 +42,21 @@ export type ApplicationVM = {
 }
 
 // ------------------------------ clients / meta ------------------------------
-function clientFactory(): ResourceServiceClient {
-  const base = serviceSubdomainUrl('resource.ResourceService')
-  return new ResourceServiceClient(base, null, { withCredentials: true })
+function clientFactory(): resourceGrpc.ResourceServiceClient {
+  const base = grpcWebHostUrl()
+  return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true })
 }
-function appMgrClient(): ApplicationManagerServiceClient {
-  const base = serviceSubdomainUrl('applications_manager.ApplicationManagerService')
-  return new ApplicationManagerServiceClient(base, null, { withCredentials: true })
+function appMgrClient(): appMgrGrpc.ApplicationManagerServiceClient {
+  const base = grpcWebHostUrl()
+  return new appMgrGrpc.ApplicationManagerServiceClient(base, null, { withCredentials: true })
 }
-function discoveryClient(): PackageDiscoveryClient {
-  const base = serviceSubdomainUrl('discovery.PackageDiscovery')
-  return new PackageDiscoveryClient(base, null, { withCredentials: true })
+function discoveryClient(): discoveryGrpc.PackageDiscoveryClient {
+  const base = grpcWebHostUrl()
+  return new discoveryGrpc.PackageDiscoveryClient(base, null, { withCredentials: true })
 }
-function repositoryClient(): PackageRepositoryClient {
-  const base = serviceSubdomainUrl('repository.PackageRepository')
-  return new PackageRepositoryClient(base, null, { withCredentials: true })
+function repositoryClient(): repoGrpc.PackageRepositoryClient {
+  const base = grpcWebHostUrl()
+  return new repoGrpc.PackageRepositoryClient(base, null, { withCredentials: true })
 }
 
 async function meta(): Promise<Record<string, string>> {

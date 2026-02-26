@@ -1,10 +1,10 @@
 // src/backend/media/title.ts
-import { getBaseUrl, serviceSubdomainUrl } from "../core/endpoints";
+import { getBaseUrl, grpcWebHostUrl } from "../core/endpoints";
 import { stream, unary } from "../core/rpc";
 import { decodeJwtPayload } from "../core/session";
 
 // ---- stubs ----
-import { TitleServiceClient } from "globular-web-client/title/title_grpc_web_pb";
+import * as titleGrpc from "globular-web-client/title/title_grpc_web_pb";
 import * as titlepb from "globular-web-client/title/title_pb";
 
 // --- add near other caches ---
@@ -18,9 +18,9 @@ const SERVICE_NAME = "title.TitleService";   // gRPC fully-qualified service nam
  * Client + metadata
  * ===================================================================================== */
 
-function clientFactory(): TitleServiceClient {
-  const base = serviceSubdomainUrl('title.TitleService');
-  return new TitleServiceClient(base, null, { withCredentials: true });
+function clientFactory(): titleGrpc.TitleServiceClient {
+  const base = grpcWebHostUrl();
+  return new titleGrpc.TitleServiceClient(base, null, { withCredentials: true });
 }
 
 async function meta(): Promise<Record<string, string>> {
@@ -986,7 +986,7 @@ function watchingEntryToPlain(entry?: titlepb.WatchingEntry | null) {
   const positionMs = typeof entry.getPositionMs === "function" ? entry.getPositionMs() : 0;
   const durationMs = typeof entry.getDurationMs === "function" ? entry.getDurationMs() : 0;
   const updatedAt = entry.getUpdatedAt?.() || "";
-  const id = rawTitleId || rawId.split(":").at(-1) || rawId;
+  const id = rawTitleId || (rawId ? rawId.split(":").slice(-1)[0] : "") || rawId;
 
   return {
     _id: id,

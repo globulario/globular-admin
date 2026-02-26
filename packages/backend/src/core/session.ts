@@ -1,6 +1,4 @@
-import { displaySuccess } from '../ui/notify'
-
-const TOKEN_KEY = '__globular_token__'
+import { logout as authLogout, getStoredTokenSync } from './auth'
 
 let navigateHandler: ((path: string) => void) | null = null;
 
@@ -21,17 +19,7 @@ export function navigateTo(path: string) {
 }
 
 export function getToken(): string | null {
-  // Standardize on sessionStorage TOKEN_KEY, keep a fallback to old localStorage key.
-  try {
-    const t = sessionStorage.getItem(TOKEN_KEY)
-    if (t) return t
-  } catch {}
-  try {
-    // legacy/fallback
-    return localStorage.getItem('access_token')
-  } catch {
-    return null
-  }
+  return getStoredTokenSync() ?? null;
 }
 
 export function decodeJwtPayload(token: string): any | null {
@@ -82,12 +70,9 @@ export function isTokenTimeValid(skewSec = 60): boolean {
 }
 
 export function logout() {
-  try {
-    sessionStorage.removeItem(TOKEN_KEY)   // new canonical key
-    localStorage.removeItem('access_token')// legacy
-    localStorage.removeItem('current_user')
-  } catch {}
-  window.dispatchEvent(new CustomEvent('auth:changed'))
-  displaySuccess('Signed out')
+  authLogout()
+  try { localStorage.removeItem('access_token') } catch {}
+  try { localStorage.removeItem('current_user') } catch {}
+  try { window.dispatchEvent(new CustomEvent('auth:changed')) } catch {}
   navigateTo('#/login')
 }

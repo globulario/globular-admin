@@ -1,8 +1,8 @@
 // src/backend/core/network.ts
-import { getConfig, requireBaseUrl, serviceSubdomainUrl } from './endpoints'
+import { getConfig, requireBaseUrl, grpcWebHostUrl } from './endpoints'
 import { unary } from './rpc'
 
-import { AdminServiceClient } from 'globular-web-client/admin/admin_grpc_web_pb'
+import * as adminGrpc from 'globular-web-client/admin/admin_grpc_web_pb'
 import * as clustercontrollerpb from 'globular-web-client/clustercontroller/clustercontroller_pb'
 
 export type Iface = {
@@ -21,9 +21,9 @@ export type NetworkSummary = {
   defaultGateway?: string
 }
 
-function client(): AdminServiceClient {
-  const addr = serviceSubdomainUrl('admin.AdminService')
-  return new AdminServiceClient(addr, null, { withCredentials: true })
+function client(): adminGrpc.AdminServiceClient {
+  const addr = grpcWebHostUrl()
+  return new adminGrpc.AdminServiceClient(addr, null, { withCredentials: true })
 }
 
 async function metadata(): Promise<Record<string, string>> {

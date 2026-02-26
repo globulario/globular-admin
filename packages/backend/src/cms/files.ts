@@ -2,11 +2,14 @@
 // Unified, typed backend wrapper for the File service.
 // Proto alignment: FileInfo { name,size,mode,mode_time,is_dir,path,mime,thumbnail,checksum,metadata,files[] }
 
-import { getBaseUrl, serviceSubdomainUrl } from "../core/endpoints";
+import { getBaseUrl, grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+// Use bundler worker pipeline (Vite-style) to emit a proper JS worker asset
+// so the browser never fetches a TS file or HTML fallback.
+import ReadDirWorker from "./readDirWorker?worker";
 
 // ---- Generated stubs (adjust paths if needed) ----
-import { FileServiceClient } from "globular-web-client/file/file_grpc_web_pb";
+import * as fileGrpc from "globular-web-client/file/file_grpc_web_pb";
 import * as filepb from "globular-web-client/file/file_pb";
 import { FilesCache, type ReadDirFetcher } from "./files_cache";
 
@@ -326,9 +329,9 @@ export function setFilesCacheOptions(opts: { max?: number; ttlMs?: number; multi
 export function getFilesCache(): FilesCache | null { return _cache; }
 
 /* ------------------------------ helpers ------------------------------ */
-function clientFactory(): FileServiceClient {
-  const base = serviceSubdomainUrl('file.FileService');
-  return new FileServiceClient(base, null, { withCredentials: true });
+function clientFactory(): fileGrpc.FileServiceClient {
+  const base = grpcWebHostUrl();
+  return new fileGrpc.FileServiceClient(base, null, { withCredentials: true });
 }
 
 async function meta(): Promise<Record<string, string>> {
@@ -535,10 +538,10 @@ export function readDirFresh(
   let activeCall: any = null;
   const requestedPath = path || "/";
 
-  const worker = new Worker(
-    new URL("./readDirWorker.ts", import.meta.url),
-    { type: "module" }
-  );
+  if (typeof ReadDirWorker !== "function") {
+    console.warn("[file-worker] ReadDirWorker is not a constructor; bundler worker import may have failed.");
+  }
+  const worker = new ReadDirWorker({ type: "module" });
 
   let workerCleanup: (() => void) | undefined;
   let rejectWorker: ((err: unknown) => void) | undefined;
@@ -558,7 +561,14 @@ export function readDirFresh(
       }
     };
     const handleError = (event: ErrorEvent) => {
-      reject(event.error || new Error("readDirWorker error"));
+      const msg = [
+        "readDirWorker load/exec failed",
+        event.message,
+        event.filename ? `file=${event.filename}` : "",
+        event.lineno ? `line=${event.lineno}` : "",
+        event.colno ? `col=${event.colno}` : ""
+      ].filter(Boolean).join(" | ");
+      reject(event.error || new Error(msg));
     };
     worker.addEventListener("message", handleMessage);
     worker.addEventListener("error", handleError);
@@ -578,6 +588,11 @@ export function readDirFresh(
     const md = await meta();
     const rq: any = newRq(["ReadDirRequest"]);
     const encodedPath = encodeURI(requestedPath);
+    try {
+      console.debug("[file-worker] gatewayBaseUrl=", getBaseUrl?.());
+      console.debug("[file-worker] grpcWebHostUrl(file)", grpcWebHostUrl());
+      console.debug("[file-worker] calling ReadDir path=", requestedPath, "recursive=", recursive, "hasToken=", !!md.token);
+    } catch { /* debug only */ }
 
     if (typeof rq.setPath === "function") rq.setPath(encodedPath);
     if (typeof rq.setRecursive === "function") rq.setRecursive(recursive);
@@ -607,16 +622,20 @@ export function readDirFresh(
         "file.FileService",
         { onCall: (call) => { activeCall = call; } }
       );
-    } catch (err) {
+    } catch (err: any) {
       worker.postMessage({ type: "cancel" });
       workerCleanup?.();
       worker.terminate();
-      const workerError = cancelled ? new Error("readDirFresh cancelled") : err;
+      const code = err?.code ?? err?.status ?? "UNKNOWN";
+      const message = err?.message || String(err);
+      const workerError = cancelled
+        ? new Error("readDirFresh cancelled")
+        : new Error(`ReadDir failed (${code}): ${message}`);
       rejectWorker?.(workerError);
       if (cancelled) {
         throw workerError;
       }
-      throw err;
+      throw workerError;
     }
 
     worker.postMessage({ type: "done" });

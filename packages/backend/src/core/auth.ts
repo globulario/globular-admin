@@ -1,17 +1,17 @@
-import { AuthenticationServiceClient } from "globular-web-client/authentication/authentication_grpc_web_pb";
+import * as authGrpc from "globular-web-client/authentication/authentication_grpc_web_pb";
 import * as authpb from "globular-web-client/authentication/authentication_pb";
 import { unary } from "./rpc";
-import { serviceSubdomainUrl } from "../core/endpoints";
+import { grpcWebHostUrl } from "../core/endpoints";
 
 let _token: string | undefined;
 let _refreshTimer: number | undefined;
 
-const TOKEN_KEY = "__globular_token__";
+export const TOKEN_KEY = "__globular_token__";
 
 // Service + client factory
 const SERVICE = "authentication.AuthenticationService";
 const factory = () =>
-  new AuthenticationServiceClient(serviceSubdomainUrl('authentication.AuthenticationService'), null, { withCredentials: false });
+  new authGrpc.AuthenticationServiceClient(grpcWebHostUrl(), null, { withCredentials: false });
 
 // ---------------------------------------------------------------------
 // Helpers
@@ -35,7 +35,7 @@ function jwtExpMs(token: string): number | undefined {
 }
 
 export function tokenExpMs(): number | undefined {
-  const t = _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
+  const t = getStoredTokenSync();
   if (!t) return;
   return jwtExpMs(t);
 }
@@ -52,13 +52,13 @@ export async function getFreshToken(padMs = 60_000): Promise<string | undefined>
   } catch {
     // best-effort
   }
-  return _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
+  return getStoredTokenSync();
 }
 
 // Ensure a fresh token (rpc.unary will call this before each call)
 export async function ensureFreshToken(minTtlMs = 60_000): Promise<void> {
   
-  const t = _token || sessionStorage.getItem(TOKEN_KEY);
+  const t = getStoredTokenSync();
   if (!t) return;
   const exp = tokenExpMs();
   if (!exp) return;
@@ -111,19 +111,27 @@ export function setToken(t?: string) {
   safeClearTimer();
 
   if (t) {
-    sessionStorage.setItem(TOKEN_KEY, t);
+    try { sessionStorage.setItem(TOKEN_KEY, t); } catch {}
     scheduleRefresh(t);
   } else {
-    sessionStorage.removeItem(TOKEN_KEY);
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
   }
 }
 
-export function getToken() {
-  return _token;
+export function getToken(): string | undefined {
+  return getStoredTokenSync();
+}
+
+export function getStoredTokenSync(): string | undefined {
+  try {
+    return _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
+  } catch {
+    return _token;
+  }
 }
 
 export function metadata(): Record<string, string> {
-  const t = _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
+  const t = getStoredTokenSync();
   return t ? { authorization: "Bearer " + t } : {};
 }
 
@@ -141,9 +149,7 @@ export async function login(username: string, password: string): Promise<string>
   );
 
   const token = rsp.getToken();
-  _token = token;
-  sessionStorage.setItem(TOKEN_KEY, token);
-  scheduleRefresh(token);
+  setToken(token);
   return token;
 }
 
@@ -170,7 +176,7 @@ export async function refresh(): Promise<string> {
   if (_refreshInFlight) return _refreshInFlight;
 
   _refreshInFlight = (async () => {
-    const token = _token || sessionStorage.getItem(TOKEN_KEY);
+    const token = getStoredTokenSync();
     if (!token) {
       _refreshInFlight = undefined;
       throw new Error("No refresh token available");
@@ -190,9 +196,7 @@ export async function refresh(): Promise<string> {
       throw new Error("Refresh returned no token");
     }
 
-    _token = next;
-    sessionStorage.setItem(TOKEN_KEY, next);
-    scheduleRefresh(next);
+    setToken(next);
 
     _refreshInFlight = undefined;
     return next;
@@ -207,7 +211,7 @@ export async function refresh(): Promise<string> {
 }
 // Explicit “force” refresh (same RPC; just a clearer intent for callers)
 export async function forceRefresh(): Promise<string> {
-  const token = _token || sessionStorage.getItem(TOKEN_KEY) || undefined;
+  const token = getStoredTokenSync();
   if (!token) throw new Error("No token available to refresh");
 
   const rq = new authpb.RefreshTokenRqst();
@@ -218,25 +222,27 @@ export async function forceRefresh(): Promise<string> {
   const next = rsp.getToken();
   if (!next) throw new Error("Refresh returned no token");
 
-  _token = next;
-  sessionStorage.setItem(TOKEN_KEY, next);
-  scheduleRefresh(next);
+  setToken(next);
   return next;
 }
 
 
 export function restoreSession() {
-  const token = sessionStorage.getItem(TOKEN_KEY);
+  let token: string | null = null;
+  try { token = sessionStorage.getItem(TOKEN_KEY); } catch {}
   if (token) {
-    _token = token;           // ✅ keep local cache in sync
-    scheduleRefresh(token);
+    setToken(token);           // ✅ keep local cache in sync
   }
 }
 
+export function clearToken(): void {
+  setToken(undefined);
+}
+
 export function logout() {
-  safeClearTimer();
-  _token = undefined;         // ✅ clear local cache
-  sessionStorage.removeItem(TOKEN_KEY);
+  clearToken();
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
+  try { window.dispatchEvent(new CustomEvent("auth:changed")); } catch {}
 }
 
 /* --------------------------------------------------------------------

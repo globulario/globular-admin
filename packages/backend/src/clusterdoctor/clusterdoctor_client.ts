@@ -1,15 +1,15 @@
 // packages/backend/src/clusterdoctor/clusterdoctor_client.ts
 import { unary } from '../core/rpc'
-import { serviceSubdomainUrl } from '../core/endpoints'
+import { grpcWebHostUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'
-import { ClusterDoctorServiceClient } from 'globular-web-client/clusterdoctor/clusterdoctor_grpc_web_pb'
+import * as cdGrpc from 'globular-web-client/clusterdoctor/clusterdoctor_grpc_web_pb'
 import * as cd from 'globular-web-client/clusterdoctor/clusterdoctor_pb'
 
 export { cd as clusterdoctorpb }
 
-function cdClient(): ClusterDoctorServiceClient {
-  const addr = serviceSubdomainUrl('clusterdoctor.ClusterDoctorService')
-  return new ClusterDoctorServiceClient(addr, null, { withCredentials: true })
+function cdClient(): cdGrpc.ClusterDoctorServiceClient {
+  const addr = grpcWebHostUrl()
+  return new cdGrpc.ClusterDoctorServiceClient(addr, null, { withCredentials: true })
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────

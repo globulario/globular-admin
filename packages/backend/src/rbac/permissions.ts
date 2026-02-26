@@ -1,18 +1,18 @@
 // src/backend/rbac/permissions.ts
-import { serviceSubdomainUrl } from '../core/endpoints'
+import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 
 // ---- Generated stubs (adjust import paths if needed) ----
-import { RbacServiceClient } from 'globular-web-client/rbac/rbac_grpc_web_pb'
+import * as rbacGrpc from 'globular-web-client/rbac/rbac_grpc_web_pb'
 import * as rbac from 'globular-web-client/rbac/rbac_pb'
 
 // Re-export common enums used by callers (e.g., SubjectType)
 export const SubjectType = rbac.SubjectType
 
 // ------------------------------ client / meta ------------------------------
-function clientFactory(): RbacServiceClient {
-  const base = serviceSubdomainUrl('rbac.RbacService')
-  return new RbacServiceClient(base, null, { withCredentials: true })
+function clientFactory(): rbacGrpc.RbacServiceClient {
+  const base = grpcWebHostUrl()
+  return new rbacGrpc.RbacServiceClient(base, null, { withCredentials: true })
 }
 
 async function meta(): Promise<Record<string, string>> {
@@ -276,5 +276,5 @@ export const setPermissionSubjects = (perm: rbac.Permission, lists: Partial<Perm
   if (lists.groups) perm.setGroupsList?.(lists.groups)
   if (lists.applications) perm.setApplicationsList?.(lists.applications)
   if (lists.organizations) perm.setOrganizationsList?.(lists.organizations)
-  if (lists.peers) perm.setPeersList?.(lists.peers)
+  if (lists.peers) (perm as any).setPeersList?.(lists.peers)
 }

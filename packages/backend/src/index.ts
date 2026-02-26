@@ -1,59 +1,18 @@
 
-export { Backend } from "./backend";
+export * from "./core";
+export * from "./services";
 
-export { getEventClient } from "./event/event";
+export * as apps from "./apps";
+export * as ui from "./ui";
 
-export * from "./core/endpoints";
-export {
-  tokenExpMs,
-  isExpiringSoon,
-  ensureFreshToken,
-  getFreshToken,
-  enableVisibilityAutoRefresh,
-  setToken,
-  metadata,
-  login,
-  refresh,
-  forceRefresh,
-  restoreSession,
-  setPassword,
-  setRootPassword,
-} from "./core/auth";
-export {
-  setNavigateHandler,
-  navigateTo,
-  getUsername,
-  isSa,
-  decodeJwtPayload,
-  isTokenTimeValid,
-  getToken,
-  logout,
-} from "./core/session";
-export * from "./core/network";
-export * from "./core/services";
+// Backward-compat: surface common UI notifiers directly (was previously exported at root)
+export { displayMessage, displayError, displaySuccess, displayQuestion } from "./ui/notify";
 
-export * from "./ui/notify";
-export * from "./notify/notification";
-
-export * from "./cms/files";
-export * from "./cms/torrent";
-export * from "./cms/files_cache";
-
-export * from "./media/media";
+// Backward-compat: commonly used media helpers that used to be at root
+// (To avoid repeated missing-export errors in existing apps, expose the whole media/title surface.)
 export * from "./media/title";
+export * from "./media/media";
 export * from "./media/blog";
 
-export * from "./search/search_document";
-
-export * from "./rbac/accounts";
-export * from "./rbac/groups";
-export * from "./rbac/organizations";
-export * from "./rbac/roles";
-export * from "./rbac/permissions";
-export * from "./rbac/applications";
-export * from "./rbac/diskSpace";
-export * from "./rbac/peers";
-export * from "./persistence/persistence";
-export * from "./cluster/cluster";
-export * from "./clusterdoctor/clusterdoctor_client";
-export * from "./core/cors";
+export { Backend } from "./backend";
+export { getEventClient } from "./event/event";

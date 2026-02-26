@@ -156,11 +156,12 @@ class PageClusterNodes extends HTMLElement {
           align-items:    center;
           justify-content: space-between;
         }
-        .cn-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
+        .cn-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); font-size: .72rem; }
         .cn-table th {
           text-align:     left;
           padding:        8px 12px;
           font:           var(--md-typescale-label-medium);
+          font-size:      .72rem;
           text-transform: uppercase;
           letter-spacing: .06em;
           color:          var(--secondary-text-color);

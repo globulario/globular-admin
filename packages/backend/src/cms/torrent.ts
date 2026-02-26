@@ -4,19 +4,19 @@
 /* ------------------------------------------------------------------
  * Core deps (same helpers used by accounts.ts/files.ts)
  * ------------------------------------------------------------------ */
-import { serviceSubdomainUrl } from "../core/endpoints"
+import { grpcWebHostUrl } from "../core/endpoints"
 import { unary, stream } from "../core/rpc"
 
 // ---- Generated stubs (adjust paths if needed) ----
-import { TorrentServiceClient } from "globular-web-client/torrent/torrent_grpc_web_pb"
+import * as torrentGrpc from "globular-web-client/torrent/torrent_grpc_web_pb"
 import * as tp from "globular-web-client/torrent/torrent_pb"
 
 /* ------------------------------------------------------------------
  * Internals
  * ------------------------------------------------------------------ */
-function clientFactory(): TorrentServiceClient {
-  const base = serviceSubdomainUrl('torrent.TorrentService')
-  return new TorrentServiceClient(base, null, { withCredentials: true })
+function clientFactory(): torrentGrpc.TorrentServiceClient {
+  const base = grpcWebHostUrl()
+  return new torrentGrpc.TorrentServiceClient(base, null, { withCredentials: true })
 }
 
 async function meta(): Promise<Record<string, string>> {

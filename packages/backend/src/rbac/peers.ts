@@ -1,12 +1,12 @@
 // src/backend/peers.ts
-import { getBaseUrl, serviceSubdomainUrl } from '../core/endpoints'
+import { getBaseUrl, grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 
 // ---- Generated stubs (adjust import paths if needed) ----
-import { ResourceServiceClient } from "globular-web-client/resource/resource_grpc_web_pb"
+import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb"
 import * as resource from "globular-web-client/resource/resource_pb"
 
-import { AdminServiceClient } from "globular-web-client/admin/admin_grpc_web_pb"
+import * as adminGrpc from "globular-web-client/admin/admin_grpc_web_pb"
 import * as admin from "globular-web-client/admin/admin_pb"
 
 // Peer VM aligned to resource.Peer
@@ -32,13 +32,13 @@ export type DiscoveredHost = {
 }
 
 // ------------------------------ clients / meta ------------------------------
-function resourceClient(): ResourceServiceClient {
-  const base = serviceSubdomainUrl('resource.ResourceService')
-  return new ResourceServiceClient(base, null, { withCredentials: true })
+function resourceClient(): resourceGrpc.ResourceServiceClient {
+  const base = grpcWebHostUrl()
+  return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true })
 }
-function adminClient(): AdminServiceClient {
-  const base = serviceSubdomainUrl('admin.AdminService')
-  return new AdminServiceClient(base, null, { withCredentials: true })
+function adminClient(): adminGrpc.AdminServiceClient {
+  const base = grpcWebHostUrl()
+  return new adminGrpc.AdminServiceClient(base, null, { withCredentials: true })
 }
 
 async function meta(): Promise<Record<string, string>> {

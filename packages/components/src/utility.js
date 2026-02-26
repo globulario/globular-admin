@@ -1,5 +1,5 @@
 
-import { AuthenticateRqst } from 'globular-web-client/authentication/authentication_pb';
+import * as authPb from 'globular-web-client/authentication/authentication_pb';
 
 export function fireResize() {
     if (document.createEvent) {

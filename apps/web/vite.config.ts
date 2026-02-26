@@ -131,7 +131,7 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        'clusterdoctor-proto': path.resolve(__dirname, '../../services/typescript/dist/clusterdoctor'),
+        'clusterdoctor-proto': path.resolve(process.cwd(), 'services/typescript/dist/clusterdoctor'),
       },
     },
     build: {
