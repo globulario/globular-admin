@@ -64,6 +64,22 @@ const routes: Record<string, RouteHandler> = {
   '#/media/about':    () => document.createElement('page-media-about'),
 }
 
+// Routes whose page instances are kept alive between navigations.
+// Login is excluded — it must always render fresh.
+const PERSISTENT_ROUTES = new Set([
+  '#/media/search',
+  '#/media/settings',
+  '#/media/watching',
+  '#/media/about',
+])
+
+const pageCache = new Map<string, HTMLElement>()
+
+export function clearPageCache() {
+  pageCache.forEach(el => el.remove())
+  pageCache.clear()
+}
+
 function getRouteHandler(route: string): RouteHandler {
   return routes[route] ?? routes[DEFAULT_ROUTE]
 }
@@ -88,11 +104,24 @@ function resolveRoute(raw?: string): string {
 
 export function mountRoute(route?: string) {
   const target = document.getElementById('app')!
-  target.innerHTML = ''
-
   const resolved = resolveRoute(route)
-  const handler = getRouteHandler(resolved)
-  target.appendChild(handler())
+
+  if (PERSISTENT_ROUTES.has(resolved)) {
+    // Hide all cached pages, show (or create) the target one
+    pageCache.forEach(el => { el.style.display = 'none' })
+
+    let page = pageCache.get(resolved)
+    if (!page) {
+      page = getRouteHandler(resolved)()
+      target.appendChild(page)
+      pageCache.set(resolved, page)
+    }
+    page.style.display = 'block'
+  } else {
+    // Non-persistent route (e.g. login): clear app area and render fresh
+    target.innerHTML = ''
+    target.appendChild(getRouteHandler(resolved)())
+  }
 
   // Reflect the resolved route in the URL bar
   if (window.location.hash !== resolved) {
