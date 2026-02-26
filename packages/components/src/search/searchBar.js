@@ -71,7 +71,7 @@ export class SearchBar extends HTMLElement {
         }
         input:focus { outline: none; }
 
-        /* Autofill — webkit ignores `color` on autofilled inputs;
+        /* Autofill — webkit ignores the color property on autofilled inputs;
            use -webkit-text-fill-color and the inset box-shadow trick
            for the background.  Same surface tokens in all states. */
         input:-webkit-autofill,
