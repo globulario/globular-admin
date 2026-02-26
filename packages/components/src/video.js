@@ -1618,15 +1618,10 @@ export class VideoPlayer extends HTMLElement {
       const vttDir = vttUrl.substring(0, vttUrl.lastIndexOf('/') + 1).split('?')[0]
       const serverOrigin = vttDir.replace(/^(https?:\/\/[^/]+).*/, '$1')
       const currentToken = getAuthToken() || token
-
-      // Origin to rewrite absolute thumbnail URLs onto — use the address the
-      // user logged in with (stored by setBaseUrl), NOT window.location.origin
-      // which is the admin UI host (may differ, e.g. globular.internal).
-      let clusterOrigin = window.location.origin
-      try {
-        const base = getBaseUrl()
-        if (base) clusterOrigin = new URL(base).origin
-      } catch { /* keep fallback */ }
+      // serverOrigin is already the correct host — it comes from vttUrl which
+      // is built via buildFileUrl() → getBaseUrl() (the address from the login
+      // box).  Use it to rewrite any origin the backend may have baked into the
+      // absolute thumbnail URLs (e.g. globular.internal → www.globular.cloud).
 
       const signedVttText = vttText.split('\n').map(line => {
         const trimmed = line.trim()
@@ -1650,12 +1645,11 @@ export class VideoPlayer extends HTMLElement {
 
         let fullUrl
         if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
-          // Normalize origin: the VTT was generated with the server's configured
-          // domain which may differ from the cluster address the user logged in
-          // with.  Replace it with clusterOrigin (derived from getBaseUrl()).
+          // Normalize origin: replace whatever the backend baked in with the
+          // same origin as the VTT file itself (serverOrigin).
           try {
             const parsed = new URL(imgPath)
-            fullUrl = clusterOrigin + parsed.pathname + parsed.search + parsed.hash
+            fullUrl = serverOrigin + parsed.pathname + parsed.search + parsed.hash
           } catch {
             fullUrl = imgPath
           }
