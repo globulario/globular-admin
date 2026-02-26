@@ -55,6 +55,7 @@ class PageLogin extends HTMLElement {
       <div class="media-login-page">
         <div class="card auth-card" part="card">
           <div class="brand">
+            <img src="${logoSrc}" alt="${appName} logo" style="width:80px;height:80px;object-fit:contain;border-radius:50%;margin-bottom:.5rem;" />
             <div class="brand-title">${appName}</div>
           </div>
 
@@ -80,7 +81,6 @@ class PageLogin extends HTMLElement {
           </form>
 
           <div class="meta">
-            <img src="${logoSrc}" alt="logo" />
             ${version ? `${version} &nbsp;•&nbsp; ` : ''}© ${new Date().getFullYear()} Globular Project
           </div>
         </div>
