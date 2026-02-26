@@ -5,7 +5,7 @@ import { displayError, displayMessage } from "@globular/backend";
 
 // Proper backend wrappers
 import { getHiddenFiles, readText, getDisplayFileForLink, isLinkFile } from "@globular/backend";
-import { getTitleInfo } from "@globular/backend";
+import { getTitleInfo, getFileVideosInfo, getFileAudiosInfo } from "@globular/backend";
 
 // FileVM helpers (DRY)
 import {
@@ -20,7 +20,7 @@ import {
 } from "./filevm-helpers";
 
 // Bounded LRU cache for media metadata populated by list/icon view loaders
-import { getMediaInfo } from "./fileMediaCache.js";
+import { getMediaInfo, mergeMediaInfo } from "./fileMediaCache.js";
 
 // UI deps
 import "@polymer/paper-checkbox/paper-checkbox.js";
@@ -89,6 +89,9 @@ export class FileIconView extends HTMLElement {
     this._cacheDom();
     this._wireEvents();
     await this._render();
+    // Load media metadata and update the label before the icon is revealed so
+    // the user always sees the human-friendly title rather than the filename.
+    await this._hydrateLabel();
     this._hideThumbtack();
 
     // Reveal with a short CSS fade-in (opacity 0 → 1 via transition on :host).
@@ -489,6 +492,72 @@ export class FileIconView extends HTMLElement {
       this._dom.fileName.setAttribute("title", text);
     }
     this._dom.content?.setAttribute("title", text);
+  }
+
+  /**
+   * Fetch media metadata for the display file (if not already cached) and
+   * update the file-name-span with the most human-friendly label available.
+   *
+   * Called inside setFile() while the icon is still invisible (icon-pending),
+   * so the icon fades in already showing the correct title rather than the
+   * raw filename.
+   *
+   * Priority:  videoInfo description/title  >  audioInfo title  >  titleInfo name  >  filename
+   */
+  async _hydrateLabel() {
+    const file = this._displayFile || this._file;
+    if (!file) return;
+
+    const path = pathOf(file);
+    if (!path) return;
+
+    // If metadata is already in cache (e.g. we visited this dir before),
+    // just re-apply the label without making any network calls.
+    if (getMediaInfo(path)) {
+      this._setDisplayName(this._displayLabelFor(file));
+      return;
+    }
+
+    const mimeRoot = mimeRootOf(file) || "";
+    const isDir    = isDirVM(file);
+    const isVideo  = mimeRoot === "video" || hasPlaylistManifest(file);
+    const isAudio  = mimeRoot === "audio";
+
+    try {
+      if (isVideo) {
+        const videos = await getFileVideosInfo(path);
+        if (Array.isArray(videos) && videos.length > 0) {
+          mergeMediaInfo(path, { videos });
+        }
+      } else if (isAudio) {
+        const audios = await getFileAudiosInfo(path);
+        if (Array.isArray(audios) && audios.length > 0) {
+          mergeMediaInfo(path, { audios });
+        }
+      } else if (isDir) {
+        // Folders may have a hidden metadata.json that points to a TitleInfo.
+        const hiddenDir = await getHiddenFiles(path, "").catch(() => null);
+        if (hiddenDir) {
+          const text = await readText(`${hiddenDir.path}/metadata.json`).catch(() => null);
+          if (text) {
+            const meta = JSON.parse(text);
+            if (meta?.ID) {
+              const title = await getTitleInfo(meta.ID).catch(() => null);
+              if (title) mergeMediaInfo(path, { titles: [title] });
+            }
+          }
+        }
+      }
+      // Plain images, text, pdf, etc. — no extra metadata needed.
+    } catch (err) {
+      // Non-fatal: keep whatever label _render() already set.
+      console.debug("_hydrateLabel: metadata fetch failed for", path, err);
+    }
+
+    // Guard: element may have been removed from the DOM while we awaited.
+    if (!this.isConnected) return;
+
+    this._setDisplayName(this._displayLabelFor(file));
   }
 
   /**
