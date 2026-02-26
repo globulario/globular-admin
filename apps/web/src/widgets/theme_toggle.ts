@@ -11,10 +11,6 @@ class ThemeToggle extends HTMLElement {
   }
 
   connectedCallback() {
-    const mode: Theme = this.getAttribute('modes') === 'two' ? 'light' : 'system'
-    // modes="two" → just light/dark; default → system/light/dark
-    const useTwoModes = this.getAttribute('modes') === 'two'
-
     this.shadow.innerHTML = `
       <style>
         :host { display: inline-flex; }
@@ -38,15 +34,8 @@ class ThemeToggle extends HTMLElement {
 
     this.btn = this.shadow.getElementById('toggle') as HTMLButtonElement
     this.btn.onclick = () => {
-      const current = getStoredTheme()
-      let next: Theme
-      if (useTwoModes) {
-        const eff = resolveTheme(current)
-        next = eff === 'dark' ? 'light' : 'dark'
-      } else {
-        // cycle: system → light → dark → system
-        next = current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system'
-      }
+      const eff = resolveTheme(getStoredTheme())
+      const next: Theme = eff === 'dark' ? 'light' : 'dark'
       setStoredTheme(next)
       applyTheme(next)
       this.render()
@@ -63,15 +52,11 @@ class ThemeToggle extends HTMLElement {
   private _onChanged = () => this.render()
 
   private render() {
-    const t = getStoredTheme()
-    const eff = resolveTheme(t)
+    const eff = resolveTheme(getStoredTheme())
     const icon = this.shadow.getElementById('icon')!
     const label = this.shadow.getElementById('label')!
-
-    // simple emoji icons (swap for SVG if you prefer)
-    const ico = t === 'system' ? '🖥️' : eff === 'dark' ? '🌙' : '☀️'
-    icon.textContent = ico
-    label.textContent = t === 'system' ? 'System' : (eff === 'dark' ? 'Dark' : 'Light')
+    icon.textContent = eff === 'dark' ? '🌙' : '☀️'
+    label.textContent = eff === 'dark' ? 'Dark' : 'Light'
   }
 }
 
