@@ -22,6 +22,7 @@ import {
   invalidateFileCaches,
 } from "@globular/backend"; // include getUrl
 import { randomUUID } from "../utility.js";
+import { getMediaInfo } from "./fileMediaCache.js";
 import { FilesListView } from "./filesListView.js";
 import { FilesIconView } from "./filesIconView.js";
 import { PermissionsManager } from "../permissionManager/permissionManager.js";
@@ -2676,21 +2677,29 @@ export class FileExplorer extends HTMLElement {
       this._informationManager.style.display = "";
       return;
     }
+    // Metadata is stored in the bounded LRU cache (fileMediaCache) by the
+    // various hydration paths; the file proto fields may be empty.
+    // Merge cache with any proto-level data so neither source is missed.
+    const cached = getMediaInfo(pathOf(file)) ?? {};
+    const titles = cached.titles?.length ? cached.titles : (file?.titles ?? []);
+    const videos = cached.videos?.length ? cached.videos : (file?.videos ?? []);
+    const audios = cached.audios?.length ? cached.audios : (file?.audios ?? []);
+
     let infos = null;
-    if (file?.titles?.length > 0) {
-      this._informationManager.setTitlesInformation(file.titles);
-      infos = file.titles[0];
+    if (titles.length > 0) {
+      this._informationManager.setTitlesInformation(titles);
+      infos = titles[0];
     }
-    if (file?.videos?.length > 0) {
-      this._informationManager.setVideosInformation(file.videos);
-      infos = infos || file.videos[0];
+    if (videos.length > 0) {
+      this._informationManager.setVideosInformation(videos);
+      infos = infos || videos[0];
     }
-    if (file?.audios?.length > 0) {
-      this._informationManager.setAudiosInformation(file.audios);
-      infos = infos || file.audios[0];
+    if (audios.length > 0) {
+      this._informationManager.setAudiosInformation(audios);
+      infos = infos || audios[0];
     }
     if (!infos && file) {
-      // fallback to raw file info if provided
+      // No media metadata at all — fall back to raw file info.
       this._informationManager.setFileInformation?.(file);
     }
 
