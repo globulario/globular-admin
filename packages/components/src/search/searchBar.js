@@ -57,7 +57,9 @@ export class SearchBar extends HTMLElement {
           border: none;
           margin-right: 11px;
           background: transparent;
-          color: var(--primary-text-color, var(--on-surface-color));
+          color: var(--on-surface-color, var(--primary-text-color));
+          -webkit-text-fill-color: var(--on-surface-color, var(--primary-text-color));
+          caret-color: var(--on-surface-color, var(--primary-text-color));
           box-sizing: border-box;
           font-size: 1.2rem;
         }
@@ -69,16 +71,15 @@ export class SearchBar extends HTMLElement {
         }
         input:focus { outline: none; }
 
-        /* Autofill */
-        input:-webkit-autofill {
-          background-color: var(--surface-color) !important;
-          color: var(--on-surface-color) !important;
-          box-shadow: 0 0 0px 1000px var(--surface-color) inset !important;
-        }
+        /* Autofill — webkit ignores `color` on autofilled inputs;
+           use -webkit-text-fill-color and the inset box-shadow trick
+           for the background.  Same surface tokens in all states. */
+        input:-webkit-autofill,
+        input:-webkit-autofill:focus,
         input:-webkit-autofill:not(:focus) {
-          background-color: var(--primary-color) !important;
-          color: var(--on-primary-color) !important;
-          box-shadow: 0 0 0px 1000px var(--primary-color) inset !important;
+          -webkit-text-fill-color: var(--on-surface-color) !important;
+          box-shadow: 0 0 0px 1000px var(--surface-color) inset !important;
+          caret-color: var(--on-surface-color);
         }
 
         #context-search-selector {
