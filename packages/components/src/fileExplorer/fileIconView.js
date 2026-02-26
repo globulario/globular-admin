@@ -5,7 +5,7 @@ import { displayError, displayMessage } from "@globular/backend";
 
 // Proper backend wrappers
 import { getHiddenFiles, readText, getDisplayFileForLink, isLinkFile } from "@globular/backend";
-import { getTitleInfo, getFileVideosInfo, getFileAudiosInfo } from "@globular/backend";
+import { getTitleInfo, getFileTitlesInfo, getFileVideosInfo, getFileAudiosInfo } from "@globular/backend";
 
 // FileVM helpers (DRY)
 import {
@@ -519,36 +519,51 @@ export class FileIconView extends HTMLElement {
     }
 
     const mimeRoot = mimeRootOf(file) || "";
-    const isDir    = isDirVM(file);
-    const isVideo  = mimeRoot === "video" || hasPlaylistManifest(file);
-    const isAudio  = mimeRoot === "audio";
+    const isDir   = isDirVM(file);
+    const isVideo = mimeRoot === "video" || hasPlaylistManifest(file);
+    const isAudio = mimeRoot === "audio";
 
     try {
       if (isVideo) {
-        const videos = await getFileVideosInfo(path);
-        if (Array.isArray(videos) && videos.length > 0) {
-          mergeMediaInfo(path, { videos });
-        }
+        // Mirror _hydrateMediaInfos(): fetch video streams AND title metadata in
+        // parallel — the human-readable label usually lives in a TitleInfo, not
+        // the raw Video stream record.
+        const [videos, titles] = await Promise.all([
+          getFileVideosInfo(path).catch(() => []),
+          getFileTitlesInfo(path).catch(() => []),
+        ]);
+        if (Array.isArray(videos) && videos.length) mergeMediaInfo(path, { videos });
+        if (Array.isArray(titles) && titles.length) mergeMediaInfo(path, { titles });
+
       } else if (isAudio) {
-        const audios = await getFileAudiosInfo(path);
-        if (Array.isArray(audios) && audios.length > 0) {
-          mergeMediaInfo(path, { audios });
-        }
+        const [audios, titles] = await Promise.all([
+          getFileAudiosInfo(path).catch(() => []),
+          getFileTitlesInfo(path).catch(() => []),
+        ]);
+        if (Array.isArray(audios) && audios.length) mergeMediaInfo(path, { audios });
+        if (Array.isArray(titles) && titles.length) mergeMediaInfo(path, { titles });
+
       } else if (isDir) {
-        // Folders may have a hidden metadata.json that points to a TitleInfo.
-        const hiddenDir = await getHiddenFiles(path, "").catch(() => null);
-        if (hiddenDir) {
-          const text = await readText(`${hiddenDir.path}/metadata.json`).catch(() => null);
-          if (text) {
-            const meta = JSON.parse(text);
-            if (meta?.ID) {
-              const title = await getTitleInfo(meta.ID).catch(() => null);
-              if (title) mergeMediaInfo(path, { titles: [title] });
+        // Plain folder: try TitleService first (fast, covers most cases).
+        const titles = await getFileTitlesInfo(path).catch(() => []);
+        if (Array.isArray(titles) && titles.length) {
+          mergeMediaInfo(path, { titles });
+        } else {
+          // Fallback: read .hidden/metadata.json → TitleInfo (older storage layout).
+          const hiddenDir = await getHiddenFiles(path, "").catch(() => null);
+          if (hiddenDir) {
+            const text = await readText(`${hiddenDir.path}/metadata.json`).catch(() => null);
+            if (text) {
+              const meta = JSON.parse(text);
+              if (meta?.ID) {
+                const title = await getTitleInfo(meta.ID).catch(() => null);
+                if (title) mergeMediaInfo(path, { titles: [title] });
+              }
             }
           }
         }
       }
-      // Plain images, text, pdf, etc. — no extra metadata needed.
+      // Images, text, PDF, etc. — no extra metadata needed.
     } catch (err) {
       // Non-fatal: keep whatever label _render() already set.
       console.debug("_hydrateLabel: metadata fetch failed for", path, err);
