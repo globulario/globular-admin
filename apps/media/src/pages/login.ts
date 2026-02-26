@@ -8,6 +8,7 @@ import {
   displayError,
   displaySuccess,
 } from "@globular/backend";
+import { navigateTo } from '../router'
 
 /**
  * <page-login>
@@ -141,12 +142,8 @@ class PageLogin extends HTMLElement {
                 try { localStorage.setItem('current_user', username) } catch { }
                 window.dispatchEvent(new CustomEvent('auth:changed'))
 
-                // Toast first so the user sees it, then route
                 displaySuccess(`Welcome, ${username}!`)
-
-                // Route to media search
-                history.replaceState(null, '', '#/media/search')
-                window.dispatchEvent(new HashChangeEvent('hashchange'))
+                navigateTo('#/media/search')
             } catch (err: any) {
                 const msg = err?.message || 'Login failed'
                 this.errorEl.textContent = msg
