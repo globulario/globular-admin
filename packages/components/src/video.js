@@ -516,7 +516,8 @@ export class VideoPlayer extends HTMLElement {
   async connectedCallback() {
     this.player = new Plyr(this.videoElement, {
       captions: { active: true, update: true },
-      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen']
+      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
+      previewThumbnails: { enabled: true, src: '' },
     })
 
     const pipBtn = this.querySelector("[data-plyr='pip']")
@@ -1667,8 +1668,12 @@ export class VideoPlayer extends HTMLElement {
       const blob = new Blob([signedVttText], { type: 'text/vtt' })
       this._previewVttBlobUrl = URL.createObjectURL(blob)
 
-      if (this.player?.setPreviewThumbnails) {
-        this.player.setPreviewThumbnails({ enabled: true, src: this._previewVttBlobUrl })
+      // Update the previewThumbnails plugin (must be enabled at init time).
+      // player.setPreviewThumbnails() does not exist in Plyr; update config and
+      // call the plugin's own load() method instead.
+      if (this.player?.previewThumbnails) {
+        this.player.config.previewThumbnails.src = this._previewVttBlobUrl
+        this.player.previewThumbnails.load()
       }
     } catch (err) {
       console.warn('[video] Failed to load preview thumbnails:', err)
