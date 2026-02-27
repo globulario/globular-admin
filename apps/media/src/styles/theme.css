@@ -5,6 +5,7 @@
   --surface-color: #ffffff;
   --on-surface-color: #1d2025;
   --primary-color: #3b82f6;
+  --accent-color:  #3b82f6;
   --primary-text-color: #1d2025;
   --secondary-text-color: color-mix(in srgb, var(--on-surface-color) 70%, transparent);
   --on-primary-color: #ffffff;
@@ -72,6 +73,7 @@
 
   /* header is slightly lighter than primary-color */
   --primary-color: #1f1e1e;
+  --accent-color:  #60a5fa;
   --primary-light-color: color-mix(in srgb, var(--primary-color) 60%, #4b5563 40%);
   --primary-dark-color: color-mix(in srgb, var(--primary-color) 80%, #020617 20%);
 

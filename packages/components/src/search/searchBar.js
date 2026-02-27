@@ -146,7 +146,7 @@ export class SearchBar extends HTMLElement {
           margin-left: 16px;
           margin-bottom: 8px;
           margin-top: 8px;
-          --paper-checkbox-checked-color: var(--primary-color);
+          --paper-checkbox-checked-color: var(--accent-color);
           --paper-checkbox-checkmark-color: var(--on-primary-color);
           --paper-checkbox-label-color: var(--primary-text-color);
         }

@@ -92,7 +92,7 @@ export class GroupInfo extends HTMLElement {
           width: 40px;
           padding-left: 15px;
           flex-shrink: 0;
-          color: var(--primary-color);
+          color: var(--accent-color);
         }
         .info-table {
           display: table;

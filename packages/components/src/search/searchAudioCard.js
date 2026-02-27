@@ -184,7 +184,7 @@ export class SearchAudioCard extends HTMLElement {
         }
 
         .play-buttons-row paper-icon-button {
-          --iron-icon-fill-color: var(--primary-color);
+          --iron-icon-fill-color: var(--accent-color);
           width: 36px;
           height: 36px;
         }

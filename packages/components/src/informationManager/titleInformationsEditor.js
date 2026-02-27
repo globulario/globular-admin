@@ -148,7 +148,7 @@ export class TitleInfoEditor extends HTMLElement {
         .input-field paper-input,.input-field iron-autogrow-textarea{width:100%;}
         .button-cell{display:table-cell;width:48px;vertical-align:middle;position:relative;}
         .button-cell iron-icon{color:var(--primary-text-color);}
-        .button-cell iron-icon:hover{color:var(--primary-color);cursor:pointer;}
+        .button-cell iron-icon:hover{color:var(--accent-color);cursor:pointer;}
 
         .action-div{
           display:flex;

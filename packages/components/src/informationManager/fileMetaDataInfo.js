@@ -44,7 +44,7 @@ export class FileMetaDataInfo extends HTMLElement {
         }
         paper-icon-button:hover {
           cursor: pointer;
-          --iron-icon-fill-color: var(--primary-color);
+          --iron-icon-fill-color: var(--accent-color);
         }
         iron-collapse {
           width: 100%;

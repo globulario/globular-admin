@@ -88,7 +88,7 @@ export class SearchResults extends HTMLElement {
 
                 paper-tabs {
                     flex-grow: 1;
-                    --paper-tabs-selection-bar-color: var(--primary-color);
+                    --paper-tabs-selection-bar-color: var(--accent-color);
                     color: var(--on-primary-color); /* Text color on accent background */
                     --paper-tab-ink: var(--palette-action-disabled);
                 }

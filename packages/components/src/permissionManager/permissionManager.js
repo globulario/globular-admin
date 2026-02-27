@@ -177,7 +177,7 @@ export class PermissionsManager extends HTMLElement {
         iron-collapse:last-of-type { border-bottom: none; }
 
         paper-icon-button { color: var(--primary-text-color); }
-        paper-icon-button:hover { cursor: pointer; color: var(--primary-color); }
+        paper-icon-button:hover { cursor: pointer; color: var(--accent-color); }
 
         #add-permission-panel {
           position: absolute; right: 20px; top: 50px; z-index: 100;
@@ -193,7 +193,7 @@ export class PermissionsManager extends HTMLElement {
           display:flex; flex-direction:column; gap:8px; padding:5px 0;
         }
         #add-permission-panel paper-radio-button {
-          --paper-radio-button-checked-color: var(--primary-color);
+          --paper-radio-button-checked-color: var(--accent-color);
           --paper-radio-button-label-color: var(--primary-text-color);
           --paper-radio-button-size: 16px;
         }

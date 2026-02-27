@@ -445,7 +445,7 @@ export class SearchableList extends HTMLElement {
             .header-row paper-input{
                 flex:1;
                 --paper-input-container-color: var(--secondary-text-color);
-                --paper-input-container-focus-color: var(--primary-color);
+                --paper-input-container-focus-color: var(--accent-color);
                 --paper-input-container-input-color: var(--primary-text-color);
             }
             .add-action-btn{
@@ -454,7 +454,7 @@ export class SearchableList extends HTMLElement {
                 font-size:.75rem;
                 gap:4px;
                 white-space:nowrap;
-                background: var(--primary-color);
+                background: var(--accent-color);
                 color: var(--on-primary-color);
                 --paper-button-raised-keyboard-focus: var(--primary-dark-color);
                 border-radius: 8px;

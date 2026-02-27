@@ -105,7 +105,7 @@ export class Autocomplete extends HTMLElement {
             paper-input {
                 width: 100%;
                 --paper-input-container-input-color: var(--primary-text-color);
-                --paper-input-container-focus-color: var(--primary-color);
+                --paper-input-container-focus-color: var(--accent-color);
                 --paper-input-container-color: var(--secondary-text-color);
             }
             #autocomplete-div {
@@ -121,7 +121,7 @@ export class Autocomplete extends HTMLElement {
                 white-space: nowrap;
             }
             .suggestion-item:hover, .suggestion-item.highlighted {
-                background-color: color-mix(in srgb, var(--primary-color) 12%, transparent);
+                background-color: color-mix(in srgb, var(--accent-color) 12%, transparent);
                 color: var(--primary-text-color);
             }
         </style>

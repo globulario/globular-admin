@@ -175,7 +175,7 @@ export class FileIconViewSection extends HTMLElement {
       }
 
       .playlist-actions iron-icon:hover {
-        fill: var(--primary-color);
+        fill: var(--accent-color);
       }
     </style>
 

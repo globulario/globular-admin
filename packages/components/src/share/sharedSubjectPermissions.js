@@ -83,7 +83,7 @@ export class SharedSubjectsPermissions extends HTMLElement {
         .subject-permissions-row:last-child { border-bottom:none; }
         .cell { display:table-cell; vertical-align:middle; padding:8px 5px; }
         .cell iron-icon { width:24px; height:24px; color:var(--secondary-text-color); }
-        .cell iron-icon:hover { cursor:pointer; color:var(--primary-color); }
+        .cell iron-icon:hover { cursor:pointer; color:var(--accent-color); }
         .cell iron-icon[icon="icons:check"] { color: var(--palette-success-main); }
         .cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main); }
         .infos { display:flex; align-items:center; padding:4px; border-radius:4px; background:var(--surface-color); color:var(--primary-text-color); transition:background .2s; }

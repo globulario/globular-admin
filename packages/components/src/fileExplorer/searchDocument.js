@@ -319,7 +319,7 @@ class DocumentSearchResults extends HTMLElement {
           font-size: 1rem;
           font-weight: 500;
           text-decoration: underline;
-          color: var(--primary-color);
+          color: var(--accent-color);
           cursor: pointer;
           overflow: hidden;
           white-space: nowrap;

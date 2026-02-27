@@ -73,7 +73,7 @@ export class DiskSpaceManager extends HTMLElement {
         #container { display:flex; flex-direction:column; position:relative; width:100%; }
         #error-message-div { display:none; text-decoration:underline; color: var(--palette-error-main); cursor:pointer; margin-top:5px; }
         #disk-space-usage-div { display:flex; font-size:.85rem; justify-content:space-between; margin-bottom:5px; }
-        paper-progress { width:100%; --paper-progress-active-color: var(--primary-color); --paper-progress-secondary-color: var(--secondary-color); }
+        paper-progress { width:100%; --paper-progress-active-color: var(--accent-color); --paper-progress-secondary-color: var(--secondary-color); }
         paper-card { background-color: var(--surface-color); color: var(--primary-text-color); }
         .allocated-space-modal { position:absolute; z-index:1000; display:flex; flex-direction:column; padding:10px; background-color: var(--surface-color); color: var(--primary-text-color); box-shadow:0 4px 8px rgba(0,0,0,.2); border-radius:4px; min-width:250px; }
         .allocated-space-modal paper-input { margin-bottom:10px; }

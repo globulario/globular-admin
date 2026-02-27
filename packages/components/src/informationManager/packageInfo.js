@@ -89,7 +89,7 @@ export class PackageInfo extends HTMLElement {
         }
         .icon-type-column iron-icon {
           height: 40px; width: 40px; margin-bottom: 5px;
-          color: var(--primary-color);
+          color: var(--accent-color);
         }
         .icon-type-column span {
           font-weight: 500; font-size: .9em; text-align: center;

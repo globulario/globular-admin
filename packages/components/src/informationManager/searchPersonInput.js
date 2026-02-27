@@ -82,8 +82,8 @@ export class SearchPersonInput extends HTMLElement {
           flex-grow: 1;
           margin-left: 5px;
           --paper-input-container-color: var(--primary-text-color);
-          --paper-input-container-focus-color: var(--primary-color);
-          --paper-input-container-label-floating-color: var(--primary-color);
+          --paper-input-container-focus-color: var(--accent-color);
+          --paper-input-container-label-floating-color: var(--accent-color);
           --paper-input-container-input-color: var(--primary-text-color);
           --paper-input-container-underline: { height: 1px; };
           --paper-input-container-underline-focus: { height: 2px; };
@@ -161,7 +161,7 @@ export class SearchPersonInput extends HTMLElement {
 
         iron-icon:hover {
           cursor: pointer;
-          color: var(--primary-color);
+          color: var(--accent-color);
         }
       </style>
 

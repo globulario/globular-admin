@@ -311,7 +311,7 @@ export class SearchFacetPanel extends HTMLElement {
                 .facet-label-main paper-checkbox {
                     margin-top: 0; /* Align with play button */
                     margin-bottom: 0;
-                    --paper-checkbox-checked-color: var(--primary-color);
+                    --paper-checkbox-checked-color: var(--accent-color);
                     --paper-checkbox-checkmark-color: var(--on-primary-color);
                     --paper-checkbox-label-color: var(--primary-text-color);
                 }
@@ -321,7 +321,7 @@ export class SearchFacetPanel extends HTMLElement {
                 }
 
                 #play_facet_btn {
-                    --iron-icon-fill-color: var(--primary-color);
+                    --iron-icon-fill-color: var(--accent-color);
                     display: none; /* Hidden by default */
                     margin-right: 5px; /* Space from checkbox */
                 }
@@ -339,13 +339,13 @@ export class SearchFacetPanel extends HTMLElement {
                     opacity: 0.65;
                 }
                 .term-item paper-checkbox {
-                    --paper-checkbox-checked-color: var(--primary-color);
+                    --paper-checkbox-checked-color: var(--accent-color);
                     --paper-checkbox-checkmark-color: var(--on-primary-color);
                     --paper-checkbox-label-color: var(--primary-text-color);
                 }
                 .term-item paper-icon-button {
-                    --iron-icon-fill-color: var(--primary-color);
-                    color: var(--primary-color);
+                    --iron-icon-fill-color: var(--accent-color);
+                    color: var(--accent-color);
                 }
                 .term-count-span {
                     margin-left: 8px;

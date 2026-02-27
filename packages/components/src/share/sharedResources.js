@@ -130,7 +130,7 @@ export class SharedResources extends HTMLElement {
         globular-link { margin-left: 15px; }
 
         paper-tabs {
-          --paper-tabs-selection-bar-color: var(--primary-color);
+          --paper-tabs-selection-bar-color: var(--accent-color);
           color: var(--primary-text-color);
           --paper-tab-ink: var(--palette-action-disabled);
           width: 100%;

@@ -163,8 +163,8 @@ export class VideoInfoEditor extends HTMLElement {
         .input-field iron-autogrow-textarea {
           width:100%;
           --paper-input-container-color:var(--primary-text-color);
-          --paper-input-container-focus-color:var(--primary-color);
-          --paper-input-container-label-floating-color:var(--primary-color);
+          --paper-input-container-focus-color:var(--accent-color);
+          --paper-input-container-label-floating-color:var(--accent-color);
           --paper-input-container-input-color:var(--primary-text-color);
         }
         .button-cell {
@@ -181,7 +181,7 @@ export class VideoInfoEditor extends HTMLElement {
           color:var(--primary-text-color);
         }
         .button-cell iron-icon:hover {
-          color:var(--primary-color);
+          color:var(--accent-color);
           cursor:pointer;
         }
         .person-section-header {

@@ -85,8 +85,8 @@ export class TableFilter extends HTMLElement {
           transition: border-color .2s ease, box-shadow .2s ease;
         }
         div[contenteditable].focus{
-          border-color: var(--primary-color);
-          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 20%, transparent);
+          border-color: var(--accent-color);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 20%, transparent);
           outline: none;
         }
 
@@ -95,7 +95,7 @@ export class TableFilter extends HTMLElement {
           color: var(--disabled-text-color, color-mix(in srgb, var(--on-surface-color) 40%, transparent));
           align-self: end;
         }
-        #infos:hover{ cursor:pointer; color: var(--primary-color); }
+        #infos:hover{ cursor:pointer; color: var(--accent-color); }
 
         .infos-panel{
           width: 320px;
@@ -132,7 +132,7 @@ export class TableFilter extends HTMLElement {
       const isOpen = panel?.style.display === "block";
       this.infos.style.color = isOpen
         ? "var(--disabled-text-color, color-mix(in srgb, var(--on-surface-color) 40%, transparent))"
-        : "var(--primary-color)";
+        : "var(--accent-color)";
       if (panel) panel.style.display = isOpen ? "none" : "block";
     };
 
@@ -245,7 +245,7 @@ export class TableSorter extends HTMLElement {
           color: var(--disabled-text-color, color-mix(in srgb, var(--on-surface-color) 40%, transparent));
         }
         iron-icon{ width:1rem; height:1rem; }
-        #container:hover{ color: var(--primary-color); cursor:pointer; }
+        #container:hover{ color: var(--accent-color); cursor:pointer; }
         #index{ font-size:.65rem; display:none; }
       </style>
       <div id="container">
@@ -263,12 +263,12 @@ export class TableSorter extends HTMLElement {
       if (this.sortOrder === "") {
         this.sortOrder = "asc";
         sortBtn.setAttribute("icon", "icons:arrow-upward");
-        container.style.color = "var(--primary-color)";
+        container.style.color = "var(--accent-color)";
         indexSpan.style.display = "inline";
       } else if (this.sortOrder === "asc") {
         this.sortOrder = "desc";
         sortBtn.setAttribute("icon", "icons:arrow-downward");
-        container.style.color = "var(--primary-color)";
+        container.style.color = "var(--accent-color)";
         indexSpan.style.display = "inline";
       } else {
         this.sortOrder = "";

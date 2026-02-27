@@ -527,7 +527,7 @@ export class SearchTitleDetail extends HTMLElement {
           height:24px; margin-left:5px; background: var(--surface-color); color: var(--primary-text-color);
           border:1px solid var(--palette-divider); border-radius:4px; padding:2px 5px; flex-grow:1; min-width:0;
         }
-        #episodes-select-div paper-icon-button { --iron-icon-fill-color: var(--primary-color); flex-shrink:0; }
+        #episodes-select-div paper-icon-button { --iron-icon-fill-color: var(--accent-color); flex-shrink:0; }
         .episode-preview-container { position:relative; flex-shrink:0; }
         #play-episode-video-button {
           position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); --iron-icon-fill-color:white;

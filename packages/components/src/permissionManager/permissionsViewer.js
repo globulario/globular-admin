@@ -199,7 +199,7 @@ export class PermissionsViewer extends HTMLElement {
           text-align: center; vertical-align: middle; padding: 5px; display: table-cell;
         }
         .permission-cell iron-icon { width: 24px; height: 24px; color: var(--secondary-text-color); }
-        .permission-cell iron-icon:hover { cursor: pointer; color: var(--primary-color); }
+        .permission-cell iron-icon:hover { cursor: pointer; color: var(--accent-color); }
         .permission-cell iron-icon[icon="icons:check"] { color: var(--palette-success-main); }
         .permission-cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main); }
         .permission-cell iron-icon[icon="icons:remove"] { color: var(--secondary-text-color); }

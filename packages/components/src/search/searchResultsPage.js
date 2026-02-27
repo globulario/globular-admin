@@ -86,9 +86,9 @@ export class SearchResultsPagesNavigator extends HTMLElement {
                 }
 
                 .pagination-btn.active {
-                    background-color: var(--primary-color); /* Highlight active button */
-                    color: var(--on-primary-color); /* Text color for active button */
-                    border-color: var(--primary-color);
+                    background-color: var(--accent-color);
+                    color: var(--on-primary-color);
+                    border-color: var(--accent-color);
                 }
             </style>
             <div id="container">
@@ -507,9 +507,9 @@ export class SearchResultsPage extends HTMLElement {
                 }
                 #webpage-search-results .webpage-link {
                     font-size: 1.1rem; font-weight: 500; text-decoration: underline; cursor: pointer;
-                    color: var(--primary-color);
+                    color: var(--accent-color);
                 }
-                #webpage-search-results .webpage-link:hover { text-decoration-color: var(--primary-color-dark); }
+                #webpage-search-results .webpage-link:hover { text-decoration-color: var(--accent-color); }
                 #webpage-search-results .snippet-container {
                     padding: 15px; font-size: 0.95rem; line-height: 1.4;
                     color: var(--primary-text-color);
@@ -542,8 +542,8 @@ export class SearchResultsPage extends HTMLElement {
                 }
 
                 #results-actions-btns paper-icon-button {
-                    color: var(--primary-color);
-                    --iron-icon-fill-color: var(--primary-color);
+                    color: var(--accent-color);
+                    --iron-icon-fill-color: var(--accent-color);
                 }
                 #results-actions-btns paper-icon-button.disable {
                     color: var(--palette-action-disabled);
@@ -1004,7 +1004,7 @@ export class SearchResultsPage extends HTMLElement {
                     });
 
                     // Basic hover effects (can be moved to CSS if complex)
-                    linkElement.addEventListener('mouseenter', () => { linkElement.style.textDecorationColor = "var(--primary-color)"; });
+                    linkElement.addEventListener('mouseenter', () => { linkElement.style.textDecorationColor = "var(--accent-color)"; });
                     linkElement.addEventListener('mouseleave', () => { linkElement.style.textDecorationColor = ""; });
 
                     count++;
@@ -1572,7 +1572,7 @@ export class SearchResultsPage extends HTMLElement {
                 .snippets-div {
                     display: flex; flex-direction: column; padding: 10px 0;
                 }
-                .snippet-field { font-weight: bold; margin-bottom: 5px; color: var(--primary-color); }
+                .snippet-field { font-weight: bold; margin-bottom: 5px; color: var(--accent-color); }
                 .snippet-fragments div { padding-bottom: 5px; line-height: 1.4; }
 
                 .title-info-wrapper {

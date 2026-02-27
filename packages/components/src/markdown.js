@@ -48,7 +48,7 @@ class Markdown extends HTMLElement {
         }
 
         .wrap p { margin: .6em 0; }
-        .wrap a { color: var(--primary-color); text-decoration: none; }
+        .wrap a { color: var(--accent-color); text-decoration: none; }
         .wrap a:hover { text-decoration: underline; }
 
         .wrap blockquote {

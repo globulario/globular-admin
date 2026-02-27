@@ -199,7 +199,7 @@ export class AudioInfoEditor extends HTMLElement {
         }
         paper-button:hover { background:var(--primary-dark-color); }
         paper-icon-button {
-          --paper-icon-button-ink-color:var(--primary-color);
+          --paper-icon-button-ink-color:var(--accent-color);
         }
         iron-collapse {
           display:flex;

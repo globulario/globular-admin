@@ -175,7 +175,7 @@ export class ResourcesPermissionsType extends HTMLElement {
         .header .title{ flex:1; font-weight:500; padding-right:10px; text-transform:capitalize; color: var(--primary-text-color); }
         .header #counter{ font-weight:400; color: var(--secondary-text-color); margin-right:10px; }
         .header paper-icon-button{ --iron-icon-fill-color: var(--primary-text-color); }
-        .header paper-icon-button:hover{ color: var(--primary-color); }
+        .header paper-icon-button:hover{ color: var(--accent-color); }
 
         #content{ display:flex; flex-direction:column; margin:10px; }
         iron-collapse{ width:100%; }
@@ -329,7 +329,7 @@ export class ResourcePermissions extends HTMLElement {
         .header:hover { background:var(--palette-action-hover); cursor:pointer; }
 
         .header iron-icon { padding:5px; color:var(--primary-text-color); }
-        .header iron-icon:hover { color:var(--primary-color); }
+        .header iron-icon:hover { color:var(--accent-color); }
 
         .resource-text { flex:1; padding:5px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:584px; }
 

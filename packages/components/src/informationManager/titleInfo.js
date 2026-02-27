@@ -501,7 +501,7 @@ const TITLE_INFO_GLOBAL_STYLE = `
   display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0;
 }
 .episodes-header-tabs paper-tabs {
-  --paper-tabs-selection-bar-color: var(--primary-color);
+  --paper-tabs-selection-bar-color: var(--accent-color);
   color: var(--primary-text-color);
   --paper-tab-ink: var(--palette-action-disabled);
   width: 100%;
@@ -706,8 +706,6 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
           border-top: 1px solid var(--palette-divider); margin-top: 15px;
         }
         .title-info-container {
-          flex: 1 1 auto;
-          display: flex;
           flex-direction: row;
           height: 100%;
           min-height: 0;

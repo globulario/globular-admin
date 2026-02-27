@@ -194,7 +194,7 @@ export class FilesListView extends FilesView {
 
       .first-cell paper-checkbox {
         visibility: hidden;
-        --paper-checkbox-checked-color: var(--primary-color, #1976d2);
+        --paper-checkbox-checked-color: var(--accent-color, #1976d2);
         --paper-checkbox-unchecked-color: var(--palette-action-disabled, #9e9e9e);
         --paper-checkbox-checkmark-color: var(--on-primary-color, #fff);
         --paper-checkbox-label-color: var(--primary-text-color);

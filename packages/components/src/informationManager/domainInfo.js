@@ -85,7 +85,7 @@ export class DomainInfo extends HTMLElement {
                     width: 40px;
                     padding-left: 15px; /* Original padding */
                     flex-shrink: 0; /* Prevent icon from shrinking */
-                    color: var(--primary-color); /* A nice color for the icon */
+                    color: var(--accent-color); /* A nice color for the icon */
                 }
 
                 .info-table {

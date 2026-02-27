@@ -80,7 +80,7 @@ export class OrganizationInfo extends HTMLElement {
           height: 40px; width: 40px;
           padding-left: 15px;
           flex-shrink: 0;
-          color: var(--primary-color);
+          color: var(--accent-color);
         }
         .info-table {
           display: table; flex-grow: 1; width: 100%;

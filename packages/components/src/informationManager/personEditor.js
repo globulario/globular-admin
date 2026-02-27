@@ -140,13 +140,13 @@ export class PersonEditor extends HTMLElement {
         .input-field paper-input, .input-field iron-autogrow-textarea {
           width:100%;
           --paper-input-container-color: var(--primary-text-color);
-          --paper-input-container-focus-color: var(--primary-color);
-          --paper-input-container-label-floating-color: var(--primary-color);
+          --paper-input-container-focus-color: var(--accent-color);
+          --paper-input-container-label-floating-color: var(--accent-color);
           --paper-input-container-input-color: var(--primary-text-color);
         }
         .button-cell { display:table-cell; width:48px; vertical-align:middle; }
         .button-cell iron-icon { color:var(--primary-text-color); }
-        .button-cell iron-icon:hover { color:var(--primary-color); cursor:pointer; }
+        .button-cell iron-icon:hover { color:var(--accent-color); cursor:pointer; }
         .action-buttons-bottom { display:flex; justify-content:flex-end; gap:10px; padding-top:15px; }
         paper-button { background-color:var(--primary-color); color:var(--on-primary-color); padding:8px 16px; border-radius:4px; }
         paper-button:hover { background-color:var(--primary-dark-color); }

@@ -140,7 +140,7 @@ export class InformationsManager extends HTMLElement {
         #header paper-icon-button {
           min-width: 40px; color: var(--secondary-text-color, var(--primary-text-color));
         }
-        #header paper-icon-button:hover { color: var(--primary-color); }
+        #header paper-icon-button:hover { color: var(--accent-color); }
 
         .title-div {
           display: flex; flex-direction: row; gap: 10px; align-items: center;

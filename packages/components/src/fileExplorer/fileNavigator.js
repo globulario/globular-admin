@@ -226,13 +226,12 @@ export class FileNavigator extends HTMLElement {
       }
 
       .directory-item.drag-over {
-        box-shadow: 0 0 5px 2px var(--primary-color);
-        background-color: var(--drag-over-bg,
-                               var(--primary-light-color, rgba(25,118,210,0.18)));
+        box-shadow: 0 0 5px 2px var(--accent-color);
+        background-color: color-mix(in srgb, var(--accent-color) 18%, transparent);
       }
 
       .directory-item.drag-over .folder-icon {
-        --iron-icon-fill-color: var(--primary-color);
+        --iron-icon-fill-color: var(--accent-color);
       }
     </style>
 

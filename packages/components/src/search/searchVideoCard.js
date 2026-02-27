@@ -172,8 +172,8 @@ export class SearchVideoCard extends HTMLElement {
           padding: 5px 10px;
         }
         .bottom-actions paper-icon-button {
-          color: var(--video-card-action-color, var(--palette-primary-light, var(--primary-color)));
-          --iron-icon-fill-color: var(--video-card-action-color, var(--palette-primary-light, var(--primary-color)));
+          color: var(--video-card-action-color, var(--accent-color));
+          --iron-icon-fill-color: var(--video-card-action-color, var(--accent-color));
         }
 
         @container videocard (max-width: 225px) {
