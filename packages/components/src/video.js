@@ -427,6 +427,7 @@ export class VideoPlayer extends HTMLElement {
     this._pendingCloseSaveState = undefined
     this._fallbackMp4Url = null  // set when we try HLS opportunistically for a raw MP4
     this._mediaSetupDone = false  // subtitle/audio-track setup runs once per video load
+    this._networkRetryNonce = 0   // incremented on MEDIA_ERR_NETWORK retry to force fresh connection
     this._hlsSeekTimer = null     // debounce timer for HLS seek handling
 
     // preview thumbnail blob URL (revoked when replaced or on disconnect)
@@ -1017,9 +1018,11 @@ export class VideoPlayer extends HTMLElement {
       cleanup()
     }, 10_000)
 
-    // Refresh token before retry so stale auth doesn't cause a loop
+    // Refresh token before retry so stale auth doesn't cause a loop.
+    // Increment the nonce so play() rebuilds the URL with ?_nc=N, forcing the browser
+    // to open a fresh connection (Chrome falls back from QUIC to TCP after a stream error).
     forceRefresh().catch(() => {}).finally(() => {
-      this.resume = true
+      this._networkRetryNonce++
       const currentItem = this.playlist?._items?.[this.playlist._index]
       if (currentItem && typeof this.playlist.setPlaying === 'function') {
         this.playlist.setPlaying(currentItem, true, true)
@@ -1611,6 +1614,20 @@ export class VideoPlayer extends HTMLElement {
       }
     }
 
+    // When retrying after a network error (e.g. QUIC/HTTP3 failure), append a nonce so
+    // the browser opens a fresh connection rather than reusing the broken one.
+    // Chrome marks QUIC as broken for ~5 min after a stream error and falls back to TCP/HTTP2
+    // on the next connection — but only if the request looks different enough to bypass the
+    // QUIC alt-svc cache. The _nc param ensures that.
+    if (this._networkRetryNonce > 0 && !isHlsSource) {
+      try {
+        const u = new URL(urlToPlay)
+        u.searchParams.set('_nc', this._networkRetryNonce)
+        urlToPlay = u.toString()
+      } catch { /* non-http path — skip nonce */ }
+      this._networkRetryNonce = 0  // consumed
+    }
+
     // For non-HLS file sources (raw .mp4 / .mkv), try the HLS playlist first.
     // HLS segments start playing in ~2s regardless of moov-atom position.
     // If the playlist doesn't exist the HLS error handler falls back to the raw MP4.
@@ -1626,8 +1643,9 @@ export class VideoPlayer extends HTMLElement {
       }
     }
 
-    // Same-path resume behavior preserved
-    if (this.path === path) {
+    // Same-path resume behavior preserved — but skip when we're retrying with a nonce
+    // so the URL is rebuilt with the cache-bust param before playContent is called.
+    if (this.path === path && this._networkRetryNonce === 0) {
       this.resume = true
       this._playVideoElement()
       return
