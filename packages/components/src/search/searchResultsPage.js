@@ -55,28 +55,30 @@ export class SearchResultsPagesNavigator extends HTMLElement {
             <style>
                 #container {
                     display: flex;
-                    padding: 10px;
+                    padding: 4px 6px;
                     flex-wrap: wrap;
-                    justify-content: center; /* Center pagination buttons */
+                    justify-content: center;
                     align-items: center;
-                    gap: 5px; /* Space between buttons */
+                    gap: 3px;
                 }
 
                 .pagination-btn {
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    height: 35px;
-                    width: 35px;
+                    height: 28px;
+                    width: 28px;
+                    font-size: 0.85rem;
                     border: 1px solid var(--palette-divider);
-                    border-radius: 50%; /* Make them round */
-                    transition: background-color 0.2s ease, border-color 0.2s ease, filter 0.2s ease;
-                    color: var(--primary-text-color); /* Default text color */
+                    border-radius: 50%;
+                    transition: background-color 0.2s ease, border-color 0.2s ease;
+                    color: var(--primary-text-color);
+                    user-select: none;
                 }
 
                 @media (max-width: 600px) {
-                    #container { padding: 2px; }
-                    .pagination-btn { height: 25px; width: 25px; font-size: 0.8em; }
+                    #container { padding: 2px 4px; }
+                    .pagination-btn { height: 22px; width: 22px; font-size: 0.75rem; }
                 }
 
                 .pagination-btn:hover {
