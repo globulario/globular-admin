@@ -632,6 +632,9 @@ export function readDirFresh(
         ? new Error("readDirFresh cancelled")
         : new Error(`ReadDir failed (${code}): ${message}`);
       rejectWorker?.(workerError);
+      // guardedWorkerPromise won't be awaited in this error path; suppress
+      // the rejection to avoid an unhandled-promise-rejection browser warning.
+      guardedWorkerPromise.catch(() => {});
       if (cancelled) {
         throw workerError;
       }
