@@ -170,6 +170,34 @@ export class DialogHandle extends HTMLElement {
                 justify-content: center;
                 background-color: black;
             }
+
+            /* Mobile: compact list row — hide preview card */
+            @media (max-width: 600px) {
+                #container {
+                    height: auto !important;
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    border-radius: 8px;
+                    border: none;
+                    border-bottom: 1px solid var(--divider-color);
+                    box-sizing: border-box;
+                }
+                #container:last-of-type {
+                    border-bottom: none;
+                }
+                #header-bar {
+                    padding: 10px 8px;
+                    min-height: 44px;
+                    background-color: transparent;
+                    color: var(--on-surface-color);
+                }
+                #close-btn, #minimize-btn {
+                    color: var(--on-surface-color);
+                }
+                .preview-container {
+                    display: none !important;
+                }
+            }
         </style>
         <div id="container">
             <div id="header-bar">
@@ -276,6 +304,11 @@ export class DialogHandles extends HTMLElement {
   // hover state
   _hoverInside = false;
   _hideTimeout = null;
+  _boundDocumentClick = null;
+
+  get _isMobile() {
+    return window.matchMedia('(max-width: 600px)').matches;
+  }
 
   constructor() {
     super();
@@ -458,8 +491,36 @@ export class DialogHandles extends HTMLElement {
           margin: 0 5px;
           transition: box-shadow 0.2s ease;
         }
+
+        /* Mobile: fixed bottom sheet above the dockbar */
+        @media (max-width: 600px) {
+          #container {
+            margin-right: 4px;
+            margin-left: 4px;
+          }
+
+          .handles {
+            position: fixed !important;
+            bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+            left: 0 !important;
+            right: 0;
+            top: auto !important;
+            max-height: 50vh;
+            overflow-y: auto;
+            flex-direction: column !important;
+            border-radius: 16px 16px 0 0;
+            width: auto !important;
+            padding: 12px 8px 4px;
+            box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.18);
+          }
+
+          .handles ::slotted(globular-dialog-handle) {
+            margin: 0;
+            width: 100%;
+          }
+        }
       </style>
-     
+
         <div id="container">
           <div id="icon-wrapper">
             <img id="main-icon"></img>
@@ -485,14 +546,20 @@ export class DialogHandles extends HTMLElement {
   _setupEventListeners() {
     if (!this._container || !this._handlesContainer) return;
 
-    // Hover on icon container
+    // Hover on icon container (desktop)
     this._container.addEventListener('pointerenter', this._handleContainerEnter);
     this._container.addEventListener('pointerleave', this._handleContainerLeave);
 
-    // Hover on handles popup
+    // Tap on icon container (mobile)
+    this._container.addEventListener('click', this._handleContainerClick);
+
+    // Hover on handles popup (desktop)
     this._handlesContainer.addEventListener('pointerenter', this._handleHandlesEnter);
     this._handlesContainer.addEventListener('pointerleave', this._handleHandlesLeave);
 
+    // Close bottom sheet on outside tap (mobile)
+    this._boundDocumentClick = this._handleDocumentClick.bind(this);
+    document.addEventListener('click', this._boundDocumentClick, true);
   }
 
   _cleanupEventListeners() {
@@ -500,13 +567,18 @@ export class DialogHandles extends HTMLElement {
 
     this._container.removeEventListener('pointerenter', this._handleContainerEnter);
     this._container.removeEventListener('pointerleave', this._handleContainerLeave);
+    this._container.removeEventListener('click', this._handleContainerClick);
 
     this._handlesContainer.removeEventListener('pointerenter', this._handleHandlesEnter);
     this._handlesContainer.removeEventListener('pointerleave', this._handleHandlesLeave);
 
+    if (this._boundDocumentClick) {
+      document.removeEventListener('click', this._boundDocumentClick, true);
+      this._boundDocumentClick = null;
+    }
   }
 
-  // --- hover logic -------------------------------------------------------
+  // --- hover logic (desktop) -------------------------------------------------------
 
   _showHandles() {
     if (!this._handlesContainer) return;
@@ -520,7 +592,9 @@ export class DialogHandles extends HTMLElement {
       }
     });
 
-    this._positionHandlesContainer();
+    if (!this._isMobile) {
+      this._positionHandlesContainer();
+    }
   }
 
   _scheduleHideHandles() {
@@ -536,6 +610,7 @@ export class DialogHandles extends HTMLElement {
   }
 
   _handleContainerEnter = (evt) => {
+    if (this._isMobile) return;
     evt.stopPropagation();
     this._hoverInside = true;
 
@@ -550,9 +625,36 @@ export class DialogHandles extends HTMLElement {
   };
 
   _handleContainerLeave = (evt) => {
+    if (this._isMobile) return;
     evt.stopPropagation();
     this._hoverInside = false;
     this._scheduleHideHandles();
+  };
+
+  _handleContainerClick = (evt) => {
+    if (!this._isMobile) return;
+    evt.stopPropagation();
+    if (this._handlesContainer?.style.display === 'flex') {
+      this.hideHandles();
+    } else {
+      // hide other groups first
+      document.querySelectorAll('globular-dialog-handles').forEach(otherHandles => {
+        if (otherHandles !== this && typeof otherHandles.hideHandles === 'function') {
+          otherHandles.hideHandles();
+        }
+      });
+      this._showHandles();
+    }
+  };
+
+  _handleDocumentClick = (evt) => {
+    if (!this._isMobile) return;
+    if (this._handlesContainer?.style.display !== 'flex') return;
+    // Close if tap is outside this element (use composedPath for shadow DOM)
+    const path = evt.composedPath();
+    if (!path.includes(this)) {
+      this.hideHandles();
+    }
   };
 
   _handleHandlesEnter = (evt) => {
@@ -773,6 +875,30 @@ export class Dockbar extends HTMLElement {
                 margin: 0 5px;
             }
 
+            /* Mobile: full-width strip at the bottom */
+            @media (max-width: 600px) {
+                #container {
+                    left: 0;
+                    right: 0;
+                    width: 100%;
+                    margin-left: 0;
+                    transform: none;
+                    bottom: env(safe-area-inset-bottom, 0px);
+                }
+
+                #dockbar {
+                    min-width: 0 !important;
+                    width: 100%;
+                    border-radius: 0;
+                    margin-bottom: 0;
+                    border-left: none;
+                    border-right: none;
+                    border-bottom: none;
+                    padding: 4px 8px;
+                    justify-content: flex-start;
+                    overflow-x: auto;
+                }
+            }
         </style>
         <div id="container">
             <paper-card id="dockbar">

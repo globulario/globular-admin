@@ -1311,6 +1311,9 @@ export class VideoPlayer extends HTMLElement {
   }
 
   loadPlaylist(path, filePaths) {
+    // Reset stored path so the first playlist item never hits the same-path
+    // resume check in play() — e.g. when replaying a folder the user just watched.
+    this.path = ''
     this.playlist.clear()
     this.playlist.load(path, filePaths, this, () => {
       this._updatePlaylistVisibility()
@@ -1599,20 +1602,42 @@ export class VideoPlayer extends HTMLElement {
   }
 
   async _loadSignedPreviewThumbnails(normalizedPath, token) {
-    const timelineDir = buildHiddenTimelineDir(normalizedPath)
+    // For HLS playlists the path ends with /playlist.m3u8; strip it so
+    // buildHiddenTimelineDir uses the parent directory name (e.g. "movie")
+    // which matches the timeline created for the original source file.
+    let timelinePath = normalizedPath
+    if (timelinePath.endsWith('/playlist.m3u8')) {
+      timelinePath = timelinePath.slice(0, -'/playlist.m3u8'.length)
+    }
+    const timelineDir = buildHiddenTimelineDir(timelinePath)
     const vttUrl = appendTokenParam(buildFileUrl(`${timelineDir}/thumbnails.vtt`, token), token)
     if (!vttUrl || !this.player) return
 
     this._revokePreviewVttBlob()
 
+    // Helper: reset Plyr's internal thumbnail cache so load() replaces
+    // rather than appends to the previous video's frames.
+    const _resetPlyrThumbnails = () => {
+      const pt = this.player?.previewThumbnails
+      if (!pt) return
+      pt.thumbnails = []
+      pt.loaded = false
+      pt.loadedImages = []
+    }
+
     try {
       const resp = await fetch(vttUrl)
       if (!resp.ok) {
         console.warn(`[video] Preview VTT not available (${resp.status})`)
+        // Clear stale thumbnails so the previous video's timeline doesn't persist.
+        _resetPlyrThumbnails()
         return
       }
       const vttText = await resp.text()
-      if (!vttText || !vttText.trimStart().startsWith('WEBVTT')) return
+      if (!vttText || !vttText.trimStart().startsWith('WEBVTT')) {
+        _resetPlyrThumbnails()
+        return
+      }
 
       // Base URL of the VTT directory (no query string) for resolving relative paths
       const vttDir = vttUrl.substring(0, vttUrl.lastIndexOf('/') + 1).split('?')[0]
@@ -1670,9 +1695,10 @@ export class VideoPlayer extends HTMLElement {
       const blob = new Blob([signedVttText], { type: 'text/vtt' })
       this._previewVttBlobUrl = URL.createObjectURL(blob)
 
-      // Update the previewThumbnails plugin (must be enabled at init time).
-      // player.setPreviewThumbnails() does not exist in Plyr; update config and
-      // call the plugin's own load() method instead.
+      // Reset Plyr's thumbnail cache BEFORE load() — Plyr's load() appends to
+      // this.thumbnails rather than replacing, so without this reset the previous
+      // video's frame data stays in thumbnails[0] and the old timeline persists.
+      _resetPlyrThumbnails()
       if (this.player?.previewThumbnails) {
         this.player.config.previewThumbnails.src = this._previewVttBlobUrl
         this.player.previewThumbnails.load()
