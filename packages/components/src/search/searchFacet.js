@@ -419,7 +419,7 @@ export class SearchFacetPanel extends HTMLElement {
 
             if (termData.itemElement) {
                 termData.itemElement.dataset.count = String(count);
-                termData.itemElement.classList.toggle("zero-count", count === 0);
+                termData.itemElement.style.display = count === 0 ? 'none' : '';
             }
         }
     }
@@ -488,6 +488,7 @@ export class SearchFacetPanel extends HTMLElement {
                 </paper-checkbox>
             `;
 
+            if (count === 0) itemElement.style.display = 'none';
             this._facetListDiv.appendChild(itemElement);
 
             // Store references

@@ -320,6 +320,7 @@ export class SearchResultsPage extends HTMLElement {
     _hitsByContext = {}; // Map of hits organized by context: {contextName: [hit1, hit2]}
     _hitsByClassName = {}; // Map of hit UUIDs by filter class name: {className: [uuid1, uuid2]}
     _hasReportedResults = false;
+    _facetRefreshTimer = null; // Debounce timer for facet count refresh
 
     _webpageSearchResultsDiv = null;
     _webpageSearchResultsCountSpan = null;
@@ -866,6 +867,13 @@ export class SearchResultsPage extends HTMLElement {
             }
             this.refreshNavigatorAndContextSelector(); // Update pagination and context totals
 
+            // Debounce facet count refresh so it runs once after a burst of hits
+            if (this._facetRefreshTimer) clearTimeout(this._facetRefreshTimer);
+            this._facetRefreshTimer = setTimeout(() => {
+                this._facetRefreshTimer = null;
+                if (this.facetFilter) this.facetFilter.refresh();
+            }, 150);
+
             if (!this._hasReportedResults && this.getTotal() > 0) {
                 this._hasReportedResults = true;
                 this.dispatchEvent(
@@ -901,9 +909,16 @@ export class SearchResultsPage extends HTMLElement {
             }
         };
 
+        // Helper: register full genre string AND each individual word so both
+        // multi-word server facet terms ("Science Fiction") and single words match.
+        const addGenre = (g) => {
+            addClassHit(g); // full string — matches server facet term exactly
+            if (g.includes(" ")) g.split(" ").forEach(g_ => addClassHit(g_));
+        };
+
         if (typeof hit?.hasTitle === "function" && hit.hasTitle()) {
             const title = hit.getTitle();
-            title.getGenresList().forEach(g => g.split(" ").forEach(g_ => addClassHit(g_)));
+            title.getGenresList().forEach(addGenre);
             addClassHit(title.getType()); // Add type as a class (e.g., "Movie", "TVEpisode")
 
             // Rating classification
@@ -913,7 +928,7 @@ export class SearchResultsPage extends HTMLElement {
             else addClassHit("high");
         } else if (typeof hit?.hasVideo === "function" && hit.hasVideo()) {
             const video = hit.getVideo();
-            video.getGenresList().forEach(g => g.split(" ").forEach(g_ => addClassHit(g_)));
+            video.getGenresList().forEach(addGenre);
             video.getTagsList().forEach(tag => addClassHit(tag));
 
             const rating = video.getRating();
@@ -922,7 +937,7 @@ export class SearchResultsPage extends HTMLElement {
             else addClassHit("high");
         } else if (typeof hit?.hasAudio === "function" && hit.hasAudio()) {
             const audio = hit.getAudio();
-            audio.getGenresList().forEach(g => g.split(" ").forEach(g_ => addClassHit(g_)));
+            audio.getGenresList().forEach(addGenre);
         } else if (typeof hit?.hasBlog === "function" && hit.hasBlog()) {
             const blog = hit.getBlog();
             blog.getKeywordsList().forEach(kw => addClassHit(kw));
