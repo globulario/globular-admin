@@ -389,10 +389,15 @@ export class SearchResultsPage extends HTMLElement {
                 }
 
                 #facets {
-                    margin-right: 15px; /* Space from content */
-                    min-width: 225px; /* Minimum width for facets */
-                    max-width: 250px; /* Max width to prevent it from getting too wide */
-                    flex-shrink: 0; /* Prevent from shrinking */
+                    margin-right: 15px;
+                    min-width: 225px;
+                    max-width: 250px;
+                    flex-shrink: 0;
+                    position: sticky;
+                    top: 0;
+                    align-self: flex-start;
+                    max-height: 100vh;
+                    overflow-y: auto;
                 }
 
                 #content {
@@ -561,7 +566,7 @@ export class SearchResultsPage extends HTMLElement {
                 }
             </style>
             <div id="container">
-                <div id="facets-panel">
+                <div id="facets">
                     <slot name="facets"></slot>
                 </div>
                 <div id="content">
@@ -655,7 +660,7 @@ export class SearchResultsPage extends HTMLElement {
         this._webpageSearchResultsHeader = this.shadowRoot.querySelector("#webpage-search-results-header");
         this._resultsActionsDiv = this.shadowRoot.querySelector("#results-actions"); // The sticky pagination bar
 
-        this._facetsPanel = this.shadowRoot.querySelector("#facets-panel"); // The container for facets
+        this._facetsPanel = this.shadowRoot.querySelector("#facets"); // The container for facets
 
         this.shadowRoot.querySelectorAll('slot[name^="mosaic_"]').forEach(slot => {
             slot.addEventListener('slotchange', this._mosaicSlotChangeHandler);

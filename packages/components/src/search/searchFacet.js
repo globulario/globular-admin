@@ -55,11 +55,9 @@ export class FacetSearchFilter extends HTMLElement {
                     padding: 10px;
                     padding-right: 30px;
                     max-width: 235px;
-                    background-color: var(--surface-color); /* Ensure background */
-                    color: var(--primary-text-color); /* Ensure text color */
-                    height: 100%; /* Take full height of parent */
-                    box-sizing: border-box; /* Include padding in dimensions */
-                    overflow-y: auto; /* Enable scrolling for many facets */
+                    background-color: var(--surface-color);
+                    color: var(--primary-text-color);
+                    box-sizing: border-box;
                 }
 
                 ::-webkit-scrollbar {
@@ -242,6 +240,8 @@ export class SearchFacetPanel extends HTMLElement {
     _totalSpan = null; // Span for facet total count
     _playFacetBtn = null; // Button to play all media in this facet
     _mainCheckbox = null; // Main checkbox for this facet field
+    _collapseBtn = null; // Button to collapse/expand the term list
+    _collapsed = false; // Whether the term list is currently collapsed
 
     /**
      * Constructor for the SearchFacetPanel custom element.
@@ -278,6 +278,26 @@ export class SearchFacetPanel extends HTMLElement {
                     font-size: 1rem;
                     display: flex;
                     flex-direction: column; /* Stack terms vertically */
+                    overflow: hidden;
+                    max-height: 2000px; /* large enough for any list */
+                    transition: max-height 0.25s ease, padding-bottom 0.25s ease;
+                }
+                .facet-list.collapsed {
+                    max-height: 0;
+                    padding-bottom: 0;
+                }
+
+                #collapse-btn {
+                    margin-left: auto;
+                    flex-shrink: 0;
+                    --iron-icon-fill-color: var(--secondary-text-color);
+                    width: 28px;
+                    height: 28px;
+                    padding: 2px;
+                    transition: transform 0.2s ease;
+                }
+                #collapse-btn.collapsed {
+                    transform: rotate(-90deg);
                 }
 
                 .facet-label-main { /* Style for the main facet checkbox label */
@@ -286,6 +306,8 @@ export class SearchFacetPanel extends HTMLElement {
                     font-size: 1.1rem; /* Slightly larger font for main label */
                     font-weight: 500;
                     margin-bottom: 10px; /* Space below main label */
+                    cursor: pointer;
+                    user-select: none;
                 }
                 .facet-label-main paper-checkbox {
                     margin-top: 0; /* Align with play button */
@@ -337,9 +359,10 @@ export class SearchFacetPanel extends HTMLElement {
                         <span id='field_span'></span>
                         <span id='total_span'></span>
                     </paper-checkbox>
+                    <paper-icon-button id="collapse-btn" icon="hardware:keyboard-arrow-down" title="Collapse/expand"></paper-icon-button>
                 </div>
                 <div class="facet-list">
-                    </div>
+                </div>
             </div>
         `;
     }
@@ -354,6 +377,7 @@ export class SearchFacetPanel extends HTMLElement {
         this._fieldSpan = this.shadowRoot.querySelector("#field_span");
         this._totalSpan = this.shadowRoot.querySelector("#total_span");
         this._playFacetBtn = this.shadowRoot.querySelector("#play_facet_btn");
+        this._collapseBtn = this.shadowRoot.querySelector("#collapse-btn");
     }
 
     /**
@@ -367,6 +391,13 @@ export class SearchFacetPanel extends HTMLElement {
         }
         if (this._playFacetBtn) {
             this._playFacetBtn.addEventListener('click', this._handlePlayFacetClick.bind(this));
+        }
+        const header = this.shadowRoot.querySelector('.facet-label-main');
+        if (header) {
+            header.addEventListener('click', (e) => {
+                if (e.target.closest('#main-checkbox') || e.target.closest('#play_facet_btn')) return;
+                this._toggleCollapse();
+            });
         }
     }
 
@@ -530,6 +561,16 @@ export class SearchFacetPanel extends HTMLElement {
                 displayError("No media found for this filter!", 3000);
             }
         });
+    }
+
+    /**
+     * Toggles the collapsed/expanded state of the term list.
+     * @private
+     */
+    _toggleCollapse() {
+        this._collapsed = !this._collapsed;
+        if (this._facetListDiv) this._facetListDiv.classList.toggle('collapsed', this._collapsed);
+        if (this._collapseBtn) this._collapseBtn.classList.toggle('collapsed', this._collapsed);
     }
 
     /**
