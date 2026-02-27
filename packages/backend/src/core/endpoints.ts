@@ -221,6 +221,29 @@ export async function getConfig(base = requireBaseUrl()): Promise<GlobularConfig
   }
 }
 
+/**
+ * Patch a service's configuration.  Only the supplied fields are changed;
+ * the backend fetches the current config and merges the patch before saving.
+ * Desired fields (Domain, Port, …) go to etcd /config; runtime fields
+ * (State, Process, ProxyProcess) go to etcd /runtime.
+ * Requires Id in the patch.
+ */
+export async function saveServiceConfig(
+  patch: Partial<ServiceDesc> & { Id: string },
+  base = requireBaseUrl(),
+): Promise<void> {
+  const token = sessionStorage.getItem("__globular_token__") ?? "";
+  const res = await fetch(safeJoin(base, "/api/save-service-config"), {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", token },
+    body:    JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText);
+    throw new Error(`save-service-config: ${res.status} — ${msg}`);
+  }
+}
+
 // ---------- URL builder ----------
 /**
  * Resolve the service URL for a given gRPC service id, e.g. "authentication.AuthenticationService".
