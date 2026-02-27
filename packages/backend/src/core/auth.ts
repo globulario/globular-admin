@@ -107,12 +107,20 @@ export function enableVisibilityAutoRefresh(padMs = 120_000) {
 // Public API
 // ---------------------------------------------------------------------
 export function setToken(t?: string) {
+  const prev = _token;
   _token = t;
   safeClearTimer();
 
   if (t) {
     try { sessionStorage.setItem(TOKEN_KEY, t); } catch {}
     scheduleRefresh(t);
+    // Notify listeners (e.g. video player) so they can apply the fresh token
+    // without polling. Only fire when the token actually changed.
+    if (t !== prev) {
+      try {
+        window.dispatchEvent(new CustomEvent("auth:token-refreshed", { detail: { token: t } }));
+      } catch { /* ignore */ }
+    }
   } else {
     try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
   }

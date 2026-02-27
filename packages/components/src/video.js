@@ -437,6 +437,9 @@ export class VideoPlayer extends HTMLElement {
     this._mp4TokenPath = ''
     this._mp4TokenIsHttpSource = false
 
+    // Bound handler for auth:token-refreshed — wired in connectedCallback
+    this._onTokenRefreshed = null
+
     const youtubeLogoUrl = new URL('../assets/icons/youtube-flat.svg', import.meta.url).href
 
     this.shadowRoot.innerHTML = `
@@ -550,6 +553,12 @@ export class VideoPlayer extends HTMLElement {
     window.addEventListener('orientationchange', this._handleOrientationChange)
     window.addEventListener('resize', this._handleWindowResize)
 
+    // React to background token refreshes (fired by auth.ts setToken).
+    // HLS: makeTokenLoader already reads getAuthToken() per-segment — no action.
+    // MP4: swap src with fresh token so the next range request authenticates.
+    this._onTokenRefreshed = (e) => this._applyFreshToken(e?.detail?.token)
+    window.addEventListener('auth:token-refreshed', this._onTokenRefreshed)
+
     this._loadInitialTracks()
   }
 
@@ -574,6 +583,11 @@ export class VideoPlayer extends HTMLElement {
     this.skipNextBtn?.removeEventListener('click', this._skipNext)
     this.loopBtn?.removeEventListener('click', this._toggleLoop)
     this.shuffleBtn?.removeEventListener('click', this._toggleShuffle)
+    if (this._onTokenRefreshed) {
+      window.removeEventListener('auth:token-refreshed', this._onTokenRefreshed)
+      this._onTokenRefreshed = null
+    }
+
     this.titleInfoButton?.removeEventListener('click', this._handleTitleInfoClick)
     this.videoElement?.removeEventListener('playing', this._handleVideoPlaying)
     this.videoElement?.removeEventListener('loadeddata', this._handleVideoLoadedData)
@@ -756,45 +770,35 @@ export class VideoPlayer extends HTMLElement {
     if (!this._mp4TokenPath || !this.videoElement) return
 
     // Check whether auth.ts already refreshed the token in the background.
-    // If the stored token differs from the one in the current src URL, we can
-    // use it directly without making a second RPC call.
-    let newToken = getAuthToken()
+    // If the stored token is already newer than what's in the src URL, dispatch
+    // immediately — no extra RPC call needed.
+    const storedToken = getAuthToken()
     const srcToken = (() => {
       try { return new URL(this.videoElement.src).searchParams.get('token') } catch { return null }
     })()
 
-    if (!newToken || newToken === srcToken) {
-      // Token hasn't been refreshed yet — trigger a refresh now.
-      // Uses the coalesced refresh() so we never fire two simultaneous RPC calls.
+    if (!storedToken || storedToken === srcToken) {
+      // Background timer hasn't fired yet — trigger the refresh ourselves.
+      // coalesced refresh() ensures only one RPC call even if both paths run.
       try {
-        newToken = await refresh()
+        await refresh()
+        // refresh() calls setToken() → dispatches auth:token-refreshed →
+        // _applyFreshToken() handles the src update automatically.
       } catch (err) {
         console.warn('[video] mp4 token refresh failed:', err)
-        // Retry in 30s so a transient network error doesn't leave us with an expired token
         this._mp4TokenMaintenanceTimer = window.setTimeout(
           () => void this._mp4TokenRefreshTick(),
           30_000
         )
         return
       }
+    } else {
+      // Background already refreshed; apply it now in case the event was
+      // dispatched before this player connected its listener.
+      this._applyFreshToken(storedToken)
     }
 
-    // Apply the fresh token to the video src.
-    if (newToken && this._mp4TokenPath) {
-      const newUrl = this._buildMp4UrlWithToken(newToken)
-      if (newUrl) {
-        const wasPaused = this.videoElement.paused
-        const preservedTime = this.videoElement.currentTime || 0
-
-        this.videoElement.src = newUrl
-        // Set currentTime immediately — the browser uses it as the range-request
-        // start position so playback resumes from the same spot with minimal stall.
-        if (preservedTime > 0) this.videoElement.currentTime = preservedTime
-        if (!wasPaused) this.videoElement.play().catch(() => {})
-      }
-    }
-
-    // Schedule the next refresh for whatever token we have now
+    // Schedule the next check for the new token's expiry window.
     this._scheduleMp4TokenRefresh()
   }
 
@@ -855,6 +859,44 @@ export class VideoPlayer extends HTMLElement {
   // ---------------------------------------------------------------------------
   // Progress + error handlers
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Token-refresh application
+  // Called by the auth:token-refreshed event listener and by _mp4TokenRefreshTick
+  // when it detects the background timer already ran.
+  // ---------------------------------------------------------------------------
+  _applyFreshToken(newToken) {
+    if (!newToken || !this._mp4TokenPath || !this.videoElement) return
+
+    // HLS handles token per-segment via makeTokenLoader/getAuthToken — no action.
+    if (this.hls) return
+
+    // Skip if the src already carries this token.
+    const srcToken = (() => {
+      try { return new URL(this.videoElement.src).searchParams.get('token') } catch { return null }
+    })()
+    if (newToken === srcToken) return
+
+    const newUrl = this._buildMp4UrlWithToken(newToken)
+    if (!newUrl) return
+
+    const wasPaused = this.videoElement.paused
+    const preservedTime = this.videoElement.currentTime || 0
+
+    // Store the seek target so _handleVideoLoadedData restores it via the
+    // existing _pendingSeekTime mechanism (spec-correct: waits for loadeddata).
+    if (preservedTime > 0) this._pendingSeekTime = preservedTime
+
+    // Swap src — browser issues a new range request from the seek position.
+    // _mediaSetupDone stays true so subtitle/audio-track setup doesn't repeat.
+    this.videoElement.src = newUrl
+
+    if (!wasPaused) {
+      this.videoElement.addEventListener('canplay', () => {
+        this.videoElement.play().catch(() => {})
+      }, { once: true })
+    }
+  }
+
   _handleVideoTimeUpdate = () => {
     if (!this.titleInfo || typeof this.titleInfo.getId !== 'function') return
     if (!this.videoElement?.playing) return
@@ -1752,8 +1794,10 @@ export class VideoPlayer extends HTMLElement {
 
       this.hls = new Hls({
         loader: makeTokenLoader(),
+        // Always read the latest token from sessionStorage — never capture a
+        // closure reference that becomes stale after a background refresh.
         xhrSetup: (xhr) => {
-          const authToken = token || getAuthToken()
+          const authToken = getAuthToken()
           if (authToken) {
             xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
             xhr.setRequestHeader('token', authToken)
