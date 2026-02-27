@@ -231,7 +231,13 @@ function computePlaylistSourcePath(path) {
     try {
       const parsed = new URL(raw)
       if (!/\/playlist\.m3u8($|\?)/i.test(parsed.pathname)) {
-        parsed.pathname = parsed.pathname.replace(/\/$/, '') + '/playlist.m3u8'
+        let pathname = parsed.pathname.replace(/\/$/, '')
+        // Strip file extension so the HLS dir matches server structure:
+        // /mnt/.../video.mp4 → /mnt/.../video/playlist.m3u8
+        const lastDot = pathname.lastIndexOf('.')
+        const lastSlash = pathname.lastIndexOf('/')
+        if (lastDot > lastSlash) pathname = pathname.substring(0, lastDot)
+        parsed.pathname = pathname + '/playlist.m3u8'
       }
       return parsed.toString()
     } catch {
@@ -239,8 +245,12 @@ function computePlaylistSourcePath(path) {
     }
   }
 
-  // local path
-  return `${n}/playlist.m3u8`
+  // local path: strip file extension so the HLS dir matches server structure.
+  // The server creates HLS at [stem]/playlist.m3u8, not [stem.ext]/playlist.m3u8.
+  const lastDot = n.lastIndexOf('.')
+  const lastSlash = n.lastIndexOf('/')
+  const stem = lastDot > lastSlash ? n.substring(0, lastDot) : n
+  return `${stem}/playlist.m3u8`
 }
 
 /**
@@ -517,7 +527,7 @@ export class VideoPlayer extends HTMLElement {
     this.player = new Plyr(this.videoElement, {
       captions: { active: true, update: true },
       controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
-      previewThumbnails: { enabled: true, src: '' },
+      previewThumbnails: { enabled: false },
     })
 
     const pipBtn = this.querySelector("[data-plyr='pip']")
@@ -1615,27 +1625,17 @@ export class VideoPlayer extends HTMLElement {
 
     this._revokePreviewVttBlob()
 
-    // Helper: reset Plyr's internal thumbnail cache so load() replaces
-    // rather than appends to the previous video's frames.
-    const _resetPlyrThumbnails = () => {
-      const pt = this.player?.previewThumbnails
-      if (!pt) return
-      pt.thumbnails = []
-      pt.loaded = false
-      pt.loadedImages = []
-    }
-
     try {
       const resp = await fetch(vttUrl)
       if (!resp.ok) {
         console.warn(`[video] Preview VTT not available (${resp.status})`)
-        // Clear stale thumbnails so the previous video's timeline doesn't persist.
-        _resetPlyrThumbnails()
+        // Disable thumbnails so the previous video's timeline doesn't persist.
+        this.player?.setPreviewThumbnails({ enabled: false })
         return
       }
       const vttText = await resp.text()
       if (!vttText || !vttText.trimStart().startsWith('WEBVTT')) {
-        _resetPlyrThumbnails()
+        this.player?.setPreviewThumbnails({ enabled: false })
         return
       }
 
@@ -1695,14 +1695,9 @@ export class VideoPlayer extends HTMLElement {
       const blob = new Blob([signedVttText], { type: 'text/vtt' })
       this._previewVttBlobUrl = URL.createObjectURL(blob)
 
-      // Reset Plyr's thumbnail cache BEFORE load() — Plyr's load() appends to
-      // this.thumbnails rather than replacing, so without this reset the previous
-      // video's frame data stays in thumbnails[0] and the old timeline persists.
-      _resetPlyrThumbnails()
-      if (this.player?.previewThumbnails) {
-        this.player.config.previewThumbnails.src = this._previewVttBlobUrl
-        this.player.previewThumbnails.load()
-      }
+      // Use Plyr's own API: destroys any existing instance and creates a fresh
+      // one with the new src, so there's no stale thumbnail cache.
+      this.player?.setPreviewThumbnails({ enabled: true, src: this._previewVttBlobUrl })
     } catch (err) {
       console.warn('[video] Failed to load preview thumbnails:', err)
     }
