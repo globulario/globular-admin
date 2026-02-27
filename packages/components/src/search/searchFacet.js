@@ -241,7 +241,7 @@ export class SearchFacetPanel extends HTMLElement {
     _playFacetBtn = null; // Button to play all media in this facet
     _mainCheckbox = null; // Main checkbox for this facet field
     _collapseBtn = null; // Button to collapse/expand the term list
-    _collapsed = false; // Whether the term list is currently collapsed
+    _collapsed = true; // Whether the term list is currently collapsed
 
     /**
      * Constructor for the SearchFacetPanel custom element.
@@ -448,6 +448,10 @@ export class SearchFacetPanel extends HTMLElement {
         // Clear existing terms before re-rendering
         this._facetListDiv.innerHTML = "";
         this._terms = {}; // Reset internal terms map
+
+        // Apply current collapsed state to the list and chevron
+        this._facetListDiv.classList.toggle('collapsed', this._collapsed);
+        if (this._collapseBtn) this._collapseBtn.classList.toggle('collapsed', this._collapsed);
 
         const terms = this._facet.getTermsList().sort((a, b) => {
             // Sort alphabetically by term
