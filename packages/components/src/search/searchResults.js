@@ -93,11 +93,20 @@ export class SearchResults extends HTMLElement {
                     --paper-tab-ink: var(--palette-action-disabled);
                 }
 
-                #close-btn {
+                #close-all-btn {
                     width: 30px;
                     height: 30px;
                     padding: 3px;
-                    color: var(--on-primary-color); /* Icon color on accent background */
+                    color: var(--on-primary-color);
+                    --iron-icon-fill-color: var(--on-primary-color);
+                }
+
+                paper-tab paper-icon-button {
+                    width: 24px;
+                    height: 24px;
+                    padding: 2px;
+                    color: var(--on-primary-color);
+                    --iron-icon-fill-color: var(--on-primary-color);
                 }
 
                 paper-card {

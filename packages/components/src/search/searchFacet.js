@@ -274,7 +274,6 @@ export class SearchFacetPanel extends HTMLElement {
         this.shadowRoot.innerHTML = `
             <style>
                 .facet-list {
-                    padding-bottom: 20px;
                     font-size: 1rem;
                     display: flex;
                     flex-direction: column; /* Stack terms vertically */
@@ -343,6 +342,10 @@ export class SearchFacetPanel extends HTMLElement {
                     --paper-checkbox-checked-color: var(--primary-color);
                     --paper-checkbox-checkmark-color: var(--on-primary-color);
                     --paper-checkbox-label-color: var(--primary-text-color);
+                }
+                .term-item paper-icon-button {
+                    --iron-icon-fill-color: var(--primary-color);
+                    color: var(--primary-color);
                 }
                 .term-count-span {
                     margin-left: 8px;

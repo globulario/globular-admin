@@ -424,6 +424,10 @@ export class SearchResultsPage extends HTMLElement {
                     margin-left: auto; /* Push to right */
                     gap: 5px;
                 }
+                #summary-actions paper-icon-button {
+                    color: var(--on-surface-color);
+                    --iron-icon-fill-color: var(--on-surface-color);
+                }
 
                 #results {
                     display: flex;
@@ -538,10 +542,12 @@ export class SearchResultsPage extends HTMLElement {
                 }
 
                 #results-actions-btns paper-icon-button {
-                    color: var(--primary-color); /* Default color */
+                    color: var(--primary-color);
+                    --iron-icon-fill-color: var(--primary-color);
                 }
                 #results-actions-btns paper-icon-button.disable {
-                    color: var(--palette-action-disabled); /* Disabled color */
+                    color: var(--palette-action-disabled);
+                    --iron-icon-fill-color: var(--palette-action-disabled);
                 }
 
 
