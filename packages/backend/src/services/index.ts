@@ -13,4 +13,4 @@ export * from "../cms/torrent";
 export * from "../cms/files_cache";
 export * from "../persistence/persistence";
 export * from "../search/search_document";
-export * from "../clusterdoctor/clusterdoctor_client";
+export * from "../cluster_doctor/clusterdoctor_client";

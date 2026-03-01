@@ -1,9 +1,16 @@
 // src/backend/core/network.ts
 import { getConfig, requireBaseUrl, grpcWebHostUrl } from './endpoints'
 import { unary } from './rpc'
+import { metadata } from './auth'
 
-import * as adminGrpc from 'globular-web-client/admin/admin_grpc_web_pb'
-import * as clustercontrollerpb from 'globular-web-client/clustercontroller/clustercontroller_pb'
+import * as clusterGrpc from 'globular-web-client/cluster_controller/clustercontroller_grpc_web_pb'
+import * as clustercontrollerpb from 'globular-web-client/cluster_controller/clustercontroller_pb'
+
+function ccClient(): clusterGrpc.ClusterControllerServiceClient {
+  return new clusterGrpc.ClusterControllerServiceClient(
+    grpcWebHostUrl(), null, { withCredentials: true }
+  )
+}
 
 export type Iface = {
   name: string
@@ -21,29 +28,15 @@ export type NetworkSummary = {
   defaultGateway?: string
 }
 
-function client(): adminGrpc.AdminServiceClient {
-  const addr = grpcWebHostUrl()
-  return new adminGrpc.AdminServiceClient(addr, null, { withCredentials: true })
-}
-
-async function metadata(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem('__globular_token__')
-    return t ? { token: t } : {}
-  } catch { return {} }
-}
-
 /**
  * Fetch a summary of network settings from the backend.
  *
- * Hostname comes from AdminService.listNodes → first node's NodeIdentity.
- * IPs from NodeIdentity.ips are mapped to Iface entries.
+ * Hostname and IPs come from ClusterController.listNodes → first node's NodeIdentity.
  * Falls back to /config for hostname when listNodes is unavailable.
- * DNS servers and default gateway are not exposed by the current API.
+ * DNS servers are not readable from the current API (writable via applyNetworkUpdate).
  */
 export async function fetchNetworkSummary(): Promise<NetworkSummary> {
-  const c = client()
-  const md = await metadata()
+  const md = metadata()
 
   let hostname: string = location.hostname
   let interfaces: Iface[] = []
@@ -53,7 +46,7 @@ export async function fetchNetworkSummary(): Promise<NetworkSummary> {
     const rsp = await unary<
       clustercontrollerpb.ListNodesRequest,
       clustercontrollerpb.ListNodesResponse
-    >(() => c, 'listNodes', rq, undefined, md)
+    >(ccClient, 'listNodes', rq, undefined, md)
 
     const nodes = rsp.getNodesList()
     if (nodes.length > 0) {
@@ -66,7 +59,7 @@ export async function fetchNetworkSummary(): Promise<NetworkSummary> {
           .map(ip => ({
             name: ip,
             ipv4: !ip.includes(':') ? [ip] : [],
-            ipv6: ip.includes(':') ? [ip] : [],
+            ipv6: ip.includes(':')  ? [ip] : [],
           } satisfies Iface))
       }
     }
@@ -76,24 +69,66 @@ export async function fetchNetworkSummary(): Promise<NetworkSummary> {
     if (cfg) hostname = (cfg as any).Name || hostname
   }
 
-  // DNS servers and default gateway are not available from the current API
   return { hostname, interfaces, dnsServers: [] }
 }
 
 // Apply changes. Keep small and composable so you can gate each call with RBAC.
 export type NetworkUpdate = Partial<{
-  hostname: string
+  /** DNS nameservers to set cluster-wide via UpdateClusterNetwork. */
   dnsServers: string[]
 }>
 
 /**
- * Persist network settings.
+ * Persist network settings via the ClusterController's UpdateClusterNetwork RPC.
  *
- * Note: the current AdminService API does not expose hostname or DNS
- * as writable fields. This function is a stub — implement once the
- * backend provides an appropriate RPC (e.g. UpdateClusterNetwork).
+ * Only `dnsServers` is writable. Hostname is a read-only node-level value
+ * that cannot be changed through the cluster API.
+ *
+ * The server requires `cluster_domain` in the spec. We read it from
+ * `getClusterInfo` and preserve the current protocol from the base URL.
+ * All other spec fields (ACME, ports, etc.) should be set via the cluster
+ * network configuration page, not here.
  */
-export async function applyNetworkUpdate(_update: NetworkUpdate): Promise<void> {
-  // TODO: implement when backend exposes UpdateClusterNetwork or equivalent
-  throw new Error('applyNetworkUpdate: not yet implemented — no backend RPC available')
+export async function applyNetworkUpdate(update: NetworkUpdate): Promise<void> {
+  if (!update.dnsServers || update.dnsServers.length === 0) return
+
+  const md = metadata()
+
+  // getClusterInfo takes google.protobuf.Timestamp — empty bytes (same trick as cluster.ts)
+  const infoRq = { serializeBinary: (): Uint8Array => new Uint8Array(0) } as any
+  let clusterDomain = ''
+  try {
+    const infoRsp = await unary<any, clustercontrollerpb.ClusterInfo>(
+      ccClient, 'getClusterInfo', infoRq, undefined, md,
+    )
+    clusterDomain = infoRsp.getClusterDomain?.() ?? ''
+  } catch { /* fall through to base-URL fallback */ }
+
+  if (!clusterDomain) {
+    // Last resort: extract from base URL (e.g. https://globular.cloud → globular.cloud)
+    try { clusterDomain = new URL(requireBaseUrl()).hostname } catch { /* leave empty */ }
+  }
+
+  if (!clusterDomain) {
+    throw new Error('Cannot determine cluster domain. Configure the cluster network first.')
+  }
+
+  // Infer protocol from the base URL so we don't accidentally downgrade to http
+  let protocol = 'https'
+  try { protocol = new URL(requireBaseUrl()).protocol.replace(':', '') } catch { /* keep https */ }
+
+  const spec = new clustercontrollerpb.ClusterNetworkSpec()
+  spec.setClusterDomain(clusterDomain)
+  spec.setProtocol(protocol)
+  if (protocol === 'http') spec.setPortHttp(80)
+  else spec.setPortHttps(443)
+  spec.setDnsNameserversList(update.dnsServers)
+
+  const rq = new clustercontrollerpb.UpdateClusterNetworkRequest()
+  rq.setSpec(spec)
+
+  await unary<
+    clustercontrollerpb.UpdateClusterNetworkRequest,
+    clustercontrollerpb.UpdateClusterNetworkResponse
+  >(ccClient, 'updateClusterNetwork', rq, undefined, md)
 }

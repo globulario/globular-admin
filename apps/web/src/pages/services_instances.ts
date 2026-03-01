@@ -29,9 +29,9 @@ function boolIcon(v: any): string {
 // IDs used by cluster control plane — these run as systemd services outside
 // the Globule service manager and are correct to have address=localhost.
 const CONTROL_PLANE_IDS = new Set([
-  'nodeagent.NodeAgentService',
-  'clustercontroller.ClusterControllerService',
-  'clusterdoctor.ClusterDoctorService',
+  'node_agent.NodeAgentService',
+  'cluster_controller.ClusterControllerService',
+  'cluster_doctor.ClusterDoctorService',
 ])
 
 function isControlPlane(s: ServiceDesc): boolean {
@@ -106,53 +106,6 @@ class PageServicesInstances extends HTMLElement {
           margin: 1.5rem 0 .5rem;
           color: var(--on-surface-color);
         }
-        .si-panel {
-          background:    var(--md-surface-container-low);
-          border:        1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-md);
-          box-shadow:    var(--md-elevation-1);
-          overflow:      hidden;
-          margin-bottom: 12px;
-        }
-        .si-panel-header {
-          padding:         10px 14px;
-          font:            var(--md-typescale-label-medium);
-          font-size:       .72rem;
-          text-transform:  uppercase;
-          letter-spacing:  .06em;
-          color:           var(--secondary-text-color);
-          background:      var(--md-surface-container);
-          border-bottom:   1px solid var(--border-subtle-color);
-          display:         flex;
-          align-items:     center;
-          justify-content: space-between;
-        }
-        .si-table {
-          width:           100%;
-          border-collapse: collapse;
-          font-size:       .72rem;
-        }
-        .si-table th {
-          text-align:     left;
-          padding:        7px 12px;
-          font-size:      .72rem;
-          font-weight:    700;
-          text-transform: uppercase;
-          letter-spacing: .05em;
-          color:          var(--secondary-text-color);
-          border-bottom:  1px solid var(--border-subtle-color);
-          background:     var(--md-surface-container);
-          white-space:    nowrap;
-        }
-        .si-table td {
-          padding:        6px 12px;
-          border-bottom:  1px solid var(--border-subtle-color);
-          vertical-align: middle;
-        }
-        .si-table tr:last-child td { border-bottom: none; }
-        .si-table tr.si-row { cursor: pointer; }
-        .si-table tr.si-row:hover td { background: var(--md-state-hover); }
-        .si-table tr.si-row.expanded td { background: var(--md-state-selected); }
         .si-name { font-weight: 600; }
         .si-mono { font-family: monospace; color: var(--secondary-text-color); }
         .si-detail td {
@@ -218,14 +171,14 @@ class PageServicesInstances extends HTMLElement {
         ${!this._loading && !this._loadError ? `
 
         <!-- ── Application services ────────────────────────── -->
-        <div class="si-panel">
-          <div class="si-panel-header">
+        <div class="md-panel">
+          <div class="md-panel-header">
             <span>Application Services (${appSvcs.length})</span>
             <span>${running} running</span>
           </div>
           ${appSvcs.length === 0
             ? `<p class="si-empty">No services registered.</p>`
-            : `<table class="si-table">
+            : `<table class="md-table">
                 <thead>
                   <tr>
                     <th></th>
@@ -247,14 +200,14 @@ class PageServicesInstances extends HTMLElement {
         </div>
 
         <!-- ── Cluster Control Plane ───────────────────────── -->
-        <div class="si-panel">
-          <div class="si-panel-header">
+        <div class="md-panel">
+          <div class="md-panel-header">
             <span>Cluster Control Plane (${cpSvcs.length})</span>
             <span>systemd-managed</span>
           </div>
           ${cpSvcs.length === 0
             ? `<p class="si-empty">No control-plane services detected.</p>`
-            : `<table class="si-table">
+            : `<table class="md-table">
                 <thead>
                   <tr>
                     <th></th>
@@ -287,7 +240,7 @@ class PageServicesInstances extends HTMLElement {
 
     this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
 
-    this.querySelectorAll<HTMLElement>('tr.si-row[data-svc-id]').forEach(el => {
+    this.querySelectorAll<HTMLElement>('tr.md-row[data-svc-id]').forEach(el => {
       el.addEventListener('click', () => {
         const id = el.dataset.svcId ?? ''
         this._expandedId = this._expandedId === id ? '' : id
@@ -331,7 +284,7 @@ class PageServicesInstances extends HTMLElement {
       : stateBadge(s.State ?? '')
 
     const row = `
-      <tr class="si-row${expanded ? ' expanded' : ''}" data-svc-id="${id}">
+      <tr class="md-row${expanded ? ' expanded' : ''}" data-svc-id="${id}">
         <td><span class="si-chevron${expanded ? ' open' : ''}">›</span></td>
         <td class="si-name">${s.Name || '—'}</td>
         <td>${domainBadge}</td>
@@ -384,7 +337,7 @@ class PageServicesInstances extends HTMLElement {
     const id       = s.Id ?? s.Name ?? ''
     const expanded = id === this._expandedId
     const row = `
-      <tr class="si-row${expanded ? ' expanded' : ''}" data-svc-id="${id}">
+      <tr class="md-row${expanded ? ' expanded' : ''}" data-svc-id="${id}">
         <td><span class="si-chevron${expanded ? ' open' : ''}">›</span></td>
         <td class="si-name">${s.Name || '—'}</td>
         <td class="si-mono">${s.Address || 'localhost'}</td>

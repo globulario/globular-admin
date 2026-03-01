@@ -1,12 +1,23 @@
 // packages/backend/src/cluster/cluster.ts
+//
+// Generated stubs in ../generated/cluster_controller/ are built from the local
+// cluster_controller.proto and include RPCs not yet in globular-web-client@1.2.17.
+// The old package is still imported for the unchanged RPCs to avoid churn.
 import { unary } from '../core/rpc'
 import { grpcWebHostUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'
-import * as clusterGrpc from 'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb'
-import * as cc from 'globular-web-client/clustercontroller/clustercontroller_pb'
-import * as planPb from 'globular-web-client/clustercontroller/plan_pb'
+import { normalizeError } from '../core/errors'
+import * as clusterGrpc    from 'globular-web-client/cluster_controller/clustercontroller_grpc_web_pb'
+import * as cc             from 'globular-web-client/cluster_controller/clustercontroller_pb'
+import * as planPb         from 'globular-web-client/cluster_controller/plan_pb'
 
 function ccClient(): clusterGrpc.ClusterControllerServiceClient {
+  const addr = grpcWebHostUrl()
+  return new clusterGrpc.ClusterControllerServiceClient(addr, null, { withCredentials: true })
+}
+
+// Generated client — used only for new RPCs not in globular-web-client@1.2.17.
+function genClient(): clusterGrpc.ClusterControllerServiceClient {
   const addr = grpcWebHostUrl()
   return new clusterGrpc.ClusterControllerServiceClient(addr, null, { withCredentials: true })
 }
@@ -230,6 +241,216 @@ export interface NodeServicePlan {
   planId:     string
   generation: number
   services:   DesiredServiceVM[]
+}
+
+// ─── Cluster Service Catalog ───────────────────────────────────────────────
+
+export interface ServiceCatalogEntry {
+  /** Canonical service name as known to the cluster controller */
+  serviceName:    string
+  /** Version the controller wants all nodes to run */
+  desiredVersion: string
+  /** Nodes already at the desired version */
+  nodesAtDesired: number
+  /** Total nodes that should run this service */
+  nodesTotal:     number
+  /** Nodes currently mid-upgrade */
+  upgrading:      number
+}
+
+/**
+ * Fetch the cluster-wide desired-service summary via GetClusterHealthV1.
+ * Returns null when the cluster controller is unreachable (RPC error).
+ * Returns an empty array when the controller is reachable but has no services planned.
+ */
+export async function getClusterServiceSummary(): Promise<ServiceCatalogEntry[] | null> {
+  try {
+    const md = metadata()
+    const rq = new cc.GetClusterHealthV1Request()
+    const rsp = await unary<cc.GetClusterHealthV1Request, cc.GetClusterHealthV1Response>(
+      ccClient, 'getClusterHealthV1', rq, undefined, md,
+    )
+    return (rsp.getServicesList?.() ?? []).map((s: any) => ({
+      serviceName:    s.getServiceName?.()    ?? '',
+      desiredVersion: s.getDesiredVersion?.() ?? '',
+      nodesAtDesired: s.getNodesAtDesired?.() ?? 0,
+      nodesTotal:     s.getNodesTotal?.()     ?? 0,
+      upgrading:      s.getUpgrading?.()      ?? 0,
+    }))
+  } catch {
+    return null
+  }
+}
+
+// ─── Desired-state management (typed proto RPCs) ──────────────────────────────
+//
+// These use the generated ClusterControllerService stubs from
+// ../generated/cluster_controller/ which are built from the local proto and
+// include RPCs not yet in globular-web-client@1.2.17.
+
+/** A single desired-service entry from the controller plan. */
+export interface DesiredEntry {
+  serviceId: string
+  version:   string
+  platform:  string
+}
+
+function toDesiredEntry(s: cc.DesiredService): DesiredEntry {
+  return { serviceId: s.getServiceId(), version: s.getVersion(), platform: s.getPlatform() }
+}
+
+/** Read the current desired-state plan from the controller. */
+export async function getDesiredState(): Promise<DesiredEntry[]> {
+  const md  = metadata()
+  const rq  = new (await import('google-protobuf/google/protobuf/empty_pb.js') as any).Empty()
+  const rsp = await unary<any, cc.DesiredState>(genClient, 'getDesiredState', rq, undefined, md)
+  return (rsp.getServicesList?.() ?? []).map(toDesiredEntry)
+}
+
+/** Upsert a single service into the desired-state plan. */
+export async function upsertDesiredService(serviceId: string, version: string): Promise<DesiredEntry[]> {
+  const md  = metadata()
+  const svc = new cc.DesiredService()
+  svc.setServiceId(serviceId)
+  svc.setVersion(version)
+  const rq  = new cc.UpsertDesiredServiceRequest()
+  rq.setService(svc)
+  const rsp = await unary<cc.UpsertDesiredServiceRequest, cc.DesiredState>(
+    genClient, 'upsertDesiredService', rq, undefined, md,
+  )
+  return (rsp.getServicesList?.() ?? []).map(toDesiredEntry)
+}
+
+/** Remove a service from the desired-state plan. */
+export async function removeDesiredService(serviceId: string): Promise<DesiredEntry[]> {
+  const md = metadata()
+  const rq = new cc.RemoveDesiredServiceRequest()
+  rq.setServiceId(serviceId)
+  const rsp = await unary<cc.RemoveDesiredServiceRequest, cc.DesiredState>(
+    genClient, 'removeDesiredService', rq, undefined, md,
+  )
+  return (rsp.getServicesList?.() ?? []).map(toDesiredEntry)
+}
+
+/** Seed desired state from installed services on the cluster. */
+export async function seedDesiredState(
+  mode: 'IMPORT_FROM_INSTALLED' | 'DEFAULT_CORE_PROFILE' = 'IMPORT_FROM_INSTALLED',
+): Promise<DesiredEntry[]> {
+  const md  = metadata()
+  const rq  = new cc.SeedDesiredStateRequest()
+  rq.setMode(mode === 'IMPORT_FROM_INSTALLED'
+    ? cc.SeedDesiredStateRequest.Mode.IMPORT_FROM_INSTALLED
+    : cc.SeedDesiredStateRequest.Mode.DEFAULT_CORE_PROFILE)
+  const rsp = await unary<cc.SeedDesiredStateRequest, cc.DesiredState>(
+    genClient, 'seedDesiredState', rq, undefined, md,
+  )
+  return (rsp.getServicesList?.() ?? []).map(toDesiredEntry)
+}
+
+/** Trigger reconciliation on all known nodes.
+ *  Throws an error listing every per-node failure so callers can surface them in the UI.
+ */
+export async function triggerReconcileAll(nodeIds: string[]): Promise<void> {
+  if (nodeIds.length === 0) return
+  const md = metadata()
+  const results = await Promise.allSettled(
+    nodeIds.map(nodeId => {
+      const rq = new cc.ReconcileNodeV1Request()
+      rq.setNodeId(nodeId)
+      return unary<cc.ReconcileNodeV1Request, cc.ReconcileNodeV1Response>(
+        ccClient, 'reconcileNodeV1', rq, undefined, md,
+      )
+    })
+  )
+  const failures = results
+    .map((r, i) => r.status === 'rejected'
+      ? `${nodeIds[i]}: ${normalizeError((r as PromiseRejectedResult).reason).message}`
+      : null)
+    .filter((msg): msg is string => msg !== null)
+  if (failures.length > 0) {
+    throw new Error(`Reconcile failed on ${failures.length} node(s) — ${failures.join('; ')}`)
+  }
+}
+
+// ─── Validation + Dry-run ────────────────────────────────────────────────────
+
+export interface ValidationIssue { severity: 'ERROR' | 'WARNING'; message: string }
+export interface ValidationReport {
+  checksumOk:      boolean
+  signatureStatus: string
+  platformOk:      boolean
+  issues:          ValidationIssue[]
+}
+
+export async function validateArtifact(
+  serviceId: string,
+  version:   string,
+  targetNodeIds: string[] = [],
+): Promise<ValidationReport> {
+  const md = metadata()
+  const rq = new cc.ValidateArtifactRequest()
+  rq.setServiceId(serviceId)
+  rq.setVersion(version)
+  rq.setTargetNodeIdsList(targetNodeIds)
+  const rsp = await unary<cc.ValidateArtifactRequest, cc.ValidationReport>(
+    genClient, 'validateArtifact', rq, undefined, md,
+  )
+  return {
+    checksumOk:      rsp.getChecksumOk(),
+    signatureStatus: rsp.getSignatureStatus(),
+    platformOk:      rsp.getPlatformOk(),
+    issues: (rsp.getIssuesList?.() ?? []).map((i: cc.ValidationIssue) => ({
+      severity: i.getSeverity() === cc.ValidationIssue.Severity.ERROR ? 'ERROR' : 'WARNING',
+      message:  i.getMessage(),
+    })),
+  }
+}
+
+export interface NodeChange { nodeId: string; willInstall: string[]; willRemove: string[]; warnings: string[] }
+export interface PlanPreview { nodeChanges: NodeChange[]; blockingIssues: ValidationIssue[] }
+
+export async function previewDesiredServices(
+  upserts:  Array<{ serviceId: string; version: string }>,
+  removals: string[],
+): Promise<PlanPreview> {
+  const md    = metadata()
+  const rq    = new cc.DesiredServicesDelta()
+  const svcs  = upserts.map(u => {
+    const s = new cc.DesiredService(); s.setServiceId(u.serviceId); s.setVersion(u.version); return s
+  })
+  rq.setUpsertsList(svcs)
+  rq.setRemovalsList(removals)
+  const rsp = await unary<cc.DesiredServicesDelta, cc.PlanPreview>(
+    genClient, 'previewDesiredServices', rq, undefined, md,
+  )
+  return {
+    nodeChanges: (rsp.getNodeChangesList?.() ?? []).map((n: cc.NodeChange) => ({
+      nodeId:      n.getNodeId(),
+      willInstall: n.getWillInstallList(),
+      willRemove:  n.getWillRemoveList(),
+      warnings:    n.getWarningsList(),
+    })),
+    blockingIssues: (rsp.getBlockingIssuesList?.() ?? []).map((i: cc.ValidationIssue) => ({
+      severity: i.getSeverity() === cc.ValidationIssue.Severity.ERROR ? 'ERROR' : 'WARNING',
+      message:  i.getMessage(),
+    })),
+  }
+}
+
+// Backward-compat shim — the catalog page used this name before the typed RPCs.
+/** @deprecated Use upsertDesiredService instead. */
+export async function applyServiceDesiredVersion(name: string, version: string): Promise<void> {
+  await upsertDesiredService(name, version)
+}
+
+/** @deprecated Use seedDesiredState instead. */
+export async function seedDesiredStateFromInstalled(
+  services: Array<{ name: string; version: string }>,
+): Promise<number> {
+  const results = await Promise.allSettled(
+    services.map(s => upsertDesiredService(s.name, s.version))
+  )
+  return results.filter(r => r.status === 'fulfilled').length
 }
 
 /** Fetch the desired-state plan for a single node from ClusterController. */

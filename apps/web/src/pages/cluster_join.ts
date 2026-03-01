@@ -66,41 +66,6 @@ class PageClusterJoin extends HTMLElement {
         .cj-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
         .cj-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
         .cj-subtitle { margin: 0.25rem 0 1.25rem; opacity: .85; font-size: .88rem; }
-        .cj-panel {
-          background: var(--md-surface-container-low);
-          border: 1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-md);
-          box-shadow: var(--md-elevation-1);
-          overflow: hidden;
-          margin-bottom: 16px;
-        }
-        .cj-panel-hdr {
-          padding: 10px 14px;
-          font: var(--md-typescale-label-medium);
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          background: var(--md-surface-container);
-          border-bottom: 1px solid var(--border-subtle-color);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 6px;
-        }
-        .cj-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
-        .cj-table th {
-          text-align: left;
-          padding: 8px 12px;
-          font-size: .71rem;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          border-bottom: 1px solid var(--border-subtle-color);
-        }
-        .cj-table td { padding: 9px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
-        .cj-table tr:last-child td { border-bottom: none; }
         .cj-mono { font-family: monospace; font-size: .78rem; color: var(--secondary-text-color); }
         .cj-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
         .cj-btn {
@@ -220,7 +185,7 @@ sudo globular cluster token create --controller <CONTROLLER_IP>:12000 --insecure
 > - \`connection refused\` — wrong IP or port. Use \`ip addr show\` to find the
 >   LAN IP, and verify the controller is listening: \`ss -tlnp | grep 12000\`.
 >
-> - \`unknown service clustercontroller.ClusterControllerService\` — wrong port.
+> - \`unknown service cluster_controller.ClusterControllerService\` — wrong port.
 >   The ClusterController listens on port **12000**, not 10000.
 >
 > - \`tls: first record does not look like a TLS handshake\` — the server is not
@@ -432,15 +397,15 @@ the cluster default. Common values:
       ${this._loadError ? `<div class="md-banner-warn">⚠ ${this._loadError}</div>` : ''}
 
       <!-- Pending requests -->
-      <div class="cj-panel">
-        <div class="cj-panel-hdr">
+      <div class="md-panel">
+        <div class="md-panel-header">
           <span>Pending (${pending.length})</span>
         </div>
         ${this._loading
           ? `<p class="cj-empty">Loading…</p>`
           : pending.length === 0
             ? `<p class="cj-empty">No pending join requests.</p>`
-            : `<table class="cj-table">
+            : `<table class="md-table">
                 <thead>
                   <tr>
                     <th>Hostname</th>
@@ -460,11 +425,11 @@ the cluster default. Common values:
 
       <!-- Recent (approved / rejected) -->
       ${other.length > 0 ? `
-      <div class="cj-panel">
-        <div class="cj-panel-hdr">
+      <div class="md-panel">
+        <div class="md-panel-header">
           <span>Recent (${other.length})</span>
         </div>
-        <table class="cj-table">
+        <table class="md-table">
           <thead>
             <tr>
               <th>Hostname</th>
@@ -488,8 +453,8 @@ the cluster default. Common values:
       </div>` : ''}
 
       <!-- Join token generator -->
-      <div class="cj-panel">
-        <div class="cj-panel-hdr">
+      <div class="md-panel">
+        <div class="md-panel-header">
           <span>Join Token</span>
           <button class="cj-btn" id="btnCreateToken" ${this._tokenLoading ? 'disabled' : ''}>
             ${this._tokenLoading ? 'Generating…' : '+ Generate Token'}

@@ -135,40 +135,6 @@ class PageClusterReconciliation extends HTMLElement {
           margin-bottom: 4px;
         }
         .cr-stat-value { font-size: 1.8rem; font-weight: 800; line-height: 1; }
-        .cr-panel {
-          background: var(--md-surface-container-low);
-          border: 1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-md);
-          box-shadow: var(--md-elevation-1);
-          overflow: hidden;
-          margin-bottom: 16px;
-        }
-        .cr-panel-header {
-          padding: 10px 14px;
-          font: var(--md-typescale-label-medium);
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          background: var(--md-surface-container);
-          border-bottom: 1px solid var(--border-subtle-color);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .cr-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
-        .cr-table th {
-          text-align: left;
-          padding: 8px 12px;
-          font-size: .71rem;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          border-bottom: 1px solid var(--border-subtle-color);
-        }
-        .cr-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
-        .cr-table tr:last-child td { border-bottom: none; }
-        .cr-table tr:hover td { background: var(--md-state-hover); }
         .cr-mono { font-family: monospace; font-size: .78rem; }
         .cr-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
         .cr-btn-refresh {
@@ -206,7 +172,7 @@ class PageClusterReconciliation extends HTMLElement {
         ${this._loadError ? `
         <div class="md-banner-warn">
           ⚠ Could not load nodes — ${this._loadError}
-          <br><span style="font-size:.8em;opacity:.8">Ensure <code>clustercontroller.ClusterControllerService</code> is reachable.</span>
+          <br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>
         </div>
         ` : ''}
 
@@ -230,12 +196,12 @@ class PageClusterReconciliation extends HTMLElement {
           const items = row.report?.items ?? []
           if (!row.report || items.length === 0) return ''
           return `
-          <div class="cr-panel">
-            <div class="cr-panel-header">
+          <div class="md-panel">
+            <div class="md-panel-header">
               <span>${row.node.hostname || row.node.nodeId}</span>
               <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}</span>
             </div>
-            <table class="cr-table">
+            <table class="md-table">
               <thead>
                 <tr>
                   <th>Category</th>
@@ -244,7 +210,7 @@ class PageClusterReconciliation extends HTMLElement {
                   <th>Actual</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody class="md-interactive">
                 ${items.map((item: DriftItem) => {
                   const color = driftCategoryColor(item.category)
                   const label = driftCategoryLabel(item.category)
@@ -262,7 +228,7 @@ class PageClusterReconciliation extends HTMLElement {
         }).join('')}
 
         ${!this._loading && this._rows.every(r => !r.report || r.report.items.length === 0) ? `
-        <div class="cr-panel">
+        <div class="md-panel">
           <p class="cr-empty">✓ No drift detected — all nodes are in the desired state.</p>
         </div>
         ` : ''}

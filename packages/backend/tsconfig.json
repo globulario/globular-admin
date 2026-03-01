@@ -14,7 +14,8 @@
     "declaration": true,
     "declarationMap": true,
     "paths": {
-      "clusterdoctor-proto/*": ["../../../services/typescript/dist/clusterdoctor/*"]
+      "cluster-doctor-proto/*": ["../../../services/typescript/dist/cluster_doctor/*"],
+      "globular-web-client/*": ["../../../services/typescript/dist/*"]
     }
   },
   "include": ["src"],

@@ -70,12 +70,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
-        '/clustercontroller.ClusterControllerService': {
+        '/cluster_controller.ClusterControllerService': {
           target,
           changeOrigin: true,
           secure: false,
         },
-        '/clusterdoctor.ClusterDoctorService': {
+        '/cluster_doctor.ClusterDoctorService': {
           target,
           changeOrigin: true,
           secure: false,
@@ -86,8 +86,8 @@ export default defineConfig(({ mode }) => {
     // symlinked globular-web-client package that Vite would otherwise skip.
     optimizeDeps: {
       include: [
-        'clusterdoctor-proto/clusterdoctor_grpc_web_pb',
-        'clusterdoctor-proto/clusterdoctor_pb',
+        'cluster-doctor-proto/clusterdoctor_grpc_web_pb',
+        'cluster-doctor-proto/clusterdoctor_pb',
         'globular-web-client/admin/admin_grpc_web_pb',
         'globular-web-client/admin/admin_pb',
         'globular-web-client/applications_manager/applications_manager_grpc_web_pb',
@@ -96,11 +96,11 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/authentication/authentication_pb',
         'globular-web-client/blog/blog_grpc_web_pb',
         'globular-web-client/blog/blog_pb',
-        'globular-web-client/clustercontroller/clustercontroller_grpc_web_pb',
-        'globular-web-client/clustercontroller/clustercontroller_pb',
-        'globular-web-client/clustercontroller/plan_pb',
-        'globular-web-client/clusterdoctor/clusterdoctor_grpc_web_pb',
-        'globular-web-client/clusterdoctor/clusterdoctor_pb',
+        'globular-web-client/cluster_controller/clustercontroller_grpc_web_pb',
+        'globular-web-client/cluster_controller/clustercontroller_pb',
+        'globular-web-client/cluster_controller/plan_pb',
+        'globular-web-client/cluster_doctor/clusterdoctor_grpc_web_pb',
+        'globular-web-client/cluster_doctor/clusterdoctor_pb',
         'globular-web-client/conversation/conversation_grpc_web_pb',
         'globular-web-client/conversation/conversation_pb',
         'globular-web-client/discovery/discovery_grpc_web_pb',
@@ -131,18 +131,22 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        'clusterdoctor-proto': path.resolve(process.cwd(), 'services/typescript/dist/clusterdoctor'),
+        'cluster-doctor-proto': path.resolve(process.cwd(), 'services/typescript/dist/cluster_doctor'),
       },
     },
     build: {
       outDir: 'dist',
       sourcemap: true,
       target: 'es2020',
-      // The clusterdoctor-proto workspace package symlinks to packages/clusterdoctor-proto,
+      // The cluster-doctor-proto workspace package symlinks to packages/cluster-doctor-proto,
       // which resolves outside node_modules. Include it explicitly so Rollup's CJS plugin
       // converts require()/module.exports to ESM, matching globular-web-client behaviour.
+      //
+      // Also include services/typescript/dist: pnpm resolves the globular-web-client symlink
+      // to its real path, placing it outside node_modules. Without this pattern Rollup's CJS
+      // plugin skips these files and goog.object.extend exports are not statically analysable.
       commonjsOptions: {
-        include: [/clusterdoctor-proto/, /node_modules/],
+        include: [/cluster-doctor-proto/, /node_modules/, /services[\\/]typescript[\\/]dist/],
       },
     },
   }

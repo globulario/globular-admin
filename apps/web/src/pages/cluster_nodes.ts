@@ -136,42 +136,6 @@ class PageClusterNodes extends HTMLElement {
         .cn-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
         .cn-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
         .cn-subtitle { margin: 0.25rem 0 1rem; opacity: .85; font: var(--md-typescale-body-medium); }
-        .cn-panel {
-          background:    var(--md-surface-container-low);
-          border:        1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-md);
-          box-shadow:    var(--md-elevation-1);
-          overflow:      hidden;
-          margin-bottom: 16px;
-        }
-        .cn-panel-header {
-          padding:        10px 14px;
-          font:           var(--md-typescale-label-medium);
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color:          var(--secondary-text-color);
-          background:     var(--md-surface-container);
-          border-bottom:  1px solid var(--border-subtle-color);
-          display:        flex;
-          align-items:    center;
-          justify-content: space-between;
-        }
-        .cn-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); font-size: .72rem; }
-        .cn-table th {
-          text-align:     left;
-          padding:        8px 12px;
-          font:           var(--md-typescale-label-medium);
-          font-size:      .72rem;
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color:          var(--secondary-text-color);
-          border-bottom:  1px solid var(--border-subtle-color);
-        }
-        .cn-table td { padding: 9px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
-        .cn-table tr:last-child td { border-bottom: none; }
-        .cn-table tbody tr { cursor: pointer; }
-        .cn-table tbody tr:hover   td { background: var(--md-state-hover); }
-        .cn-table tbody tr.selected td { background: var(--md-state-selected); }
         .cn-node-id  { font-family: monospace; font-size: .78rem; color: var(--secondary-text-color); }
         .cn-hostname { font-weight: 600; }
         .cn-empty { padding: 14px; font: var(--md-typescale-body-medium); font-style: italic; color: var(--secondary-text-color); }
@@ -193,18 +157,6 @@ class PageClusterNodes extends HTMLElement {
           overflow:      hidden;
           margin-bottom: 16px;
         }
-        .cn-findings-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
-        .cn-findings-table th {
-          text-align:     left;
-          padding:        7px 12px;
-          font:           var(--md-typescale-label-medium);
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color:          var(--secondary-text-color);
-          border-bottom:  1px solid var(--border-subtle-color);
-        }
-        .cn-findings-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
-        .cn-findings-table tr:last-child td { border-bottom: none; }
         .cn-kv-list { font-size: .75rem; font-family: monospace; color: var(--secondary-text-color); }
         .cn-warn-banner { /* now use global .md-banner-warn */ }
       </style>
@@ -222,17 +174,17 @@ class PageClusterNodes extends HTMLElement {
         ${this._loadError ? `
         <div class="md-banner-warn">
           ⚠ Could not load nodes — ${this._loadError}
-          <br><span style="font-size:.8em;opacity:.8">Ensure <code>clustercontroller.ClusterControllerService</code> is reachable.</span>
+          <br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>
         </div>
         ` : ''}
 
         ${!this._loading && !this._loadError ? `
-        <div class="cn-panel">
-          <div class="cn-panel-header">
+        <div class="md-panel">
+          <div class="md-panel-header">
             <span>Nodes (${this._rows.length})</span>
           </div>
           ${this._rows.length > 0 ? `
-          <table class="cn-table">
+          <table class="md-table">
             <thead>
               <tr>
                 <th>Hostname</th>
@@ -244,7 +196,7 @@ class PageClusterNodes extends HTMLElement {
                 <th>Worst Severity</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="md-interactive">
               ${this._rows.map(row => {
                 const r = row.report
                 const wSev = r ? worstSeverity(r.findings) : 0
@@ -283,7 +235,7 @@ class PageClusterNodes extends HTMLElement {
     this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
 
     // Row click → show findings detail
-    this.querySelectorAll('.cn-table tbody tr[data-node-id]').forEach(tr => {
+    this.querySelectorAll('.md-table tbody tr[data-node-id]').forEach(tr => {
       tr.addEventListener('click', () => {
         const nodeId = (tr as HTMLElement).dataset.nodeId ?? ''
         this._selectedNodeId = this._selectedNodeId === nodeId ? '' : nodeId
@@ -291,7 +243,7 @@ class PageClusterNodes extends HTMLElement {
         this._saveError = ''
         this.renderDetail()
         // Update selected highlight without full re-render
-        this.querySelectorAll('.cn-table tbody tr[data-node-id]').forEach(r => {
+        this.querySelectorAll('.md-table tbody tr[data-node-id]').forEach(r => {
           r.classList.toggle('selected', (r as HTMLElement).dataset.nodeId === this._selectedNodeId)
         })
       })
@@ -315,8 +267,8 @@ class PageClusterNodes extends HTMLElement {
     const r = row.report
     if (!r) {
       el.innerHTML = `
-        <div class="cn-panel">
-          <div class="cn-panel-header"><span>Findings — ${row.node.hostname || this._selectedNodeId}</span></div>
+        <div class="md-panel">
+          <div class="md-panel-header"><span>Findings — ${row.node.hostname || this._selectedNodeId}</span></div>
           <p class="cn-empty">ClusterDoctor unavailable for this node: ${row.error}</p>
         </div>`
       return
@@ -344,7 +296,7 @@ class PageClusterNodes extends HTMLElement {
 
     el.innerHTML = `
       <div class="cn-detail-panel">
-        <div class="cn-panel-header">
+        <div class="md-panel-header">
           <span>Findings — ${row.node.hostname || this._selectedNodeId}</span>
           <span style="font-size:.78rem;font-weight:400">${r.findings.length} finding${r.findings.length !== 1 ? 's' : ''} · heartbeat ${ageLabel(r.heartbeatAgeSeconds)} ago</span>
         </div>
@@ -359,7 +311,7 @@ class PageClusterNodes extends HTMLElement {
           </div>
         </div>
         ${r.findings.length > 0 ? `
-        <table class="cn-findings-table">
+        <table class="md-table">
           <thead>
             <tr>
               <th>Severity</th>

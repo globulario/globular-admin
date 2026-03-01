@@ -182,13 +182,6 @@ class PageDashboard extends HTMLElement {
         .panel-body.no-pad { padding:0; }
 
         /* ── node health table ── */
-        table { width:100%; border-collapse:collapse; font: var(--md-typescale-body-small); }
-        th { text-align:left; padding:8px 12px; font-size:.72rem; font-weight:700;
-             text-transform:uppercase; letter-spacing:.06em;
-             color:var(--secondary-text-color); border-bottom:1px solid var(--border-subtle-color); }
-        td { padding:9px 12px; border-bottom:1px solid var(--border-subtle-color); vertical-align:middle; }
-        tr:last-child td { border-bottom:none; }
-        tr:hover td { background: var(--md-state-hover); }
         .hostname { font-weight:600; }
         .failed-checks { font-size:.75rem; color:var(--error-color); }
 
@@ -244,7 +237,7 @@ class PageDashboard extends HTMLElement {
           ⚠ ClusterController service not reachable —
           <span style="font-family:monospace;font-size:.8em">${this._healthError}</span>
           <br><span style="font-size:.8em;opacity:.8">
-            Ensure the <code>clustercontroller.ClusterControllerService</code> subdomain is
+            Ensure the <code>cluster_controller.ClusterControllerService</code> subdomain is
             registered in the Envoy/xDS routing on your cluster.
           </span>
         </div>
@@ -288,7 +281,7 @@ class PageDashboard extends HTMLElement {
               </div>
               <div class="panel-body no-pad">
                 ${h && h.nodes.length > 0 && !serviceUnavailable ? `
-                <table>
+                <table class="md-table">
                   <thead>
                     <tr>
                       <th>Hostname</th>
@@ -297,7 +290,7 @@ class PageDashboard extends HTMLElement {
                       <th>Last Seen</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody class="md-interactive">
                     ${h.nodes.map(n => `
                     <tr>
                       <td class="hostname">${n.hostname || n.nodeId}</td>
@@ -326,9 +319,9 @@ class PageDashboard extends HTMLElement {
                 Drift & Inventory Issues
               </div>
               <div class="panel-body no-pad">
-                <table>
+                <table class="md-table">
                   <thead><tr><th>Hostname</th><th>Problem</th><th>Detail</th></tr></thead>
-                  <tbody>
+                  <tbody class="md-interactive">
                     ${degraded.map(n => `
                     <tr>
                       <td class="hostname">${n.hostname || n.nodeId}</td>
