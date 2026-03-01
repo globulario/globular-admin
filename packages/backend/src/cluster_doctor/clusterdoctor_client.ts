@@ -2,8 +2,8 @@
 import { unary } from '../core/rpc'
 import { grpcWebHostUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'
-import * as cdGrpc from 'globular-web-client/cluster_doctor/clusterdoctor_grpc_web_pb'
-import * as cd from 'globular-web-client/cluster_doctor/clusterdoctor_pb'
+import * as cdGrpc from 'globular-web-client/cluster_doctor/cluster_doctor_grpc_web_pb'
+import * as cd from 'globular-web-client/cluster_doctor/cluster_doctor_pb'
 
 export { cd as clusterdoctorpb }
 

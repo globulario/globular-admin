@@ -7,8 +7,8 @@ import { unary } from '../core/rpc'
 import { grpcWebHostUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'
 import { normalizeError } from '../core/errors'
-import * as clusterGrpc    from 'globular-web-client/cluster_controller/clustercontroller_grpc_web_pb'
-import * as cc             from 'globular-web-client/cluster_controller/clustercontroller_pb'
+import * as clusterGrpc    from 'globular-web-client/cluster_controller/cluster_controller_grpc_web_pb'
+import * as cc             from 'globular-web-client/cluster_controller/cluster_controller_pb'
 import * as planPb         from 'globular-web-client/cluster_controller/plan_pb'
 
 function ccClient(): clusterGrpc.ClusterControllerServiceClient {

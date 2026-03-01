@@ -3,8 +3,8 @@ import { getConfig, requireBaseUrl, grpcWebHostUrl } from './endpoints'
 import { unary } from './rpc'
 import { metadata } from './auth'
 
-import * as clusterGrpc from 'globular-web-client/cluster_controller/clustercontroller_grpc_web_pb'
-import * as clustercontrollerpb from 'globular-web-client/cluster_controller/clustercontroller_pb'
+import * as clusterGrpc from 'globular-web-client/cluster_controller/cluster_controller_grpc_web_pb'
+import * as clustercontrollerpb from 'globular-web-client/cluster_controller/cluster_controller_pb'
 
 function ccClient(): clusterGrpc.ClusterControllerServiceClient {
   return new clusterGrpc.ClusterControllerServiceClient(

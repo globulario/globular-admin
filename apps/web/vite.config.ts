@@ -86,8 +86,8 @@ export default defineConfig(({ mode }) => {
     // symlinked globular-web-client package that Vite would otherwise skip.
     optimizeDeps: {
       include: [
-        'cluster-doctor-proto/clusterdoctor_grpc_web_pb',
-        'cluster-doctor-proto/clusterdoctor_pb',
+        'cluster-doctor-proto/cluster_doctor_grpc_web_pb',
+        'cluster-doctor-proto/cluster_doctor_pb',
         'globular-web-client/admin/admin_grpc_web_pb',
         'globular-web-client/admin/admin_pb',
         'globular-web-client/applications_manager/applications_manager_grpc_web_pb',
@@ -96,11 +96,11 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/authentication/authentication_pb',
         'globular-web-client/blog/blog_grpc_web_pb',
         'globular-web-client/blog/blog_pb',
-        'globular-web-client/cluster_controller/clustercontroller_grpc_web_pb',
-        'globular-web-client/cluster_controller/clustercontroller_pb',
+        'globular-web-client/cluster_controller/cluster_controller_grpc_web_pb',
+        'globular-web-client/cluster_controller/cluster_controller_pb',
         'globular-web-client/cluster_controller/plan_pb',
-        'globular-web-client/cluster_doctor/clusterdoctor_grpc_web_pb',
-        'globular-web-client/cluster_doctor/clusterdoctor_pb',
+        'globular-web-client/cluster_doctor/cluster_doctor_grpc_web_pb',
+        'globular-web-client/cluster_doctor/cluster_doctor_pb',
         'globular-web-client/conversation/conversation_grpc_web_pb',
         'globular-web-client/conversation/conversation_pb',
         'globular-web-client/discovery/discovery_grpc_web_pb',
