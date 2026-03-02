@@ -185,7 +185,6 @@ class PageServicesInstances extends HTMLElement {
                     <th>Name</th>
                     <th>Domain</th>
                     <th>Port</th>
-                    <th>Proxy</th>
                     <th>State</th>
                     <th>PID</th>
                     <th>Version</th>
@@ -253,7 +252,7 @@ class PageServicesInstances extends HTMLElement {
       btn.addEventListener('click', e => {
         e.stopPropagation()
         const id = btn.dataset.fixDomain!
-        this.patchService({ Id: id, Domain: 'globular.internal', PublisherID: 'globular.internal' })
+        this.patchService({ Id: id, Domain: 'globular.internal' })
       })
     })
 
@@ -289,7 +288,6 @@ class PageServicesInstances extends HTMLElement {
         <td class="si-name">${s.Name || '—'}</td>
         <td>${domainBadge}</td>
         <td class="si-mono">${s.Port   || '—'}</td>
-        <td class="si-mono">${s.Proxy  || '—'}</td>
         <td>${stateBadgeHtml}</td>
         <td class="si-mono">${pid || '—'}</td>
         <td class="si-mono">${s.Version || '—'}</td>
@@ -316,14 +314,14 @@ class PageServicesInstances extends HTMLElement {
 
     const detail = `
       <tr class="si-detail">
-        <td colspan="9">
+        <td colspan="8">
           <div class="si-detail-inner">
             ${kv('ID',              s.Id)}
             ${kv('Description',     s.Description)}
             ${kv('Address',         s.Address)}
             ${kv('TLS',             s.TLS != null ? String(s.TLS) : null)}
             ${kv('Keep up to date', s.KeepUpToDate != null ? String(s.KeepUpToDate) : null)}
-            ${kv('Publisher',       s.PublisherID)}
+            ${kv('Publisher',       s.PublisherID && s.PublisherID !== 'localhost' ? s.PublisherID : null)}
             ${kv('Config path',     s.ConfigPath)}
           </div>
           ${actions}
