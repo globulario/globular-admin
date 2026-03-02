@@ -1810,8 +1810,14 @@ export class VideoPlayer extends HTMLElement {
         return
       }
 
+      const initialHlsStart = (typeof this._pendingSeekTime === 'number' && !Number.isNaN(this._pendingSeekTime) && this._pendingSeekTime >= 0)
+        ? this._pendingSeekTime
+        : null
+
       this.hls = new Hls({
         loader: makeTokenLoader(),
+        autoStartLoad: false, // we will manually start loading after wiring resume position
+        startPosition: initialHlsStart ?? -1, // -1 lets hls.js choose start; otherwise resume point
         // Always read the latest token from sessionStorage — never capture a
         // closure reference that becomes stale after a background refresh.
         xhrSetup: (xhr) => {
@@ -1886,6 +1892,10 @@ export class VideoPlayer extends HTMLElement {
         this.hls.loadSource(hlsSrc)
         this.hls.attachMedia(this.videoElement)
         this._initHlsSeekHandling()
+        // Kick off loading from the resume point if known; otherwise hls.js
+        // will use the default startPosition we set above (or 0).
+        if (initialHlsStart !== null) this.hls.startLoad(initialHlsStart)
+        else this.hls.startLoad()
       }
       if (serverWait > 0) setTimeout(startHls, serverWait)
       else startHls()

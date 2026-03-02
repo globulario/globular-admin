@@ -131,7 +131,12 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        'cluster-doctor-proto': path.resolve(process.cwd(), 'services/typescript/dist/cluster_doctor'),
+        // globular-web-client is only symlinked inside packages/components and
+        // packages/backend node_modules, not at the workspace root.  Without
+        // this alias Vite cannot pre-bundle the CJS proto stubs and serves
+        // them directly via /@fs/, which breaks named ESM imports.
+        'globular-web-client': path.resolve(__dirname, '../../../services/typescript/dist'),
+        'cluster-doctor-proto': path.resolve(__dirname, '../../../services/typescript/dist/cluster_doctor'),
       },
     },
     build: {

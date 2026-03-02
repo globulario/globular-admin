@@ -8,6 +8,7 @@ import {
   getClusterHealth, type ClusterHealth,
   listClusterNodes,
   getDriftReport, type DriftReport,
+  getClusterHealthV1Full, type NodeHealthV1,
   explainFinding, type FindingExplanation,
 } from '@globular/backend'
 
@@ -92,6 +93,7 @@ class PageClusterOverview extends HTMLElement {
   private _report: ClusterReport | null = null
   private _health: ClusterHealth | null = null
   private _drift: DriftReport | null = null
+  private _nodeHealths: NodeHealthV1[] = []
   private _incompleteNodes = 0
 
   private _reportError = ''
@@ -147,11 +149,12 @@ class PageClusterOverview extends HTMLElement {
     this._explanation = null
     this.renderExplain()
 
-    const [reportRes, healthRes, driftRes, nodesRes] = await Promise.allSettled([
+    const [reportRes, healthRes, driftRes, nodesRes, healthV1Res] = await Promise.allSettled([
       getClusterReport(),
       getClusterHealth(),
       getDriftReport(),
       listClusterNodes(),
+      getClusterHealthV1Full(),
     ])
 
     this._report = reportRes.status === 'fulfilled' ? reportRes.value : null
@@ -168,6 +171,9 @@ class PageClusterOverview extends HTMLElement {
 
     this._incompleteNodes = nodesRes.status === 'fulfilled'
       ? nodesRes.value.filter(n => !n.inventoryComplete).length : 0
+
+    this._nodeHealths = (healthV1Res.status === 'fulfilled' && healthV1Res.value)
+      ? healthV1Res.value.nodeHealths : []
 
     this._loading = false
     this.renderDoctor()
@@ -267,42 +273,6 @@ class PageClusterOverview extends HTMLElement {
           flex-direction: column;
           gap: 6px;
         }
-        .ov-panel {
-          background: var(--md-surface-container-low);
-          border: 1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-md);
-          box-shadow: var(--md-elevation-1);
-          overflow: hidden;
-          margin-bottom: 16px;
-        }
-        .ov-panel-hdr {
-          padding: 10px 14px;
-          font: var(--md-typescale-label-medium);
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          background: var(--md-surface-container);
-          border-bottom: 1px solid var(--border-subtle-color);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .ov-table { width: 100%; border-collapse: collapse; font: var(--md-typescale-body-small); }
-        .ov-table th {
-          text-align: left;
-          padding: 8px 12px;
-          font-size: .71rem;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color: var(--secondary-text-color);
-          border-bottom: 1px solid var(--border-subtle-color);
-        }
-        .ov-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle-color); vertical-align: middle; }
-        .ov-table tr:last-child td { border-bottom: none; }
-        .ov-table tbody tr[data-fid] { cursor: pointer; }
-        .ov-table tbody tr[data-fid]:hover td { background: var(--md-state-hover); }
-        .ov-table tbody tr[data-fid].selected td { background: var(--md-state-selected); }
         .ov-empty { padding: 14px; font-size: .85rem; font-style: italic; color: var(--secondary-text-color); }
         .ov-btn {
           border: 1px solid var(--border-subtle-color);
@@ -373,7 +343,7 @@ class PageClusterOverview extends HTMLElement {
 
       <!-- Drift -->
       <p class="ov-section-label">Drift</p>
-      <div class="ov-row-drift">
+      <div class="ov-row-drift" style="grid-template-columns:1fr 1fr 1fr">
         <div class="ov-card">
           <div class="ov-card-label">Total Drift Items</div>
           <div class="ov-card-value" style="color:${d && d.totalDriftCount > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${d ? d.totalDriftCount : '—'}</div>
@@ -387,16 +357,27 @@ class PageClusterOverview extends HTMLElement {
           <div class="ov-card-value" style="color:${affectedNodes > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${d ? affectedNodes : '—'}</div>
           <div class="ov-card-sub">${d ? 'with drifted services' : 'unavailable'}</div>
         </div>
+        ${(() => {
+          const privCount = this._nodeHealths.filter(nh =>
+            !nh.canApplyPrivileged && nh.desiredServicesHash && nh.desiredServicesHash !== nh.appliedServicesHash
+          ).length
+          return `
+          <div class="ov-card">
+            <div class="ov-card-label">Needs Privileged Apply</div>
+            <div class="ov-card-value" style="color:${privCount > 0 ? '#f97316' : 'var(--secondary-text-color)'}">${privCount}</div>
+            <div class="ov-card-sub">${privCount > 0 ? 'run apply-desired on node' : 'all nodes can self-apply'}</div>
+          </div>`
+        })()}
       </div>
 
       <!-- Findings table -->
-      <div class="ov-panel">
-        <div class="ov-panel-hdr">
+      <div class="md-panel">
+        <div class="md-panel-header">
           <span>Top Findings${r ? ` (${r.findings.length})` : ''}</span>
           <button class="ov-btn" id="btnRefresh">↻ Refresh</button>
         </div>
         ${topFindings.length > 0 ? `
-        <table class="ov-table">
+        <table class="md-table">
           <thead>
             <tr>
               <th>Severity</th>
@@ -406,7 +387,7 @@ class PageClusterOverview extends HTMLElement {
               <th>Summary</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class="md-interactive">
             ${topFindings.map((f: Finding) => `
             <tr data-fid="${f.findingId}" class="${f.findingId === this._selectedFindingId ? 'selected' : ''}" title="Click to explain">
               <td>${badge(sevLabel(f.severity), sevColor(f.severity))}</td>
@@ -426,7 +407,7 @@ class PageClusterOverview extends HTMLElement {
 
     el.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
 
-    el.querySelectorAll<HTMLElement>('.ov-table tbody tr[data-fid]').forEach(tr => {
+    el.querySelectorAll<HTMLElement>('.md-table tbody tr[data-fid]').forEach(tr => {
       tr.addEventListener('click', () => {
         const fid = tr.dataset.fid ?? ''
         if (this._selectedFindingId === fid) {
@@ -436,7 +417,7 @@ class PageClusterOverview extends HTMLElement {
           tr.classList.remove('selected')
           this.renderExplain()
         } else {
-          el.querySelectorAll('.ov-table tbody tr.selected').forEach(r => r.classList.remove('selected'))
+          el.querySelectorAll('.md-table tbody tr.selected').forEach(r => r.classList.remove('selected'))
           tr.classList.add('selected')
           this._selectedFindingId = fid
           this.fetchExplain(fid)

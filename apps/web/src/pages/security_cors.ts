@@ -31,13 +31,13 @@ class PageSecurityCors extends HTMLElement {
         <p class="subtitle">Controls which browser origins may call the gateway and each Globular service. Changes take effect immediately.</p>
 
         <div class="card" style="overflow:auto;margin-top:12px;">
-          <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+          <table class="md-table">
             <thead>
-              <tr style="border-bottom:2px solid var(--border-subtle-color,rgba(0,0,0,.12));text-align:left;">
-                <th style="padding:10px 14px;font-weight:600;">Service</th>
-                <th style="padding:10px 14px;font-weight:600;white-space:nowrap;">Allow All Origins</th>
-                <th style="padding:10px 14px;font-weight:600;">Allowed Origins <span style="font-weight:400;opacity:.6;font-size:.8em">(comma-separated, ignored when Allow All is on)</span></th>
-                <th style="padding:10px 14px;font-weight:600;"></th>
+              <tr>
+                <th>Service</th>
+                <th style="white-space:nowrap;">Allow All Origins</th>
+                <th>Allowed Origins <span style="font-weight:400;opacity:.6;font-size:.8em">(comma-separated, ignored when Allow All is on)</span></th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="corsBody">
@@ -119,20 +119,20 @@ class PageSecurityCors extends HTMLElement {
   private buildGatewayRow(gw: GatewayCorsPolicy): HTMLTableRowElement {
     const tr = document.createElement('tr')
     tr.dataset.id = GATEWAY_ID
-    tr.style.cssText = 'border-bottom:1px solid var(--border-subtle-color,rgba(0,0,0,.08));transition:background .15s;'
+    tr.style.cssText = 'transition:background .15s;'
 
     tr.innerHTML = `
-      <td style="padding:10px 14px;">
+      <td>
         <div style="font-weight:600;">Gateway (Globular)</div>
         <div style="font-size:.75em;opacity:.55;margin-top:1px;">HTTP gateway — applies to all proxied traffic</div>
       </td>
-      <td style="padding:10px 14px;text-align:center;">
+      <td style="text-align:center;">
         <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
           <input type="checkbox" class="allow-all-cb" ${gw.allowAllOrigins ? 'checked' : ''}>
           <span class="allow-all-label" style="font-size:.82em;opacity:.7">${gw.allowAllOrigins ? 'Yes' : 'No'}</span>
         </label>
       </td>
-      <td style="padding:10px 14px;">
+      <td>
         <input type="text" class="origins-input"
           value="${escapeHtml(gw.allowedOrigins)}"
           placeholder="e.g. https://app.example.com,https://admin.example.com"
@@ -142,7 +142,7 @@ class PageSecurityCors extends HTMLElement {
                  background:var(--surface-color);color:var(--on-surface-color);font-size:.88rem;
                  outline:none;min-width:240px;">
       </td>
-      <td style="padding:10px 14px;text-align:right;white-space:nowrap;">
+      <td style="text-align:right;white-space:nowrap;">
         <button class="save-row-btn submit" disabled
           style="font-size:.8rem;padding:5px 14px;">Save</button>
       </td>
@@ -167,23 +167,23 @@ class PageSecurityCors extends HTMLElement {
   private buildRow(p: ServiceCorsPolicy): HTMLTableRowElement {
     const tr = document.createElement('tr')
     tr.dataset.id = p.id
-    tr.style.cssText = 'border-bottom:1px solid var(--border-subtle-color,rgba(0,0,0,.08));transition:background .15s'
+    tr.style.cssText = 'transition:background .15s'
 
     const label = p.name || p.id
     const subtitle = p.name ? `<div style="font-size:.75em;opacity:.55;margin-top:1px">${escapeHtml(p.id)}</div>` : ''
 
     tr.innerHTML = `
-      <td style="padding:10px 14px;">
+      <td>
         <div style="font-weight:500">${escapeHtml(label)}</div>
         ${subtitle}
       </td>
-      <td style="padding:10px 14px;text-align:center;">
+      <td style="text-align:center;">
         <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
           <input type="checkbox" class="allow-all-cb" data-id="${escapeHtml(p.id)}" ${p.allowAllOrigins ? 'checked' : ''}>
           <span class="allow-all-label" style="font-size:.82em;opacity:.7">${p.allowAllOrigins ? 'Yes' : 'No'}</span>
         </label>
       </td>
-      <td style="padding:10px 14px;">
+      <td>
         <input type="text" class="origins-input" data-id="${escapeHtml(p.id)}"
           value="${escapeHtml(p.allowedOrigins)}"
           placeholder="e.g. https://app.example.com,https://admin.example.com"
@@ -193,7 +193,7 @@ class PageSecurityCors extends HTMLElement {
                  background:var(--surface-color);color:var(--on-surface-color);font-size:.88rem;
                  outline:none;min-width:240px;">
       </td>
-      <td style="padding:10px 14px;text-align:right;white-space:nowrap;">
+      <td style="text-align:right;white-space:nowrap;">
         <button class="save-row-btn submit" data-id="${escapeHtml(p.id)}" disabled
           style="font-size:.8rem;padding:5px 14px;">Save</button>
       </td>

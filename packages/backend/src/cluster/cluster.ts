@@ -29,6 +29,7 @@ export interface NodeCapabilities {
   ramBytes: number
   diskBytes: number
   diskFreeBytes: number
+  canApplyPrivileged: boolean
 }
 
 export interface NodeHealth {
@@ -51,6 +52,19 @@ export interface ClusterHealth {
   /** Overall cluster status string */
   status: string
   nodes: NodeHealth[]
+}
+
+export interface NodeHealthV1 {
+  nodeId: string
+  desiredNetworkHash: string
+  appliedNetworkHash: string
+  desiredServicesHash: string
+  appliedServicesHash: string
+  currentPlanId: string
+  currentPlanGeneration: number
+  currentPlanPhase: string
+  lastError: string
+  canApplyPrivileged: boolean
 }
 
 export interface ClusterNode {
@@ -146,10 +160,11 @@ export async function listJoinRequests(): Promise<JoinRequest[]> {
       profiles:          r.getProfilesList?.()           ?? [],
       suggestedProfiles: r.getSuggestedProfilesList?.()  ?? [],
       capabilities: rawCaps ? {
-        cpuCount:      rawCaps.getCpuCount?.()      ?? 0,
-        ramBytes:      rawCaps.getRamBytes?.()      ?? 0,
-        diskBytes:     rawCaps.getDiskBytes?.()     ?? 0,
-        diskFreeBytes: rawCaps.getDiskFreeBytes?.() ?? 0,
+        cpuCount:           rawCaps.getCpuCount?.()           ?? 0,
+        ramBytes:           rawCaps.getRamBytes?.()           ?? 0,
+        diskBytes:          rawCaps.getDiskBytes?.()          ?? 0,
+        diskFreeBytes:      rawCaps.getDiskFreeBytes?.()      ?? 0,
+        canApplyPrivileged: rawCaps.getCanApplyPrivileged?.() ?? false,
       } : null,
     } satisfies JoinRequest
   })
@@ -219,10 +234,11 @@ export async function listClusterNodes(): Promise<ClusterNode[]> {
       lastSeen:             n.getLastSeen?.()?.getSeconds?.() ?? 0,
       lastError:            n.getLastError?.()            ?? '',
       capabilities: rawCaps ? {
-        cpuCount:      rawCaps.getCpuCount?.()      ?? 0,
-        ramBytes:      rawCaps.getRamBytes?.()      ?? 0,
-        diskBytes:     rawCaps.getDiskBytes?.()     ?? 0,
-        diskFreeBytes: rawCaps.getDiskFreeBytes?.() ?? 0,
+        cpuCount:           rawCaps.getCpuCount?.()           ?? 0,
+        ramBytes:           rawCaps.getRamBytes?.()           ?? 0,
+        diskBytes:          rawCaps.getDiskBytes?.()          ?? 0,
+        diskFreeBytes:      rawCaps.getDiskFreeBytes?.()      ?? 0,
+        canApplyPrivileged: rawCaps.getCanApplyPrivileged?.() ?? false,
       } : null,
     } satisfies ClusterNode
   })
@@ -258,25 +274,52 @@ export interface ServiceCatalogEntry {
   upgrading:      number
 }
 
+export interface ClusterHealthV1Result {
+  services: ServiceCatalogEntry[]
+  nodeHealths: NodeHealthV1[]
+}
+
 /**
  * Fetch the cluster-wide desired-service summary via GetClusterHealthV1.
  * Returns null when the cluster controller is unreachable (RPC error).
- * Returns an empty array when the controller is reachable but has no services planned.
+ * Returns an empty result when the controller is reachable but has no services planned.
  */
 export async function getClusterServiceSummary(): Promise<ServiceCatalogEntry[] | null> {
+  const result = await getClusterHealthV1Full()
+  return result ? result.services : null
+}
+
+/**
+ * Full GetClusterHealthV1 response including per-node health data.
+ * Returns null when the cluster controller is unreachable.
+ */
+export async function getClusterHealthV1Full(): Promise<ClusterHealthV1Result | null> {
   try {
     const md = metadata()
     const rq = new cc.GetClusterHealthV1Request()
     const rsp = await unary<cc.GetClusterHealthV1Request, cc.GetClusterHealthV1Response>(
       ccClient, 'getClusterHealthV1', rq, undefined, md,
     )
-    return (rsp.getServicesList?.() ?? []).map((s: any) => ({
+    const services = (rsp.getServicesList?.() ?? []).map((s: any) => ({
       serviceName:    s.getServiceName?.()    ?? '',
       desiredVersion: s.getDesiredVersion?.() ?? '',
       nodesAtDesired: s.getNodesAtDesired?.() ?? 0,
       nodesTotal:     s.getNodesTotal?.()     ?? 0,
       upgrading:      s.getUpgrading?.()      ?? 0,
     }))
+    const nodeHealths = (rsp.getNodesList?.() ?? []).map((n: any) => ({
+      nodeId:                n.getNodeId?.()                ?? '',
+      desiredNetworkHash:    n.getDesiredNetworkHash?.()    ?? '',
+      appliedNetworkHash:    n.getAppliedNetworkHash?.()    ?? '',
+      desiredServicesHash:   n.getDesiredServicesHash?.()   ?? '',
+      appliedServicesHash:   n.getAppliedServicesHash?.()   ?? '',
+      currentPlanId:         n.getCurrentPlanId?.()         ?? '',
+      currentPlanGeneration: n.getCurrentPlanGeneration?.() ?? 0,
+      currentPlanPhase:      n.getCurrentPlanPhase?.()      ?? '',
+      lastError:             n.getLastError?.()             ?? '',
+      canApplyPrivileged:    n.getCanApplyPrivileged?.()    ?? false,
+    } satisfies NodeHealthV1))
+    return { services, nodeHealths }
   } catch {
     return null
   }

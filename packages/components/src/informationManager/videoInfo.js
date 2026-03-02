@@ -434,7 +434,11 @@ export class VideoInfo extends HTMLElement {
           console.warn("VideoInfo: failed to enumerate associated files before delete", err);
         }
 
-        await deleteVideoHelper(this._video.globule, this._video.getId());
+        // deleteVideo(videoId, indexPath?) — pass only the ID; indexPath defaults
+        // to "/search/videos".  Previously this._video.globule was passed as the
+        // first arg (videoId) and getId() as the second (indexPath), causing the
+        // server to look for a database at the video-ID path.
+        await deleteVideoHelper(this._video.getId());
 
         // Notify UI
         displaySuccess(`"${this._video.getDescription?.() || "Video"}" was deleted successfully!`, 3000);

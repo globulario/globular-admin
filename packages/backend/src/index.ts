@@ -16,3 +16,4 @@ export * from "./media/blog";
 
 export { Backend } from "./backend";
 export { getEventClient } from "./event/event";
+export * from "./repository";

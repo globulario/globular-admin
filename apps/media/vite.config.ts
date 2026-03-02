@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import path from 'path'
 
 // Vite automatically provides mode in the callback
 export default defineConfig(({ mode }) => {
@@ -125,6 +126,11 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/torrent/torrent_grpc_web_pb',
         'globular-web-client/torrent/torrent_pb',
       ],
+    },
+    resolve: {
+      alias: {
+        'globular-web-client': path.resolve(__dirname, '../../../services/typescript/dist'),
+      },
     },
     build: {
       outDir: 'dist',

@@ -1,5 +1,13 @@
 // src/pages/cluster_reconciliation.ts
-import { listClusterNodes, getDriftReport, type ClusterNode, type DriftReport, type DriftItem } from '@globular/backend'
+import {
+  listClusterNodes,
+  getDriftReport,
+  getClusterHealthV1Full,
+  type ClusterNode,
+  type DriftReport,
+  type DriftItem,
+  type NodeHealthV1,
+} from '@globular/backend'
 
 // ─── DriftCategory constants (numeric, from generated proto enums) ───────────
 
@@ -52,6 +60,7 @@ interface NodeDrift {
 
 class PageClusterReconciliation extends HTMLElement {
   private _rows: NodeDrift[] = []
+  private _nodeHealths: NodeHealthV1[] = []
   private _loadError = ''
   private _loading = true
   private _refreshTimer: number | null = null
@@ -70,7 +79,12 @@ class PageClusterReconciliation extends HTMLElement {
   private async load() {
     let nodes: ClusterNode[]
     try {
-      nodes = await listClusterNodes()
+      const [nodeList, healthResult] = await Promise.all([
+        listClusterNodes(),
+        getClusterHealthV1Full().catch(() => null),
+      ])
+      nodes = nodeList
+      this._nodeHealths = healthResult?.nodeHealths ?? []
       this._loadError = ''
     } catch (e: any) {
       this._loadError = e?.message || 'ClusterController unavailable'
@@ -110,6 +124,9 @@ class PageClusterReconciliation extends HTMLElement {
     const totalDrift = allItems.length
     const criticalCats = new Set([MISSING_UNIT_FILE, UNIT_STOPPED])
     const criticalCount = allItems.filter(i => criticalCats.has(i.category)).length
+    const needsPrivApplyCount = this._nodeHealths.filter(nh =>
+      !nh.canApplyPrivileged && nh.desiredServicesHash && nh.desiredServicesHash !== nh.appliedServicesHash
+    ).length
 
     this.innerHTML = `
       <style>
@@ -117,7 +134,7 @@ class PageClusterReconciliation extends HTMLElement {
         .cr-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
         .cr-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
         .cr-subtitle { margin: .25rem 0 1rem; opacity: .85; font-size: .88rem; }
-        .cr-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+        .cr-stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
         @media(max-width: 540px) { .cr-stat-grid { grid-template-columns: 1fr 1fr; } }
         .cr-stat-card {
           background: var(--md-surface-container-low);
@@ -157,6 +174,20 @@ class PageClusterReconciliation extends HTMLElement {
           background: var(--md-surface-container);
           border-bottom: 1px solid var(--border-subtle-color);
         }
+        .cr-cmd-wrap {
+          display: inline-flex; align-items: center; gap: 6px;
+          margin-top: 4px; padding: 4px 8px;
+          background: var(--md-surface-container);
+          border-radius: 4px;
+        }
+        .cr-copy-btn {
+          background: transparent; border: none; cursor: pointer;
+          color: var(--secondary-text-color);
+          padding: 2px; display: inline-flex; align-items: center;
+          border-radius: 3px; transition: color .15s;
+        }
+        .cr-copy-btn:hover { color: var(--accent-color); }
+        .cr-copy-btn.cr-copy-ok { color: var(--success-color); }
       </style>
 
       <div class="cr-wrap">
@@ -190,17 +221,31 @@ class PageClusterReconciliation extends HTMLElement {
             <div class="cr-stat-label">Critical Items</div>
             <div class="cr-stat-value" style="color:${criticalCount > 0 ? 'var(--error-color)' : 'var(--secondary-text-color)'}">${criticalCount}</div>
           </div>
+          <div class="cr-stat-card">
+            <div class="cr-stat-label">Needs Privileged Apply</div>
+            <div class="cr-stat-value" style="color:${needsPrivApplyCount > 0 ? '#f97316' : 'var(--secondary-text-color)'}">${needsPrivApplyCount}</div>
+          </div>
         </div>
 
         ${this._rows.map(row => {
           const items = row.report?.items ?? []
           if (!row.report || items.length === 0) return ''
+          const nh = this._nodeHealths.find(h => h.nodeId === row.node.nodeId)
+          const hasHashMismatch = items.some(i => i.category === STATE_HASH_MISMATCH)
+          const nodeCanPriv = nh?.canApplyPrivileged ?? true
           return `
           <div class="md-panel">
             <div class="md-panel-header">
               <span>${row.node.hostname || row.node.nodeId}</span>
-              <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}</span>
+              <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}${!nodeCanPriv ? ' · <span style="color:#f97316">unprivileged</span>' : ''}</span>
             </div>
+            ${nh ? `
+            <div style="padding:6px 14px;font-size:.75rem;display:flex;gap:14px;flex-wrap:wrap;color:var(--secondary-text-color);border-bottom:1px solid var(--border-subtle-color)">
+              <span>Desired hash: <code class="cr-mono">${nh.desiredServicesHash?.slice(0, 12) || '—'}…</code></span>
+              <span>Applied hash: <code class="cr-mono">${nh.appliedServicesHash?.slice(0, 12) || '—'}…</code></span>
+              <span>Plan phase: <code class="cr-mono">${nh.currentPlanPhase || '—'}</code></span>
+              <span>Privileged: ${nodeCanPriv ? '✓' : '<span style="color:#f97316">✕</span>'}</span>
+            </div>` : ''}
             <table class="md-table">
               <thead>
                 <tr>
@@ -224,6 +269,22 @@ class PageClusterReconciliation extends HTMLElement {
                 }).join('')}
               </tbody>
             </table>
+            ${hasHashMismatch ? `
+            <div class="md-banner-warn" style="margin:8px 14px 14px;font-size:.82rem">
+              ${!nodeCanPriv
+                ? `<strong>Awaiting privileged apply</strong> — this node cannot apply privileged operations (systemd unit installation).`
+                : `<strong>Apply required</strong> — the node-agent cannot install systemd units.`}
+              Run on the target node:<br>
+              <span class="cr-cmd-wrap">
+                <code>globular services apply-desired</code>
+                <button class="cr-copy-btn" data-copy="globular services apply-desired" title="Copy to clipboard">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+              </span>
+            </div>` : ''}
           </div>`
         }).join('')}
 
@@ -237,6 +298,16 @@ class PageClusterReconciliation extends HTMLElement {
     `
 
     this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+    this.querySelectorAll<HTMLElement>('[data-copy]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const text = btn.dataset.copy ?? ''
+        navigator.clipboard.writeText(text).then(() => {
+          btn.classList.add('cr-copy-ok')
+          setTimeout(() => btn.classList.remove('cr-copy-ok'), 1200)
+        })
+      })
+    })
   }
 }
 

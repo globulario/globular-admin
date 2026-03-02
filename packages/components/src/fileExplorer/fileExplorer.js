@@ -2242,15 +2242,20 @@ export class FileExplorer extends HTMLElement {
 
   playVideo(file) {
     this.style.zIndex = 1;
-    let videoInfo = null;
-    if (file?.videos?.length > 0) videoInfo = file.videos[0];
-    else if (file?.titles?.length > 0) videoInfo = file.titles[0];
     const rawPath = extractPath(file);
     if (!rawPath) {
       displayError("Invalid file path.", 3000);
       this.resume();
       return;
     }
+    // Metadata is stored in the LRU cache (not on the file proto) since the
+    // fileMediaCache refactor — check the cache before falling back to the proto.
+    const _cachedMeta = getMediaInfo(rawPath) ?? {};
+    let videoInfo = null;
+    if (_cachedMeta.videos?.length > 0) videoInfo = _cachedMeta.videos[0];
+    else if (file?.videos?.length > 0) videoInfo = file.videos[0];
+    else if (_cachedMeta.titles?.length > 0) videoInfo = _cachedMeta.titles[0];
+    else if (file?.titles?.length > 0) videoInfo = file.titles[0];
     const path = (() => {
       if (!rawPath) return rawPath;
       if (rawPath.toLowerCase().endsWith(".m3u8")) return rawPath;
@@ -2312,7 +2317,12 @@ export class FileExplorer extends HTMLElement {
   async playAudio(file) {
     this.style.zIndex = 1;
     const path = extractPath(file);
-    const initialInfo = (file?.audios?.length ? file.audios[0] : null) || (file?.titles?.length ? file.titles[0] : null);
+    const _cachedMetaAudio = getMediaInfo(path) ?? {};
+    const initialInfo =
+      (_cachedMetaAudio.audios?.length ? _cachedMetaAudio.audios[0] : null) ||
+      (file?.audios?.length ? file.audios[0] : null) ||
+      (_cachedMetaAudio.titles?.length ? _cachedMetaAudio.titles[0] : null) ||
+      (file?.titles?.length ? file.titles[0] : null);
 
     if (!path) {
       displayError("Invalid file path.", 3000);

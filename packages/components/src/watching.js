@@ -1738,14 +1738,15 @@ export class MediaWatchingCard extends HTMLElement {
       ".hidden" +
       basePath.substring(basePath.lastIndexOf("/"));
     const previewPath = `${hiddenSegment}/preview.mp4`;
-    let url = getBaseUrl?.() || "";
-    previewPath.split("/").forEach((segment) => {
-      const sanitized = encodeURIComponent(segment.trim());
-      if (sanitized.length > 0) {
-        url += `/${sanitized}`;
-      }
-    });
-    return url;
+    try {
+      const { url, headers } = buildFileUrl(previewPath);
+      if (!url) return "";
+      const token = headers?.token;
+      const glue = url.includes("?") ? "&" : "?";
+      return token ? `${url}${glue}token=${encodeURIComponent(token)}` : url;
+    } catch {
+      return "";
+    }
   }
 
   _getProgressMetrics() {

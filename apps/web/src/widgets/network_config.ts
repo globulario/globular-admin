@@ -103,11 +103,11 @@ class NetworkConfig extends HTMLElement {
 
         <div class="form">
           <div class="field">
-            <label for="hostname">Hostname</label>
-            <input id="hostname" placeholder="e.g. node-01" />
+            <label for="hostname">Hostname <span style="font-weight:400;opacity:.65;font-size:.85em">(read-only)</span></label>
+            <input id="hostname" readonly style="opacity:.65;cursor:default" />
           </div>
           <div class="field">
-            <label for="dns">DNS servers (comma-separated)</label>
+            <label for="dns">DNS nameservers (comma-separated)</label>
             <input id="dns" placeholder="e.g. 1.1.1.1, 8.8.8.8" />
           </div>
         </div>
@@ -183,7 +183,6 @@ class NetworkConfig extends HTMLElement {
     this.setBusy(true)
     try {
       await applyNetworkUpdate({
-        hostname: this.hostInput.value.trim() || undefined,
         dnsServers: this.parseDns(),
       })
       displaySuccess('Network settings saved')

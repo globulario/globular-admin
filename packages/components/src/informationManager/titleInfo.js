@@ -711,7 +711,6 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
           min-height: 0;
           gap: 10px;
           max-height: calc(100vh - 400px);
-          overflow-y: auto;
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, var(--palette-divider))
           var(--scroll-track, var(--surface-color));

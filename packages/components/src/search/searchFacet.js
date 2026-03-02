@@ -534,7 +534,7 @@ export class SearchFacetPanel extends HTMLElement {
         checkbox.addEventListener('click', () => { // Use click for immediate action
             this._page.hideAll(); // Hide all results initially
             if (!checkbox.checked) {
-                 // If unchecking, ensure main checkbox is also unchecked if no other terms are checked
+                // If unchecking, ensure main checkbox is also unchecked if no other terms are checked
                 const checkedTerms = Object.values(this._terms).filter(t => t.checkbox.checked);
                 if (checkedTerms.length === 0) {
                     this._mainCheckbox.checked = false;

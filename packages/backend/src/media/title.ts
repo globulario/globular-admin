@@ -330,15 +330,30 @@ export async function createOrUpdateAudio(
  * File-scoped lookups
  * ===================================================================================== */
 
+/**
+ * Strip /playlist.m3u8 (and any trailing query/fragment) from a path so that
+ * HLS directory lookups resolve the same association key as file-explorer lookups.
+ *
+ * Examples:
+ *   /users/sa/video/playlist.m3u8          → /users/sa/video
+ *   /users/sa/video/playlist.m3u8?token=x  → /users/sa/video
+ *   /users/sa/video.mp4                    → /users/sa/video.mp4  (unchanged)
+ */
+function normalizeMediaPath(p: string): string {
+  const idx = p.indexOf("/playlist.m3u8");
+  return idx !== -1 ? p.slice(0, idx) : p;
+}
+
 export async function getFileTitlesInfo(
   filePath: string,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<titlepb.Title[]> {
-  if (fileTitlesCache.has(filePath)) return fileTitlesCache.get(filePath)!;
+  const normalizedPath = normalizeMediaPath(filePath);
+  if (fileTitlesCache.has(normalizedPath)) return fileTitlesCache.get(normalizedPath)!;
 
   const md = await meta();
   const rq = new titlepb.GetFileTitlesRequest();
-  rq.setFilepath(filePath);
+  rq.setFilepath(normalizedPath);
   rq.setIndexpath(indexPath);
 
   const rsp = await unary(clientFactory, "getFileTitles", rq, undefined, md) as titlepb.GetFileTitlesResponse;
@@ -348,7 +363,7 @@ export async function getFileTitlesInfo(
 
   // cache each by id and by file
   list.forEach((t) => titlesCache.set(t.getId(), t));
-  fileTitlesCache.set(filePath, list);
+  fileTitlesCache.set(normalizedPath, list);
   return list;
 }
 
@@ -367,7 +382,7 @@ export async function getFileVideosInfo(
     return String(v);
   };
 
-  const safeFilePath = normalize(filePath, "filePath");
+  const safeFilePath = normalizeMediaPath(normalize(filePath, "filePath"));
   const safeIndexPath = normalize(indexPath, "indexPath");
 
   //  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;

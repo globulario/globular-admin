@@ -17,13 +17,14 @@
 //   Installed            — installed, controller unreachable (state unknown)
 
 import {
-  getClusterServiceSummary,
+  getClusterHealthV1Full,
   listClusterNodes,
   getConfig,
   normalizeError,
   displayError,
   displaySuccess,
   upsertDesiredService,
+  removeDesiredService,
   seedDesiredState,
   triggerReconcileAll,
   listBundles,
@@ -32,6 +33,7 @@ import {
   type BundleSummary,
   type ServiceCatalogEntry,
   type ClusterNode,
+  type NodeHealthV1,
   type ServiceDesc,
   type ValidationIssue,
   type PlanPreview,
@@ -71,43 +73,66 @@ interface CatalogRow {
   nodesAtDesired:   number | undefined
   nodesTotal:       number | undefined
   upgrading:        number | undefined
+  // From NodeHealthV1 (lifecycle state derivation)
+  planPhase:            string | undefined
+  canApplyPrivileged:   boolean | undefined
 }
 
 // ─── Status derivation ────────────────────────────────────────────────────────
 
-type StatusKey =
-  | 'managed-current'
-  | 'managed-progressing'
-  | 'managed-drift'
-  | 'desired-missing'
-  | 'unmanaged'
-  | 'installed'   // controller unreachable, just know it's installed
-  | 'none'        // not installed, not in plan, controller has no plan — just exists in registry
+type LifecycleState =
+  | 'applied'                      // green — desired == applied, running
+  | 'managed-pending'              // yellow — desired set, not yet applied
+  | 'staged'                       // blue — artifacts ready, not activated
+  | 'awaiting-privileged-apply'    // orange — node lacks privilege
+  | 'progressing'                  // yellow — plan actively running
+  | 'drifted'                      // red — applied diverged from desired
+  | 'failure'                      // red — plan failed
+  | 'unmanaged'                    // gray — installed without desired entry (legacy)
+  | 'not-selected'                 // muted — not installed, not desired
 
-function deriveStatus(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean): StatusKey {
+function deriveStatus(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean): LifecycleState {
   const { installedVersion, desiredVersion, nodesTotal = 0, nodesAtDesired = 0, upgrading = 0 } = row
   const installed = !!installedVersion
   const desired   = desiredVersion !== undefined
 
   if (!ccAvailable) {
-    return installed ? 'installed' : 'none'
+    return installed ? 'unmanaged' : 'not-selected'
   }
 
   if (!desired) {
-    // Controller reachable but not planning this service
-    if (!ccHasPlan) return installed ? 'installed' : 'none'
-    return installed ? 'unmanaged' : 'none'
+    if (!ccHasPlan) return installed ? 'unmanaged' : 'not-selected'
+    return installed ? 'unmanaged' : 'not-selected'
   }
 
-  // Desired exists
-  if (!installed) return 'desired-missing'
-  if (upgrading > 0 || (nodesTotal > 0 && nodesAtDesired < nodesTotal)) return 'managed-progressing'
-  if (nodesTotal > 0 && nodesAtDesired === nodesTotal) {
-    if (installedVersion !== desiredVersion) return 'managed-drift'
-    return 'managed-current'
+  // Desired exists — check convergence
+  const phase = (row.planPhase ?? '').toUpperCase()
+
+  if (nodesTotal > 0 && nodesAtDesired === nodesTotal && installedVersion === desiredVersion) {
+    return 'applied'
   }
-  // nodesTotal === 0 — desired exists, no nodes tracked yet
-  return 'managed-progressing'
+
+  // Plan phase overrides
+  if (phase.includes('AWAITING_PRIVILEGED_APPLY') || (row.canApplyPrivileged === false && desiredVersion !== installedVersion)) {
+    return 'awaiting-privileged-apply'
+  }
+  if (phase.includes('FAILED')) {
+    return 'failure'
+  }
+  if (phase.includes('RUNNING') || phase.includes('ROLLING_BACK')) {
+    return 'progressing'
+  }
+
+  // Divergence checks
+  if (upgrading > 0 || (nodesTotal > 0 && nodesAtDesired < nodesTotal)) {
+    return 'progressing'
+  }
+  if (installed && installedVersion !== desiredVersion && nodesTotal > 0) {
+    return 'drifted'
+  }
+
+  // Desired but not yet applied anywhere
+  return 'managed-pending'
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -133,20 +158,22 @@ function badge(label: string, color: string): string {
   return `<span class="sc-badge" style="--badge-color:${color}">${label}</span>`
 }
 
-const STATUS_META: Record<StatusKey, { label: string; color: string }> = {
-  'managed-current':     { label: 'Managed & current',    color: 'var(--success-color)' },
-  'managed-progressing': { label: 'Progressing',           color: '#f59e0b' },
-  'managed-drift':       { label: 'Drift',                 color: 'var(--error-color)' },
-  'desired-missing':     { label: 'Desired — not installed', color: '#f59e0b' },
-  'unmanaged':           { label: 'Unmanaged',             color: 'var(--secondary-text-color)' },
-  'installed':           { label: 'Installed',             color: 'var(--secondary-text-color)' },
-  'none':                { label: '—',                     color: 'var(--secondary-text-color)' },
+const STATUS_META: Record<LifecycleState, { label: string; color: string }> = {
+  'applied':                    { label: 'Applied',                   color: 'var(--success-color)' },
+  'managed-pending':            { label: 'Managed — pending',        color: '#f59e0b' },
+  'staged':                     { label: 'Staged',                    color: '#3b82f6' },
+  'awaiting-privileged-apply':  { label: 'Awaiting privileged apply', color: '#f97316' },
+  'progressing':                { label: 'Progressing',               color: '#f59e0b' },
+  'drifted':                    { label: 'Drift',                     color: 'var(--error-color)' },
+  'failure':                    { label: 'Failed',                    color: 'var(--error-color)' },
+  'unmanaged':                  { label: 'Unmanaged',                 color: 'var(--secondary-text-color)' },
+  'not-selected':               { label: '—',                         color: 'var(--secondary-text-color)' },
 }
 
 function statusBadge(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean): string {
   const key = deriveStatus(row, ccAvailable, ccHasPlan)
   const { label, color } = STATUS_META[key]
-  if (key === 'none') return `<span class="sc-muted">—</span>`
+  if (key === 'not-selected') return `<span class="sc-muted">—</span>`
   return badge(label, color)
 }
 
@@ -229,8 +256,8 @@ class PageServicesCatalog extends HTMLElement {
   private async load() {
     try {
       let bundleError = ''
-      const [catalogResult, nodes, cfg, bundleResult] = await Promise.all([
-        getClusterServiceSummary().catch(() => null),
+      const [healthV1Result, nodes, cfg, bundleResult] = await Promise.all([
+        getClusterHealthV1Full().catch(() => null),
         listClusterNodes().catch(() => [] as ClusterNode[]),
         getConfig().catch(() => null),
         listBundles().catch((e: unknown): BundleSummary[] | null => {
@@ -240,9 +267,10 @@ class PageServicesCatalog extends HTMLElement {
       ])
 
       this._nodes         = nodes
-      this._ccAvailable   = catalogResult !== null
-      this._ccHasPlan     = (catalogResult?.length ?? 0) > 0
-      const catalogEntries: ServiceCatalogEntry[] = catalogResult ?? []
+      this._ccAvailable   = healthV1Result !== null
+      const catalogEntries: ServiceCatalogEntry[] = healthV1Result?.services ?? []
+      const nodeHealths: NodeHealthV1[] = healthV1Result?.nodeHealths ?? []
+      this._ccHasPlan     = catalogEntries.length > 0
       this._repoAvailable = bundleResult !== null
       this._repoError     = bundleError
 
@@ -260,6 +288,17 @@ class PageServicesCatalog extends HTMLElement {
         bundleData:  b,
       }))
 
+      // Aggregate node-health info: worst-case plan phase and overall privilege status
+      let aggregatePlanPhase = ''
+      let anyNodeLacksPrivilege = false
+      for (const nh of nodeHealths) {
+        if (!nh.canApplyPrivileged) anyNodeLacksPrivilege = true
+        const phase = nh.currentPlanPhase.toUpperCase()
+        if (phase.includes('AWAITING_PRIVILEGED_APPLY')) aggregatePlanPhase = nh.currentPlanPhase
+        else if (phase.includes('FAILED') && !aggregatePlanPhase.includes('AWAITING')) aggregatePlanPhase = nh.currentPlanPhase
+        else if (phase.includes('RUNNING') && !aggregatePlanPhase) aggregatePlanPhase = nh.currentPlanPhase
+      }
+
       const runtimeSvcs = Object.values(cfg?.Services ?? {}) as ServiceDesc[]
       this._runtimeAvailable = runtimeSvcs.length > 0
 
@@ -273,18 +312,25 @@ class PageServicesCatalog extends HTMLElement {
       for (const svc of runtimeSvcs) {
         const name = svc.Name ?? svc.Id ?? ''
         if (!name) continue
-        const key = name.toLowerCase()
-        const cc  = ccMap.get(key)
-        rowMap.set(key, {
-          name,
+        // Runtime names are "package.ServiceName" (e.g. "ldap.LdapService",
+        // "cluster_controller.ClusterControllerService"), but the controller
+        // uses canonical kebab-case names (e.g. "ldap", "cluster-controller").
+        // Strip the gRPC suffix and convert underscores → hyphens.
+        const canonical = name.split('.')[0].toLowerCase().replaceAll('_', '-')
+        const cc  = ccMap.get(canonical) ?? ccMap.get(name.toLowerCase())
+        rowMap.set(canonical, {
+          name: canonical,
           installedVersion: (svc.Version as string) || null,
           installedState:   (svc.State  as string) || null,
           desiredVersion:   cc?.desiredVersion,
           nodesAtDesired:   cc?.nodesAtDesired,
           nodesTotal:       cc?.nodesTotal,
           upgrading:        cc?.upgrading,
+          planPhase:        cc ? aggregatePlanPhase : undefined,
+          canApplyPrivileged: cc ? !anyNodeLacksPrivilege : undefined,
         })
-        ccMap.delete(key)
+        ccMap.delete(canonical)
+        ccMap.delete(name.toLowerCase())
       }
 
       // Add controller entries not in runtime
@@ -297,6 +343,8 @@ class PageServicesCatalog extends HTMLElement {
           nodesAtDesired:   e.nodesAtDesired,
           nodesTotal:       e.nodesTotal,
           upgrading:        e.upgrading,
+          planPhase:        aggregatePlanPhase,
+          canApplyPrivileged: !anyNodeLacksPrivilege,
         })
       }
 
@@ -324,10 +372,14 @@ class PageServicesCatalog extends HTMLElement {
       const status = deriveStatus(row, this._ccAvailable, this._ccHasPlan)
       let matchesStatus = true
       switch (this._filterStatus) {
-        case 'managed':    matchesStatus = status.startsWith('managed'); break
+        case 'managed':    matchesStatus = status === 'applied' || status === 'managed-pending'
+                             || status === 'progressing' || status === 'awaiting-privileged-apply'
+                             || status === 'drifted' || status === 'failure'; break
         case 'unmanaged':  matchesStatus = status === 'unmanaged'; break
-        case 'drift':      matchesStatus = status === 'managed-drift' || status === 'managed-progressing'; break
-        case 'missing':    matchesStatus = status === 'desired-missing'; break
+        case 'drift':      matchesStatus = status === 'drifted' || status === 'progressing'
+                             || status === 'awaiting-privileged-apply' || status === 'failure'; break
+        case 'pending':    matchesStatus = status === 'managed-pending'
+                             || status === 'awaiting-privileged-apply'; break
         case 'installed':  matchesStatus = !!row.installedVersion; break
       }
 
@@ -339,26 +391,42 @@ class PageServicesCatalog extends HTMLElement {
 
   private renderDetailPanel(row: CatalogRow): string {
     const status   = deriveStatus(row, this._ccAvailable, this._ccHasPlan)
-    const managed  = status.startsWith('managed')
+    const managed  = status === 'applied' || status === 'progressing' || status === 'managed-pending'
+      || status === 'awaiting-privileged-apply' || status === 'drifted' || status === 'failure'
     const unmanaged = status === 'unmanaged'
-    const desired  = status === 'desired-missing'
 
     const addBtn = (unmanaged || (!this._ccHasPlan && !!row.installedVersion)) && this._ccAvailable
       ? `<button class="sc-action-btn sc-action-live" data-action="add" data-name="${row.name}" data-version="${row.installedVersion ?? ''}">
            + Add to desired state (${row.installedVersion})
          </button>` : ''
 
-    const reconcileBtn = desired && this._ccAvailable && this._nodes.length > 0
-      ? `<button class="sc-action-btn sc-action-live" data-action="reconcile" data-name="${row.name}">
-           ↻ Trigger reconcile
+    const removeBtn = managed && this._ccAvailable && row.desiredVersion
+      ? `<button class="sc-action-btn" data-action="remove-desired" data-name="${row.name}"
+           style="border-color:var(--error-color);color:var(--error-color)">
+           Remove from desired state
          </button>` : ''
 
-    const upgradeBtn = status === 'managed-drift' && this._ccAvailable && !!row.desiredVersion
-      ? `<button class="sc-action-btn sc-action-live" data-action="add" data-name="${row.name}" data-version="${row.desiredVersion}">
-           ↑ Re-apply desired ${row.desiredVersion}
-         </button>` : ''
+    // Show apply-desired hint when node lacks privilege or service is pending
+    const needsApply = status === 'awaiting-privileged-apply' || status === 'managed-pending'
+      || status === 'drifted' || status === 'failure'
+    const applyCmd = needsApply ? 'globular services apply-desired' : ''
+    const applyHint = applyCmd
+      ? `<div class="sc-apply-hint">
+           <span class="sc-apply-label">${status === 'awaiting-privileged-apply'
+             ? 'Node lacks privilege. Run on the target node:'
+             : 'Apply desired state on the target node:'}</span>
+           <div class="sc-apply-cmd">
+             <code>${applyCmd}</code>
+             <button class="sc-copy-btn" data-copy="${applyCmd}" title="Copy to clipboard">
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+               </svg>
+             </button>
+           </div>
+         </div>` : ''
 
-    const actionHtml = addBtn || reconcileBtn || upgradeBtn
+    const actionHtml = addBtn || removeBtn || applyHint
 
     return `
       <tr class="sc-detail">
@@ -406,7 +474,7 @@ class PageServicesCatalog extends HTMLElement {
             ${actionHtml ? `
             <section class="sc-detail-section">
               <div class="sc-detail-title">Actions</div>
-              ${addBtn}${reconcileBtn}${upgradeBtn}
+              ${addBtn}${removeBtn}${applyHint}
             </section>` : ''}
 
           </div>
@@ -740,6 +808,33 @@ class PageServicesCatalog extends HTMLElement {
         .sc-action-btn:disabled { opacity: .5; cursor: not-allowed; }
         .sc-action-live { color: var(--accent-color); border-color: var(--accent-color); }
 
+        .sc-apply-hint { margin-top: 6px; }
+        .sc-apply-label {
+          font-size: .72rem; font-weight: 600;
+          text-transform: uppercase; letter-spacing: .04em;
+          color: var(--secondary-text-color);
+          display: block; margin-bottom: 4px;
+        }
+        .sc-apply-cmd {
+          display: inline-flex; align-items: center; gap: 6px;
+          background: var(--md-surface-container);
+          border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-sm);
+          padding: 4px 8px;
+        }
+        .sc-apply-cmd code {
+          font-size: .78rem; white-space: nowrap;
+          color: var(--on-surface-color);
+        }
+        .sc-copy-btn {
+          background: transparent; border: none; cursor: pointer;
+          color: var(--secondary-text-color);
+          padding: 2px; display: inline-flex; align-items: center;
+          border-radius: 3px; transition: color .15s;
+        }
+        .sc-copy-btn:hover { color: var(--accent-color); }
+        .sc-copy-btn.sc-copy-ok { color: var(--success-color); }
+
         .sc-modal-overlay {
           position: fixed; inset: 0;
           background: rgba(0,0,0,.45); z-index: 9999;
@@ -826,8 +921,8 @@ class PageServicesCatalog extends HTMLElement {
                 <option value="all"${this._filterStatus === 'all'       ? ' selected' : ''}>All</option>
                 <option value="managed"${this._filterStatus === 'managed'   ? ' selected' : ''}>Managed</option>
                 <option value="unmanaged"${this._filterStatus === 'unmanaged' ? ' selected' : ''}>Unmanaged</option>
-                <option value="drift"${this._filterStatus === 'drift'     ? ' selected' : ''}>Drift / Progressing</option>
-                <option value="missing"${this._filterStatus === 'missing'   ? ' selected' : ''}>Desired — not installed</option>
+                <option value="drift"${this._filterStatus === 'drift'     ? ' selected' : ''}>Drift / Needs action</option>
+                <option value="pending"${this._filterStatus === 'pending'   ? ' selected' : ''}>Pending apply</option>
                 <option value="installed"${this._filterStatus === 'installed' ? ' selected' : ''}>Installed</option>
               </select>
               <span class="sc-count">
@@ -919,7 +1014,18 @@ class PageServicesCatalog extends HTMLElement {
         const version = actionBtn.dataset.version ?? ''
         if (action === 'add') this.doAddToDesired(name, version)
         if (action === 'repo-add') this.doSetDesired(name, version)
-        if (action === 'reconcile') this.doReconcile()
+        if (action === 'remove-desired') this.doRemoveFromDesired(name)
+        return
+      }
+      // Copy button
+      const copyBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-copy]')
+      if (copyBtn) {
+        e.stopPropagation()
+        const text = copyBtn.dataset.copy ?? ''
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.classList.add('sc-copy-ok')
+          setTimeout(() => copyBtn.classList.remove('sc-copy-ok'), 1200)
+        })
         return
       }
       // Rollout tab row expand
@@ -1069,7 +1175,8 @@ class PageServicesCatalog extends HTMLElement {
         this._activeTab = 'rollout'
         await this.load()
       } catch (e: unknown) {
-        displayError(normalizeError(e).message)
+        const msg = normalizeError(e).message
+        displayError(msg + '\n\nHint: Run on the node: globular services apply-desired')
         this.closeModal()
       }
     }
@@ -1119,14 +1226,14 @@ class PageServicesCatalog extends HTMLElement {
     }
   }
 
-  private async doReconcile() {
-    if (this._busy) return
+  private async doRemoveFromDesired(name: string) {
+    if (this._busy || !name) return
     this._busy = true
     this.render()
     try {
-      await triggerReconcileAll(this._nodes.map(n => n.nodeId))
-      displaySuccess('Reconciliation triggered')
-      window.setTimeout(() => this.load(), 1500)
+      await removeDesiredService(name)
+      displaySuccess(`${name} removed from desired state`)
+      await this.load()
     } catch (e: unknown) {
       displayError(normalizeError(e).message)
     } finally {
@@ -1134,6 +1241,7 @@ class PageServicesCatalog extends HTMLElement {
       this.render()
     }
   }
+
 }
 
 customElements.define('page-services-catalog', PageServicesCatalog)

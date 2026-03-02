@@ -109,6 +109,7 @@
   background:      var(--md-surface-container);
   border-bottom:   1px solid var(--border-subtle-color);
   font:            var(--md-typescale-label-medium);
+  font-size:       .72rem;
   text-transform:  uppercase;
   letter-spacing:  .06em;
   color:           var(--secondary-text-color);
@@ -117,37 +118,49 @@
 
 /* ─── Table ───────────────────────────────────────────────────────────────── */
 /*
- * MD3 Data Table.
- * Add .md-table-interactive to tbody to enable hover/selection state layers.
+ * Catalog-style compact data table.  Wrap in .md-panel for the card shell.
+ *
+ * Interaction modifiers:
+ *   tr.md-row              — hover + .expanded / .selected state per row
+ *   tbody.md-interactive   — hover + .selected state on the whole body
  */
 .md-table {
-  width: 100%;
+  width:           100%;
   border-collapse: collapse;
-  font: var(--md-typescale-body-small);
+  font-size:       .75rem;
 }
 
 .md-table th {
   text-align:     left;
-  padding:        8px 12px;
-  font:           var(--md-typescale-label-medium);
+  padding:        7px 12px;
+  font-size:      .7rem;
+  font-weight:    700;
   text-transform: uppercase;
-  letter-spacing: .06em;
+  letter-spacing: .05em;
   color:          var(--secondary-text-color);
   border-bottom:  1px solid var(--border-subtle-color);
+  background:     var(--md-surface-container);
+  white-space:    nowrap;
 }
 
 .md-table td {
-  padding:        9px 12px;
+  padding:        6px 12px;
   border-bottom:  1px solid var(--border-subtle-color);
   vertical-align: middle;
 }
 
 .md-table tr:last-child td { border-bottom: none; }
 
-/* Interactive rows */
-.md-table tbody.md-interactive tr            { cursor: pointer; }
-.md-table tbody.md-interactive tr:hover   td { background: var(--md-state-hover); }
-.md-table tbody.md-interactive tr.selected td { background: var(--md-state-selected); }
+/* Per-row click/expand pattern */
+.md-table tr.md-row            { cursor: pointer; }
+.md-table tr.md-row:hover   td { background: var(--md-state-hover); }
+.md-table tr.md-row.expanded td,
+.md-table tr.md-row.selected td { background: var(--md-state-selected); }
+
+/* Tbody-level interactive state */
+.md-table tbody.md-interactive tr              { cursor: pointer; }
+.md-table tbody.md-interactive tr:hover     td { background: var(--md-state-hover); }
+.md-table tbody.md-interactive tr.selected  td { background: var(--md-state-selected); }
 
 
 /* ─── Button ──────────────────────────────────────────────────────────────── */
