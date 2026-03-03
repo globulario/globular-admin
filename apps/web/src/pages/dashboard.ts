@@ -1,6 +1,7 @@
 import {
   getClusterHealth,
   listClusterNodes,
+  queryEvents,
   Backend,
   type ClusterHealth,
   type ClusterNode,
@@ -40,8 +41,13 @@ function relativeTime(epochSeconds: number): string {
 
 class PageDashboard extends HTMLElement {
   private _refreshTimer: number | null = null
-  private _eventSubs: string[] = []
-  private _events: Array<{ time: string; name: string; data: string }> = []
+  private _eventSubs: Array<[string, string]> = []
+  private _events: Array<{
+    time: string; name: string; data: string;
+    severity?: string; type?: string; message?: string;
+    nodeId?: string; service?: string; correlationId?: string;
+  }> = []
+  private _latestSequence = 0
   private _health: ClusterHealth | null = null
   private _nodes: ClusterNode[] = []
   private _loading = true
@@ -58,7 +64,7 @@ class PageDashboard extends HTMLElement {
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
-    this._eventSubs.forEach(uuid => Backend.unsubscribe('globular.cluster', uuid))
+    this._eventSubs.forEach(([ch, uuid]) => Backend.unsubscribe(ch, uuid))
     this._eventSubs = []
   }
 
@@ -82,26 +88,94 @@ class PageDashboard extends HTMLElement {
       this._nodesError = (nodesResult.reason as any)?.message || 'Could not list nodes'
     }
 
+    // Load recent control-plane events from history (survives page refresh).
+    try {
+      const [planResult, serviceResult] = await Promise.allSettled([
+        queryEvents({ nameFilter: 'plan_', limit: 50 }),
+        queryEvents({ nameFilter: 'service_apply_', limit: 50 }),
+      ])
+      type DashEvent = { time: string; name: string; data: string; severity?: string; type?: string; message?: string; nodeId?: string; service?: string; correlationId?: string }
+      const allHistorical: Array<{ ev: DashEvent; seq: number }> = []
+      for (const r of [planResult, serviceResult]) {
+        if (r.status !== 'fulfilled') continue
+        for (const ev of r.value.events) {
+          allHistorical.push({
+            ev: {
+              time: ev.tsEpoch ? new Date(ev.tsEpoch * 1000).toLocaleTimeString() : '??:??',
+              name: ev.name,
+              data: ev.dataJson?.message || (typeof ev.dataJson === 'object' ? JSON.stringify(ev.dataJson) : `${ev.data.length} bytes`),
+              severity: ev.dataJson?.severity as string | undefined,
+              type: ev.name,
+              message: ev.dataJson?.message as string | undefined,
+              nodeId: ev.dataJson?.node_id as string | undefined,
+              service: ev.dataJson?.service as string | undefined,
+              correlationId: ev.dataJson?.correlation_id as string | undefined,
+            },
+            seq: ev.sequence,
+          })
+        }
+        if (r.value.latestSequence > this._latestSequence) {
+          this._latestSequence = r.value.latestSequence
+        }
+      }
+      // Sort by sequence descending (newest first), take top 50.
+      allHistorical.sort((a, b) => b.seq - a.seq)
+      const historical = allHistorical.slice(0, 50).map(h => h.ev)
+      if (historical.length > 0) {
+        const existing = new Set(this._events.map(e => `${e.time}:${e.name}`))
+        for (const h of historical) {
+          if (!existing.has(`${h.time}:${h.name}`)) {
+            this._events.push(h)
+          }
+        }
+        this._events = this._events.slice(0, 50)
+      }
+    } catch { /* event service may be unavailable */ }
+
     this._loading = false
     this.render()
   }
 
   private subscribeEvents() {
     if (!Backend.eventHub) return
-    const channels = ['globular.cluster', 'globular.node', 'globular.reconcile']
+    const controlPlaneEvents = [
+      'plan_generated', 'plan_apply_started', 'plan_blocked_privileged',
+      'plan_apply_succeeded', 'plan_apply_failed', 'plan_blocked',
+      'service_apply_started', 'service_apply_succeeded', 'service_apply_failed',
+    ]
+    const channels = [...controlPlaneEvents]
     channels.forEach(ch => {
       Backend.subscribe(ch, (uuid) => {
-        this._eventSubs.push(uuid)
+        this._eventSubs.push([ch, uuid])
       }, (data) => {
+        let parsed: any = null
+        if (typeof data === 'string') {
+          try { parsed = JSON.parse(data) } catch { /* not JSON */ }
+        } else if (typeof data === 'object') {
+          parsed = data
+        }
         this._events.unshift({
           time: new Date().toLocaleTimeString(),
           name: ch,
-          data: typeof data === 'string' ? data : JSON.stringify(data),
+          data: parsed?.message || (typeof data === 'string' ? data : JSON.stringify(data)),
+          severity: parsed?.severity,
+          type: ch,
+          message: parsed?.message,
+          nodeId: parsed?.node_id,
+          service: parsed?.service,
+          correlationId: parsed?.correlation_id,
         })
         if (this._events.length > 50) this._events.pop()
         this.renderEventsFeed()
       }, false)
     })
+  }
+
+  private severityColor(sev?: string): string {
+    const s = (sev || '').toUpperCase()
+    if (s === 'ERROR') return 'var(--error-color)'
+    if (s === 'WARN')  return '#f59e0b'
+    return 'var(--secondary-text-color)'
   }
 
   private renderEventsFeed() {
@@ -111,13 +185,29 @@ class PageDashboard extends HTMLElement {
       feed.innerHTML = '<p class="empty-msg">No events yet — waiting for cluster activity…</p>'
       return
     }
-    feed.innerHTML = this._events.slice(0, 20).map(e => `
-      <div class="event-row">
-        <span class="ev-time">${e.time}</span>
-        <span class="ev-name">${e.name}</span>
-        <span class="ev-data">${e.data}</span>
-      </div>
-    `).join('')
+    feed.innerHTML = this._events.slice(0, 20).map(e => {
+      const color = this.severityColor(e.severity)
+      const badge = e.name || 'event'
+      const typeBadge = `<span style="
+            display:inline-block; padding:1px 6px; border-radius:var(--md-shape-full); font-size:.68rem;
+            font-weight:700; letter-spacing:.03em;
+            background:color-mix(in srgb,${color} 15%,transparent);
+            color:${color}; border:1px solid color-mix(in srgb,${color} 30%,transparent);
+          ">${badge}</span>`
+      const msg = e.message || e.data
+      const meta = [e.nodeId, e.service, e.correlationId].filter(Boolean)
+      const metaHtml = meta.length > 0
+        ? `<div style="font-size:.65rem;color:var(--secondary-text-color);opacity:.7;grid-column:2/4;font-family:monospace">${meta.join(' · ')}</div>`
+        : ''
+      return `
+        <div class="event-row">
+          <span class="ev-time">${e.time}</span>
+          ${typeBadge}
+          <span class="ev-data" style="color:${e.severity === 'ERROR' ? 'var(--error-color)' : 'var(--on-surface-color)'}">${msg}</span>
+          ${metaHtml}
+        </div>
+      `
+    }).join('')
   }
 
   private render() {
