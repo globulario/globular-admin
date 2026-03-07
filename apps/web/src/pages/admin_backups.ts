@@ -5,11 +5,11 @@ import {
   displayMessage, displayError,
   getRetentionStatus, promoteBackup, demoteBackup, restorePlan, restoreBackup,
   listMinioBuckets, createMinioBucket, deleteMinioBucket,
-  getScheduleStatus, runRestoreTest,
+  getScheduleStatus, runRestoreTest, testScyllaConnection,
   getConfig, saveServiceConfig, getUsername,
   type BackupJob, type BackupArtifact, type ProviderResult, type ToolCheckResult,
   type RetentionStatus, type BackupValidationIssue, type RestoreStep,
-  type MinioBucketInfo, type ScheduleStatus,
+  type MinioBucketInfo, type ScheduleStatus, type ScyllaConnectionCheck,
   type ValidationReportData, type RestoreTestReportData, type NodeCoverageReportData,
 } from '@globular/backend'
 
@@ -1598,7 +1598,13 @@ class PageAdminBackups extends HTMLElement {
   private markDirty() {
     this._settingsDirty = true
     const banner = this.querySelector('#bkUnsavedBanner') as HTMLElement
-    if (banner) banner.style.display = 'flex'
+    if (banner) {
+      banner.innerHTML = `
+        <span style="font-size:.85rem;font-weight:600;color:color-mix(in srgb, #f59e0b 85%, var(--on-surface-color))">Unsaved changes</span>
+        <button class="bk-btn-primary" id="bkSaveAll">Save All</button>`
+      banner.style.display = 'flex'
+      this.querySelector('#bkSaveAll')?.addEventListener('click', () => this.saveAllSettings())
+    }
   }
 
   private clearDirty() {
@@ -2064,6 +2070,10 @@ class PageAdminBackups extends HTMLElement {
         </div>
         ${field('Scylla Location', 'ScyllaLocation', c.ScyllaLocation, 's3:scylla-backups', 'S3 bucket for ScyllaDB backups (e.g. s3:my-bucket). Set automatically when creating a MinIO bucket with "Use for ScyllaDB".')}
         ${field('Manager API', 'ScyllaManagerAPI', c.ScyllaManagerAPI, 'http://127.0.0.1:5080', 'Scylla-manager HTTP endpoint.')}
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle-color)">
+          <button class="bk-btn-primary" id="bkTestScyllaConn" style="white-space:nowrap">Test Connection</button>
+          <div id="bkScyllaTestResult" style="margin-top:10px"></div>
+        </div>
       `) +
       section('MinIO / Rclone', `
         <p style="font-size:.78rem;color:var(--secondary-text-color);margin:0 0 8px">MinIO connection is configured in the <strong>MinIO Object Storage</strong> panel above. These settings control the rclone-based MinIO data sync provider.</p>
@@ -2126,6 +2136,51 @@ class PageAdminBackups extends HTMLElement {
         }
       } catch (e: any) {
         if (resultEl) resultEl.innerHTML = `<span style="font-size:.82rem;color:var(--error-color)">Detection failed: ${esc(e?.message ?? '')}</span>`
+      } finally {
+        if (btn) btn.disabled = false
+      }
+    })
+
+    // Test ScyllaDB connection
+    this.querySelector('#bkTestScyllaConn')?.addEventListener('click', async () => {
+      const btn = this.querySelector('#bkTestScyllaConn') as HTMLButtonElement
+      const resultEl = this.querySelector('#bkScyllaTestResult') as HTMLElement
+      if (btn) btn.disabled = true
+      if (resultEl) resultEl.innerHTML = `<span style="font-size:.82rem;color:var(--secondary-text-color)">Testing connection...</span>`
+
+      try {
+        const clusterInp = this.querySelector('[data-key="ScyllaCluster"]') as HTMLInputElement
+        const locationInp = this.querySelector('[data-key="ScyllaLocation"]') as HTMLInputElement
+        const result = await testScyllaConnection(
+          clusterInp?.value || undefined,
+          locationInp?.value || undefined,
+        )
+
+        const renderCheck = (c: ScyllaConnectionCheck) => {
+          const icon = c.ok
+            ? '<span style="color:var(--success-color)">&#10003;</span>'
+            : '<span style="color:var(--error-color)">&#10007;</span>'
+          let html = `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px">
+            <span style="flex-shrink:0;margin-top:1px">${icon}</span>
+            <div>
+              <div style="font-size:.82rem;font-weight:500">${esc(c.message)}</div>`
+          if (!c.ok && c.fix) {
+            html += `<div style="font-size:.75rem;color:var(--secondary-text-color);margin-top:3px;white-space:pre-wrap;font-family:var(--md-ref-typeface-mono, monospace);background:var(--md-surface-container-low);padding:6px 8px;border-radius:4px;border:1px solid var(--border-subtle-color)">${esc(c.fix)}</div>`
+          }
+          html += `</div></div>`
+          return html
+        }
+
+        let html = ''
+        if (result.allOk) {
+          html += `<div style="font-size:.85rem;font-weight:600;color:var(--success-color);margin-bottom:8px">&#10003; All checks passed</div>`
+        } else {
+          html += `<div style="font-size:.85rem;font-weight:600;color:var(--error-color);margin-bottom:8px">&#10007; Some checks failed</div>`
+        }
+        html += result.checks.map(renderCheck).join('')
+        resultEl.innerHTML = html
+      } catch (e: any) {
+        if (resultEl) resultEl.innerHTML = `<span style="font-size:.82rem;color:var(--error-color)">Test failed: ${esc(e?.message ?? '')}</span>`
       } finally {
         if (btn) btn.disabled = false
       }

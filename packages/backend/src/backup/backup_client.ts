@@ -793,6 +793,37 @@ export async function getRecoveryStatus(): Promise<RecoveryStatus> {
   }
 }
 
+export interface ScyllaConnectionCheck {
+  name: string
+  ok: boolean
+  message: string
+  fix: string
+}
+
+export interface ScyllaConnectionResult {
+  allOk: boolean
+  checks: ScyllaConnectionCheck[]
+}
+
+export async function testScyllaConnection(cluster?: string, location?: string): Promise<ScyllaConnectionResult> {
+  const md = metadata()
+  const rq = new bm.TestScyllaConnectionRequest()
+  if (cluster) rq.setCluster(cluster)
+  if (location) rq.setLocation(location)
+  const rsp = await unary<bm.TestScyllaConnectionRequest, bm.TestScyllaConnectionResponse>(
+    bmClient, 'testScyllaConnection', rq, undefined, md,
+  )
+  return {
+    allOk:  rsp.getAllOk?.()  ?? false,
+    checks: (rsp.getChecksList?.() ?? []).map((c: any) => ({
+      name:    c.getName?.()    ?? '',
+      ok:      c.getOk?.()     ?? false,
+      message: c.getMessage?.() ?? '',
+      fix:     c.getFix?.()    ?? '',
+    })),
+  }
+}
+
 export async function applyRecoverySeed(force?: boolean): Promise<{ ok: boolean; message: string }> {
   const md = metadata()
   const rq = new bm.ApplyRecoverySeedRequest()
