@@ -66,9 +66,62 @@ export interface HookResultItem {
   durationMs: number
 }
 
+export interface ValidationReportItem {
+  severity: number
+  code: string
+  message: string
+}
+
+export interface ReplicationCheckItem {
+  destinationName: string
+  ok: boolean
+  missingFiles: string[]
+  errorMessage: string
+}
+
+export interface ValidationReportData {
+  valid: boolean
+  validatedAtMs: number
+  issues: ValidationReportItem[]
+  replicationChecks: ReplicationCheckItem[]
+}
+
+export interface RestoreTestCheckItem {
+  provider: string
+  ok: boolean
+  summary: string
+  errorMessage: string
+}
+
+export interface RestoreTestReportData {
+  backupId: string
+  level: number
+  passed: boolean
+  startedMs: number
+  finishedMs: number
+  checks: RestoreTestCheckItem[]
+}
+
+export interface NodeCoverageEntry {
+  nodeId: string
+  hostname: string
+  ok: boolean
+  errorMessage: string
+}
+
+export interface NodeCoverageReportData {
+  provider: string
+  entries: NodeCoverageEntry[]
+  succeeded: number
+  failed: number
+  skipped: number
+  total: number
+}
+
 export interface BackupArtifact {
   backupId: string
   createdMs: number
+  completedMs: number
   location: string
   planName: string
   clusterId: string
@@ -86,6 +139,9 @@ export interface BackupArtifact {
   clusterInfo: { clusterId: string; domain: string; nodeId: string } | null
   hooks: { prepare: HookResultItem[]; finalize: HookResultItem[] } | null
   skippedProviders: SkippedProvider[]
+  validationReport: ValidationReportData | null
+  restoreTestReport: RestoreTestReportData | null
+  nodeCoverage: NodeCoverageReportData[]
 }
 
 export interface BackupValidationIssue {
@@ -112,6 +168,7 @@ export interface RetentionStatus {
   keepLastN: number
   keepDays: number
   maxTotalBytes: number
+  minRestoreTestedToKeep: number
   currentBackupCount: number
   currentTotalBytes: number
   oldestMs: number
@@ -179,12 +236,65 @@ function mapHookResult(h: any): HookResultItem {
   }
 }
 
+function mapValidationReport(vr: any): ValidationReportData | null {
+  if (!vr) return null
+  return {
+    valid:             vr.getValid?.()              ?? false,
+    validatedAtMs:     vr.getValidatedAtUnixMs?.()  ?? 0,
+    issues: (vr.getIssuesList?.() ?? []).map((i: any) => ({
+      severity: i.getSeverity?.() ?? 0,
+      code:     i.getCode?.()     ?? '',
+      message:  i.getMessage?.()  ?? '',
+    })),
+    replicationChecks: (vr.getReplicationChecksList?.() ?? []).map((rc: any) => ({
+      destinationName: rc.getDestinationName?.() ?? '',
+      ok:              rc.getOk?.()              ?? false,
+      missingFiles:    rc.getMissingFilesList?.() ?? [],
+      errorMessage:    rc.getErrorMessage?.()    ?? '',
+    })),
+  }
+}
+
+function mapRestoreTestReport(rt: any): RestoreTestReportData | null {
+  if (!rt) return null
+  return {
+    backupId:   rt.getBackupId?.()       ?? '',
+    level:      rt.getLevel?.()          ?? 0,
+    passed:     rt.getPassed?.()         ?? false,
+    startedMs:  rt.getStartedUnixMs?.()  ?? 0,
+    finishedMs: rt.getFinishedUnixMs?.() ?? 0,
+    checks: (rt.getChecksList?.() ?? []).map((c: any) => ({
+      provider:     c.getProvider?.()     ?? '',
+      ok:           c.getOk?.()           ?? false,
+      summary:      c.getSummary?.()      ?? '',
+      errorMessage: c.getErrorMessage?.() ?? '',
+    })),
+  }
+}
+
+function mapNodeCoverage(list: any[]): NodeCoverageReportData[] {
+  return (list ?? []).map((nc: any) => ({
+    provider:  nc.getProvider?.()  ?? '',
+    succeeded: nc.getSucceeded?.() ?? 0,
+    failed:    nc.getFailed?.()    ?? 0,
+    skipped:   nc.getSkipped?.()   ?? 0,
+    total:     nc.getTotal?.()     ?? 0,
+    entries: (nc.getEntriesList?.() ?? []).map((e: any) => ({
+      nodeId:       e.getNodeId?.()       ?? '',
+      hostname:     e.getHostname?.()     ?? '',
+      ok:           e.getOk?.()           ?? false,
+      errorMessage: e.getErrorMessage?.() ?? '',
+    })),
+  }))
+}
+
 function mapArtifact(a: any): BackupArtifact {
   const cluster = a.getCluster?.()
   const hooks = a.getHooks?.()
   return {
     backupId:        a.getBackupId?.()         ?? '',
     createdMs:       a.getCreatedUnixMs?.()    ?? 0,
+    completedMs:     a.getCompletedUnixMs?.()  ?? 0,
     location:        a.getLocation?.()         ?? '',
     planName:        a.getPlanName?.()         ?? '',
     clusterId:       a.getClusterId?.()        ?? '',
@@ -212,6 +322,9 @@ function mapArtifact(a: any): BackupArtifact {
       name:   s.getName?.()   ?? '',
       reason: s.getReason?.() ?? '',
     })),
+    validationReport:  mapValidationReport(a.getValidationReport?.()),
+    restoreTestReport: mapRestoreTestReport(a.getRestoreTestReport?.()),
+    nodeCoverage:      mapNodeCoverage(a.getNodeCoverageList?.()),
   }
 }
 
@@ -485,9 +598,10 @@ export async function getRetentionStatus(): Promise<RetentionStatus> {
   )
   const pol = rsp.getPolicy?.()
   return {
-    keepLastN:          pol?.getKeepLastN?.()      ?? 0,
-    keepDays:           pol?.getKeepDays?.()       ?? 0,
-    maxTotalBytes:      pol?.getMaxTotalBytes?.()  ?? 0,
+    keepLastN:               pol?.getKeepLastN?.()               ?? 0,
+    keepDays:                pol?.getKeepDays?.()                ?? 0,
+    maxTotalBytes:           pol?.getMaxTotalBytes?.()           ?? 0,
+    minRestoreTestedToKeep:  pol?.getMinRestoreTestedToKeep?.()  ?? 0,
     currentBackupCount: rsp.getCurrentBackupCount?.() ?? 0,
     currentTotalBytes:  rsp.getCurrentTotalBytes?.()  ?? 0,
     oldestMs:           rsp.getOldestBackupUnixMs?.() ?? 0,
@@ -515,6 +629,51 @@ export async function demoteBackup(backupId: string): Promise<{ ok: boolean; mes
     bmClient, 'demoteBackup', rq, undefined, md,
   )
   return { ok: rsp.getOk?.() ?? false, message: rsp.getMessage?.() ?? '' }
+}
+
+// ─── Restore Test ───────────────────────────────────────────────────────────
+
+export async function runRestoreTest(opts: {
+  backupId?: string
+  level?: number
+}): Promise<{ jobId: string; backupId: string; level: number }> {
+  const md = metadata()
+  const rq = new bm.RunRestoreTestRequest()
+  if (opts.backupId) rq.setBackupId(opts.backupId)
+  if (opts.level) rq.setLevel(opts.level)
+
+  const rsp = await unary<bm.RunRestoreTestRequest, bm.RunRestoreTestResponse>(
+    bmClient, 'runRestoreTest', rq, undefined, md,
+  )
+  return {
+    jobId:    rsp.getJobId?.()    ?? '',
+    backupId: rsp.getBackupId?.() ?? '',
+    level:    rsp.getLevel?.()    ?? 0,
+  }
+}
+
+// ─── Schedule Status ────────────────────────────────────────────────────────
+
+export interface ScheduleStatus {
+  enabled: boolean
+  interval: string
+  intervalMs: number
+  nextFireUnixMs: number
+}
+
+export async function getScheduleStatus(): Promise<ScheduleStatus> {
+  const md = metadata()
+  const rq = new bm.GetScheduleStatusRequest()
+
+  const rsp = await unary<bm.GetScheduleStatusRequest, bm.GetScheduleStatusResponse>(
+    bmClient, 'getScheduleStatus', rq, undefined, md,
+  )
+  return {
+    enabled:        rsp.getEnabled?.()        ?? false,
+    interval:       rsp.getInterval?.()       ?? '',
+    intervalMs:     rsp.getIntervalMs?.()     ?? 0,
+    nextFireUnixMs: rsp.getNextFireUnixMs?.() ?? 0,
+  }
 }
 
 // ─── MinIO Bucket Management ────────────────────────────────────────────────
@@ -576,6 +735,70 @@ export async function deleteMinioBucket(opts: {
 
   const rsp = await unary<bm.DeleteMinioBucketRequest, bm.DeleteMinioBucketResponse>(
     bmClient, 'deleteMinioBucket', rq, undefined, md,
+  )
+  return {
+    ok:      rsp.getOk?.()      ?? false,
+    message: rsp.getMessage?.() ?? '',
+  }
+}
+
+// ─── Recovery Seed ─────────────────────────────────────────────────────────
+
+export interface RecoveryStatus {
+  seedPresent: boolean
+  seedVersion: string
+  clusterName: string
+  clusterId: string
+  domain: string
+  credentialsAvailable: boolean
+  destinationConfigured: boolean
+  seedMatchesConfig: boolean
+  message: string
+  destination?: { name: string; type: string; path: string; options: Record<string, string> }
+  lastBackup?: { backupId: string; createdMs: number; planName: string; qualityState: string }
+}
+
+export async function getRecoveryStatus(): Promise<RecoveryStatus> {
+  const md = metadata()
+  const rq = new bm.GetRecoveryStatusRequest()
+  const rsp = await unary<bm.GetRecoveryStatusRequest, bm.GetRecoveryStatusResponse>(
+    bmClient, 'getRecoveryStatus', rq, undefined, md,
+  )
+
+  const dest = rsp.getDestination?.()
+  const lb = rsp.getLastBackup?.()
+
+  return {
+    seedPresent:           rsp.getSeedPresent?.()           ?? false,
+    seedVersion:           rsp.getSeedVersion?.()           ?? '',
+    clusterName:           rsp.getClusterName?.()           ?? '',
+    clusterId:             rsp.getClusterId?.()             ?? '',
+    domain:                rsp.getDomain?.()                ?? '',
+    credentialsAvailable:  rsp.getCredentialsAvailable?.()  ?? false,
+    destinationConfigured: rsp.getDestinationConfigured?.() ?? false,
+    seedMatchesConfig:     rsp.getSeedMatchesConfig?.()     ?? false,
+    message:               rsp.getMessage?.()               ?? '',
+    destination: dest ? {
+      name:    dest.getName?.()    ?? '',
+      type:    dest.getType?.()    ?? '',
+      path:    dest.getPath?.()    ?? '',
+      options: (dest.getOptionsMap?.()?.toObject?.() ?? []).reduce((acc: Record<string, string>, [k, v]: [string, string]) => { acc[k] = v; return acc }, {}),
+    } : undefined,
+    lastBackup: lb ? {
+      backupId:     lb.getBackupId?.()      ?? '',
+      createdMs:    lb.getCreatedUnixMs?.() ?? 0,
+      planName:     lb.getPlanName?.()      ?? '',
+      qualityState: lb.getQualityState?.()  ?? '',
+    } : undefined,
+  }
+}
+
+export async function applyRecoverySeed(force?: boolean): Promise<{ ok: boolean; message: string }> {
+  const md = metadata()
+  const rq = new bm.ApplyRecoverySeedRequest()
+  if (force) rq.setForce(true)
+  const rsp = await unary<bm.ApplyRecoverySeedRequest, bm.ApplyRecoverySeedResponse>(
+    bmClient, 'applyRecoverySeed', rq, undefined, md,
   )
   return {
     ok:      rsp.getOk?.()      ?? false,

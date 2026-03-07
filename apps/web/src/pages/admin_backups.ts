@@ -5,10 +5,12 @@ import {
   displayMessage, displayError,
   getRetentionStatus, promoteBackup, demoteBackup, restorePlan, restoreBackup,
   listMinioBuckets, createMinioBucket, deleteMinioBucket,
+  getScheduleStatus, runRestoreTest,
   getConfig, saveServiceConfig, getUsername,
   type BackupJob, type BackupArtifact, type ProviderResult, type ToolCheckResult,
   type RetentionStatus, type BackupValidationIssue, type RestoreStep,
-  type MinioBucketInfo,
+  type MinioBucketInfo, type ScheduleStatus,
+  type ValidationReportData, type RestoreTestReportData, type NodeCoverageReportData,
 } from '@globular/backend'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -137,7 +139,7 @@ class PageAdminBackups extends HTMLElement {
   private _preflight: { tools: ToolCheckResult[]; allOk: boolean } | null = null
   private _serviceConfig: any = null
   private _serviceId = ''
-  private _destinations: { Name: string; Type: string; Path: string; Options: Record<string, string>; Primary: boolean }[] = []
+  private _destinations: { Name: string; Type: string; Path: string; Options: Record<string, string>; Primary: boolean; AuthoritativeForRecovery?: boolean }[] = []
   private _providerConfig: {
     ScyllaCluster: string; ScyllaLocation: string; ScyllaManagerAPI: string;
     RcloneRemote: string; RcloneSource: string;
@@ -227,9 +229,21 @@ class PageAdminBackups extends HTMLElement {
           padding: 4px 12px; cursor: pointer; font-size: .8rem;
         }
         .bk-btn-danger:hover { background: color-mix(in srgb, var(--error-color) 16%, transparent); }
-        select, select option {
-          background: var(--md-surface-container-low);
-          color: var(--on-surface-color);
+        select, select option,
+        input, textarea {
+          background: var(--md-surface-container-low) !important;
+          color: var(--on-surface-color) !important;
+          border: 1px solid var(--border-subtle-color) !important;
+        }
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus {
+          -webkit-box-shadow: 0 0 0 1000px var(--md-surface-container-low) inset !important;
+          -webkit-text-fill-color: var(--on-surface-color) !important;
+        }
+        input::placeholder, textarea::placeholder {
+          color: var(--secondary-text-color);
+          opacity: .6;
         }
         .bk-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
         .bk-table th, .bk-table td { padding: 7px 10px; text-align: left; }
@@ -787,6 +801,7 @@ class PageAdminBackups extends HTMLElement {
           <div class="bk-kv">
             <span class="bk-kv-label">Backup ID</span><span style="font-family:monospace">${esc(b.backupId)}</span>
             <span class="bk-kv-label">Created</span><span>${fmtMs(b.createdMs)}</span>
+            ${b.completedMs ? `<span class="bk-kv-label">Completed</span><span>${fmtMs(b.completedMs)}</span>` : ''}
             <span class="bk-kv-label">Created By</span><span>${esc(b.createdBy || '—')}</span>
             <span class="bk-kv-label">Plan</span><span>${esc(b.planName || '—')}</span>
             <span class="bk-kv-label">Total Size</span><span>${fmtBytes(b.totalBytes)}</span>
@@ -867,16 +882,94 @@ class PageAdminBackups extends HTMLElement {
       </div>`
     }
 
+    // Node Coverage
+    if (b.nodeCoverage.length > 0) {
+      html += `<div class="bk-detail-section">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);margin-bottom:8px">Node Coverage</div>`
+      for (const nc of b.nodeCoverage) {
+        html += `<p style="font-size:.78rem;font-weight:600;margin:8px 0 4px">${esc(nc.provider)}
+          <span style="font-weight:400;color:var(--secondary-text-color)">
+            &mdash; ${nc.succeeded} succeeded, ${nc.failed} failed, ${nc.total} total
+          </span></p>
+        <table class="bk-table"><thead><tr><th>Node</th><th>Hostname</th><th>Status</th><th>Error</th></tr></thead>
+        <tbody>${nc.entries.map(e => `<tr>
+          <td style="font-family:monospace;font-size:.78rem">${esc(e.nodeId)}</td>
+          <td>${esc(e.hostname)}</td>
+          <td>${e.ok ? badge('Succeeded', 'var(--success-color)') : badge('Failed', 'var(--error-color)')}</td>
+          <td style="color:var(--error-color)">${esc(e.errorMessage || '')}</td>
+        </tr>`).join('')}</tbody></table>`
+      }
+      html += `</div>`
+    }
+
+    // Validation evidence
+    if (b.validationReport) {
+      const vr = b.validationReport
+      html += `<div class="bk-detail-section">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);margin-bottom:8px">Validation</div>
+        <div class="bk-kv">
+          <span class="bk-kv-label">Status</span><span>${vr.valid
+            ? badge('Validated', 'var(--success-color)')
+            : badge('Failed', 'var(--error-color)')}</span>
+          <span class="bk-kv-label">Validated At</span><span>${fmtMs(vr.validatedAtMs)}</span>
+        </div>
+        ${vr.issues.length > 0 ? `
+          <p style="font-size:.78rem;font-weight:600;margin:10px 0 4px">Issues</p>
+          <ul style="margin:0;padding-left:1.4em;font-size:.82rem">${vr.issues.map(i =>
+            `<li style="color:${i.severity === 3 ? 'var(--error-color)' : i.severity === 2 ? '#f59e0b' : 'var(--secondary-text-color)'}">[${esc(SEV[i.severity] ?? '?')}] ${esc(i.code)}: ${esc(i.message)}</li>`
+          ).join('')}</ul>
+        ` : ''}
+        ${vr.replicationChecks.length > 0 ? `
+          <p style="font-size:.78rem;font-weight:600;margin:10px 0 4px">Replication Checks</p>
+          <table class="bk-table"><thead><tr><th>Destination</th><th>Status</th><th>Missing</th><th>Error</th></tr></thead>
+          <tbody>${vr.replicationChecks.map(rc => `<tr>
+            <td>${esc(rc.destinationName)}</td>
+            <td>${rc.ok ? badge('OK', 'var(--success-color)') : badge('Failed', 'var(--error-color)')}</td>
+            <td>${rc.missingFiles.length > 0 ? esc(rc.missingFiles.join(', ')) : '—'}</td>
+            <td style="color:var(--error-color)">${esc(rc.errorMessage || '')}</td>
+          </tr>`).join('')}</tbody></table>
+        ` : ''}
+      </div>`
+    }
+
+    // Restore Test evidence
+    if (b.restoreTestReport) {
+      const rt = b.restoreTestReport
+      const LEVEL: Record<number, string> = { 0: 'Unknown', 1: 'Light', 2: 'Heavy' }
+      html += `<div class="bk-detail-section">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);margin-bottom:8px">Restore Test</div>
+        <div class="bk-kv">
+          <span class="bk-kv-label">Status</span><span>${rt.passed
+            ? badge('Passed', 'var(--success-color)')
+            : badge('Failed', 'var(--error-color)')}</span>
+          <span class="bk-kv-label">Level</span><span>${esc(LEVEL[rt.level] ?? '—')}</span>
+          <span class="bk-kv-label">Started</span><span>${fmtMs(rt.startedMs)}</span>
+          <span class="bk-kv-label">Duration</span><span>${fmtDuration(rt.startedMs, rt.finishedMs)}</span>
+        </div>
+        ${rt.checks.length > 0 ? `
+          <p style="font-size:.78rem;font-weight:600;margin:10px 0 4px">Provider Checks</p>
+          <table class="bk-table"><thead><tr><th>Provider</th><th>Status</th><th>Summary</th><th>Error</th></tr></thead>
+          <tbody>${rt.checks.map(c => `<tr>
+            <td>${esc(c.provider)}</td>
+            <td>${c.ok ? badge('OK', 'var(--success-color)') : badge('Failed', 'var(--error-color)')}</td>
+            <td>${esc(c.summary)}</td>
+            <td style="color:var(--error-color)">${esc(c.errorMessage || '')}</td>
+          </tr>`).join('')}</tbody></table>
+        ` : ''}
+      </div>`
+    }
+
     // Actions
     html += `<div class="bk-detail-section">
       <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);margin-bottom:8px">Actions</div>
       <div class="bk-actions">
         <button class="bk-btn" id="bkValidate">Validate</button>
         <button class="bk-btn" id="bkValidateDeep">Deep Validate</button>
+        <button class="bk-btn" id="bkRestoreTest">Run Restore Test</button>
         ${b.qualityState !== 4
           ? `<button class="bk-btn-primary" id="bkPromote">Promote</button>`
           : `<button class="bk-btn" id="bkDemote">Demote</button>`}
-        <button class="bk-btn-primary" id="bkRestoreThis">Restore</button>
+        <button class="bk-btn-primary" id="bkRestoreThis">Execute Restore</button>
         <button class="bk-btn-danger" id="bkDelete">Delete</button>
       </div>`
 
@@ -903,6 +996,16 @@ class PageAdminBackups extends HTMLElement {
     })
     this.querySelector('#bkValidate')?.addEventListener('click', () => this.doValidate(false))
     this.querySelector('#bkValidateDeep')?.addEventListener('click', () => this.doValidate(true))
+    this.querySelector('#bkRestoreTest')?.addEventListener('click', async () => {
+      try {
+        const res = await runRestoreTest({ backupId: b.backupId, level: 1 })
+        displayMessage(`Restore test started (job ${res.jobId.slice(0, 8)}). Track progress in the Jobs tab.`)
+        this._tab = 'jobs'
+        this._selectedJob = res.jobId
+        this.renderTabs()
+        this.renderContent()
+      } catch (e: any) { this._error = e?.message || 'Restore test failed'; this.renderContent() }
+    })
     this.querySelector('#bkPromote')?.addEventListener('click', async () => {
       try {
         await promoteBackup(b.backupId)
@@ -933,6 +1036,8 @@ class PageAdminBackups extends HTMLElement {
     const b = this._selectedBackup!
     try {
       this._validateResult = await validateBackup(b.backupId, deep)
+      // Refresh artifact to get persisted validation evidence
+      this._selectedBackup = await getBackup(b.backupId)
       this.renderContent()
     } catch (e: any) {
       this._error = e?.message || 'Validation failed'
@@ -1164,22 +1269,22 @@ class PageAdminBackups extends HTMLElement {
   private _scopeConfig = { etcd: true, scylla: false, minio: false, restic: true }
   private _policyConfig = { ProviderTimeoutSeconds: 600, MaxConcurrentJobs: 1, HookStrict: false, CompressCapsule: false }
   private _scheduleInterval = 'daily'
-  private _retentionConfig = { RetentionKeepLastN: 0, RetentionKeepDays: 0, RetentionMaxTotalBytes: 0 }
+  private _retentionConfig = { RetentionKeepLastN: 0, RetentionKeepDays: 0, RetentionMaxTotalBytes: 0, MinRestoreTestedToKeep: 0 }
 
   private renderSettings() {
     const el = this.querySelector('#bkContent') as HTMLElement
     if (!el) return
 
     const LABEL = `font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);display:block;margin-bottom:2px`
-    const INPUT = `width:100%;max-width:480px;box-sizing:border-box;padding:6px 10px;font-size:.85rem;border:1px solid var(--border-subtle-color);border-radius:var(--md-shape-sm);background:transparent;color:var(--on-surface-color)`
+    const INPUT = `width:100%;max-width:480px;box-sizing:border-box;padding:6px 10px;font-size:.85rem;border:1px solid var(--border-subtle-color);border-radius:var(--md-shape-sm)`
     const SECTION = `max-width:960px`
 
     el.innerHTML = `
       <div style="${SECTION}">
 
       <!-- Unsaved banner -->
-      <div id="bkUnsavedBanner" style="display:none;position:sticky;top:0;z-index:10;padding:8px 14px;margin-bottom:12px;background:color-mix(in srgb, #f59e0b 12%, var(--md-surface-container));border:1px solid #f59e0b;border-radius:var(--md-shape-sm);display:none;align-items:center;justify-content:space-between">
-        <span style="font-size:.85rem;font-weight:600;color:#f59e0b">Unsaved changes</span>
+      <div id="bkUnsavedBanner" style="display:none;position:sticky;top:0;z-index:10;padding:8px 14px;margin-bottom:12px;background:color-mix(in srgb, #f59e0b 15%, var(--md-surface-container-low));border:1px solid color-mix(in srgb, #f59e0b 50%, var(--border-subtle-color));border-radius:var(--md-shape-sm);align-items:center;justify-content:space-between">
+        <span style="font-size:.85rem;font-weight:600;color:color-mix(in srgb, #f59e0b 85%, var(--on-surface-color))">Unsaved changes</span>
         <button class="bk-btn-primary" id="bkSaveAll">Save All</button>
       </div>
 
@@ -1333,6 +1438,7 @@ class PageAdminBackups extends HTMLElement {
               </select>
             </div>
             <div style="font-size:.72rem;color:var(--secondary-text-color);margin-top:2px">Cluster backups run automatically at this interval. Skipped if a job is already running.</div>
+            <div id="bkNextScheduled" style="font-size:.82rem;margin-top:6px"></div>
           </div>
         </div>
       </div>
@@ -1361,7 +1467,7 @@ class PageAdminBackups extends HTMLElement {
       <div class="bk-panel">
         <div class="bk-panel-header"><span>Retention Policy</span></div>
         <div class="bk-detail-section">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;max-width:600px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;max-width:800px">
             <div>
               <label style="${LABEL}">Keep last backups</label>
               <input id="bkRetKeepN" type="number" min="0" placeholder="0 = unlimited" style="${INPUT};max-width:120px">
@@ -1379,6 +1485,11 @@ class PageAdminBackups extends HTMLElement {
                 <input id="bkRetMaxGB" type="number" min="0" step="1" placeholder="0" style="${INPUT};max-width:80px">
                 <span style="font-size:.82rem;color:var(--secondary-text-color)">GB</span>
               </div>
+            </div>
+            <div>
+              <label style="${LABEL}">Min restore-tested</label>
+              <input id="bkRetMinTested" type="number" min="0" placeholder="0 = disabled" style="${INPUT};max-width:120px">
+              <div style="font-size:.72rem;color:var(--secondary-text-color);margin-top:2px">Always keep N restore-tested backups</div>
             </div>
           </div>
           <div id="bkRetentionResult" style="margin-top:12px"></div>
@@ -1454,9 +1565,11 @@ class PageAdminBackups extends HTMLElement {
     const retN = this.querySelector('#bkRetKeepN') as HTMLInputElement
     const retDays = this.querySelector('#bkRetKeepDays') as HTMLInputElement
     const retGB = this.querySelector('#bkRetMaxGB') as HTMLInputElement
+    const retMinTested = this.querySelector('#bkRetMinTested') as HTMLInputElement
     retN?.addEventListener('input', () => { this._retentionConfig.RetentionKeepLastN = Number(retN.value) || 0; this.markDirty() })
     retDays?.addEventListener('input', () => { this._retentionConfig.RetentionKeepDays = Number(retDays.value) || 0; this.markDirty() })
     retGB?.addEventListener('input', () => { this._retentionConfig.RetentionMaxTotalBytes = (Number(retGB.value) || 0) * 1024 * 1024 * 1024; this.markDirty() })
+    retMinTested?.addEventListener('input', () => { this._retentionConfig.MinRestoreTestedToKeep = Number(retMinTested.value) || 0; this.markDirty() })
 
     // Advanced toggle
     this.querySelector('#bkAdvProvToggle')?.addEventListener('click', () => {
@@ -1511,6 +1624,7 @@ class PageAdminBackups extends HTMLElement {
       this._destinations = (svc.Destinations || []).map((d: any) => ({
         Name: d.Name || '', Type: d.Type || 'local', Path: d.Path || '',
         Options: d.Options || {}, Primary: d.Primary || false,
+        AuthoritativeForRecovery: d.AuthoritativeForRecovery || false,
       }))
       if (this._destinations.length === 0) {
         this._destinations = [{ Name: 'local', Type: 'local', Path: '/var/lib/globular/backups', Options: {}, Primary: true }]
@@ -1539,6 +1653,7 @@ class PageAdminBackups extends HTMLElement {
         RetentionKeepLastN: svc.RetentionKeepLastN || 0,
         RetentionKeepDays: svc.RetentionKeepDays || 0,
         RetentionMaxTotalBytes: svc.RetentionMaxTotalBytes || 0,
+        MinRestoreTestedToKeep: svc.MinRestoreTestedToKeep || 0,
       }
 
       // Schedule
@@ -1600,15 +1715,33 @@ class PageAdminBackups extends HTMLElement {
     if (compress) compress.checked = this._policyConfig.CompressCapsule
     const sched = this.querySelector('#bkScheduleInterval') as HTMLSelectElement
     if (sched) sched.value = this._scheduleInterval
+    this.updateNextScheduled()
+  }
+
+  private async updateNextScheduled() {
+    const el = this.querySelector('#bkNextScheduled') as HTMLElement
+    if (!el) return
+    try {
+      const status = await getScheduleStatus()
+      if (!status.enabled || !status.nextFireUnixMs) {
+        el.textContent = ''
+        return
+      }
+      el.innerHTML = `<span style="color:var(--secondary-text-color)">Next scheduled backup: <strong>${fmtMs(status.nextFireUnixMs)}</strong></span>`
+    } catch {
+      el.textContent = ''
+    }
   }
 
   private populateRetentionUI() {
     const n = this.querySelector('#bkRetKeepN') as HTMLInputElement
     const d = this.querySelector('#bkRetKeepDays') as HTMLInputElement
     const g = this.querySelector('#bkRetMaxGB') as HTMLInputElement
+    const mt = this.querySelector('#bkRetMinTested') as HTMLInputElement
     if (n) n.value = this._retentionConfig.RetentionKeepLastN ? String(this._retentionConfig.RetentionKeepLastN) : ''
     if (d) d.value = this._retentionConfig.RetentionKeepDays ? String(this._retentionConfig.RetentionKeepDays) : ''
     if (g) g.value = this._retentionConfig.RetentionMaxTotalBytes ? String(Math.round(this._retentionConfig.RetentionMaxTotalBytes / (1024 * 1024 * 1024))) : ''
+    if (mt) mt.value = this._retentionConfig.MinRestoreTestedToKeep ? String(this._retentionConfig.MinRestoreTestedToKeep) : ''
   }
 
   // ─── MinIO Bucket Management ──────────────────────────────────────────────
@@ -1739,7 +1872,7 @@ class PageAdminBackups extends HTMLElement {
       if (resultEl) resultEl.innerHTML = `<span style="color:var(--success-color)">&#10003; ${esc(res.message)}</span>`
       if (nameEl) nameEl.value = ''
 
-      // If setDest, also add to local destinations list
+      // If setDest, also add to local destinations list and persist immediately
       if (setDest) {
         this.addMinioBucketAsDestination(name)
         this.renderStorageCards()
@@ -1748,10 +1881,13 @@ class PageAdminBackups extends HTMLElement {
         this._providerConfig.ScyllaLocation = 's3:' + name
         this.renderProvCfgEditor()
       }
+      if (setDest || setScylla) {
+        await this.saveAllSettings()
+        displayMessage('Bucket created and settings saved.')
+      }
 
       // Refresh bucket list
       await this.loadMinioBuckets()
-      this.markDirty()
     } catch (e: any) {
       if (resultEl) resultEl.innerHTML = `<span style="color:var(--error-color)">&#10007; ${esc(e?.message ?? 'Create failed')}</span>`
     }
@@ -1775,7 +1911,7 @@ class PageAdminBackups extends HTMLElement {
     if (!el) return
     const DEST_TYPES = ['local', 'minio', 'nfs', 's3', 'rclone']
     const typeLabel: Record<string, string> = { local: 'Local Disk', minio: 'S3 / MinIO', nfs: 'NFS Mount', s3: 'AWS S3', rclone: 'Rclone Remote' }
-    const INPUT = `width:100%;box-sizing:border-box;padding:4px 8px;font-size:.85rem;border:1px solid var(--border-subtle-color);border-radius:var(--md-shape-sm);background:transparent;color:var(--on-surface-color)`
+    const INPUT = `width:100%;box-sizing:border-box;padding:4px 8px;font-size:.85rem;border:1px solid var(--border-subtle-color);border-radius:var(--md-shape-sm)`
     const LABEL = `font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);display:block;margin-bottom:2px`
 
     if (this._destinations.length === 0) {
@@ -1813,6 +1949,9 @@ class PageAdminBackups extends HTMLElement {
             }).join('\n')}</textarea>
           </div>` : ''}
         </div>
+        ${d.Type !== 'local' ? `<div style="margin-top:6px">
+          <label class="bk-checkbox" style="font-size:.8rem"><input type="checkbox" class="bk-dest-recovery" data-idx="${i}" ${d.AuthoritativeForRecovery ? 'checked' : ''}> Authoritative for recovery seed</label>
+        </div>` : ''}
       </div>
     `).join('')
 
@@ -1842,6 +1981,15 @@ class PageAdminBackups extends HTMLElement {
         this.markDirty()
       })
     })
+    el.querySelectorAll<HTMLInputElement>('.bk-dest-recovery').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const idx = Number(chk.dataset.idx)
+        // Only one can be authoritative
+        this._destinations.forEach((d, i) => d.AuthoritativeForRecovery = i === idx && chk.checked)
+        this.renderStorageCards()
+        this.markDirty()
+      })
+    })
     el.querySelectorAll<HTMLButtonElement>('.bk-dest-set-primary').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = Number(btn.dataset.idx)
@@ -1857,13 +2005,27 @@ class PageAdminBackups extends HTMLElement {
         this.markDirty()
       })
     })
+
+    // Local-only warning
+    const msgEl = this.querySelector('#bkStorageMsg') as HTMLElement
+    if (msgEl) {
+      const hasNonLocal = this._destinations.some(d => d.Type !== 'local')
+      if (!hasNonLocal && this._destinations.length > 0) {
+        msgEl.innerHTML = `<div style="padding:8px 12px;border-radius:var(--md-shape-sm);background:var(--warning-container-color, #fff3cd);color:var(--warning-color, #856404);font-size:.82rem;display:flex;align-items:center;gap:8px">
+          <span style="font-size:1.1rem">&#9888;</span>
+          <span>All destinations are local. Backups will <strong>not survive</strong> a full disk failure or OS reinstall. Add an S3/MinIO or rclone destination for disaster recovery.</span>
+        </div>`
+      } else {
+        msgEl.innerHTML = ''
+      }
+    }
   }
 
   private renderProvCfgEditor() {
     const el = this.querySelector('#bkProvCfgEditor') as HTMLElement
     if (!el) return
     const c = this._providerConfig
-    const INPUT = `width:100%;max-width:420px;box-sizing:border-box;padding:5px 10px;font-size:.85rem;border:1px solid var(--border-subtle-color);border-radius:var(--md-shape-sm);background:transparent;color:var(--on-surface-color)`
+    const INPUT = `width:100%;max-width:420px;box-sizing:border-box;padding:5px 10px;font-size:.85rem;border:1px solid var(--border-subtle-color);border-radius:var(--md-shape-sm)`
     const LABEL = `font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary-text-color);display:block;margin-bottom:2px`
 
     const field = (label: string, key: string, value: string, placeholder: string, hint: string) => `
@@ -1979,6 +2141,9 @@ class PageAdminBackups extends HTMLElement {
     this.querySelectorAll<HTMLInputElement>('.bk-dest-path').forEach(inp => {
       this._destinations[Number(inp.dataset.idx)].Path = inp.value
     })
+    this.querySelectorAll<HTMLInputElement>('.bk-dest-recovery').forEach(chk => {
+      this._destinations[Number(chk.dataset.idx)].AuthoritativeForRecovery = chk.checked
+    })
     this.querySelectorAll<HTMLInputElement>('.bk-prov-field').forEach(inp => {
       (this._providerConfig as any)[inp.dataset.key!] = inp.value
     })
@@ -2031,22 +2196,67 @@ class PageAdminBackups extends HTMLElement {
   private renderPreflightResult() {
     const el = this.querySelector('#bkPreflightResult') as HTMLElement
     if (!el || !this._preflight) return
-    // Filter out synthetic detection entries — they're handled by the Detect button
-    const pf = { ...this._preflight, tools: this._preflight.tools.filter(t => !t.name.endsWith('_detected')) }
+    // Separate recovery checks from tool checks and detection entries
+    const RECOVERY_KEYS = new Set(['recovery_seed_present', 'recovery_destination_configured', 'recovery_credentials_available', 'recovery_seed_matches_current_config'])
+    const toolChecks = this._preflight.tools.filter(t => !t.name.endsWith('_detected') && !RECOVERY_KEYS.has(t.name))
+    const recoveryChecks = this._preflight.tools.filter(t => RECOVERY_KEYS.has(t.name))
+
     const HINTS: Record<string, string> = {
       sctool: 'Check that scylla-manager is running: <code>systemctl status globular-scylla-manager</code>',
       restic: 'Install restic: <code>apt install restic</code> or download from GitHub',
       etcdctl: 'Install etcdctl from the etcd release package',
       rclone: 'Install rclone: <code>curl https://rclone.org/install.sh | bash</code>',
     }
+    const RECOVERY_LABELS: Record<string, string> = {
+      recovery_destination_configured: 'Recovery destination configured',
+      recovery_seed_present: 'Recovery seed present',
+      recovery_credentials_available: 'Recovery credentials available',
+      recovery_seed_matches_current_config: 'Seed matches current config',
+    }
+
+    const renderCheck = (t: ToolCheckResult) => {
+      const ok = t.available
+      const icon = ok ? '<span style="color:var(--success-color)">&#10003;</span>' : '<span style="color:var(--error-color)">&#10007;</span>'
+      const severity = ok ? 'ok' : 'error'
+      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:6px 10px;border-radius:var(--md-shape-sm);background:${severity === 'error' ? 'color-mix(in srgb, var(--error-color) 6%, transparent)' : 'transparent'}">
+        <span style="font-size:1.1rem;line-height:1;min-width:20px">${icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <strong style="font-size:.88rem">${esc(RECOVERY_LABELS[t.name] || t.name)}</strong>
+            ${t.version ? `<span style="font-size:.78rem;color:var(--secondary-text-color)">${esc(t.version)}</span>` : ''}
+          </div>
+          ${t.errorMessage ? `<div style="font-size:.78rem;color:var(--error-color);margin-top:2px">${esc(t.errorMessage)}</div>` : ''}
+        </div>
+      </div>`
+    }
+
+    // Disaster recovery readiness
+    const drReady = recoveryChecks.length > 0 && recoveryChecks.every(t => t.available)
+    const hasAuthoritative = this._destinations.some(d => d.AuthoritativeForRecovery)
+    const drSection = recoveryChecks.length > 0 ? `
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-subtle-color)">
+        <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
+          <strong style="font-size:.88rem">Disaster Recovery Readiness</strong>
+          ${drReady
+            ? `<span class="bk-badge" style="--badge-color:var(--success-color)">READY</span>`
+            : `<span class="bk-badge" style="--badge-color:var(--error-color)">NOT READY</span>`}
+        </div>
+        ${!hasAuthoritative ? `<div style="padding:6px 10px;border-radius:var(--md-shape-sm);background:color-mix(in srgb, var(--warning-color, #f59e0b) 8%, transparent);color:var(--warning-color, #856404);font-size:.82rem;margin-bottom:8px">
+          &#9888; No destination is marked as authoritative recovery source. Mark one non-local destination to enable disaster recovery.
+        </div>` : ''}
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${recoveryChecks.map(renderCheck).join('')}
+        </div>
+      </div>
+    ` : ''
 
     el.innerHTML = `
-      <div style="margin-bottom:10px">${pf.allOk
+      <div style="margin-bottom:10px">${this._preflight.allOk
         ? `<span style="color:var(--success-color);font-weight:700">&#10003; All tools available</span>`
         : `<span style="color:var(--error-color);font-weight:700">&#10007; Some tools need attention</span>`}
       </div>
       <div style="display:flex;flex-direction:column;gap:6px">
-      ${pf.tools.map(t => {
+      ${toolChecks.map(t => {
         const ok = t.available
         const icon = ok ? (t.errorMessage ? '<span style="color:#f59e0b">&#9888;</span>' : '<span style="color:var(--success-color)">&#10003;</span>') : '<span style="color:var(--error-color)">&#10007;</span>'
         const severity = ok ? (t.errorMessage ? 'warn' : 'ok') : 'error'
@@ -2062,7 +2272,8 @@ class PageAdminBackups extends HTMLElement {
           </div>
         </div>`
       }).join('')}
-      </div>`
+      </div>
+      ${drSection}`
   }
 
   private renderRetentionStatus() {
