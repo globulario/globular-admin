@@ -19,7 +19,7 @@ import { getBaseUrl } from "@globular/backend"
 
 // --- Constants ---
 const AUDIO_PLAYER_ID = "globular-audio-player-instance"
-const DEFAULT_AUDIO_COVER = new URL('../assets/icons/music-quavers-flat.svg', import.meta.url).href
+const DEFAULT_AUDIO_COVER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23316CFF' d='M32 0c17.7 0 32 14.3 32 32S49.7 64 32 64 0 49.7 0 32 14.3 0 32 0z'/%3E%3Cpath fill='%23FFF' d='M23.9 21.6V30v9.9c-.9-.7-2.1-1.1-3.3-1.1-3.1 0-5.6 2.5-5.6 5.6s2.5 5.6 5.6 5.6 5.5-2.5 5.5-5.6V30l16.7-5.9v12.4c-.9-.7-2.1-1.1-3.3-1.1-3.1 0-5.5 2.5-5.5 5.6s2.5 5.6 5.5 5.6c3.1 0 5.6-2.5 5.6-5.6V24.1V14l-21.2 7.6z'/%3E%3C/svg%3E"
 
 const AUDIO_LOOP_STORAGE_KEY = "audio_loop"
 const AUDIO_SHUFFLE_STORAGE_KEY = "audio_shuffle"

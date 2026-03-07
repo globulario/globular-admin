@@ -22,8 +22,12 @@ import './pages/rbac_orgs'
 import './pages/rbac_groups'
 import './pages/rbac_roles'
 // Infrastructure
+import './pages/infrastructure_overview'
 import './pages/infrastructure_storage'
 import './pages/infrastructure_dns'
+import './pages/infrastructure_networking'
+import './pages/infrastructure_control_plane'
+import './pages/infrastructure_observability'
 // Observability
 import './pages/observability_metrics'
 import './pages/observability_logs'
@@ -127,8 +131,12 @@ const routes: Record<string, RouteHandler> = {
   '#/security/rbac/roles':          () => document.createElement('page-rbac-roles'),
 
   // Infrastructure
-  '#/infrastructure/storage': () => document.createElement('page-infrastructure-storage'),
-  '#/infrastructure/dns':     () => document.createElement('page-infrastructure-dns'),
+  '#/infrastructure/overview':      () => document.createElement('page-infrastructure-overview'),
+  '#/infrastructure/storage':       () => document.createElement('page-infrastructure-storage'),
+  '#/infrastructure/dns':           () => document.createElement('page-infrastructure-dns'),
+  '#/infrastructure/networking':    () => document.createElement('page-infrastructure-networking'),
+  '#/infrastructure/control-plane': () => document.createElement('page-infrastructure-control-plane'),
+  '#/infrastructure/observability': () => document.createElement('page-infrastructure-observability'),
 
   // Observability
   '#/observability/metrics': () => document.createElement('page-observability-metrics'),

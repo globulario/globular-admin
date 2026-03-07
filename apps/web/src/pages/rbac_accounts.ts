@@ -42,9 +42,7 @@ Use this page to **create**, **update**, and **delete** accounts used to access 
           </globular-markdown>
         </iron-collapse>
 
-        <div class="card">
-          <div id="content"></div>
-        </div>
+        <div id="content"></div>
       </section>
     `;
 

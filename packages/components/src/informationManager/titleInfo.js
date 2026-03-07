@@ -339,6 +339,7 @@ const TITLE_INFO_GLOBAL_STYLE = `
   display: flex;
   flex-direction: column;
   border-radius: 8px;
+  overflow: hidden;
 }
 
 .title-poster-div img, p { }
@@ -710,7 +711,6 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
           height: 100%;
           min-height: 0;
           gap: 10px;
-          max-height: calc(100vh - 400px);
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, var(--palette-divider))
           var(--scroll-track, var(--surface-color));

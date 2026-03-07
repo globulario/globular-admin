@@ -3,10 +3,13 @@ import {
   listClusterNodes,
   getDriftReport,
   getClusterHealthV1Full,
+  computeReconciliationDiff,
   type ClusterNode,
   type DriftReport,
   type DriftItem,
   type NodeHealthV1,
+  type NodeReconciliationDiff,
+  type ServiceDiffEntry,
 } from '@globular/backend'
 
 // ─── DriftCategory constants (numeric, from generated proto enums) ───────────
@@ -50,6 +53,17 @@ function badge(label: string, color: string): string {
   return `<span class="md-badge" style="--badge-color:${color}">${label}</span>`
 }
 
+function actionColor(action: ServiceDiffEntry['action']): string {
+  switch (action) {
+    case 'install':   return 'var(--error-color)'
+    case 'upgrade':
+    case 'downgrade': return '#f59e0b'
+    case 'remove':    return '#f97316'
+    case 'ok':        return 'color-mix(in srgb, var(--success-color) 70%, transparent)'
+    default:          return 'var(--secondary-text-color)'
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface NodeDrift {
@@ -61,6 +75,7 @@ interface NodeDrift {
 class PageClusterReconciliation extends HTMLElement {
   private _rows: NodeDrift[] = []
   private _nodeHealths: NodeHealthV1[] = []
+  private _diffs: NodeReconciliationDiff[] = []
   private _loadError = ''
   private _loading = true
   private _refreshTimer: number | null = null
@@ -79,12 +94,14 @@ class PageClusterReconciliation extends HTMLElement {
   private async load() {
     let nodes: ClusterNode[]
     try {
-      const [nodeList, healthResult] = await Promise.all([
+      const [nodeList, healthResult, diffs] = await Promise.all([
         listClusterNodes(),
         getClusterHealthV1Full().catch(() => null),
+        computeReconciliationDiff().catch(() => [] as NodeReconciliationDiff[]),
       ])
       nodes = nodeList
       this._nodeHealths = healthResult?.nodeHealths ?? []
+      this._diffs = diffs
       this._loadError = ''
     } catch (e: any) {
       this._loadError = e?.message || 'ClusterController unavailable'
@@ -164,7 +181,6 @@ class PageClusterReconciliation extends HTMLElement {
           font-size: .78rem;
         }
         .cr-btn-refresh:hover { background: var(--md-state-hover); }
-        /* use global .md-banner-warn */
         .cr-node-panel-header {
           padding: 8px 14px;
           font: var(--md-typescale-label-medium);
@@ -188,6 +204,12 @@ class PageClusterReconciliation extends HTMLElement {
         }
         .cr-copy-btn:hover { color: var(--accent-color); }
         .cr-copy-btn.cr-copy-ok { color: var(--success-color); }
+        .cr-section-label {
+          font-size: .72rem; font-weight: 700; text-transform: uppercase;
+          letter-spacing: .06em; color: var(--secondary-text-color);
+          padding: 8px 14px; background: var(--md-surface-container);
+          border-bottom: 1px solid var(--border-subtle-color);
+        }
       </style>
 
       <div class="cr-wrap">
@@ -196,13 +218,13 @@ class PageClusterReconciliation extends HTMLElement {
           <div style="flex:1"></div>
           <button class="cr-btn-refresh" id="btnRefresh">↻ Refresh</button>
         </div>
-        <p class="cr-subtitle">Drift between desired and applied state, version mismatches, and missing units per node.</p>
+        <p class="cr-subtitle">Service version diff, drift between desired and applied state, and missing units per node.</p>
 
         ${this._loading ? `<p class="cr-empty">Loading drift data…</p>` : ''}
 
         ${this._loadError ? `
         <div class="md-banner-warn">
-          ⚠ Could not load nodes — ${this._loadError}
+          Could not load nodes — ${this._loadError}
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>
         </div>
         ` : ''}
@@ -229,7 +251,12 @@ class PageClusterReconciliation extends HTMLElement {
 
         ${this._rows.map(row => {
           const items = row.report?.items ?? []
-          if (!row.report || items.length === 0) return ''
+          const diff = this._diffs.find(d => d.nodeId === row.node.nodeId)
+          const diffServices = diff?.services ?? []
+          const hasDriftItems = items.length > 0
+          const hasServiceDiff = diffServices.some(s => s.action !== 'ok')
+          if (!hasDriftItems && !hasServiceDiff) return ''
+
           const nh = this._nodeHealths.find(h => h.nodeId === row.node.nodeId)
           const hasHashMismatch = items.some(i => i.category === STATE_HASH_MISMATCH)
           const nodeCanPriv = nh?.canApplyPrivileged ?? true
@@ -237,7 +264,7 @@ class PageClusterReconciliation extends HTMLElement {
           <div class="md-panel">
             <div class="md-panel-header">
               <span>${row.node.hostname || row.node.nodeId}</span>
-              <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}${!nodeCanPriv ? ' · <span style="color:#f97316">unprivileged</span>' : ''}</span>
+              <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}${diffServices.filter(s => s.action !== 'ok').length > 0 ? ` · ${diffServices.filter(s => s.action !== 'ok').length} service action${diffServices.filter(s => s.action !== 'ok').length !== 1 ? 's' : ''}` : ''}${!nodeCanPriv ? ' · <span style="color:#f97316">unprivileged</span>' : ''}</span>
             </div>
             ${nh ? `
             <div style="padding:6px 14px;font-size:.75rem;display:flex;gap:14px;flex-wrap:wrap;color:var(--secondary-text-color);border-bottom:1px solid var(--border-subtle-color)">
@@ -246,6 +273,31 @@ class PageClusterReconciliation extends HTMLElement {
               <span>Plan phase: <code class="cr-mono">${nh.currentPlanPhase || '—'}</code></span>
               <span>Privileged: ${nodeCanPriv ? '✓' : '<span style="color:#f97316">✕</span>'}</span>
             </div>` : ''}
+
+            ${diffServices.length > 0 ? `
+            <div class="cr-section-label">Service Versions</div>
+            <table class="md-table">
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Desired</th>
+                  <th>Installed</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${diffServices.map(s => `
+                <tr>
+                  <td class="cr-mono">${s.serviceId}</td>
+                  <td class="cr-mono" style="color:var(--success-color)">${s.desired || '—'}</td>
+                  <td class="cr-mono" style="color:${s.action === 'ok' ? 'var(--on-surface-color)' : actionColor(s.action)}">${s.installed || '—'}</td>
+                  <td>${badge(s.action.toUpperCase(), actionColor(s.action))}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>` : ''}
+
+            ${items.length > 0 ? `
+            <div class="cr-section-label">Drift Items</div>
             <table class="md-table">
               <thead>
                 <tr>
@@ -268,7 +320,8 @@ class PageClusterReconciliation extends HTMLElement {
                   </tr>`
                 }).join('')}
               </tbody>
-            </table>
+            </table>` : ''}
+
             ${hasHashMismatch ? `
             <div class="md-banner-warn" style="margin:8px 14px 14px;font-size:.82rem">
               ${!nodeCanPriv
@@ -288,7 +341,7 @@ class PageClusterReconciliation extends HTMLElement {
           </div>`
         }).join('')}
 
-        ${!this._loading && this._rows.every(r => !r.report || r.report.items.length === 0) ? `
+        ${!this._loading && this._rows.every(r => !r.report || r.report.items.length === 0) && !this._diffs.some(d => d.hasDrift) ? `
         <div class="md-panel">
           <p class="cr-empty">✓ No drift detected — all nodes are in the desired state.</p>
         </div>

@@ -45,9 +45,7 @@ Use this page to **create**, **update**, and **delete** groups, and manage **mem
           </globular-markdown>
         </iron-collapse>
 
-        <div class="card">
-          <div id="content"></div>
-        </div>
+        <div id="content"></div>
       </section>
     `;
 

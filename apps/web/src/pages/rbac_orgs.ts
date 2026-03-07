@@ -43,9 +43,7 @@ You can also manage membership by adding/removing **accounts** and **groups**.
           </globular-markdown>
         </iron-collapse>
 
-        <div class="card">
-          <div id="content"></div>
-        </div>
+        <div id="content"></div>
       </section>
     `;
 

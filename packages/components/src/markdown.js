@@ -38,7 +38,7 @@ class Markdown extends HTMLElement {
           padding: 1rem 1.25rem;
           overflow: auto;
           line-height: 1.6;
-          font: 400 1rem/1.6 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+          font: 400 var(--md-font-size, 1rem)/1.6 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
         }
 
         .wrap :is(h1,h2,h3,h4,h5,h6) {

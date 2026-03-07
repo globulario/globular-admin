@@ -16,4 +16,12 @@ export * from "./media/blog";
 
 export { Backend } from "./backend";
 export { getEventClient } from "./event/event";
+export * from "./event/queryEvents";
+export * from "./log/queryLogs";
+export * from "./metrics/stats";
+export * from "./metrics/metricsNormalizer";
+export * from "./metrics/prometheus";
+export * from "./metrics/adminMetrics";
 export * from "./repository";
+export * from "./dns/dns";
+export * from "./backup/backup_client";

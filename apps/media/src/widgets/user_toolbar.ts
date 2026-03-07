@@ -6,7 +6,7 @@ import "@globular/components/fileExplorer/fileExplorer.js"
 class UserToolbar extends HTMLElement {
   private shadow!: ShadowRoot
   private root!: HTMLElement
-  private folderIconUrl = new URL('../assets/icons/folder-flat.svg', import.meta.url).href
+  private folderIconUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23FF6A4D' d='M32 0c17.7 0 32 14.3 32 32S49.7 64 32 64 0 49.7 0 32 14.3 0 32 0z'/%3E%3Cpath fill='%23FFB133' d='M51 23v9H13V19c0-1.1.9-2 2-2h12.3c.5 0 .9.1 1.2.4l3.9 3.1c.4.3.8.4 1.2.4H49c1.1 0 2 .9 2 2z'/%3E%3Cpath fill='%23FFF' d='M45.9 41.2H18.1c-1.1 0-2-.9-2-2V26c0-1.1.9-2 2-2h27.8c1.1 0 2 .9 2 2v13.2c0 1.1-.9 2-2 2z'/%3E%3Cpath fill='%23FFD731' d='M51 29.3V45c0 1.1-.9 2-2 2H15c-1.1 0-2-.9-2-2V29.3c0-1.3 1.1-2.3 2.4-2.3h33.1c1.4 0 2.5 1.1 2.5 2.3z'/%3E%3C/svg%3E"
 
   constructor() {
     super()

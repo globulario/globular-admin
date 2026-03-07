@@ -44,9 +44,7 @@ Use this page to **create**, **update**, and **delete** roles, and manage **acco
           </globular-markdown>
         </iron-collapse>
 
-        <div class="card">
-          <div id="content"></div>
-        </div>
+        <div id="content"></div>
       </section>
     `;
 

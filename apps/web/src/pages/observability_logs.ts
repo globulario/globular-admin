@@ -236,6 +236,8 @@ class PageObservabilityLogs extends HTMLElement {
   private _overviewLoading = true
   private _overviewError = ''
   private _overviewTimer: number | null = null
+  private _overviewSubId = ''
+  private _overviewDebounce: number | null = null
 
   // Live tail
   private _tailRunning = false
@@ -277,6 +279,7 @@ class PageObservabilityLogs extends HTMLElement {
 
   disconnectedCallback() {
     this._stopOverviewTimer()
+    this._stopOverviewSub()
     this._stopTail()
   }
 
@@ -314,6 +317,7 @@ class PageObservabilityLogs extends HTMLElement {
     this._overviewLoading = false
     this.render()
     this._startOverviewTimer()
+    this._startOverviewSub()
   }
 
   private _startOverviewTimer() {
@@ -323,6 +327,32 @@ class PageObservabilityLogs extends HTMLElement {
 
   private _stopOverviewTimer() {
     if (this._overviewTimer) { clearInterval(this._overviewTimer); this._overviewTimer = null }
+  }
+
+  private _startOverviewSub() {
+    if (this._overviewSubId) return
+    Backend.subscribe('new_log_evt', (uuid: string) => {
+      this._overviewSubId = uuid
+    }, (data: any) => {
+      const entry = parseLogEvent(data)
+      if (!entry) return
+      // Only refresh for persisted levels (ERROR / FATAL)
+      if (entry.level > 1) return
+      // Debounce: wait 2s after last relevant event before reloading
+      if (this._overviewDebounce) clearTimeout(this._overviewDebounce)
+      this._overviewDebounce = window.setTimeout(() => {
+        this._overviewDebounce = null
+        this._loadOverview()
+      }, 2000)
+    }, false)
+  }
+
+  private _stopOverviewSub() {
+    if (this._overviewDebounce) { clearTimeout(this._overviewDebounce); this._overviewDebounce = null }
+    if (this._overviewSubId) {
+      Backend.unsubscribe('new_log_evt', this._overviewSubId)
+      this._overviewSubId = ''
+    }
   }
 
   private _renderOverview(): string {
@@ -784,7 +814,7 @@ class PageObservabilityLogs extends HTMLElement {
         const tab = btn.dataset.tab as Tab
         if (tab === this._tab) return
         if (this._tab === 'tail') this._stopTail()
-        if (this._tab === 'overview') this._stopOverviewTimer()
+        if (this._tab === 'overview') { this._stopOverviewTimer(); this._stopOverviewSub() }
         this._tab = tab
         this._correlationId = ''
         this.render()

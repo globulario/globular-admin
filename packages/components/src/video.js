@@ -441,7 +441,7 @@ export class VideoPlayer extends HTMLElement {
     // Bound handler for auth:token-refreshed — wired in connectedCallback
     this._onTokenRefreshed = null
 
-    const youtubeLogoUrl = new URL('../assets/icons/youtube-flat.svg', import.meta.url).href
+    const youtubeLogoUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23CD201F' d='M32 0c17.7 0 32 14.3 32 32S49.7 64 32 64 0 49.7 0 32 14.3 0 32 0z'/%3E%3Cpath fill='%23FFF' d='M50.6 24.6s-.4-2.5-1.5-3.7c-1.4-1.5-3.1-1.5-3.8-1.6C40 19 32 19 32 19h0s-8 0-13.3.4c-.7.1-2.4.1-3.8 1.6-1.1 1.1-1.5 3.7-1.5 3.7s-.4 3-.4 6v2.8c0 3 .4 6 .4 6s.4 2.5 1.5 3.7c1.4 1.5 3.3 1.4 4.2 1.6C22.1 44.9 32 45 32 45s8 0 13.3-.4c.7-.1 2.4-.1 3.8-1.6 1.1-1.1 1.5-3.7 1.5-3.7s.4-3 .4-6v-2.8c0-2.9-.4-5.9-.4-5.9zM28.1 36.8l0-10.4 10.3 5.2-10.3 5.2z'/%3E%3C/svg%3E"
 
     this.shadowRoot.innerHTML = `
       <style>

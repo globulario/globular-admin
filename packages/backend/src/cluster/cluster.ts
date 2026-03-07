@@ -65,6 +65,7 @@ export interface NodeHealthV1 {
   currentPlanPhase: string
   lastError: string
   canApplyPrivileged: boolean
+  installedVersions: Record<string, string>
 }
 
 export interface ClusterNode {
@@ -318,6 +319,9 @@ export async function getClusterHealthV1Full(): Promise<ClusterHealthV1Result | 
       currentPlanPhase:      n.getCurrentPlanPhase?.()      ?? '',
       lastError:             n.getLastError?.()             ?? '',
       canApplyPrivileged:    n.getCanApplyPrivileged?.()    ?? false,
+      installedVersions:     Object.fromEntries(
+        (n.getInstalledVersionsMap?.()?.toArray?.() ?? []) as Array<[string, string]>
+      ),
     } satisfies NodeHealthV1))
     return { services, nodeHealths }
   } catch {
@@ -478,6 +482,117 @@ export async function previewDesiredServices(
       message:  i.getMessage(),
     })),
   }
+}
+
+// ─── Feature A: Per-node health detail ────────────────────────────────────────
+
+export interface NodeHealthCheck {
+  subsystem: string
+  ok: boolean
+  reason: string
+}
+
+export interface NodeHealthDetail {
+  nodeId: string
+  overallStatus: string
+  healthy: boolean
+  checks: NodeHealthCheck[]
+  lastError: string
+  canApplyPrivileged: boolean
+  inventoryComplete: boolean
+  lastSeen: number
+}
+
+export async function getNodeHealthDetail(nodeId: string): Promise<NodeHealthDetail> {
+  const md = metadata()
+  const rq = new cc.GetNodeHealthDetailV1Request()
+  rq.setNodeId(nodeId)
+  const rsp = await unary<cc.GetNodeHealthDetailV1Request, cc.GetNodeHealthDetailV1Response>(
+    ccClient, 'getNodeHealthDetailV1', rq, undefined, md,
+  )
+  return {
+    nodeId:             rsp.getNodeId?.()             ?? '',
+    overallStatus:      rsp.getOverallStatus?.()      ?? '',
+    healthy:            rsp.getHealthy?.()            ?? false,
+    checks: (rsp.getChecksList?.() ?? []).map((c: any) => ({
+      subsystem: c.getSubsystem?.() ?? '',
+      ok:        c.getOk?.()        ?? false,
+      reason:    c.getReason?.()    ?? '',
+    })),
+    lastError:          rsp.getLastError?.()          ?? '',
+    canApplyPrivileged: rsp.getCanApplyPrivileged?.() ?? false,
+    inventoryComplete:  rsp.getInventoryComplete?.()  ?? false,
+    lastSeen:           rsp.getLastSeen?.()?.getSeconds?.() ?? 0,
+  }
+}
+
+// ─── Feature B: Reconciliation diff ──────────────────────────────────────────
+
+export interface ServiceDiffEntry {
+  serviceId: string
+  desired: string
+  installed: string
+  action: 'install' | 'upgrade' | 'downgrade' | 'remove' | 'ok'
+}
+
+export interface NodeReconciliationDiff {
+  nodeId: string
+  canApplyPrivileged: boolean
+  services: ServiceDiffEntry[]
+  hasDrift: boolean
+  needsPrivilegedApply: boolean
+}
+
+export async function computeReconciliationDiff(): Promise<NodeReconciliationDiff[]> {
+  const [healthResult, desiredEntries] = await Promise.all([
+    getClusterHealthV1Full(),
+    getDesiredState(),
+  ])
+  if (!healthResult) return []
+
+  const desiredMap = new Map<string, string>()
+  for (const e of desiredEntries) {
+    desiredMap.set(e.serviceId, e.version)
+  }
+
+  return healthResult.nodeHealths.map(nh => {
+    const installed = nh.installedVersions ?? {}
+    const services: ServiceDiffEntry[] = []
+
+    // Check desired services against installed
+    for (const [svcId, desiredVer] of desiredMap) {
+      const installedVer = installed[svcId] ?? ''
+      let action: ServiceDiffEntry['action']
+      if (!installedVer) {
+        action = 'install'
+      } else if (installedVer === desiredVer) {
+        action = 'ok'
+      } else if (installedVer < desiredVer) {
+        action = 'upgrade'
+      } else {
+        action = 'downgrade'
+      }
+      services.push({ serviceId: svcId, desired: desiredVer, installed: installedVer, action })
+    }
+
+    // Check installed services not in desired (removals)
+    for (const [svcId, installedVer] of Object.entries(installed)) {
+      if (!desiredMap.has(svcId)) {
+        services.push({ serviceId: svcId, desired: '', installed: installedVer, action: 'remove' })
+      }
+    }
+
+    const hasDrift = services.some(s => s.action !== 'ok')
+    const needsPrivilegedApply = hasDrift && !nh.canApplyPrivileged
+
+    return {
+      nodeId: nh.nodeId,
+      canApplyPrivileged: nh.canApplyPrivileged,
+      services,
+      hasDrift,
+      needsPrivilegedApply,
+    }
+  })
 }
 
 // Backward-compat shim — the catalog page used this name before the typed RPCs.

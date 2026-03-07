@@ -13,6 +13,9 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// Internal transport events that should not clutter the UI
+const HIDDEN_EVENTS = new Set(['new_log_evt'])
+
 function isControlPlaneEvent(name: string): boolean {
   return name.startsWith('plan_') || name.startsWith('service_apply_')
 }
@@ -70,7 +73,7 @@ class PageObservabilityEvents extends HTMLElement {
           nameFilter: this._filter,
           limit: 200,
         })
-        this._events = result.events
+        this._events = result.events.filter(e => !HIDDEN_EVENTS.has(e.name))
         this._latestSequence = result.latestSequence
       }
       this._error = ''
@@ -99,8 +102,9 @@ class PageObservabilityEvents extends HTMLElement {
             }
           }
         }
-        if (newEvents.length > 0) {
-          this._events = [...this._events, ...newEvents].slice(-500)
+        const filtered = newEvents.filter(e => !HIDDEN_EVENTS.has(e.name))
+        if (filtered.length > 0) {
+          this._events = [...this._events, ...filtered].slice(-500)
           this.render()
         }
       } else {
@@ -109,10 +113,13 @@ class PageObservabilityEvents extends HTMLElement {
           limit: 200,
           afterSequence: this._latestSequence,
         })
-        if (result.events.length > 0) {
-          this._events = [...this._events, ...result.events].slice(-500)
+        const filtered = result.events.filter(e => !HIDDEN_EVENTS.has(e.name))
+        if (filtered.length > 0) {
+          this._events = [...this._events, ...filtered].slice(-500)
           this._latestSequence = result.latestSequence
           this.render()
+        } else if (result.latestSequence > this._latestSequence) {
+          this._latestSequence = result.latestSequence
         }
       }
     } catch { /* silently skip poll failures */ }

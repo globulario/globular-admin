@@ -1,5 +1,16 @@
 // src/pages/cluster_nodes.ts
-import { listClusterNodes, setNodeProfiles, getNodeReport, type ClusterNode, type NodeReport, type Finding, type NodeCapabilities } from '@globular/backend'
+import {
+  listClusterNodes,
+  setNodeProfiles,
+  getNodeReport,
+  getNodeHealthDetail,
+  type ClusterNode,
+  type NodeReport,
+  type Finding,
+  type NodeCapabilities,
+  type NodeHealthDetail,
+  type NodeHealthCheck,
+} from '@globular/backend'
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return '—'
@@ -70,6 +81,16 @@ function worstSeverity(findings: Finding[]): number {
   return findings.reduce((max, f) => Math.max(max, f.severity), 0)
 }
 
+function statusBadge(status: string): string {
+  const color =
+    status === 'ready'      ? 'var(--success-color)' :
+    status === 'converging' ? '#f59e0b' :
+    status === 'degraded'   ? '#f97316' :
+    status === 'unhealthy'  ? 'var(--error-color)' :
+                              'var(--secondary-text-color)'
+  return badge(status.toUpperCase(), color)
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface NodeRow {
@@ -87,6 +108,9 @@ class PageClusterNodes extends HTMLElement {
   private _editingProfiles = false
   private _savingProfiles = false
   private _saveError = ''
+  private _healthDetail: NodeHealthDetail | null = null
+  private _healthLoading = false
+  private _healthError = ''
 
   connectedCallback() {
     this.style.display = 'block'
@@ -129,6 +153,20 @@ class PageClusterNodes extends HTMLElement {
     this.render()
   }
 
+  private async loadHealthDetail(nodeId: string) {
+    this._healthLoading = true
+    this._healthError = ''
+    this._healthDetail = null
+    this.renderDetail()
+    try {
+      this._healthDetail = await getNodeHealthDetail(nodeId)
+    } catch (e: any) {
+      this._healthError = e?.message || 'Health detail unavailable'
+    }
+    this._healthLoading = false
+    this.renderDetail()
+  }
+
   private render() {
     this.innerHTML = `
       <style>
@@ -158,7 +196,15 @@ class PageClusterNodes extends HTMLElement {
           margin-bottom: 16px;
         }
         .cn-kv-list { font-size: .75rem; font-family: monospace; color: var(--secondary-text-color); }
-        .cn-warn-banner { /* now use global .md-banner-warn */ }
+        .cn-section-label {
+          font-size: .72rem; font-weight: 700; text-transform: uppercase;
+          letter-spacing: .06em; color: var(--secondary-text-color);
+          padding: 8px 14px; background: var(--md-surface-container);
+          border-bottom: 1px solid var(--border-subtle-color);
+        }
+        .cn-check-icon { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
+        .cn-check-ok   { color: var(--success-color); }
+        .cn-check-fail { color: var(--error-color); }
       </style>
 
       <div class="cn-wrap">
@@ -173,7 +219,7 @@ class PageClusterNodes extends HTMLElement {
 
         ${this._loadError ? `
         <div class="md-banner-warn">
-          ⚠ Could not load nodes — ${this._loadError}
+          Could not load nodes — ${this._loadError}
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>
         </div>
         ` : ''}
@@ -238,7 +284,13 @@ class PageClusterNodes extends HTMLElement {
     this.querySelectorAll('.md-table tbody tr[data-node-id]').forEach(tr => {
       tr.addEventListener('click', () => {
         const nodeId = (tr as HTMLElement).dataset.nodeId ?? ''
-        this._selectedNodeId = this._selectedNodeId === nodeId ? '' : nodeId
+        if (this._selectedNodeId === nodeId) {
+          this._selectedNodeId = ''
+          this._healthDetail = null
+        } else {
+          this._selectedNodeId = nodeId
+          this.loadHealthDetail(nodeId)
+        }
         this._editingProfiles = false
         this._saveError = ''
         this.renderDetail()
@@ -294,6 +346,42 @@ class PageClusterNodes extends HTMLElement {
            Edit
          </button>`
 
+    // Build health detail section
+    const hd = this._healthDetail
+    const healthSection = this._healthLoading
+      ? `<div class="cn-section-label">Health Checks</div>
+         <p class="cn-empty">Loading health detail…</p>`
+      : this._healthError
+        ? `<div class="cn-section-label">Health Checks</div>
+           <p class="cn-empty">Could not load health detail: ${this._healthError}</p>`
+        : hd ? `
+           <div class="cn-section-label">
+             Health Checks — ${statusBadge(hd.overallStatus)}
+             ${hd.inventoryComplete ? '' : ' <span style="color:#f59e0b;font-size:.72rem;font-weight:400">(inventory incomplete)</span>'}
+           </div>
+           <table class="md-table">
+             <thead>
+               <tr>
+                 <th></th>
+                 <th>Subsystem</th>
+                 <th>Status</th>
+                 <th>Reason</th>
+               </tr>
+             </thead>
+             <tbody>
+               ${hd.checks.map((c: NodeHealthCheck) => `
+               <tr>
+                 <td><span class="cn-check-icon ${c.ok ? 'cn-check-ok' : 'cn-check-fail'}">${c.ok ? '✓' : '✕'}</span></td>
+                 <td style="font-family:monospace;font-size:.78rem">${c.subsystem}</td>
+                 <td>${c.ok
+                   ? badge('OK', 'var(--success-color)')
+                   : badge('FAIL', 'var(--error-color)')
+                 }</td>
+                 <td style="font-size:.82rem;color:var(--secondary-text-color)">${c.reason || '—'}</td>
+               </tr>`).join('')}
+             </tbody>
+           </table>` : ''
+
     el.innerHTML = `
       <div class="cn-detail-panel">
         <div class="md-panel-header">
@@ -310,7 +398,11 @@ class PageClusterNodes extends HTMLElement {
             ${capsLine(row.node.capabilities)}
           </div>
         </div>
+
+        ${healthSection}
+
         ${r.findings.length > 0 ? `
+        <div class="cn-section-label">Diagnostic Findings</div>
         <table class="md-table">
           <thead>
             <tr>

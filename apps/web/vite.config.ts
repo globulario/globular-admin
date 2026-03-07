@@ -1,5 +1,47 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import path from 'path'
+import fs from 'fs'
+
+// The globular-web-client proto stubs live outside node_modules (via pnpm link:).
+// Rollup's CJS plugin marks their relative require() targets as "?commonjs-external"
+// because they resolve outside node_modules. This plugin intercepts those virtual IDs
+// and resolves them to the actual file on disk.
+const protoDir = path.resolve(__dirname, '../../../services/typescript/dist')
+function fixProtoExternals(): Plugin {
+  return {
+    name: 'fix-proto-commonjs-externals',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      // Catch both " ./foo_pb.js?commonjs-external" and "\0./foo_pb.js?commonjs-external"
+      const extIdx = source.indexOf('?commonjs-external')
+      if (extIdx < 0 && !source.includes('_pb.js')) return null
+      const bare = (extIdx >= 0 ? source.slice(0, extIdx) : source).replace(/^\0/, '').trim()
+      if (!bare.endsWith('_pb.js') && !bare.endsWith('_pb.d.ts')) return null
+      // Resolve relative to the proto dist directory
+      if (bare.startsWith('./')) {
+        const basename = bare.slice(2)
+        // Try resolving from importer directory first
+        if (importer) {
+          const importerClean = importer.split('?')[0].replace(/^\0/, '')
+          const dir = path.dirname(importerClean)
+          const candidate = path.resolve(dir, bare)
+          if (fs.existsSync(candidate)) return candidate
+        }
+        // Fall back: scan all proto subdirectories
+        try {
+          const subdirs = fs.readdirSync(protoDir, { withFileTypes: true })
+            .filter((d: any) => d.isDirectory())
+            .map((d: any) => d.name)
+          for (const sub of subdirs) {
+            const candidate = path.join(protoDir, sub, basename)
+            if (fs.existsSync(candidate)) return candidate
+          }
+        } catch {}
+      }
+      return null
+    },
+  }
+}
 
 // Vite automatically provides mode in the callback
 export default defineConfig(({ mode }) => {
@@ -7,15 +49,26 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '')
 
   // Default to your backend if no .env value is set
-  const target = env.VITE_PROXY_TARGET || 'https://globule-ryzen.globular.io'
+  const target = env.VITE_PROXY_TARGET || 'https://www.globular.cloud'
 
   return {
+    plugins: [fixProtoExternals()],
     root: '.',
     server: {
       port: 5173,
       open: true,
       proxy: {
+        '/prometheus': {
+          target: 'http://127.0.0.1:9090',
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/prometheus/, ''),
+        },
         '/config': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/stats': {
           target,
           changeOrigin: true,
           secure: false,
@@ -80,6 +133,31 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/log.LogService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/monitoring.MonitoringService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/dns.DnsService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/backup_manager.BackupManagerService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/admin': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     // Force Vite to pre-bundle (CJS→ESM) all proto-generated modules from the
@@ -105,8 +183,12 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/conversation/conversation_pb',
         'globular-web-client/discovery/discovery_grpc_web_pb',
         'globular-web-client/discovery/discovery_pb',
+        'globular-web-client/dns/dns_grpc_web_pb',
+        'globular-web-client/dns/dns_pb',
         'globular-web-client/event/event_grpc_web_pb',
         'globular-web-client/event/event_pb',
+        'globular-web-client/log/log_grpc_web_pb',
+        'globular-web-client/log/log_pb',
         'globular-web-client/file/file_grpc_web_pb',
         'globular-web-client/file/file_pb',
         'globular-web-client/media/media_grpc_web_pb',
@@ -127,6 +209,10 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/title/title_pb',
         'globular-web-client/torrent/torrent_grpc_web_pb',
         'globular-web-client/torrent/torrent_pb',
+        'globular-web-client/monitoring/monitoring_grpc_web_pb',
+        'globular-web-client/monitoring/monitoring_pb',
+        'globular-web-client/backup_manager/backup_manager_grpc_web_pb',
+        'globular-web-client/backup_manager/backup_manager_pb',
       ],
     },
     resolve: {
@@ -137,6 +223,9 @@ export default defineConfig(({ mode }) => {
         // them directly via /@fs/, which breaks named ESM imports.
         'globular-web-client': path.resolve(__dirname, '../../../services/typescript/dist'),
         'cluster-doctor-proto': path.resolve(__dirname, '../../../services/typescript/dist/cluster_doctor'),
+        // Resolve @globular/backend to source so Vite hot-reloads changes
+        // without needing `npm run build` in packages/backend.
+        '@globular/backend': path.resolve(__dirname, '../../packages/backend/src'),
       },
     },
     build: {

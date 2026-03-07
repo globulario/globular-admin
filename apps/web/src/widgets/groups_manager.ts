@@ -88,35 +88,44 @@ class GroupInlineEditor extends HTMLElement {
       <style>
         :host { display:block; }
         .card {
-          background: var(--surface-color);
+          background: var(--md-surface-container-low);
           color: var(--on-surface-color);
-          border-radius: .5rem;
-          box-shadow: 0 0 0 1px var(--divider-color);
+          border-radius: var(--md-shape-md);
+          border: 1px solid var(--border-subtle-color);
+          box-shadow: var(--md-elevation-1);
           padding: 1rem 1.25rem;
           margin-top: 12px;
         }
         .row { display:flex; gap:10px; align-items:center; margin: 8px 0; }
-        label { width: 140px; font: 500 14px/25px Roboto,sans-serif; }
+        label { width: 140px; font-weight: 500; font-size: .85rem; color: var(--secondary-text-color); }
         input[type="text"] {
-          flex: 1; border: none; border-bottom: 1px solid var(--divider-color);
-          background: var(--surface-color); color: var(--on-surface-color); padding: 6px 4px;
+          flex: 1; border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-sm);
+          background: var(--md-surface-container-lowest, var(--surface-color));
+          color: var(--on-surface-color); padding: 6px 8px; font-size: .85rem;
+          outline: none; transition: border-color .12s, box-shadow .12s;
         }
-        input:focus { outline: none; border-bottom: 1px solid var(--primary-color); }
-        .actions { display:flex; gap:.5rem; margin-top: 12px; }
+        input:focus { border-color: var(--accent-color); box-shadow: var(--md-focus-ring); }
+        .actions { display:flex; gap:.5rem; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-subtle-color); }
         .spacer { flex: 1; }
-        .inline-btn { padding: 6px 10px; border: 1px solid var(--divider-color); background: transparent; color: var(--on-surface-color); border-radius: 8px; cursor: pointer; }
-        .inline-btn:hover { border-color: var(--primary-color); }
-        .block { margin-top: 12px; }
-        .block h4 { margin: 0 0 .5rem 0; font-size: .95rem; }
+        .inline-btn {
+          padding: 6px 16px; border: 1px solid var(--border-subtle-color);
+          background: transparent; color: var(--on-surface-color);
+          border-radius: var(--md-shape-full); cursor: pointer; font-size: .82rem;
+          transition: background .12s, border-color .12s;
+        }
+        .inline-btn:hover { background: var(--md-state-hover); border-color: var(--accent-color); }
+        .block { margin-top: 16px; }
+        .block h4 { margin: 0 0 .5rem 0; font-size: .82rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); }
         .lists { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .pane {
           display:flex; gap:8px; flex-wrap: wrap;
-          border: 1px solid var(--divider-color);
-          border-radius: 6px; min-height: 140px; padding: .5rem; overflow:auto;
+          border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-sm); min-height: 140px; padding: .5rem; overflow:auto;
         }
-        .hint { opacity: .7; font-size: .85rem; }
+        .hint { font-size: .8rem; color: var(--secondary-text-color); }
         .avatar { display:flex; align-items:center; gap:.75rem; position: relative; }
-        .avatar img { width: 48px; height:48px; border-radius: 6px; object-fit: cover; border: 1px solid var(--divider-color); cursor: pointer; }
+        .avatar img { width: 48px; height:48px; border-radius: var(--md-shape-sm); object-fit: cover; border: 1px solid var(--border-subtle-color); cursor: pointer; }
       </style>
 
       <div class="card">
@@ -394,25 +403,26 @@ export class GroupsManager extends HTMLElement {
     this.shadow.innerHTML = `
       <style>
         :host { display:block; }
+        paper-icon-button { --paper-icon-button-ink-color: var(--accent-color); }
         .page {
-          padding: 12px;
           color: var(--on-surface-color);
-          background: var(--background-color);
         }
         .header {
-          display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem;
+          display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem;
         }
         h2 {
-          margin:0; font-size:1.1rem; font-weight:800;
-          color: var(--on-surface-color);
+          margin:0; font-size:1rem; font-weight:700;
+          text-transform: uppercase; letter-spacing: .04em;
+          color: var(--secondary-text-color);
         }
         .spacer { flex:1; }
         .card {
-          background: var(--surface-color);
+          background: var(--md-surface-container-low);
           color: var(--on-surface-color);
           padding: 1rem 1.25rem;
-          border-radius: .5rem;
-          border: 1px solid var(--divider-color, color-mix(in srgb, var(--on-surface-color) 12%, transparent));
+          border-radius: var(--md-shape-md);
+          border: 1px solid var(--border-subtle-color);
+          box-shadow: var(--md-elevation-1);
         }
         .table-wrap { margin-top: 10px; }
       </style>
@@ -432,8 +442,8 @@ export class GroupsManager extends HTMLElement {
               display-index="true"
               visible-data-count="10"
               row-height="50px"
-              header-background-color="var(--surface-color)"
-              header-text-color="var(--on-primary-light-color)"
+              header-background-color="var(--md-surface-container, var(--surface-color))"
+              header-text-color="var(--secondary-text-color)"
             >
               <span id="table-title" slot="title">Groups</span>
               <span class="field" slot="fields" field="displayGroupId">Id</span>
