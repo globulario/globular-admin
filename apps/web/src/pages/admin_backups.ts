@@ -111,6 +111,7 @@ function providerBadges(results: ProviderResult[]): string {
 class PageAdminBackups extends HTMLElement {
   private _tab: Tab = 'overview'
   private _jobPollTimer: number | null = null
+  private _jobsListPollTimer: number | null = null
 
   // Jobs tab state
   private _jobs: BackupJob[] = []
@@ -131,9 +132,11 @@ class PageAdminBackups extends HTMLElement {
   // Restore wizard state
   private _restoreStep = 0
   private _restoreBackupId = ''
-  private _restoreOpts = { includeEtcd: true, includeConfig: true, includeMinio: true, includeScylla: true }
+  private _restoreOpts = { includeEtcd: true, includeConfig: true, includeMinio: true, includeScylla: true, force: false }
   private _restorePlan: { steps: RestoreStep[]; warnings: BackupValidationIssue[]; confirmationToken: string } | null = null
   private _restoreResult: { jobId: string; dryRun: boolean; steps: RestoreStep[]; warnings: BackupValidationIssue[] } | null = null
+  private _restoreJob: BackupJob | null = null
+  private _restorePollTimer: ReturnType<typeof setInterval> | null = null
 
   // Settings tab state
   private _preflight: { tools: ToolCheckResult[]; allOk: boolean } | null = null
@@ -161,6 +164,7 @@ class PageAdminBackups extends HTMLElement {
 
   disconnectedCallback() {
     this.stopJobPoll()
+    this.stopJobsListPoll()
   }
 
   private render() {
@@ -497,6 +501,14 @@ class PageAdminBackups extends HTMLElement {
     this._jobs = res.jobs
     this._jobsTotal = res.total
     this._selectedJob = null
+    // Keep overview in sync so stale jobs don't reappear when switching tabs
+    this._recentJobs = res.jobs
+    // Auto-poll the list if any job is still active
+    if (this._jobs.some(j => j.state === 1 || j.state === 2)) {
+      this.startJobsListPoll()
+    } else {
+      this.stopJobsListPoll()
+    }
   }
 
   private jobsTableHtml(jobs: BackupJob[]): string {
@@ -579,6 +591,13 @@ class PageAdminBackups extends HTMLElement {
   private async selectJob(jobId: string) {
     try {
       this._selectedJob = await getBackupJob(jobId)
+      // Switch to Jobs tab so the detail panel is visible
+      if (this._tab !== 'jobs') {
+        this._tab = 'jobs'
+        this.renderTabs()
+        // Load full jobs list so "Back to Jobs" shows populated table
+        this.loadJobs().catch(() => {})
+      }
       this.renderContent()
       if (this._selectedJob.state === 1 || this._selectedJob.state === 2) {
         this.startJobPoll(jobId)
@@ -604,6 +623,27 @@ class PageAdminBackups extends HTMLElement {
 
   private stopJobPoll() {
     if (this._jobPollTimer) { clearInterval(this._jobPollTimer); this._jobPollTimer = null }
+  }
+
+  /** Auto-refresh the jobs list while any job is QUEUED (1) or RUNNING (2). */
+  private startJobsListPoll() {
+    this.stopJobsListPoll()
+    this._jobsListPollTimer = window.setInterval(async () => {
+      try {
+        const res = await listBackupJobs({ limit: 50 })
+        this._jobs = res.jobs
+        this._jobsTotal = res.total
+        // Only re-render list view (not detail)
+        if (this._tab === 'jobs' && !this._selectedJob) this.renderContent()
+        if (this._tab === 'overview') { await this.loadOverview(); this.renderContent() }
+        // Stop polling when no active jobs remain
+        if (!this._jobs.some(j => j.state === 1 || j.state === 2)) this.stopJobsListPoll()
+      } catch { this.stopJobsListPoll() }
+    }, JOB_POLL_MS)
+  }
+
+  private stopJobsListPoll() {
+    if (this._jobsListPollTimer) { clearInterval(this._jobsListPollTimer); this._jobsListPollTimer = null }
   }
 
   private renderJobDetail(el: HTMLElement) {
@@ -697,10 +737,10 @@ class PageAdminBackups extends HTMLElement {
     this.querySelector('#bkDeleteJob')?.addEventListener('click', () => {
       const self = this
       this._showConfirmDialog(
-        `Delete job <strong>${esc(j.jobId.slice(0, 8))}…</strong> and its backup artifacts?`,
+        `Delete job record <strong>${esc(j.jobId.slice(0, 8))}…</strong>? (backup data is kept)`,
         async () => {
           try {
-            await deleteBackupJob(j.jobId, true)
+            await deleteBackupJob(j.jobId, false)
             self._selectedJob = null
             self.stopJobPoll()
             await self.loadJobs()
@@ -999,11 +1039,13 @@ class PageAdminBackups extends HTMLElement {
     this.querySelector('#bkRestoreTest')?.addEventListener('click', async () => {
       try {
         const res = await runRestoreTest({ backupId: b.backupId, level: 1 })
-        displayMessage(`Restore test started (job ${res.jobId.slice(0, 8)}). Track progress in the Jobs tab.`)
+        displayMessage(`Restore test started (job ${res.jobId.slice(0, 8)}). Navigating to job detail...`)
         this._tab = 'jobs'
-        this._selectedJob = res.jobId
         this.renderTabs()
+        await this.loadJobs()
+        this._loading = false
         this.renderContent()
+        this.selectJob(res.jobId)
       } catch (e: any) { this._error = e?.message || 'Restore test failed'; this.renderContent() }
     })
     this.querySelector('#bkPromote')?.addEventListener('click', async () => {
@@ -1067,6 +1109,14 @@ class PageAdminBackups extends HTMLElement {
     const el = this.querySelector('#bkContent') as HTMLElement
     if (!el) return
 
+    // Resume polling if we return to step 4 with an active restore job
+    if (this._restoreStep === 4 && this._restoreResult?.jobId && !this._restorePollTimer) {
+      const job = this._restoreJob
+      if (!job || job.state === 1 || job.state === 2) {
+        this.startRestorePoll(this._restoreResult.jobId)
+      }
+    }
+
     const steps = ['Select Backup', 'Restore Scope', 'Review Plan', 'Execute']
     let html = `<div class="bk-wizard-steps">${steps.map((s, i) => {
       const step = i + 1
@@ -1127,6 +1177,10 @@ class PageAdminBackups extends HTMLElement {
         <div class="bk-checkbox"><input type="checkbox" id="bkRconfig" ${this._restoreOpts.includeConfig ? 'checked' : ''}><label for="bkRconfig">Include config</label></div>
         <div class="bk-checkbox"><input type="checkbox" id="bkRminio" ${this._restoreOpts.includeMinio ? 'checked' : ''}><label for="bkRminio">Include MinIO</label></div>
         <div class="bk-checkbox"><input type="checkbox" id="bkRscylla" ${this._restoreOpts.includeScylla ? 'checked' : ''}><label for="bkRscylla">Include ScyllaDB</label></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color)">
+          <div class="bk-checkbox"><input type="checkbox" id="bkRforce" ${this._restoreOpts.force ? 'checked' : ''}><label for="bkRforce">Force (overwrite running services like etcd)</label></div>
+          <div style="font-size:.72rem;color:var(--secondary-text-color);margin-top:2px;margin-left:24px">Required if etcd is currently running</div>
+        </div>
         <div style="margin-top:16px">
           <button class="bk-btn" id="bkRestoreBack1">&larr; Back</button>
           <button class="bk-btn-primary" id="bkRestoreNext2" style="margin-left:8px">Generate Restore Plan &rarr;</button>
@@ -1168,13 +1222,37 @@ class PageAdminBackups extends HTMLElement {
       return `<p style="color:var(--secondary-text-color);font-size:.85rem">Executing restore...</p>`
     }
     const r = this._restoreResult
-    let html = `<div class="bk-panel"><div class="bk-panel-header"><span>Restore ${r.dryRun ? '(Dry Run)' : 'Initiated'}</span></div>
+    const job = this._restoreJob
+
+    // Determine header based on job state
+    let header = r.dryRun ? 'Dry Run' : 'Initiated'
+    let statusColor = 'var(--secondary-text-color)'
+    if (job) {
+      const state = JOB_STATE[job.state] ?? 'Unknown'
+      if (job.state === 3) { header = 'Succeeded'; statusColor = 'var(--success-color, #22c55e)' }
+      else if (job.state === 4) { header = 'Failed'; statusColor = 'var(--error-color, #ef4444)' }
+      else if (job.state === 5) { header = 'Canceled'; statusColor = 'var(--warn-color, #f59e0b)' }
+      else if (job.state === 2) { header = 'Running'; statusColor = 'var(--info-color, #3b82f6)' }
+      else { header = state }
+    }
+
+    let html = `<div class="bk-panel"><div class="bk-panel-header"><span>Restore ${esc(header)}</span></div>
       <div class="bk-detail-section">`
 
     if (r.jobId) {
-      html += `<p style="font-size:.85rem">Restore job started: <code>${esc(r.jobId)}</code></p>
-        <p style="font-size:.85rem;color:var(--secondary-text-color)">Track progress in the Jobs tab.</p>
-        <button class="bk-btn-primary" id="bkGoToRestoreJob">View Job &rarr;</button>`
+      html += `<p style="font-size:.85rem">Restore job: <code>${esc(r.jobId)}</code></p>`
+      if (job) {
+        html += `<p style="font-size:.85rem;color:${statusColor};font-weight:600">${esc(job.message || JOB_STATE[job.state] || '')}</p>`
+        if (job.state === 2 || job.state === 1) {
+          html += `<p style="font-size:.78rem;color:var(--secondary-text-color)">Polling for completion...</p>`
+        }
+      } else {
+        html += `<p style="font-size:.85rem;color:var(--secondary-text-color)">Loading job status...</p>`
+      }
+      html += `<button class="bk-btn-primary" id="bkGoToRestoreJob" style="margin-top:8px">View Job &rarr;</button>`
+      if (job && (job.state === 3 || job.state === 4 || job.state === 5)) {
+        html += ` <button class="bk-btn" id="bkRestoreReset" style="margin-left:8px">New Restore</button>`
+      }
     }
 
     if (r.warnings.length > 0) {
@@ -1208,6 +1286,7 @@ class PageAdminBackups extends HTMLElement {
       this._restoreOpts.includeConfig = (this.querySelector('#bkRconfig') as HTMLInputElement)?.checked ?? true
       this._restoreOpts.includeMinio = (this.querySelector('#bkRminio') as HTMLInputElement)?.checked ?? true
       this._restoreOpts.includeScylla = (this.querySelector('#bkRscylla') as HTMLInputElement)?.checked ?? true
+      this._restoreOpts.force = (this.querySelector('#bkRforce') as HTMLInputElement)?.checked ?? false
 
       this._restoreStep = 3
       this._restorePlan = null
@@ -1234,6 +1313,8 @@ class PageAdminBackups extends HTMLElement {
     this.querySelector('#bkRestoreExecute')?.addEventListener('click', async () => {
       this._restoreStep = 4
       this._restoreResult = null
+      this._restoreJob = null
+      this.stopRestorePoll()
       this.renderContent()
       try {
         this._restoreResult = await restoreBackup(this._restoreBackupId, {
@@ -1241,6 +1322,10 @@ class PageAdminBackups extends HTMLElement {
           confirmationToken: this._restorePlan?.confirmationToken,
         })
         this.renderContent()
+        // Start polling the restore job until it finishes
+        if (this._restoreResult?.jobId) {
+          this.startRestorePoll(this._restoreResult.jobId)
+        }
       } catch (e: any) {
         this._error = e?.message || 'Restore failed'
         this._restoreStep = 3
@@ -1261,6 +1346,41 @@ class PageAdminBackups extends HTMLElement {
         })
       }
     })
+    // Step 4: reset wizard for a new restore
+    this.querySelector('#bkRestoreReset')?.addEventListener('click', () => {
+      this.stopRestorePoll()
+      this._restoreStep = 1
+      this._restoreResult = null
+      this._restoreJob = null
+      this._restorePlan = null
+      this.renderContent()
+    })
+  }
+
+  private startRestorePoll(jobId: string) {
+    this.stopRestorePoll()
+    const poll = async () => {
+      try {
+        const job = await getBackupJob(jobId)
+        this._restoreJob = job
+        if (this._tab === 'restore' && this._restoreStep === 4) {
+          this.renderContent()
+        }
+        // Stop polling once job reaches a terminal state
+        if (job.state === 3 || job.state === 4 || job.state === 5) {
+          this.stopRestorePoll()
+        }
+      } catch { /* ignore poll errors */ }
+    }
+    poll() // immediate first poll
+    this._restorePollTimer = setInterval(poll, JOB_POLL_MS)
+  }
+
+  private stopRestorePoll() {
+    if (this._restorePollTimer) {
+      clearInterval(this._restorePollTimer)
+      this._restorePollTimer = null
+    }
   }
 
   // ─── Settings Tab ──────────────────────────────────────────────────────────
