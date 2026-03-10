@@ -7,7 +7,10 @@ import '@polymer/iron-collapse/iron-collapse.js'
 import {
   fetchAdminServices, getClusterHealth,
   getDnsDomains, fetchZoneRecords,
+  fetchProviders, saveProvider, deleteProvider,
+  fetchDomainSpecs, saveDomainSpec, deleteDomainSpec,
   type ServicesResponse, type ClusterHealth, type DnsRecord,
+  type DNSProviderConfig, type DomainSpecWithStatus,
 } from '@globular/backend'
 
 import {
@@ -18,7 +21,7 @@ import {
 
 const POLL = 30_000
 
-type DnsTab = 'overview' | 'records'
+type DnsTab = 'overview' | 'records' | 'external'
 type DnsState = 'no-zones' | 'ready'
 type SortCol = 'name' | 'type' | 'value'
 
@@ -37,6 +40,15 @@ class PageInfrastructureDns extends HTMLElement {
   private _helpOpen = false
   private _loading = false
   private _error: string | null = null
+
+  // External domains state
+  private _providers: DNSProviderConfig[] = []
+  private _extDomains: DomainSpecWithStatus[] = []
+  private _extError: string | null = null
+  private _showProviderForm = false
+  private _showDomainForm = false
+  private _editingProvider: DNSProviderConfig | null = null
+  private _editingDomain: DomainSpecWithStatus | null = null
 
   connectedCallback() {
     this.style.display = 'block'
@@ -105,6 +117,15 @@ class PageInfrastructureDns extends HTMLElement {
       this._records = []
     }
 
+    // Fetch external domains and providers (best-effort)
+    const [provR, extR] = await Promise.allSettled([
+      fetchProviders(),
+      fetchDomainSpecs(),
+    ])
+    this._providers  = provR.status === 'fulfilled' ? provR.value : []
+    this._extDomains = extR.status  === 'fulfilled' ? extR.value  : []
+    this._extError   = null
+
     this._lastUpdated = new Date()
     this._loading = false
     this.render()
@@ -161,6 +182,7 @@ class PageInfrastructureDns extends HTMLElement {
       <div class="infra-tabs">
         <button class="infra-tab ${this._tab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
         <button class="infra-tab ${this._tab === 'records' ? 'active' : ''}" data-tab="records">Records</button>
+        <button class="infra-tab ${this._tab === 'external' ? 'active' : ''}" data-tab="external">External Domains</button>
       </div>
       <div id="dnsTabContent"></div>
     `
@@ -174,8 +196,10 @@ class PageInfrastructureDns extends HTMLElement {
     const content = body.querySelector('#dnsTabContent') as HTMLElement
     if (this._tab === 'overview') {
       this.renderOverview(content)
-    } else {
+    } else if (this._tab === 'records') {
       this.renderRecords(content)
+    } else {
+      this.renderExternal(content)
     }
   }
 
@@ -451,6 +475,319 @@ class PageInfrastructureDns extends HTMLElement {
     })
   }
 
+  // ─── External Domains Tab ──────────────────────────────────────────────────
+
+  private renderExternal(el: HTMLElement) {
+    el.innerHTML = `
+      ${this._extError ? `<div class="dns-banner dns-banner--error">${esc(this._extError)}</div>` : ''}
+
+      <div class="ext-section">
+        <div class="ext-section-header">
+          <h3>DNS Providers</h3>
+          <button class="infra-btn" id="extAddProvider">+ Add Provider</button>
+        </div>
+        <div id="extProviderForm"></div>
+        <div id="extProviderList">${this.renderProviderList()}</div>
+      </div>
+
+      <div class="ext-section" style="margin-top:24px">
+        <div class="ext-section-header">
+          <h3>External Domains</h3>
+          <button class="infra-btn" id="extAddDomain">+ Add Domain</button>
+        </div>
+        <div id="extDomainForm"></div>
+        <div id="extDomainList">${this.renderDomainList()}</div>
+      </div>
+    `
+
+    el.querySelector('#extAddProvider')?.addEventListener('click', () => {
+      this._showProviderForm = true
+      this._editingProvider = null
+      this.renderProviderForm(el.querySelector('#extProviderForm') as HTMLElement)
+    })
+    el.querySelector('#extAddDomain')?.addEventListener('click', () => {
+      this._showDomainForm = true
+      this._editingDomain = null
+      this.renderDomainForm(el.querySelector('#extDomainForm') as HTMLElement)
+    })
+
+    if (this._showProviderForm) {
+      this.renderProviderForm(el.querySelector('#extProviderForm') as HTMLElement)
+    }
+    if (this._showDomainForm) {
+      this.renderDomainForm(el.querySelector('#extDomainForm') as HTMLElement)
+    }
+
+    // Wire delete/edit buttons
+    el.querySelectorAll('.ext-del-provider').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = (btn as HTMLElement).dataset.name!
+        if (!confirm(`Delete provider "${name}"?`)) return
+        try {
+          await deleteProvider(name)
+          this.load()
+        } catch (e: any) {
+          this._extError = e?.message ?? 'Failed to delete provider'
+          this.render()
+        }
+      })
+    })
+    el.querySelectorAll('.ext-edit-provider').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt((btn as HTMLElement).dataset.idx!, 10)
+        this._editingProvider = this._providers[idx] ?? null
+        this._showProviderForm = true
+        this.renderProviderForm(el.querySelector('#extProviderForm') as HTMLElement)
+      })
+    })
+    el.querySelectorAll('.ext-del-domain').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const fqdn = (btn as HTMLElement).dataset.fqdn!
+        if (!confirm(`Delete domain "${fqdn}"? This will stop reconciliation.`)) return
+        try {
+          await deleteDomainSpec(fqdn)
+          this.load()
+        } catch (e: any) {
+          this._extError = e?.message ?? 'Failed to delete domain'
+          this.render()
+        }
+      })
+    })
+    el.querySelectorAll('.ext-edit-domain').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt((btn as HTMLElement).dataset.idx!, 10)
+        this._editingDomain = this._extDomains[idx] ?? null
+        this._showDomainForm = true
+        this.renderDomainForm(el.querySelector('#extDomainForm') as HTMLElement)
+      })
+    })
+  }
+
+  private renderProviderList(): string {
+    if (this._providers.length === 0) {
+      return '<div class="infra-empty">No DNS providers configured. Add one to manage external domains.</div>'
+    }
+    const rows = this._providers.map((p, i) => {
+      const creds = Object.entries(p.credentials || {}).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join(', ')
+      return `
+        <tr>
+          <td style="font-family:monospace;font-size:.82rem;font-weight:600">${esc(p.name ?? '')}</td>
+          <td>${badge(p.type.toUpperCase(), providerColor(p.type))}</td>
+          <td style="font-family:monospace;font-size:.82rem">${esc(p.zone)}</td>
+          <td style="font-size:.82rem;color:var(--secondary-text-color)">${creds || '—'}</td>
+          <td style="font-size:.82rem">${p.default_ttl || 600}s</td>
+          <td>
+            <button class="ext-edit-provider ext-icon-btn" data-idx="${i}" title="Edit">&#9998;</button>
+            <button class="ext-del-provider ext-icon-btn ext-icon-btn--danger" data-name="${esc(p.name ?? '')}" title="Delete">&#128465;</button>
+          </td>
+        </tr>
+      `
+    }).join('')
+
+    return `
+      <table class="infra-table">
+        <thead><tr><th>Name</th><th>Type</th><th>Zone</th><th>Credentials</th><th>TTL</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `
+  }
+
+  private renderDomainList(): string {
+    if (this._extDomains.length === 0) {
+      return '<div class="infra-empty">No external domains configured.</div>'
+    }
+    const rows = this._extDomains.map((d, i) => {
+      const phase = d.status?.phase || 'Pending'
+      const phaseColor = phase === 'Ready' ? '#22c55e' : phase === 'Error' ? 'var(--error-color)' : '#f59e0b'
+      const certExp = d.status?.cert_expiry ? new Date(d.status.cert_expiry).toLocaleDateString() : '—'
+      const ip = d.status?.current_ip || d.target_ip || '—'
+      const errMsg = d.status?.message || ''
+      const lastReconcile = d.status?.last_reconcile
+        ? new Date(d.status.last_reconcile).toLocaleString()
+        : ''
+      return `
+        <tr>
+          <td style="font-family:monospace;font-size:.85rem;font-weight:600">${esc(d.fqdn)}</td>
+          <td style="font-size:.82rem">${esc(d.zone)}</td>
+          <td style="font-size:.82rem">${esc(d.provider_ref)}</td>
+          <td style="font-family:monospace;font-size:.82rem">${esc(ip)}</td>
+          <td title="${esc(errMsg)}">${badge(phase, phaseColor)}</td>
+          <td style="font-size:.82rem">${certExp}</td>
+          <td>
+            <button class="ext-edit-domain ext-icon-btn" data-idx="${i}" title="Edit">&#9998;</button>
+            <button class="ext-del-domain ext-icon-btn ext-icon-btn--danger" data-fqdn="${esc(d.fqdn)}" title="Delete">&#128465;</button>
+          </td>
+        </tr>
+        ${phase === 'Error' && errMsg ? `
+        <tr class="ext-error-row">
+          <td colspan="7">
+            <div class="ext-error-detail">
+              <strong>Error:</strong> ${esc(errMsg)}
+              ${lastReconcile ? `<span class="ext-error-time">Last attempt: ${esc(lastReconcile)}</span>` : ''}
+            </div>
+          </td>
+        </tr>
+        ` : ''}
+      `
+    }).join('')
+
+    return `
+      <table class="infra-table">
+        <thead><tr><th>FQDN</th><th>Zone</th><th>Provider</th><th>IP</th><th>Status</th><th>Cert Exp.</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `
+  }
+
+  private renderProviderForm(container: HTMLElement) {
+    if (!container || !this._showProviderForm) return
+    const p = this._editingProvider
+    container.innerHTML = `
+      <div class="ext-form">
+        <h4>${p ? 'Edit Provider' : 'Add DNS Provider'}</h4>
+        <div class="ext-form-grid">
+          <label>Type
+            <select id="extPType" class="dns-select">
+              <option value="cloudflare" ${p?.type === 'cloudflare' ? 'selected' : ''}>Cloudflare</option>
+              <option value="godaddy" ${p?.type === 'godaddy' ? 'selected' : ''}>GoDaddy</option>
+              <option value="route53" ${p?.type === 'route53' ? 'selected' : ''}>Route53</option>
+              <option value="manual" ${p?.type === 'manual' ? 'selected' : ''}>Manual</option>
+            </select>
+          </label>
+          <label>Zone <input id="extPZone" class="dns-input" value="${esc(p?.zone ?? '')}" placeholder="example.com"></label>
+          <label>Default TTL <input id="extPTTL" type="number" class="dns-input" value="${p?.default_ttl ?? 600}" placeholder="600"></label>
+        </div>
+        <div id="extPCredsArea"></div>
+        <div class="ext-form-actions">
+          <button class="infra-btn" id="extPSave">Save</button>
+          <button class="infra-btn ext-btn-cancel" id="extPCancel">Cancel</button>
+        </div>
+      </div>
+    `
+
+    const updateCreds = () => {
+      const type = (container.querySelector('#extPType') as HTMLSelectElement).value
+      const area = container.querySelector('#extPCredsArea') as HTMLElement
+      const fields = providerCredFields(type)
+      area.innerHTML = fields.map(f => `
+        <label>${esc(f.label)}
+          <input id="extPCred_${f.key}" class="dns-input" style="width:100%"
+            value="${esc(p?.credentials?.[f.key] ?? '')}"
+            placeholder="${esc(f.placeholder)}" type="${f.secret ? 'password' : 'text'}">
+        </label>
+      `).join('')
+    }
+    updateCreds()
+    container.querySelector('#extPType')?.addEventListener('change', updateCreds)
+
+    container.querySelector('#extPCancel')?.addEventListener('click', () => {
+      this._showProviderForm = false
+      this._editingProvider = null
+      container.innerHTML = ''
+    })
+
+    container.querySelector('#extPSave')?.addEventListener('click', async () => {
+      const type = (container.querySelector('#extPType') as HTMLSelectElement).value
+      const zone = (container.querySelector('#extPZone') as HTMLInputElement).value.trim()
+      const ttl = parseInt((container.querySelector('#extPTTL') as HTMLInputElement).value, 10) || 600
+      const fields = providerCredFields(type)
+      const credentials: Record<string, string> = {}
+      for (const f of fields) {
+        const el = container.querySelector(`#extPCred_${f.key}`) as HTMLInputElement
+        if (el?.value) credentials[f.key] = el.value
+      }
+      try {
+        await saveProvider({ type, zone, credentials, default_ttl: ttl })
+        this._showProviderForm = false
+        this._editingProvider = null
+        this.load()
+      } catch (e: any) {
+        this._extError = e?.message ?? 'Failed to save provider'
+        this.render()
+      }
+    })
+  }
+
+  private renderDomainForm(container: HTMLElement) {
+    if (!container || !this._showDomainForm) return
+    const d = this._editingDomain
+    const providerOptions = this._providers.map(p => {
+      return `<option value="${esc(p.name ?? '')}" ${d?.provider_ref === p.name ? 'selected' : ''}>${esc(p.name ?? '')} (${esc(p.zone)})</option>`
+    }).join('')
+
+    container.innerHTML = `
+      <div class="ext-form">
+        <h4>${d ? 'Edit Domain' : 'Add External Domain'}</h4>
+        <div class="ext-form-grid">
+          <label>FQDN <input id="extDFqdn" class="dns-input" value="${esc(d?.fqdn ?? '')}" placeholder="app.example.com"></label>
+          <label>Zone <input id="extDZone" class="dns-input" value="${esc(d?.zone ?? '')}" placeholder="example.com"></label>
+          <label>Node ID <input id="extDNode" class="dns-input" value="${esc(d?.node_id ?? '')}" placeholder="node-0"></label>
+          <label>Target IP <input id="extDIP" class="dns-input" value="${esc(d?.target_ip ?? 'auto')}" placeholder="auto or IP"></label>
+          <label>Provider
+            <select id="extDProv" class="dns-select">${providerOptions}</select>
+          </label>
+          <label>TTL <input id="extDTTL" type="number" class="dns-input" value="${d?.ttl ?? 600}" placeholder="600"></label>
+        </div>
+        <div class="ext-form-row">
+          <label><input id="extDPub" type="checkbox" ${d?.publish_external ? 'checked' : ''}> Publish to external DNS</label>
+          <label><input id="extDWild" type="checkbox" ${d?.use_wildcard_cert ? 'checked' : ''}> Use wildcard certificate</label>
+        </div>
+        <details class="ext-acme-details">
+          <summary>ACME Settings</summary>
+          <div class="ext-form-grid" style="margin-top:8px">
+            <label><input id="extDAcme" type="checkbox" ${d?.acme?.enabled ? 'checked' : ''}> Enable ACME</label>
+            <label>Email <input id="extDAcmeEmail" class="dns-input" value="${esc(d?.acme?.email ?? '')}" placeholder="admin@example.com"></label>
+            <label>Challenge
+              <select id="extDAcmeChal" class="dns-select">
+                <option value="dns-01" ${d?.acme?.challenge_type === 'dns-01' ? 'selected' : ''}>dns-01</option>
+                <option value="http-01" ${d?.acme?.challenge_type === 'http-01' ? 'selected' : ''}>http-01</option>
+              </select>
+            </label>
+          </div>
+        </details>
+        <div class="ext-form-actions">
+          <button class="infra-btn" id="extDSave">Save</button>
+          <button class="infra-btn ext-btn-cancel" id="extDCancel">Cancel</button>
+        </div>
+      </div>
+    `
+
+    container.querySelector('#extDCancel')?.addEventListener('click', () => {
+      this._showDomainForm = false
+      this._editingDomain = null
+      container.innerHTML = ''
+    })
+
+    container.querySelector('#extDSave')?.addEventListener('click', async () => {
+      const spec: any = {
+        fqdn: (container.querySelector('#extDFqdn') as HTMLInputElement).value.trim(),
+        zone: (container.querySelector('#extDZone') as HTMLInputElement).value.trim(),
+        node_id: (container.querySelector('#extDNode') as HTMLInputElement).value.trim(),
+        target_ip: (container.querySelector('#extDIP') as HTMLInputElement).value.trim() || 'auto',
+        provider_ref: (container.querySelector('#extDProv') as HTMLSelectElement).value,
+        publish_external: (container.querySelector('#extDPub') as HTMLInputElement).checked,
+        use_wildcard_cert: (container.querySelector('#extDWild') as HTMLInputElement).checked,
+        ttl: parseInt((container.querySelector('#extDTTL') as HTMLInputElement).value, 10) || 600,
+        acme: {
+          enabled: (container.querySelector('#extDAcme') as HTMLInputElement).checked,
+          email: (container.querySelector('#extDAcmeEmail') as HTMLInputElement).value.trim(),
+          ca_url: '',
+          challenge_type: (container.querySelector('#extDAcmeChal') as HTMLSelectElement).value,
+        },
+        ingress: d?.ingress ?? { gateway_port_http: 80, gateway_port_https: 443 },
+      }
+      try {
+        await saveDomainSpec(spec)
+        this._showDomainForm = false
+        this._editingDomain = null
+        this.load()
+      } catch (e: any) {
+        this._extError = e?.message ?? 'Failed to save domain'
+        this.render()
+      }
+    })
+  }
+
   private renderCliDocs(el: HTMLElement) {
     const md = el.querySelector('#dnsCliDocs') as HTMLElement
     if (!md) return
@@ -472,6 +809,35 @@ function typeColor(type: string): string {
     case 'SRV':   return '#14b8a6'
     case 'SOA':   return '#64748b'
     default:      return 'var(--secondary-text-color)'
+  }
+}
+
+function providerColor(type: string): string {
+  switch (type) {
+    case 'cloudflare': return '#f38020'
+    case 'godaddy':    return '#1bdbdb'
+    case 'route53':    return '#ff9900'
+    case 'manual':     return '#64748b'
+    default:           return 'var(--secondary-text-color)'
+  }
+}
+
+function providerCredFields(type: string): Array<{ key: string; label: string; placeholder: string; secret: boolean }> {
+  switch (type) {
+    case 'cloudflare': return [
+      { key: 'api_token', label: 'API Token', placeholder: 'Cloudflare API token', secret: true },
+    ]
+    case 'godaddy': return [
+      { key: 'api_key', label: 'API Key', placeholder: 'GoDaddy API key', secret: true },
+      { key: 'api_secret', label: 'API Secret', placeholder: 'GoDaddy API secret', secret: true },
+    ]
+    case 'route53': return [
+      { key: 'aws_access_key_id', label: 'AWS Access Key ID', placeholder: 'AKIA...', secret: false },
+      { key: 'aws_secret_access_key', label: 'AWS Secret Access Key', placeholder: 'Secret', secret: true },
+      { key: 'aws_region', label: 'AWS Region', placeholder: 'us-east-1', secret: false },
+    ]
+    case 'manual': return []
+    default: return []
   }
 }
 
@@ -514,6 +880,66 @@ const PAGE_STYLES = `
   .dns-status-table td { padding: 2px 0; }
   .dns-status-table td:first-child {
     color: var(--secondary-text-color); padding-right: 12px; white-space: nowrap;
+  }
+
+  /* External domains */
+  .ext-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .ext-section-header h3 {
+    margin: 0; font-size: .95rem; font-weight: 700;
+  }
+  .ext-form {
+    background: var(--md-surface-container-low);
+    border: 1px solid var(--border-subtle-color);
+    border-radius: var(--md-shape-md);
+    padding: 16px; margin-bottom: 16px;
+  }
+  .ext-form h4 { margin: 0 0 12px; font-size: .9rem; }
+  .ext-form-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px; margin-bottom: 12px;
+  }
+  .ext-form-grid label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: .82rem; color: var(--secondary-text-color);
+  }
+  .ext-form-grid .dns-input, .ext-form-grid .dns-select { width: 100%; box-sizing: border-box; }
+  .ext-form-row {
+    display: flex; gap: 16px; align-items: center; margin-bottom: 12px;
+    font-size: .82rem;
+  }
+  .ext-form-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .ext-form-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .ext-btn-cancel {
+    background: transparent; border-color: var(--border-subtle-color);
+    color: var(--secondary-text-color);
+  }
+  .ext-acme-details {
+    margin-bottom: 12px; font-size: .85rem;
+  }
+  .ext-acme-details summary {
+    cursor: pointer; color: var(--accent-color); font-weight: 600;
+  }
+  .ext-icon-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: .9rem; padding: 2px 6px; border-radius: 4px;
+    color: var(--secondary-text-color);
+  }
+  .ext-icon-btn:hover { background: color-mix(in srgb, var(--on-surface-color) 8%, transparent); }
+  .ext-icon-btn--danger:hover { color: var(--error-color); }
+  .ext-error-row td { padding: 0 !important; border-top: none !important; }
+  .ext-error-detail {
+    background: color-mix(in srgb, var(--error-color) 8%, transparent);
+    border-left: 3px solid var(--error-color);
+    padding: 6px 12px; margin: 0 0 4px;
+    font-size: .78rem; color: var(--error-color);
+    word-break: break-word;
+  }
+  .ext-error-time {
+    display: inline-block; margin-left: 12px;
+    color: var(--secondary-text-color); font-weight: normal;
   }
 `
 

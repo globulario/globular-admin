@@ -146,9 +146,11 @@ class PageSecurityCors extends HTMLElement {
           color: var(--primary-color, #1976d2);
         }
         .cors-page .diag-curl {
-          background: var(--surface-variant-color, #f5f5f5); padding: 10px 14px; border-radius: 6px;
+          background: color-mix(in srgb, var(--on-surface-color, #000) 6%, var(--surface-color, #fff));
+          color: var(--on-surface-color, #333);
+          padding: 10px 14px; border-radius: 6px;
           font-family: monospace; font-size: .82rem; white-space: pre-wrap; word-break: break-all;
-          margin-top: 8px; border: 1px solid var(--border-subtle-color, rgba(0,0,0,.10));
+          margin-top: 8px; border: 1px solid color-mix(in srgb, var(--on-surface-color, #000) 12%, transparent);
         }
       </style>
       <section class="cors-page page">
