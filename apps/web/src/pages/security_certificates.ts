@@ -84,11 +84,26 @@ interface EnvoyTLSUsage {
   status: string
 }
 
+interface CertActionResponse {
+  ok: boolean
+  message: string
+}
+
 // ─── Backend client ──────────────────────────────────────────────────────────
 
 async function fetchCertificates(): Promise<CertData> {
   const resp = await fetch('/admin/certificates')
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return resp.json()
+}
+
+async function renewPublicCert(): Promise<CertActionResponse> {
+  const resp = await fetch('/admin/certificates/renew-public', { method: 'POST' })
+  return resp.json()
+}
+
+async function regenerateInternalCerts(): Promise<CertActionResponse> {
+  const resp = await fetch('/admin/certificates/regenerate-internal', { method: 'POST' })
   return resp.json()
 }
 
@@ -253,6 +268,8 @@ class PageSecurityCertificates extends HTMLElement {
   private _loading = false
   private _error: string | null = null
   private _sanConfigOpen = false
+  private _actionRunning: string | null = null  // 'renew' | 'regenerate' | null
+  private _actionResult: { ok: boolean; message: string } | null = null
 
   connectedCallback() {
     this.style.display = 'block'
@@ -332,11 +349,18 @@ class PageSecurityCertificates extends HTMLElement {
     const data = this._data!
 
     body.innerHTML = `
+      ${this.renderActionToast()}
       ${this.renderOverview(data)}
       ${this.renderTabs()}
       <div id="certTabContent"></div>
       ${this.renderWarnings(data.warnings)}
     `
+
+    // Wire toast dismiss
+    body.querySelector('[data-action="dismiss-toast"]')?.addEventListener('click', () => {
+      this._actionResult = null
+      this.render()
+    })
 
     // Wire tabs
     body.querySelectorAll('.infra-tab').forEach(btn => {
@@ -449,12 +473,23 @@ class PageSecurityCertificates extends HTMLElement {
     const caActions = `<button class="md-btn-text" data-action="download-ca">Download CA</button>`
     const sanToggle = `<button class="md-btn-text" data-action="toggle-san">View SAN Config</button>`
 
+    const canRegenerate = pki.ca?.exists && pki.ca?.status !== 'missing'
+    const regenDisabled = !canRegenerate || !!this._actionRunning
+    const regenLabel = this._actionRunning === 'regenerate' ? 'Regenerating...' : 'Regenerate internal certificates'
+
     el.innerHTML = `
       <div class="infra-section-title">Certificate Authority</div>
       ${renderCertCard(pki.ca, pki.consumers, data.envoy?.usage, caActions)}
 
       <div class="infra-section-title">Service Certificate</div>
       ${renderCertCard(pki.serviceCert, pki.consumers, data.envoy?.usage)}
+
+      <div class="cert-action-bar">
+        <button class="cert-action-btn" data-action="regenerate-internal" ${regenDisabled ? 'disabled' : ''}>
+          ${regenLabel}
+        </button>
+        <span class="cert-action-hint">Used by: gRPC services, Envoy upstream TLS</span>
+      </div>
 
       <div class="infra-section-title" style="display:flex;align-items:center;gap:8px">
         SAN Configuration ${sanToggle}
@@ -472,6 +507,9 @@ class PageSecurityCertificates extends HTMLElement {
       this._sanConfigOpen = !this._sanConfigOpen
       const block = el.querySelector('#sanConfigBlock') as HTMLElement
       if (block) block.style.display = this._sanConfigOpen ? 'block' : 'none'
+    })
+    el.querySelector('[data-action="regenerate-internal"]')?.addEventListener('click', () => {
+      this.doRegenerateInternal()
     })
   }
 
@@ -521,7 +559,21 @@ class PageSecurityCertificates extends HTMLElement {
 
       <div class="infra-section-title">Issuer / Chain Bundle</div>
       ${renderCertCard(pub.issuerBundle, ['Certificate chain validation'], data.envoy?.usage)}
+
+      ${pub.protocol === 'https' && extDomains.length > 0 ? `
+        <div class="cert-action-bar">
+          <button class="cert-action-btn" data-action="renew-public" ${this._actionRunning ? 'disabled' : ''}>
+            ${this._actionRunning === 'renew' ? 'Renewing...' : 'Renew public certificate'}
+          </button>
+          <span class="cert-action-hint">Used by: Envoy public listener, browser clients</span>
+        </div>
+      ` : ''}
     `
+
+    // Wire renew action
+    el.querySelector('[data-action="renew-public"]')?.addEventListener('click', () => {
+      this.doRenewPublic()
+    })
   }
 
   // ─── Envoy / SDS tab ─────────────────────────────────────────────────────
@@ -578,6 +630,79 @@ class PageSecurityCertificates extends HTMLElement {
         </div>
       ` : '<div class="infra-empty">No SDS secrets configured.</div>'}
     `
+  }
+
+  // ─── Action toast ─────────────────────────────────────────────────────────
+
+  private renderActionToast(): string {
+    if (this._actionRunning) {
+      const label = this._actionRunning === 'renew' ? 'Renewing public certificate' : 'Regenerating internal certificates'
+      return `
+        <div class="action-toast" style="border-left:4px solid #3b82f6;background:color-mix(in srgb, #3b82f6 8%, var(--md-surface-container-low))">
+          <span class="action-spinner"></span>
+          <span>${label}...</span>
+        </div>
+      `
+    }
+    if (this._actionResult) {
+      const color = this._actionResult.ok ? '#22c55e' : 'var(--error-color)'
+      const icon = this._actionResult.ok ? '&#10003;' : '&#10005;'
+      return `
+        <div class="action-toast" style="border-left:4px solid ${color}">
+          <span style="color:${color};font-weight:700;font-size:1.1rem">${icon}</span>
+          <span>${esc(this._actionResult.message)}</span>
+          <button class="action-toast-dismiss" data-action="dismiss-toast">&times;</button>
+        </div>
+      `
+    }
+    return ''
+  }
+
+  // ─── Actions ─────────────────────────────────────────────────────────────
+
+  private async doRenewPublic() {
+    if (this._actionRunning) return
+    if (!confirm('Renew the public certificate for all external domains?\n\nThis will trigger the configured ACME renewal flow. The domain reconciler will re-obtain certificates within ~60 seconds.')) return
+
+    this._actionRunning = 'renew'
+    this._actionResult = null
+    this.render()
+
+    try {
+      const result = await renewPublicCert()
+      this._actionResult = result
+    } catch (e: any) {
+      this._actionResult = { ok: false, message: e?.message ?? 'Failed to renew public certificate' }
+    }
+
+    this._actionRunning = null
+    this.render()
+
+    // Delayed re-fetch to pick up changes
+    setTimeout(() => this.load(), 3000)
+  }
+
+  private async doRegenerateInternal() {
+    if (this._actionRunning) return
+    if (!confirm('Regenerate internal certificates using the current SAN configuration?\n\nThis will update certificate files consumed by internal services and Envoy. Services may need restart to pick up new certificates.')) return
+
+    this._actionRunning = 'regenerate'
+    this._actionResult = null
+    this.render()
+
+    try {
+      const result = await regenerateInternalCerts()
+      this._actionResult = result
+    } catch (e: any) {
+      this._actionResult = { ok: false, message: e?.message ?? 'Failed to regenerate internal certificates' }
+    }
+
+    this._actionRunning = null
+    this.render()
+
+    // Immediate + delayed re-fetch
+    this.load()
+    setTimeout(() => this.load(), 3000)
   }
 
   // ─── Warnings ─────────────────────────────────────────────────────────────
@@ -697,6 +822,60 @@ const PAGE_STYLES = `
     text-transform: uppercase; letter-spacing: .04em;
     margin-right: 6px;
     color: var(--secondary-text-color);
+  }
+  .cert-action-bar {
+    display: flex; align-items: center; gap: 12px;
+    margin: 16px 0; padding: 12px 16px;
+    background: var(--md-surface-container-low);
+    border: 1px solid var(--border-subtle-color);
+    border-radius: var(--md-shape-md);
+  }
+  .cert-action-btn {
+    padding: 8px 20px;
+    border: none; border-radius: var(--md-shape-sm);
+    background: var(--accent-color);
+    color: var(--on-accent-color, #fff);
+    font: var(--md-typescale-label-large);
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .cert-action-btn:hover:not(:disabled) {
+    opacity: .85;
+  }
+  .cert-action-btn:disabled {
+    opacity: .5; cursor: not-allowed;
+  }
+  .cert-action-hint {
+    font-size: .78rem;
+    color: var(--secondary-text-color);
+  }
+  .action-toast {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; margin-bottom: 12px;
+    border-radius: var(--md-shape-md);
+    background: var(--md-surface-container-low);
+    font-size: .88rem;
+  }
+  .action-toast-dismiss {
+    margin-left: auto;
+    border: none; background: transparent;
+    color: var(--secondary-text-color);
+    font-size: 1.2rem; cursor: pointer;
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .action-toast-dismiss:hover {
+    background: color-mix(in srgb, var(--on-surface-color) 10%, transparent);
+  }
+  @keyframes cert-spin {
+    to { transform: rotate(360deg); }
+  }
+  .action-spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid #3b82f6;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: cert-spin .6s linear infinite;
   }
 `
 
