@@ -62,6 +62,10 @@ interface CertData {
   envoy: {
     sdsEnabled: boolean
     usage: EnvoyTLSUsage[]
+    listeners: EnvoyListenerTLS[]
+    upstreams: EnvoyUpstreamTLS[]
+    secrets: EnvoySecretRef[]
+    xdsClient: XDSClientTLS
   }
   warnings: CertWarning[]
   debugGraph: DebugNode[]
@@ -77,6 +81,50 @@ interface ExternalDomainTLS {
 interface EnvoyTLSUsage {
   name: string
   type: string
+  certPath: string
+  keyPath: string
+  caPath: string
+  exists: boolean
+  status: string
+}
+
+interface EnvoyListenerTLS {
+  name: string
+  address: string
+  tlsMode: string
+  secretName: string
+  certPath: string
+  keyPath: string
+  exists: boolean
+  status: string
+  certificateRef: string
+}
+
+interface EnvoyUpstreamTLS {
+  name: string
+  tlsMode: string
+  serverCertPath: string
+  keyPath: string
+  caPath: string
+  exists: boolean
+  status: string
+  certificateRef: string
+  caRef: string
+}
+
+interface EnvoySecretRef {
+  name: string
+  type: string
+  certPath: string
+  keyPath: string
+  caPath: string
+  exists: boolean
+  status: string
+  consumers: string[]
+}
+
+interface XDSClientTLS {
+  enabled: boolean
   certPath: string
   keyPath: string
   caPath: string
@@ -400,7 +448,9 @@ class PageSecurityCertificates extends HTMLElement {
     const pubLabel = pub ? pub.status.toUpperCase() : 'N/A'
     const extCount = (data.publicTLS?.externalDomains ?? []).length
 
-    const envoyOk = data.envoy?.usage?.every(u => u.status === 'valid' || u.status === 'ok') ?? false
+    const envoySecretsOk = (data.envoy?.secrets ?? []).every(s => s.status === 'ok')
+    const envoyXdsOk = data.envoy?.xdsClient?.status === 'ok'
+    const envoyOk = envoySecretsOk && envoyXdsOk
     const envoyState: HealthState = !data.envoy ? 'unknown'
       : envoyOk ? 'healthy'
       : 'degraded'
@@ -431,10 +481,10 @@ class PageSecurityCertificates extends HTMLElement {
         <div class="infra-card" style="border-left:4px solid ${stateColor(envoyState)}">
           <div class="infra-card-label">Envoy TLS</div>
           <div style="display:flex;align-items:center;gap:8px">
-            <span class="infra-card-value" style="font-size:1.4rem">${data.envoy?.usage?.length ?? 0}</span>
+            <span class="infra-card-value" style="font-size:1.4rem">${(data.envoy?.secrets ?? []).length}</span>
             ${badge(envoyOk ? 'HEALTHY' : 'ISSUES', stateColor(envoyState))}
           </div>
-          <div class="infra-card-sub">SDS ${data.envoy?.sdsEnabled ? 'enabled' : 'disabled'} &middot; ${data.envoy?.usage?.length ?? 0} secret(s)</div>
+          <div class="infra-card-sub">SDS ${data.envoy?.sdsEnabled ? 'enabled' : 'disabled'} &middot; ${(data.envoy?.listeners ?? []).length} listener(s) &middot; ${(data.envoy?.upstreams ?? []).length} upstream(s)</div>
         </div>
 
         <div class="infra-card" style="border-left:4px solid ${stateColor(dnsState)}">
@@ -589,46 +639,170 @@ class PageSecurityCertificates extends HTMLElement {
       ? badge('SDS ENABLED', '#22c55e')
       : badge('SDS DISABLED', '#f59e0b')
 
-    const rows = (envoy.usage ?? []).map(u => {
-      const ok = u.status === 'valid' || u.status === 'ok'
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <span style="font-weight:700;font-size:.92rem">Envoy / TLS Consumers</span>
+        ${sdsLabel}
+      </div>
+
+      ${this.renderEnvoyListeners(envoy.listeners ?? [])}
+      ${this.renderEnvoyUpstreams(envoy.upstreams ?? [])}
+      ${this.renderEnvoySecrets(envoy.secrets ?? [])}
+      ${this.renderEnvoyXDSClient(envoy.xdsClient)}
+    `
+
+    // Wire detail toggles
+    el.querySelectorAll('[data-toggle-detail]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = (btn as HTMLElement).dataset.toggleDetail!
+        const detail = el.querySelector(`[data-detail="${target}"]`) as HTMLElement
+        if (detail) {
+          const open = detail.style.display !== 'none'
+          detail.style.display = open ? 'none' : 'block'
+          ;(btn as HTMLElement).textContent = open ? 'Show details' : 'Hide details'
+        }
+      })
+    })
+  }
+
+  private renderEnvoyListeners(listeners: EnvoyListenerTLS[]): string {
+    if (!listeners.length) return ''
+
+    const rows = listeners.map((l, i) => {
+      const ok = l.status === 'ok'
       const color = ok ? '#22c55e' : 'var(--error-color)'
+      const modeColor = l.tlsMode === 'public' ? '#8b5cf6' : '#6366f1'
       return `
         <tr>
-          <td style="font-weight:600">${esc(u.name)}</td>
-          <td>${badge(u.type.toUpperCase(), '#6366f1')}</td>
-          <td style="font-family:monospace;font-size:.78rem">${esc(u.certPath)}</td>
-          <td style="font-family:monospace;font-size:.78rem">${esc(u.keyPath)}</td>
-          <td style="font-family:monospace;font-size:.78rem">${esc(u.caPath)}</td>
-          <td>${statusIcon(u.exists)}</td>
-          <td>${badge(u.status.toUpperCase(), color)}</td>
+          <td style="font-weight:600">${esc(l.name)}</td>
+          <td>${esc(l.address)}</td>
+          <td>${badge(l.tlsMode.toUpperCase(), modeColor)}</td>
+          <td><span class="pill">${esc(l.secretName)}</span></td>
+          <td>${statusIcon(l.exists)}</td>
+          <td>${badge(l.status.toUpperCase(), color)}</td>
+          <td><button class="md-btn-text" data-toggle-detail="listener-${i}">Show details</button></td>
+        </tr>
+        <tr data-detail="listener-${i}" style="display:none">
+          <td colspan="7" class="envoy-detail-cell">
+            <div class="envoy-detail-grid">
+              <span class="label">Cert Path</span><span class="mono">${esc(l.certPath)}</span>
+              <span class="label">Key Path</span><span class="mono">${esc(l.keyPath)}</span>
+              <span class="label">Certificate Ref</span><span>${esc(l.certificateRef)}</span>
+            </div>
+          </td>
         </tr>
       `
     }).join('')
 
-    el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-        <span style="font-weight:700;font-size:.92rem">Envoy TLS Secrets</span>
-        ${sdsLabel}
+    return `
+      <div class="infra-section-title">Public &amp; Internal Listeners</div>
+      <div style="overflow-x:auto;margin-bottom:16px">
+        <table class="infra-table">
+          <thead>
+            <tr><th>Listener</th><th>Address</th><th>TLS Mode</th><th>Secret</th><th>Exists</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
       </div>
+    `
+  }
 
-      ${envoy.usage && envoy.usage.length > 0 ? `
-        <div style="overflow-x:auto">
-          <table class="infra-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Cert Path</th>
-                <th>Key Path</th>
-                <th>CA Path</th>
-                <th>Exists</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
+  private renderEnvoyUpstreams(upstreams: EnvoyUpstreamTLS[]): string {
+    if (!upstreams.length) return ''
+
+    const rows = upstreams.map((u, i) => {
+      const ok = u.status === 'ok' || u.status === 'no_tls'
+      const color = ok ? '#22c55e' : 'var(--error-color)'
+      const modeColor = u.tlsMode === 'none' ? 'var(--secondary-text-color)' : '#6366f1'
+      return `
+        <tr>
+          <td style="font-weight:600">${esc(u.name)}</td>
+          <td>${badge(u.tlsMode.toUpperCase(), modeColor)}</td>
+          <td>${u.tlsMode !== 'none' ? statusIcon(u.exists) : '<span style="color:var(--secondary-text-color)">—</span>'}</td>
+          <td>${badge(u.status.toUpperCase(), color)}</td>
+          <td><button class="md-btn-text" data-toggle-detail="upstream-${i}">Show details</button></td>
+        </tr>
+        <tr data-detail="upstream-${i}" style="display:none">
+          <td colspan="5" class="envoy-detail-cell">
+            <div class="envoy-detail-grid">
+              ${u.caPath ? `<span class="label">CA Bundle</span><span class="mono">${esc(u.caPath)}</span>` : ''}
+              ${u.certificateRef ? `<span class="label">Cert Ref</span><span>${esc(u.certificateRef)}</span>` : ''}
+              ${u.caRef ? `<span class="label">CA Ref</span><span>${esc(u.caRef)}</span>` : ''}
+            </div>
+          </td>
+        </tr>
+      `
+    }).join('')
+
+    return `
+      <div class="infra-section-title">Upstream TLS</div>
+      <div style="overflow-x:auto;margin-bottom:16px">
+        <table class="infra-table">
+          <thead>
+            <tr><th>Upstream / Service</th><th>TLS Mode</th><th>Exists</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `
+  }
+
+  private renderEnvoySecrets(secrets: EnvoySecretRef[]): string {
+    if (!secrets.length) return ''
+
+    const cards = secrets.map((s, i) => {
+      const ok = s.status === 'ok'
+      const color = ok ? '#22c55e' : 'var(--error-color)'
+      const typeColor = s.type === 'tls_certificate' ? '#8b5cf6' : '#0ea5e9'
+      const consumers = (s.consumers ?? []).map(c => `<span class="pill">${esc(c)}</span>`).join(' ')
+      return `
+        <div class="infra-card envoy-secret-card" style="border-left:4px solid ${color}">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-weight:700;font-size:.88rem">${esc(s.name)}</span>
+            ${badge(s.type.replace('_', ' ').toUpperCase(), typeColor)}
+            ${badge(s.status.toUpperCase(), color)}
+            ${statusIcon(s.exists)}
+          </div>
+          ${consumers ? `<div class="cert-pills" style="margin-top:6px;padding-top:6px">Used by: ${consumers}</div>` : ''}
+          <div style="margin-top:6px">
+            <button class="md-btn-text" data-toggle-detail="secret-${i}">Show details</button>
+          </div>
+          <div data-detail="secret-${i}" style="display:none;margin-top:8px" class="envoy-detail-grid">
+            ${s.certPath ? `<span class="label">Cert</span><span class="mono">${esc(s.certPath)}</span>` : ''}
+            ${s.keyPath ? `<span class="label">Key</span><span class="mono">${esc(s.keyPath)}</span>` : ''}
+            ${s.caPath ? `<span class="label">CA</span><span class="mono">${esc(s.caPath)}</span>` : ''}
+          </div>
         </div>
-      ` : '<div class="infra-empty">No SDS secrets configured.</div>'}
+      `
+    }).join('')
+
+    return `
+      <div class="infra-section-title">SDS Secrets</div>
+      ${cards}
+    `
+  }
+
+  private renderEnvoyXDSClient(xds: XDSClientTLS | undefined): string {
+    if (!xds) return ''
+
+    const ok = xds.status === 'ok'
+    const color = ok ? '#22c55e' : 'var(--error-color)'
+
+    return `
+      <div class="infra-section-title">xDS Client TLS</div>
+      <div class="infra-card" style="border-left:4px solid ${color};margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-weight:700;font-size:.88rem">Envoy xDS Client</span>
+          ${badge(xds.enabled ? 'ENABLED' : 'DISABLED', xds.enabled ? '#22c55e' : '#f59e0b')}
+          ${badge(xds.status.toUpperCase(), color)}
+          ${statusIcon(xds.exists)}
+        </div>
+        <div class="envoy-detail-grid">
+          <span class="label">Cert</span><span class="mono">${esc(xds.certPath)}</span>
+          <span class="label">Key</span><span class="mono">${esc(xds.keyPath)}</span>
+          <span class="label">CA</span><span class="mono">${esc(xds.caPath)}</span>
+        </div>
+      </div>
     `
   }
 
@@ -876,6 +1050,29 @@ const PAGE_STYLES = `
     border-top-color: transparent;
     border-radius: 50%;
     animation: cert-spin .6s linear infinite;
+  }
+  .envoy-detail-cell {
+    padding: 8px 16px !important;
+    background: color-mix(in srgb, var(--md-surface-container-low) 60%, transparent);
+  }
+  .envoy-detail-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: .82rem;
+  }
+  .envoy-detail-grid .label {
+    color: var(--secondary-text-color);
+    font-weight: 600;
+    font-size: .78rem;
+  }
+  .envoy-detail-grid .mono {
+    font-family: monospace;
+    font-size: .76rem;
+    word-break: break-all;
+  }
+  .envoy-secret-card {
+    margin-bottom: 10px;
   }
 `
 
