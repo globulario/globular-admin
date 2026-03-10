@@ -6,6 +6,7 @@ import {
   type ClusterHealth,
   type ClusterNode,
 } from '@globular/backend'
+import { alertDialog } from '../utils/confirm_dialog'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -517,12 +518,20 @@ class PageDashboard extends HTMLElement {
 
   private handlePause() {
     // Stub — requires a dedicated PauseReconciliation RPC (Phase 2)
-    alert('Pause reconciliation requires a PauseReconciliation RPC (not yet implemented).')
+    alertDialog({
+      title: 'Not Yet Available',
+      message: 'Pause reconciliation requires a PauseReconciliation RPC (not yet implemented).',
+      icon: 'fa fa-pause-circle',
+    })
   }
 
   private handleMaintenance() {
     // Stub — requires MaintenanceMode RPC (Phase 2)
-    alert('Maintenance mode requires a SetMaintenanceMode RPC (not yet implemented).')
+    alertDialog({
+      title: 'Not Yet Available',
+      message: 'Maintenance mode requires a SetMaintenanceMode RPC (not yet implemented).',
+      icon: 'fa fa-wrench',
+    })
   }
 }
 

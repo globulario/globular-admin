@@ -5,6 +5,7 @@ import {
   fmtTime, freshnessBadge,
   type HealthState,
 } from '../utils/infra_health'
+import { confirmDialog } from '../utils/confirm_dialog'
 
 const POLL = 60_000
 
@@ -949,7 +950,13 @@ class PageSecurityCertificates extends HTMLElement {
 
   private async doRenewPublic() {
     if (this._actionRunning) return
-    if (!confirm('Renew the public certificate for all external domains?\n\nThis will trigger the configured ACME renewal flow. The domain reconciler will re-obtain certificates within ~60 seconds.')) return
+    const ok = await confirmDialog({
+      title: 'Renew Public Certificate',
+      message: 'Renew the public certificate for all external domains?\n\nThis will trigger the configured ACME renewal flow. The domain reconciler will re-obtain certificates within ~60 seconds.',
+      okLabel: 'Renew',
+      icon: 'fa fa-certificate',
+    })
+    if (!ok) return
 
     this._actionRunning = 'renew'
     this._actionResult = null
@@ -971,7 +978,14 @@ class PageSecurityCertificates extends HTMLElement {
 
   private async doRegenerateInternal() {
     if (this._actionRunning) return
-    if (!confirm('Regenerate internal certificates using the current SAN configuration?\n\nThis will update certificate files consumed by internal services and Envoy. Services may need restart to pick up new certificates.')) return
+    const ok = await confirmDialog({
+      title: 'Regenerate Internal Certificates',
+      message: 'Regenerate internal certificates using the current SAN configuration?\n\nThis will update certificate files consumed by internal services and Envoy. Services may need restart to pick up new certificates.',
+      okLabel: 'Regenerate',
+      variant: 'danger',
+      icon: 'fa fa-shield',
+    })
+    if (!ok) return
 
     this._actionRunning = 'regenerate'
     this._actionResult = null

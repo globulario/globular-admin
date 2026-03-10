@@ -1,5 +1,6 @@
 // src/pages/services_instances.ts
 import { getConfig, saveServiceConfig, type ServiceDesc } from '@globular/backend'
+import { alertDialog } from '../utils/confirm_dialog'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,11 @@ class PageServicesInstances extends HTMLElement {
       await saveServiceConfig(patch)
       await this.load()   // reload to show updated state
     } catch (e: any) {
-      alert(`Failed to save service config: ${e?.message ?? e}`)
+      alertDialog({
+        title: 'Save Failed',
+        message: `Failed to save service config: ${e?.message ?? e}`,
+        variant: 'danger',
+      })
     } finally {
       this._saving = false
     }
