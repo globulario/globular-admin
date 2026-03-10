@@ -8,7 +8,9 @@ import {
 
 const POLL = 60_000
 
+type CertMode = 'node' | 'cluster'
 type CertTab = 'internal' | 'public' | 'envoy'
+type ClusterFilter = 'all' | 'errors' | 'warnings' | 'expiring' | 'unreachable'
 
 interface CertRecord {
   name: string
@@ -137,6 +139,60 @@ interface CertActionResponse {
   message: string
 }
 
+// ─── Cluster types ────────────────────────────────────────────────────────
+
+interface ClusterCertSummary {
+  totalNodes: number
+  healthyNodes: number
+  warningNodes: number
+  errorNodes: number
+  unreachableNodes: number
+  expiringSoonCount: number
+  expiredCount: number
+}
+
+interface ClusterTrustDrift {
+  internalSANMismatch: boolean
+  publicDomainMismatch: boolean
+  envoyTLSDrift: boolean
+  nodesOutOfPolicy: string[]
+}
+
+interface NodeCertPKISummary {
+  caStatus: string
+  serviceCertStatus: string
+  daysUntilExpiry?: number
+}
+
+interface NodeCertPublicSummary {
+  enabled: boolean
+  certStatus: string
+  daysUntilExpiry?: number
+  domain?: string
+}
+
+interface NodeCertEnvoySummary {
+  status: string
+  listenerIssues: number
+  upstreamIssues: number
+}
+
+interface ClusterNodeCertStatus {
+  nodeId: string
+  address: string
+  status: string
+  internalPKI?: NodeCertPKISummary
+  publicTLS?: NodeCertPublicSummary
+  envoy?: NodeCertEnvoySummary
+  warnings: CertWarning[]
+}
+
+interface ClusterCertOverview {
+  summary: ClusterCertSummary
+  drift: ClusterTrustDrift
+  nodes: ClusterNodeCertStatus[]
+}
+
 // ─── Backend client ──────────────────────────────────────────────────────────
 
 async function fetchCertificates(): Promise<CertData> {
@@ -152,6 +208,12 @@ async function renewPublicCert(): Promise<CertActionResponse> {
 
 async function regenerateInternalCerts(): Promise<CertActionResponse> {
   const resp = await fetch('/admin/certificates/regenerate-internal', { method: 'POST' })
+  return resp.json()
+}
+
+async function fetchClusterCertificates(): Promise<ClusterCertOverview> {
+  const resp = await fetch('/admin/certificates/cluster')
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   return resp.json()
 }
 
@@ -313,11 +375,16 @@ class PageSecurityCertificates extends HTMLElement {
   private _lastUpdated: Date | null = null
   private _data: CertData | null = null
   private _tab: CertTab = 'internal'
+  private _mode: CertMode = 'node'
   private _loading = false
   private _error: string | null = null
   private _sanConfigOpen = false
   private _actionRunning: string | null = null  // 'renew' | 'regenerate' | null
   private _actionResult: { ok: boolean; message: string } | null = null
+  private _clusterData: ClusterCertOverview | null = null
+  private _clusterError: string | null = null
+  private _clusterFilter: ClusterFilter = 'all'
+  private _expandedNodes: Set<string> = new Set()
 
   connectedCallback() {
     this.style.display = 'block'
@@ -353,10 +420,19 @@ class PageSecurityCertificates extends HTMLElement {
     this.render()
 
     try {
-      this._data = await fetchCertificates()
-      this._error = null
+      if (this._mode === 'cluster') {
+        this._clusterData = await fetchClusterCertificates()
+        this._clusterError = null
+      } else {
+        this._data = await fetchCertificates()
+        this._error = null
+      }
     } catch (e: any) {
-      this._error = e?.message ?? 'Failed to fetch certificate data'
+      if (this._mode === 'cluster') {
+        this._clusterError = e?.message ?? 'Failed to fetch cluster certificate data'
+      } else {
+        this._error = e?.message ?? 'Failed to fetch certificate data'
+      }
     }
 
     this._lastUpdated = new Date()
@@ -380,29 +456,45 @@ class PageSecurityCertificates extends HTMLElement {
       return
     }
 
-    if (this._error && !this._data) {
+    // Mode tabs (This Node / Cluster)
+    const modeError = this._mode === 'cluster' ? this._clusterError : this._error
+    const hasData = this._mode === 'cluster' ? !!this._clusterData : !!this._data
+
+    if (modeError && !hasData) {
       body.innerHTML = `
+        ${this.renderModeTabs()}
         <div class="cert-error-card infra-card" style="border-left:4px solid var(--error-color)">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <span style="font-weight:700;font-size:.92rem">Error</span>
             ${badge('FAILED', 'var(--error-color)')}
           </div>
-          <div class="infra-card-metric">${esc(this._error!)}</div>
-          <div class="infra-card-sub">The /admin/certificates endpoint may not be available yet.</div>
+          <div class="infra-card-metric">${esc(modeError)}</div>
+          <div class="infra-card-sub">${this._mode === 'cluster'
+            ? 'The cluster controller or /admin/certificates/cluster endpoint may not be available.'
+            : 'The /admin/certificates endpoint may not be available yet.'}</div>
         </div>
       `
+      this.wireModeTabs(body)
+      return
+    }
+
+    if (this._mode === 'cluster') {
+      this.renderClusterView(body)
       return
     }
 
     const data = this._data!
 
     body.innerHTML = `
+      ${this.renderModeTabs()}
       ${this.renderActionToast()}
       ${this.renderOverview(data)}
       ${this.renderTabs()}
       <div id="certTabContent"></div>
       ${this.renderWarnings(data.warnings)}
     `
+
+    this.wireModeTabs(body)
 
     // Wire toast dismiss
     body.querySelector('[data-action="dismiss-toast"]')?.addEventListener('click', () => {
@@ -411,7 +503,7 @@ class PageSecurityCertificates extends HTMLElement {
     })
 
     // Wire tabs
-    body.querySelectorAll('.infra-tab').forEach(btn => {
+    body.querySelectorAll('.infra-tab:not(.mode-tab)').forEach(btn => {
       btn.addEventListener('click', () => {
         this._tab = (btn as HTMLElement).dataset.tab as CertTab
         this.render()
@@ -425,6 +517,27 @@ class PageSecurityCertificates extends HTMLElement {
       case 'public':   this.renderPublicTLS(content, data); break
       case 'envoy':    this.renderEnvoy(content, data); break
     }
+  }
+
+  private renderModeTabs(): string {
+    return `
+      <div class="mode-tabs" style="margin-bottom:16px">
+        <button class="mode-tab ${this._mode === 'node' ? 'active' : ''}" data-mode="node">This Node</button>
+        <button class="mode-tab ${this._mode === 'cluster' ? 'active' : ''}" data-mode="cluster">Cluster</button>
+      </div>
+    `
+  }
+
+  private wireModeTabs(container: HTMLElement) {
+    container.querySelectorAll('.mode-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newMode = (btn as HTMLElement).dataset.mode as CertMode
+        if (newMode !== this._mode) {
+          this._mode = newMode
+          this.load()
+        }
+      })
+    })
   }
 
   // ─── Overview cards ───────────────────────────────────────────────────────
@@ -879,6 +992,240 @@ class PageSecurityCertificates extends HTMLElement {
     setTimeout(() => this.load(), 3000)
   }
 
+  // ─── Cluster view ─────────────────────────────────────────────────────────
+
+  private renderClusterView(body: HTMLElement) {
+    const data = this._clusterData
+    if (!data) {
+      body.innerHTML = `${this.renderModeTabs()}<div class="infra-empty">No cluster data available.</div>`
+      this.wireModeTabs(body)
+      return
+    }
+
+    const s = data.summary
+    const drift = data.drift
+    const hasDrift = drift.internalSANMismatch || drift.publicDomainMismatch || drift.envoyTLSDrift
+
+    // Filter nodes
+    const filtered = (data.nodes ?? []).filter(n => {
+      switch (this._clusterFilter) {
+        case 'errors':      return n.status === 'error'
+        case 'warnings':    return n.status === 'warning'
+        case 'expiring':    return (n.internalPKI?.daysUntilExpiry != null && n.internalPKI.daysUntilExpiry < 30) ||
+                                   (n.publicTLS?.daysUntilExpiry != null && n.publicTLS.daysUntilExpiry < 30)
+        case 'unreachable': return n.status === 'unreachable'
+        default:            return true
+      }
+    })
+
+    body.innerHTML = `
+      ${this.renderModeTabs()}
+
+      <div class="infra-grid" style="margin-bottom:16px">
+        <div class="infra-card" style="border-left:4px solid ${stateColor('healthy')}">
+          <div class="infra-card-label">Total Nodes</div>
+          <div class="infra-card-value" style="font-size:1.4rem">${s.totalNodes}</div>
+          <div class="infra-card-sub">${s.healthyNodes} healthy</div>
+        </div>
+        <div class="infra-card" style="border-left:4px solid ${s.warningNodes > 0 ? stateColor('degraded') : stateColor('healthy')}">
+          <div class="infra-card-label">Warnings</div>
+          <div class="infra-card-value" style="font-size:1.4rem">${s.warningNodes}</div>
+          <div class="infra-card-sub">${s.expiringSoonCount} expiring soon</div>
+        </div>
+        <div class="infra-card" style="border-left:4px solid ${s.errorNodes > 0 ? stateColor('critical') : stateColor('healthy')}">
+          <div class="infra-card-label">Errors</div>
+          <div class="infra-card-value" style="font-size:1.4rem">${s.errorNodes}</div>
+          <div class="infra-card-sub">${s.expiredCount} expired</div>
+        </div>
+        <div class="infra-card" style="border-left:4px solid ${s.unreachableNodes > 0 ? 'var(--secondary-text-color)' : stateColor('healthy')}">
+          <div class="infra-card-label">Unreachable</div>
+          <div class="infra-card-value" style="font-size:1.4rem">${s.unreachableNodes}</div>
+          <div class="infra-card-sub">${s.totalNodes - s.unreachableNodes} reachable</div>
+        </div>
+      </div>
+
+      ${hasDrift ? this.renderDriftBanner(drift) : ''}
+
+      <div class="cluster-filters" style="margin-bottom:12px">
+        ${(['all', 'errors', 'warnings', 'expiring', 'unreachable'] as ClusterFilter[]).map(f =>
+          `<button class="cluster-filter-btn ${this._clusterFilter === f ? 'active' : ''}" data-filter="${f}">${f.charAt(0).toUpperCase() + f.slice(1)}</button>`
+        ).join('')}
+      </div>
+
+      ${filtered.length > 0 ? `
+        <div style="overflow-x:auto">
+          <table class="infra-table">
+            <thead>
+              <tr><th>Node</th><th>Internal PKI</th><th>Public TLS</th><th>Envoy TLS</th><th>Status</th><th>Warnings</th><th></th></tr>
+            </thead>
+            <tbody>${filtered.map(n => this.renderClusterNodeRow(n)).join('')}</tbody>
+          </table>
+        </div>
+      ` : '<div class="infra-empty">No nodes match the selected filter.</div>'}
+    `
+
+    this.wireModeTabs(body)
+
+    // Wire filters
+    body.querySelectorAll('.cluster-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._clusterFilter = (btn as HTMLElement).dataset.filter as ClusterFilter
+        this.renderClusterView(body)
+      })
+    })
+
+    // Wire node expand toggles
+    body.querySelectorAll('[data-toggle-node]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const nodeId = (btn as HTMLElement).dataset.toggleNode!
+        if (this._expandedNodes.has(nodeId)) {
+          this._expandedNodes.delete(nodeId)
+        } else {
+          this._expandedNodes.add(nodeId)
+        }
+        this.renderClusterView(body)
+      })
+    })
+  }
+
+  private renderDriftBanner(drift: ClusterTrustDrift): string {
+    const items: string[] = []
+    if (drift.internalSANMismatch) items.push('Internal certificate status mismatch across nodes')
+    if (drift.publicDomainMismatch) items.push('Public TLS domain mismatch across nodes')
+    if (drift.envoyTLSDrift) items.push('Envoy TLS configuration drift across nodes')
+
+    return `
+      <div class="drift-banner infra-card" style="border-left:4px solid #f59e0b;margin-bottom:16px;background:color-mix(in srgb, #f59e0b 6%, var(--md-surface-container-low))">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="color:#f59e0b;font-size:1.2rem;font-weight:700">&#9888;</span>
+          <span style="font-weight:700;font-size:.92rem">Cluster Trust Drift Detected</span>
+        </div>
+        <ul style="margin:0;padding-left:20px;font-size:.85rem">
+          ${items.map(i => `<li>${esc(i)}</li>`).join('')}
+        </ul>
+        ${drift.nodesOutOfPolicy.length > 0 ? `
+          <div style="margin-top:6px;font-size:.82rem;color:var(--secondary-text-color)">
+            Affected nodes: ${drift.nodesOutOfPolicy.map(n => `<span class="pill">${esc(n)}</span>`).join(' ')}
+          </div>
+        ` : ''}
+      </div>
+    `
+  }
+
+  private renderClusterNodeRow(n: ClusterNodeCertStatus): string {
+    const statusColors: Record<string, string> = {
+      healthy: '#22c55e', warning: '#f59e0b', error: 'var(--error-color)', unreachable: 'var(--secondary-text-color)'
+    }
+    const color = statusColors[n.status] ?? 'var(--secondary-text-color)'
+    const warnCount = (n.warnings ?? []).length
+    const expanded = this._expandedNodes.has(n.nodeId)
+
+    // PKI cell
+    let pkiCell = '<span style="color:var(--secondary-text-color)">—</span>'
+    if (n.internalPKI) {
+      const pkiColor = n.internalPKI.serviceCertStatus === 'valid' ? '#22c55e'
+        : n.internalPKI.serviceCertStatus === 'expiring' ? '#f59e0b' : 'var(--error-color)'
+      const days = n.internalPKI.daysUntilExpiry != null ? ` (${n.internalPKI.daysUntilExpiry}d)` : ''
+      pkiCell = `${badge(n.internalPKI.serviceCertStatus.toUpperCase(), pkiColor)}${days}`
+    }
+
+    // Public TLS cell
+    let pubCell = '<span style="color:var(--secondary-text-color)">—</span>'
+    if (n.publicTLS) {
+      if (n.publicTLS.certStatus === 'not_applicable') {
+        pubCell = `${badge('N/A', 'var(--secondary-text-color)')}`
+      } else {
+        const pubColor = n.publicTLS.certStatus === 'valid' ? '#22c55e'
+          : n.publicTLS.certStatus === 'expiring' ? '#f59e0b' : 'var(--error-color)'
+        const days = n.publicTLS.daysUntilExpiry != null ? ` (${n.publicTLS.daysUntilExpiry}d)` : ''
+        pubCell = `${badge(n.publicTLS.certStatus.toUpperCase(), pubColor)}${days}`
+      }
+    }
+
+    // Envoy cell
+    let envoyCell = '<span style="color:var(--secondary-text-color)">—</span>'
+    if (n.envoy) {
+      const envoyColor = n.envoy.status === 'ok' ? '#22c55e'
+        : n.envoy.status === 'warning' ? '#f59e0b' : 'var(--error-color)'
+      const issues = n.envoy.listenerIssues + n.envoy.upstreamIssues
+      envoyCell = `${badge(n.envoy.status.toUpperCase(), envoyColor)}${issues > 0 ? ` ${issues} issue${issues > 1 ? 's' : ''}` : ''}`
+    }
+
+    const expandRow = expanded ? `
+      <tr>
+        <td colspan="7" class="envoy-detail-cell">
+          ${this.renderNodeDrillDown(n)}
+        </td>
+      </tr>
+    ` : ''
+
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:600">${esc(n.nodeId)}</div>
+          <div style="font-size:.75rem;color:var(--secondary-text-color)">${esc(n.address)}</div>
+        </td>
+        <td>${pkiCell}</td>
+        <td>${pubCell}</td>
+        <td>${envoyCell}</td>
+        <td>${badge(n.status.toUpperCase(), color)}</td>
+        <td>${warnCount > 0 ? `<span style="color:#f59e0b;font-weight:600">${warnCount}</span>` : '<span style="color:var(--secondary-text-color)">0</span>'}</td>
+        <td><button class="md-btn-text" data-toggle-node="${esc(n.nodeId)}">${expanded ? 'Hide' : 'Details'}</button></td>
+      </tr>
+      ${expandRow}
+    `
+  }
+
+  private renderNodeDrillDown(n: ClusterNodeCertStatus): string {
+    const sections: string[] = []
+
+    if (n.internalPKI) {
+      sections.push(`
+        <div class="envoy-detail-grid">
+          <span class="label">CA Status</span><span>${esc(n.internalPKI.caStatus)}</span>
+          <span class="label">Service Cert</span><span>${esc(n.internalPKI.serviceCertStatus)}</span>
+          ${n.internalPKI.daysUntilExpiry != null ? `<span class="label">Expires In</span><span>${n.internalPKI.daysUntilExpiry} days</span>` : ''}
+        </div>
+      `)
+    }
+
+    if (n.publicTLS && n.publicTLS.enabled) {
+      sections.push(`
+        <div class="envoy-detail-grid" style="margin-top:8px">
+          <span class="label">Public Domain</span><span>${esc(n.publicTLS.domain ?? '')}</span>
+          <span class="label">Cert Status</span><span>${esc(n.publicTLS.certStatus)}</span>
+          ${n.publicTLS.daysUntilExpiry != null ? `<span class="label">Expires In</span><span>${n.publicTLS.daysUntilExpiry} days</span>` : ''}
+        </div>
+      `)
+    }
+
+    if (n.envoy) {
+      sections.push(`
+        <div class="envoy-detail-grid" style="margin-top:8px">
+          <span class="label">Envoy Status</span><span>${esc(n.envoy.status)}</span>
+          <span class="label">Listener Issues</span><span>${n.envoy.listenerIssues}</span>
+          <span class="label">Upstream Issues</span><span>${n.envoy.upstreamIssues}</span>
+        </div>
+      `)
+    }
+
+    if (n.warnings && n.warnings.length > 0) {
+      sections.push(`
+        <div style="margin-top:8px">
+          <div style="font-weight:600;font-size:.82rem;margin-bottom:4px">Warnings</div>
+          ${n.warnings.map(w => `
+            <div style="display:flex;align-items:flex-start;gap:6px;font-size:.82rem;padding:2px 0">
+              <span style="color:${severityColor(w.severity)}">${severityIcon(w.severity)}</span>
+              <span>${esc(w.message)}</span>
+            </div>
+          `).join('')}
+        </div>
+      `)
+    }
+
+    return sections.length > 0 ? sections.join('') : '<span style="color:var(--secondary-text-color);font-size:.82rem">No details available</span>'
+  }
+
   // ─── Warnings ─────────────────────────────────────────────────────────────
 
   private renderWarnings(warnings: CertWarning[]): string {
@@ -1073,6 +1420,54 @@ const PAGE_STYLES = `
   }
   .envoy-secret-card {
     margin-bottom: 10px;
+  }
+  .mode-tabs {
+    display: flex; gap: 0;
+    border-bottom: 2px solid var(--border-subtle-color);
+  }
+  .mode-tab {
+    padding: 8px 20px;
+    border: none; background: transparent;
+    font: var(--md-typescale-label-large);
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color .15s, border-color .15s;
+  }
+  .mode-tab:hover {
+    color: var(--on-surface-color);
+  }
+  .mode-tab.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+    font-weight: 700;
+  }
+  .cluster-filters {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .cluster-filter-btn {
+    padding: 4px 14px;
+    border: 1px solid var(--border-subtle-color);
+    border-radius: 16px;
+    background: transparent;
+    font-size: .78rem; font-weight: 600;
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .cluster-filter-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+  .cluster-filter-btn.active {
+    background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+  .drift-banner ul {
+    list-style: disc;
+    color: var(--on-surface-color);
   }
 `
 
