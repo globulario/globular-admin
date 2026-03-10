@@ -21,6 +21,18 @@ import { InformationsManager } from "../informationManager/informationsManager";
 const INDEX_TITLES = "/search/titles";
 
 // -----------------------------------------------------------------------------
+// Type normalisation — IMDb data may use "TV Series" or "TVSeries"
+// -----------------------------------------------------------------------------
+function isTVSeries(title) {
+  const t = typeof title?.getType === "function" ? title.getType() : "";
+  return t === "TVSeries" || t === "TV Series";
+}
+function isTVEpisode(title) {
+  const t = typeof title?.getType === "function" ? title.getType() : "";
+  return t === "TVEpisode";
+}
+
+// -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
 
@@ -317,6 +329,7 @@ export class SearchTitleCard extends HTMLElement {
           text-align:center; border-radius:8px; box-shadow: var(--shadow-elevation-6dp); overflow:hidden; background-color: var(--surface-color);
         }
         .front { z-index:2; transform: rotateY(0deg); background-size: cover; background-position: center; background-repeat: no-repeat; }
+        .front-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; pointer-events:none; }
         .back { transform: rotateY(180deg); }
         .series-info {
           display:flex; flex-direction:column; align-items:flex-start; position:absolute; bottom:0; left:0; right:0;
@@ -327,6 +340,18 @@ export class SearchTitleCard extends HTMLElement {
         .series-info span { width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
         #hit-div-mosaic-series-name { font-size:1.4em; font-weight:bold; }
         #hit-div-mosaic-episode-name { font-size:1.1em; font-weight:bold; }
+        #episode-badge {
+          position:absolute; bottom:60px; left:10px; right:10px; z-index:4;
+          display:none; align-items:center; justify-content:center;
+          border-radius:8px;
+          background-color: color-mix(in srgb, #000000 55%, transparent);
+          box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+          padding:4px; pointer-events:none;
+        }
+        #episode-badge img {
+          width:100%; height:auto;
+          object-fit:contain; border-radius:6px;
+        }
         globular-search-title-detail { width:100%; height:100%; }
       </style>
 
@@ -334,6 +359,10 @@ export class SearchTitleCard extends HTMLElement {
         <div class="flip-container">
           <div class="flipper">
             <div id="hit-div-mosaic-front" class="front">
+              <img id="front-img" class="front-img" alt="" hidden />
+              <div id="episode-badge" hidden>
+                <img id="episode-badge-img" alt="Episode still" />
+              </div>
               <div class="series-info">
                 <span id="hit-div-mosaic-series-name"></span>
                 <span id="hit-div-mosaic-episode-name"></span>
@@ -351,6 +380,9 @@ export class SearchTitleCard extends HTMLElement {
     this._backContainer = this.shadowRoot.querySelector("#back-container");
     this._seriesNameSpan = this.shadowRoot.querySelector("#hit-div-mosaic-series-name");
     this._episodeNameSpan = this.shadowRoot.querySelector("#hit-div-mosaic-episode-name");
+    this._episodeBadge = this.shadowRoot.querySelector("#episode-badge");
+    this._episodeBadgeImg = this.shadowRoot.querySelector("#episode-badge-img");
+    this._frontImg = this.shadowRoot.querySelector("#front-img");
   }
 
   async setTitle(title) {
@@ -360,6 +392,11 @@ export class SearchTitleCard extends HTMLElement {
 
     const activeTitleId = this._title.getId();
 
+    const upgradeTmdbUrl = (url) => {
+      if (!url) return url;
+      return url.replace("/t/p/w500/", "/t/p/w780/");
+    };
+
     const applyFrontVisual = (name, posterUrl) => {
       if (!this._title || this._title.getId() !== activeTitleId) {
         return;
@@ -368,9 +405,16 @@ export class SearchTitleCard extends HTMLElement {
         this._seriesNameSpan.textContent = name;
       }
       if (posterUrl !== undefined) {
-        this._frontDiv.style.backgroundImage = posterUrl
-          ? `url(${posterUrl})`
-          : "";
+        const hiRes = upgradeTmdbUrl(posterUrl);
+        if (hiRes) {
+          this._frontImg.src = hiRes;
+          this._frontImg.hidden = false;
+          this._frontDiv.style.backgroundImage = "";
+        } else {
+          this._frontImg.hidden = true;
+          this._frontImg.removeAttribute("src");
+          this._frontDiv.style.backgroundImage = "";
+        }
       }
     };
 
@@ -388,19 +432,39 @@ export class SearchTitleCard extends HTMLElement {
     }
     this._searchTitleDetail.setTitle(this._title);
 
-    if (this._title.getType() === "TVEpisode") {
-      this._seriesNameSpan.textContent = "";
+    if (isTVEpisode(this._title)) {
       this._episodeNameSpan.textContent = `${this._title.getName()} S${this._title.getSeason()}E${this._title.getEpisode()}`;
 
+      // Episode still as overlay badge (landscape, reasonable size).
+      const episodePoster = this._title.getPoster ? this._title.getPoster() : undefined;
+      const episodePosterUrl = episodePoster?.getContenturl?.() || episodePoster?.getUrl?.() || "";
+      if (episodePosterUrl) {
+        this._episodeBadgeImg.src = upgradeTmdbUrl(episodePosterUrl);
+        this._episodeBadge.hidden = false;
+        this._episodeBadge.style.display = "flex";
+      } else {
+        const titleSnapshot = this._title;
+        resolveFilePosterUrl(titleSnapshot.getId(), INDEX_TITLES).then(url => {
+          if (url && this._title === titleSnapshot) {
+            this._episodeBadgeImg.src = url;
+            this._episodeBadge.hidden = false;
+            this._episodeBadge.style.display = "flex";
+          }
+        }).catch(() => {});
+      }
+
+      // Series poster as full background (portrait, high-res — no stretch).
       if (this._title.getSerie()) {
         try {
           const serie = await getTitleInfo(this._title.getSerie(), INDEX_TITLES);
           if (serie) {
             const seriePoster = serie.getPoster ? serie.getPoster() : undefined;
-            const seriePosterUrl =
-              seriePoster?.getContenturl?.() || seriePoster?.getUrl?.() || "";
-            if (seriePosterUrl || serie.getName()) {
-              applyFrontVisual(serie.getName(), seriePosterUrl);
+            const seriePosterUrl = seriePoster?.getContenturl?.() || seriePoster?.getUrl?.() || "";
+            if (serie.getName()) {
+              this._seriesNameSpan.textContent = serie.getName();
+            }
+            if (seriePosterUrl) {
+              applyFrontVisual(null, seriePosterUrl);
             }
           }
         } catch (err) {
@@ -408,13 +472,14 @@ export class SearchTitleCard extends HTMLElement {
           try {
             const imdbSerie = await getImdbInfo(this._title.getSerie());
             if (imdbSerie) {
+              if (imdbSerie.Name) this._seriesNameSpan.textContent = imdbSerie.Name;
               const imdbPoster =
                 imdbSerie?.Poster?.ContentURL ||
                 imdbSerie?.Poster?.ContentUrl ||
                 imdbSerie?.Poster?.contenturl ||
                 imdbSerie?.Poster?.Url ||
                 imdbSerie?.Poster?.url;
-              applyFrontVisual(imdbSerie.Name || "", imdbPoster || "");
+              if (imdbPoster) applyFrontVisual(null, imdbPoster);
             }
           } catch (imdbErr) {
             displayError(`Failed to get series poster for ${this._title.getSerie()}: ${imdbErr?.message || imdbErr}`, 3000);
@@ -423,20 +488,7 @@ export class SearchTitleCard extends HTMLElement {
       }
 
       if (!this._seriesNameSpan.textContent) {
-        applyFrontVisual(this._title.getSerie() || "", null);
-      }
-      if (!this._frontDiv.style.backgroundImage) {
-        const fallbackPoster = this._title.getPoster ? this._title.getPoster() : undefined;
-        const fallbackPosterUrl =
-          fallbackPoster?.getContenturl?.() || fallbackPoster?.getUrl?.() || "";
-        if (fallbackPosterUrl) {
-          applyFrontVisual(null, fallbackPosterUrl);
-        } else {
-          const titleSnapshot = this._title;
-          resolveFilePosterUrl(titleSnapshot.getId(), INDEX_TITLES).then(url => {
-            if (url && this._title === titleSnapshot) applyFrontVisual(null, url);
-          }).catch(() => {});
-        }
+        this._seriesNameSpan.textContent = this._title.getSerie() || "";
       }
     } else {
 
@@ -505,7 +557,7 @@ export class SearchTitleDetail extends HTMLElement {
         }
         .title-interaction-div paper-icon-button { --paper-icon-button-ink-color:white; --iron-icon-fill-color:white; }
         .season-episodes-lst {
-          display:flex; flex-direction:column; width:100%; flex-grow:1; overflow-y:auto;
+          display:flex; flex-direction:column; width:100%; flex-grow:1; overflow:none;
         }
         .season-episodes-lst::-webkit-scrollbar {
           width: 10px;
@@ -665,7 +717,7 @@ export class SearchTitleDetail extends HTMLElement {
     const t = this._title_;
     if (!t) return;
 
-    if (t.getType() === "TVSeries") {
+    if (isTVSeries(t)) {
       this._titlePreview.style.display = "none";
       this._playVideoBtn.style.display = "none";
       return;
@@ -710,7 +762,7 @@ export class SearchTitleDetail extends HTMLElement {
   }
 
   async _loadEpisodesForSeries() {
-    if (this._title_.getType() !== "TVSeries") {
+    if (!isTVSeries(this._title_)) {
       this._episodesListContainer.style.display = "none";
       this._videoDiv.style.display = "";
       this._setTitleInfoButtonLocation(false);
@@ -728,7 +780,7 @@ export class SearchTitleDetail extends HTMLElement {
 
       const seasonsInfo = {};
       episodes.forEach((e) => {
-        if (e.getType() === "TVEpisode" && e.getSeason() > 0) {
+        if (isTVEpisode(e) && e.getSeason() > 0) {
           if (!seasonsInfo[e.getSeason()]) seasonsInfo[e.getSeason()] = [];
           seasonsInfo[e.getSeason()].push(e);
         }
@@ -812,8 +864,8 @@ export class SearchTitleDetail extends HTMLElement {
     if (!this._title_ || !this._titlePreview) {
       return;
     }
-    if (this._title_.getType() !== "TVEpisode" && this._title_.getType() !== "TVSeries") {
-      this._titlePreview.play();
+    if (!isTVEpisode(this._title_) && !isTVSeries(this._title_)) {
+      this._titlePreview.play()?.catch(() => {});
     }
     // (episode preview is controlled by its own container hover)
   }
@@ -822,17 +874,17 @@ export class SearchTitleDetail extends HTMLElement {
     if (!this._title_ || !this._titlePreview) {
       return;
     }
-    if (this._title_.getType() !== "TVEpisode" && this._title_.getType() !== "TVSeries") {
+    if (!isTVEpisode(this._title_) && !isTVSeries(this._title_)) {
       this._titlePreview.pause();
     }
   }
 
   _handleEpisodesListMouseEnter() {
-    this._episodePreview.play();
+    this._episodePreview?.play()?.catch(() => {});
   }
 
   _handleEpisodesListMouseLeave() {
-    this._episodePreview.pause();
+    this._episodePreview?.pause();
   }
 
   _setTitleInfoButtonLocation(inEpisodes) {

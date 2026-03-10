@@ -30,6 +30,7 @@ export class CastPersonPanel extends HTMLElement {
     this._roleLabel = "Cast";
     this._onEdit = null;
     this._onClose = null;
+    this._isEnriching = false;
     this._render();
   }
 
@@ -123,6 +124,20 @@ export class CastPersonPanel extends HTMLElement {
         .section-value {
           font-size: 0.95rem;
           line-height: 1.5;
+        }
+        .loading-text {
+          color: var(--secondary-text-color, #9ca3af);
+          font-style: italic;
+        }
+        .loading-text::after {
+          content: '';
+          animation: ellipsis 1.5s steps(4, end) infinite;
+        }
+        @keyframes ellipsis {
+          0%  { content: ''; }
+          25% { content: '.'; }
+          50% { content: '..'; }
+          75% { content: '...'; }
         }
         .tags {
           display: flex;
@@ -229,9 +244,19 @@ export class CastPersonPanel extends HTMLElement {
 
   close() {
     this.setAttribute("hidden", "true");
+    this._isEnriching = false;
     if (typeof this._onClose === "function") {
       this._onClose(this._person);
     }
+  }
+
+  showLoading() {
+    this._isEnriching = true;
+    this._update();
+  }
+
+  hideLoading() {
+    this._isEnriching = false;
   }
 
   _update() {
@@ -248,14 +273,25 @@ export class CastPersonPanel extends HTMLElement {
     this._roleEl.textContent = this._roleLabel;
     this._aliasesEl.textContent = aliases.length ? `Also known as ${aliases.join(", ")}` : "";
     this._aliasesEl.style.display = aliases.length ? "block" : "none";
-    this._bioEl.textContent = biography || "No biography available.";
+
+    // Show loading state in bio and details when enriching.
+    if (this._isEnriching && !biography) {
+      this._bioEl.innerHTML = '<span class="loading-text">Looking up biography on TMDb</span>';
+    } else {
+      this._bioEl.textContent = biography || "No biography available.";
+    }
 
     const detailPieces = [];
     if (career) detailPieces.push(`Career: ${career}`);
     if (gender) detailPieces.push(`Gender: ${gender}`);
     if (birthPlace) detailPieces.push(`Birth place: ${birthPlace}`);
     if (birthDate) detailPieces.push(`Born: ${birthDate}`);
-    this._detailsEl.textContent = detailPieces.join(" · ") || "No detailed information yet.";
+
+    if (this._isEnriching && detailPieces.length === 0) {
+      this._detailsEl.innerHTML = '<span class="loading-text">Fetching details from TMDb</span>';
+    } else {
+      this._detailsEl.textContent = detailPieces.join(" · ") || "No detailed information yet.";
+    }
 
     const credits = [
       { label: "Directing", items: this._person.getDirectingList?.() },

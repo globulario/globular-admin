@@ -1964,6 +1964,16 @@ export class FileExplorer extends HTMLElement {
     this._informationManager.style.display = "none";
     this._closeSharePanel();
 
+    // Restore the active file view (list or icon) in case it was hidden
+    // by _hideAllViewsExcept when the informations manager was open.
+    if (this._filesListBtn.classList.contains("active")) {
+      this._filesListView.show();
+      this._filesIconView.hide();
+    } else {
+      this._filesIconView.show();
+      this._filesListView.hide();
+    }
+
     this._imageViewer.onclose = () => this._displayView(this._currentDir);
     this._fileReader.onclose = () => this._displayView(this._currentDir);
 

@@ -594,7 +594,7 @@ export class FileNavigator extends HTMLElement {
             );
           }
           this._selectRow(path);
-          if (this._fileExplorer?._informationsManager?.parentNode) {
+          if (this._fileExplorer?._informationManager?.parentNode) {
             this._fileExplorer._informationsManager.style.display = "none";
           }
           return;
@@ -603,7 +603,7 @@ export class FileNavigator extends HTMLElement {
         // Real directories: navigate normally
         this._fileExplorer?.publishSetDirEvent?.(path);
         this._selectRow(path);
-        if (this._fileExplorer?._informationsManager?.parentNode) {
+        if (this._fileExplorer?._informationManager?.parentNode) {
           this._fileExplorer._informationsManager.style.display = "none";
         }
       });

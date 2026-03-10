@@ -21,16 +21,30 @@ import { getFile, buildFileUrl, readDir } from "@globular/backend";
 import {
   deleteTitle,
   dissociateFileWithTitle,
+  getPersonInfo,
   getTitleFiles,
   getTitleInfo,
   invalidateFileCaches,
   invalidateTitleCache,
   refreshTitleMetadata,
   searchTitles,
+  getSeriesEpisodes,
   updateTitleMetadata
 } from "@globular/backend";
 import { Backend } from "@globular/backend";
 import { getToken } from "@globular/backend";
+
+/* =========================================================
+ * Type normalisation — IMDb data may use "TV Series" or "TVSeries"
+ * =======================================================*/
+function isTVSeries(title) {
+  const t = typeof title?.getType === "function" ? title.getType() : "";
+  return t === "TVSeries" || t === "TV Series";
+}
+function isTVEpisode(title) {
+  const t = typeof title?.getType === "function" ? title.getType() : "";
+  return t === "TVEpisode";
+}
 
 /* =========================================================
  * Utilities
@@ -215,17 +229,35 @@ export async function getTitleFilePaths(title, indexPath = "/search/titles") {
 }
 
 /**
- * Stream search via backend wrapper and collect TVEpisode results.
+ * Fetch episodes for a series using the dedicated backend RPC.
+ * Falls back to search-based lookup if the RPC is unavailable.
  */
 async function searchEpisodesBySerie(serieId, indexPath = "/search/titles") {
+  try {
+    // Use the dedicated backend RPC — authoritative, sorted, no search hacks.
+    const episodes = await getSeriesEpisodes(serieId, indexPath);
+    if (episodes && episodes.length > 0) {
+      return episodes;
+    }
+  } catch (err) {
+    console.warn("GetSeriesEpisodes RPC failed, falling back to search:", err);
+  }
+
+  // Fallback: search-based lookup (for backward compatibility).
   const episodes = [];
   try {
-    const res = await searchTitles(serieId, indexPath, [], 1000, 0);
-    const hits = (res && res.hits) ? res.hits : [];
+    let res = await searchTitles({ query: `Serie:${serieId}`, indexPath, size: 1000, offset: 0 });
+    let hits = (res && res.hits) ? res.hits : [];
+
+    if (hits.length === 0) {
+      res = await searchTitles({ query: serieId, indexPath, size: 1000, offset: 0 });
+      hits = (res && res.hits) ? res.hits : [];
+    }
+
     hits.forEach(h => {
       if (h && h.getTitle && h.getTitle()) {
         const t = h.getTitle();
-        if (t.getType && t.getType() === "TVEpisode" && t.getSerie && t.getSerie() === serieId) {
+        if (isTVEpisode(t) && t.getSerie && t.getSerie() === serieId) {
           episodes.push(t);
         }
       }
@@ -313,6 +345,7 @@ const TITLE_INFO_GLOBAL_STYLE = `
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .title-div {
@@ -320,7 +353,8 @@ const TITLE_INFO_GLOBAL_STYLE = `
   gap: 20px;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  max-height: 600px;
+  width: 100%;
 }
 
 .title-poster-div {
@@ -332,14 +366,10 @@ const TITLE_INFO_GLOBAL_STYLE = `
 
 .title-informations-div {
   font-size: 1em;
-  max-width: 450px;
-  max-height: 600px;
-  flex: 1 1 auto;
-  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   border-radius: 8px;
-  overflow: hidden;
 }
 
 .title-poster-div img, p { }
@@ -484,7 +514,6 @@ const TITLE_INFO_GLOBAL_STYLE = `
 @media only screen and (max-width: 600px) {
   .title-div {
     flex-direction: column;
-    max-height: calc(100vh - 300px);
     overflow-y: auto; overflow-x: hidden;
   }
   .title-poster-div {
@@ -682,7 +711,7 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
       this._title = title;
       this._renderTitleSpecificContent();
       this._setupBackendSubscriptions();
-      if(this._title.getType() === "TVSeries"){
+      if(isTVSeries(this._title)){
         this._episodesContainerDiv.style.display = "block";
       } else {
         this._episodesContainerDiv.style.display = "none";
@@ -696,24 +725,22 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
       <style>
         ${TITLE_INFO_GLOBAL_STYLE}
         .title-div {
+          display: flex;
+          flex-direction: row;
+          flex: 1 1 0%;
+          min-height: 0;
+          width: 100%;
+          gap: 10px;
           overflow-y: auto;
-          height: 100%;
+          overflow-x: hidden;
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, var(--palette-divider))
           var(--scroll-track, var(--surface-color));
+          max-height: 600px;
         }
         .action-div {
           display: flex; justify-content: flex-end; gap: 10px;
           border-top: 1px solid var(--palette-divider); margin-top: 15px;
-        }
-        .title-info-container {
-          flex-direction: row;
-          height: 100%;
-          min-height: 0;
-          gap: 10px;
-          scrollbar-width: thin;
-          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
-          var(--scroll-track, var(--surface-color));
         }
         .title-poster-div {
           flex: 0 0 320px;
@@ -726,7 +753,7 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
           height: auto;
         }
         #episodes-div {
-          width: 50%;
+          width: 100%;
           height: 100%;
    
         }
@@ -736,14 +763,12 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
             var(--scroll-track, var(--surface-color));
         }
         @media (max-width: 1100px), (max-height: 700px) {
-          .title-info-container {
+          .title-div {
             flex-direction: column;
-            display: block;
-            max-height: calc(100vh - 250px);
+            overflow-y: auto;
           }
           #episodes-div {
             width: 100%;
-            height: 30%;
             min-height: 220px;
           }
         }
@@ -758,17 +783,16 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
 
 
       </style>
-      <div class="title-info-container">
-        <div class="title-div">
-          <div style="display: flex; flex-direction: column;">
-            <div class="title-poster-div">
-              <img class="title-poster-img"></img>
-            </div>
-            <div class="title-files-div">
-              <paper-progress indeterminate></paper-progress>
-            </div>
+      <div class="title-div">
+        <div style="display: flex; flex-direction: column;">
+          <div class="title-poster-div">
+            <img class="title-poster-img"></img>
           </div>
-          <div class="title-informations-div">
+          <div class="title-files-div">
+            <paper-progress indeterminate></paper-progress>
+          </div>
+        </div>
+        <div class="title-informations-div">
             <div class="title-genres-div"></div>
             <p class="title-synopsis-div"></p>
             <div class="title-rating-div">
@@ -792,11 +816,11 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
                 <div id="title-actors-lst" class="title-credit-lst"></div>
               </div>
             </div>
+            <div id="episodes-div" style="display: none;">
+              <slot name="episodes"></slot>
+            </div>
           </div>
-        </div>
-        <div id="episodes-div" style="display: none;">
-          <slot name="episodes"></slot>
-        </div>
+
       </div>
       <div class="action-div">
         <paper-button id="edit-indexation-btn">Edit</paper-button>
@@ -893,7 +917,7 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
       let typeText = this._title.getType();
       let yearDurationText = this._title.getYear() ? String(this._title.getYear()) : "";
 
-      if (this._title.getType() === "TVEpisode") {
+      if (isTVEpisode(this._title)) {
         if (this._title.getSeason() > 0 && this._title.getEpisode() > 0) {
           yearDurationText = `S${this._title.getSeason()} · E${this._title.getEpisode()}`;
           if (this._title.getYear()) yearDurationText = `${this._title.getYear()} · ${yearDurationText}`;
@@ -1076,9 +1100,25 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
     if (this._ratingTotalDiv) this._ratingTotalDiv.textContent = this._title.getRatingcount();
 
     // People lists
+    const dedupePersons = (list) => {
+      if (!list) return [];
+      const seen = new Map();
+      return list.filter(p => {
+        if (!p) return false;
+        const id = p.getId?.() || "";
+        const name = (p.getFullname?.() || "").toLowerCase().trim();
+        if (id && seen.has("id:" + id)) return false;
+        if (name && seen.has("name:" + name)) return false;
+        if (id) seen.set("id:" + id, true);
+        if (name) seen.set("name:" + name, true);
+        return true;
+      });
+    };
+
     const displayPersonsList = (listDiv, persons, titleDiv, roleLabel) => {
       if (!listDiv) return;
       listDiv.innerHTML = "";
+      persons = dedupePersons(persons);
       if (persons && persons.length > 0) {
         persons.forEach(p => {
           const lnk = document.createElement("a");
@@ -1127,7 +1167,7 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
 
     // Files / episodes
     if (this._filesProgress) this._filesProgress.style.display = "block";
-    if (this._title.getType() === "TVSeries") {
+    if (isTVSeries(this._title)) {
       this._filesDiv.style.paddingLeft = "0px";
       const indexPath = "/search/titles";
       const episodes = await GetEpisodes(indexPath, this._title);
@@ -1175,10 +1215,40 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
       panel = document.createElement("globular-cast-person-panel");
       document.body.appendChild(panel);
     }
+
+    // Determine if we need to fetch enriched data from backend.
+    const id = person.getId?.() || "";
+    const name = person.getFullname?.() || "";
+    const bio = (person.getBiography?.() || "").trim();
+    const picture = (person.getPicture?.() || "").trim();
+    const birthDate = (person.getBirthdate?.() || "").trim();
+
+    // Consider person incomplete if missing bio, picture, or birth date.
+    const needsEnrich = !bio || !picture || !birthDate;
+    const lookupKey = id || name;
+
+    // Set enriching flag BEFORE setPerson so _update() can show the hint.
+    if (lookupKey && needsEnrich) {
+      panel.showLoading();
+    }
+
+    // Show panel immediately with current data.
     panel.setPerson(person, roleLabel, {
       onEdit: () => this.showPersonEditor(person),
     });
     panel.open();
+
+    // Use ID if available, otherwise use name as lookup key (backend handles both).
+    if (lookupKey && needsEnrich) {
+      getPersonInfo(lookupKey).then(enriched => {
+        if (enriched) {
+          panel.setPerson(enriched, roleLabel, {
+            onEdit: () => this.showPersonEditor(enriched),
+          });
+        }
+      }).catch(() => { /* keep original person data */ })
+        .finally(() => panel.hideLoading());
+    }
   }
 
   _handleEditClick() {
@@ -1329,7 +1399,7 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
 
     const seasons = {};
     episodes.forEach(e => {
-      if (e.getType() === "TVEpisode" && e.getSeason() > 0) {
+      if (isTVEpisode(e) && e.getSeason() > 0) {
         if (!seasons[e.getSeason()]) seasons[e.getSeason()] = [];
         if (!seasons[e.getSeason()].some(ep => ep.getId() === e.getId())) {
           seasons[e.getSeason()].push(e);
