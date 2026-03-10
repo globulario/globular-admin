@@ -49,6 +49,8 @@ class PageInfrastructureDns extends HTMLElement {
   private _showDomainForm = false
   private _editingProvider: DNSProviderConfig | null = null
   private _editingDomain: DomainSpecWithStatus | null = null
+  private _providerHelpOpen = false
+  private _domainHelpOpen = false
 
   connectedCallback() {
     this.style.display = 'block'
@@ -484,8 +486,17 @@ class PageInfrastructureDns extends HTMLElement {
       <div class="ext-section">
         <div class="ext-section-header">
           <h3>DNS Providers</h3>
+          <div style="flex:1"></div>
+          <paper-icon-button id="extProviderHelpBtn" icon="icons:info-outline" title="Provider documentation"></paper-icon-button>
           <button class="infra-btn" id="extAddProvider">+ Add Provider</button>
         </div>
+        <iron-collapse id="extProviderHelpPanel">
+          <globular-markdown style="
+            display: block; padding: 0 4px 12px;
+            --md-font-size: .82rem;
+            --divider-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+          " id="extProviderDocs"></globular-markdown>
+        </iron-collapse>
         <div id="extProviderForm"></div>
         <div id="extProviderList">${this.renderProviderList()}</div>
       </div>
@@ -493,8 +504,17 @@ class PageInfrastructureDns extends HTMLElement {
       <div class="ext-section" style="margin-top:24px">
         <div class="ext-section-header">
           <h3>External Domains</h3>
+          <div style="flex:1"></div>
+          <paper-icon-button id="extDomainHelpBtn" icon="icons:info-outline" title="Domain documentation"></paper-icon-button>
           <button class="infra-btn" id="extAddDomain">+ Add Domain</button>
         </div>
+        <iron-collapse id="extDomainHelpPanel">
+          <globular-markdown style="
+            display: block; padding: 0 4px 12px;
+            --md-font-size: .82rem;
+            --divider-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+          " id="extDomainDocs"></globular-markdown>
+        </iron-collapse>
         <div id="extDomainForm"></div>
         <div id="extDomainList">${this.renderDomainList()}</div>
       </div>
@@ -509,6 +529,25 @@ class PageInfrastructureDns extends HTMLElement {
       this._showDomainForm = true
       this._editingDomain = null
       this.renderDomainForm(el.querySelector('#extDomainForm') as HTMLElement)
+    })
+
+    // Wire help panels
+    const provHelpMd = el.querySelector('#extProviderDocs') as HTMLElement
+    if (provHelpMd) provHelpMd.textContent = EXT_PROVIDER_DOCS
+    const provHelpPanel = el.querySelector('#extProviderHelpPanel') as any
+    if (provHelpPanel && this._providerHelpOpen) provHelpPanel.opened = true
+    el.querySelector('#extProviderHelpBtn')?.addEventListener('click', () => {
+      this._providerHelpOpen = !this._providerHelpOpen
+      provHelpPanel?.toggle()
+    })
+
+    const domHelpMd = el.querySelector('#extDomainDocs') as HTMLElement
+    if (domHelpMd) domHelpMd.textContent = EXT_DOMAIN_DOCS
+    const domHelpPanel = el.querySelector('#extDomainHelpPanel') as any
+    if (domHelpPanel && this._domainHelpOpen) domHelpPanel.opened = true
+    el.querySelector('#extDomainHelpBtn')?.addEventListener('click', () => {
+      this._domainHelpOpen = !this._domainHelpOpen
+      domHelpPanel?.toggle()
     })
 
     if (this._showProviderForm) {
@@ -1073,6 +1112,200 @@ globular cluster dns bootstrap \\
 \`\`\`
 
 This creates the managed zone, apex A record, and wildcard \`*.globular.internal\` in one step.
+`.trim()
+
+// ─── External Domains Documentation ──────────────────────────────────────────
+
+const EXT_PROVIDER_DOCS = `
+# DNS Providers
+
+A DNS provider connects Globular to your external DNS service so it can automatically create and update DNS records and obtain TLS certificates via ACME DNS-01 challenges.
+
+**Each provider is bound to a single DNS zone.** If you manage multiple zones (e.g. \`example.com\` and \`example.io\`), create one provider per zone. The same API token/credentials can be reused across providers.
+
+---
+
+## Supported Providers
+
+| Provider | Credentials Required | Notes |
+|---|---|---|
+| **Cloudflare** | API Token | Recommended. Use a scoped token with \`Zone:DNS:Edit\` permission. |
+| **GoDaddy** | API Key + Secret | Production key required (not test/OTE). |
+| **Route53** | AWS Access Key + Secret | Uses standard AWS SDK credential chain. IAM policy needs \`route53:ChangeResourceRecordSets\`. |
+| **Manual** | None | No automatic DNS — you must create records yourself. ACME DNS-01 will not work. |
+
+---
+
+## Generating a Cloudflare API Token
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens)
+2. Click **Create Token**
+3. Use the **Edit zone DNS** template, or create a custom token with:
+   - **Permissions:** Zone → DNS → Edit
+   - **Zone Resources:** Include → Specific zone → *your zone*
+   - For multiple zones, select "All zones" or add each zone
+4. Click **Continue to summary** → **Create Token**
+5. Copy the token — it is shown only once
+
+> **Tip:** A single token with "All zones" permission works for all your Cloudflare-managed domains. You still need one *provider entry* per zone, but they can share the same token.
+
+---
+
+## CLI Reference
+
+\`\`\`bash
+# List all providers
+globular domain provider list
+
+# Add a Cloudflare provider
+export CLOUDFLARE_API_TOKEN="your-token-here"
+globular domain provider add \\
+  --name my-cloudflare \\
+  --type cloudflare \\
+  --zone example.com \\
+  --ttl 600
+
+# Add a GoDaddy provider
+export GODADDY_API_KEY="your-key"
+export GODADDY_API_SECRET="your-secret"
+globular domain provider add \\
+  --name my-godaddy \\
+  --type godaddy \\
+  --zone example.com \\
+  --ttl 600
+
+# Remove a provider
+globular domain provider remove --name my-cloudflare
+
+# Show provider details (credentials masked)
+globular domain provider list --output json
+\`\`\`
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| \`Invalid format for Authorization header\` | Invalid or placeholder API token | Edit the provider and paste a real Cloudflare API token |
+| \`zone mismatch: expected "X", got "Y"\` | Domain's zone doesn't match the provider's zone | Create a separate provider for zone Y, or update the domain to use the correct provider |
+| \`CLOUDFLARE_API_TOKEN required\` | CLI can't find the env var | \`export CLOUDFLARE_API_TOKEN=...\` before running the command |
+| \`HTTP 403\` from Cloudflare | Token lacks \`Zone:DNS:Edit\` permission | Regenerate token with correct permissions |
+| Provider not found after adding via UI | Name mismatch | Check \`globular domain provider list\` — the name is auto-generated as \`type-zone\` |
+
+\`\`\`bash
+# Verify your Cloudflare token works
+curl -s -H "Authorization: Bearer YOUR_TOKEN" \\
+  "https://api.cloudflare.com/client/v4/zones" | jq '.result[].name'
+
+# Check what's stored in etcd
+globular domain provider list --output json | jq .
+\`\`\`
+`.trim()
+
+const EXT_DOMAIN_DOCS = `
+# External Domains
+
+An external domain tells the reconciler to manage a public DNS record and (optionally) obtain a TLS certificate from Let's Encrypt via ACME.
+
+The reconciler runs every 60 seconds. When you add or modify a domain, it will be picked up automatically.
+
+---
+
+## Key Concepts
+
+| Field | Description |
+|---|---|
+| **FQDN** | The fully-qualified domain name (e.g. \`app.example.com\` or \`example.com\`) |
+| **Zone** | The root DNS zone (e.g. \`example.com\`). FQDN must be a subdomain of this zone (or equal to it). |
+| **Provider** | Which DNS provider to use. Must match the zone. |
+| **Target IP** | Public IP for the A record. Use \`auto\` to detect automatically. |
+| **Publish External** | If checked, the reconciler creates/updates the DNS A record at the provider. |
+| **Wildcard Cert** | Request \`*.zone\` certificate instead of FQDN-specific. Useful for multiple subdomains. |
+| **ACME** | Enable automatic TLS certificate acquisition via Let's Encrypt. |
+
+---
+
+## How It Works
+
+1. **DNS Record** — If "Publish External" is enabled, the reconciler calls the provider API to create/update an A record pointing to your IP.
+2. **TLS Certificate** — If ACME is enabled, the reconciler uses DNS-01 challenge to prove domain ownership and obtains a certificate from Let's Encrypt.
+3. **Certificate Renewal** — Certificates are automatically renewed 30 days before expiry. Old certs stay active during renewal (no downtime).
+4. **Ingress** — The certificate is stored at \`/var/lib/globular/domains/<fqdn>/\` and picked up by Envoy for TLS termination.
+
+---
+
+## CLI Reference
+
+\`\`\`bash
+# List all external domains with status
+globular domain list
+
+# Add an external domain with ACME
+globular domain add \\
+  --fqdn app.example.com \\
+  --zone example.com \\
+  --provider my-cloudflare \\
+  --target-ip auto \\
+  --publish-external \\
+  --enable-acme \\
+  --acme-email admin@example.com \\
+  --ttl 600
+
+# Add with wildcard certificate
+globular domain add \\
+  --fqdn example.com \\
+  --zone example.com \\
+  --provider my-cloudflare \\
+  --target-ip auto \\
+  --publish-external \\
+  --use-wildcard-cert \\
+  --enable-acme \\
+  --acme-email admin@example.com
+
+# Check domain status
+globular domain status --fqdn app.example.com
+
+# Check status as JSON (shows error details)
+globular domain status --fqdn app.example.com --output json
+
+# Remove a domain
+globular domain remove --fqdn app.example.com
+\`\`\`
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Status: **Error** + "provider not found" | Domain references a provider that doesn't exist | Create the provider first, or edit the domain to use an existing one |
+| Status: **Error** + "zone mismatch" | Provider is for a different zone than the domain | Create a provider for the correct zone |
+| Status: **Pending** (stuck) | Reconciler hasn't run yet, or cluster controller not running | Check: \`systemctl status globular-cluster-controller\` |
+| Certificate not appearing | ACME is disabled, or DNS-01 challenge failed | Enable ACME, check provider credentials, verify DNS propagation |
+| Certificate expired | Auto-renewal failed | Check controller logs: \`journalctl -u globular-cluster-controller -n 100\` |
+| IP shows "auto" | Public IP detection failed | Set an explicit IP address instead |
+
+\`\`\`bash
+# Check reconciler logs
+journalctl -u globular-cluster-controller.service -n 100 --no-pager \\
+  | grep -i "reconcil\\|domain\\|cert\\|acme"
+
+# Verify DNS record was created
+dig app.example.com A +short
+
+# Check certificate on disk
+openssl x509 -in /var/lib/globular/domains/app.example.com/fullchain.pem \\
+  -noout -subject -dates
+
+# Force certificate renewal
+# (via admin UI: Certificates → Renew Public)
+# or manually:
+touch /var/lib/globular/domains/app.example.com/.renew-requested
+
+# View etcd data directly
+globular domain status --fqdn app.example.com --output json | jq .
+\`\`\`
 `.trim()
 
 customElements.define('page-infrastructure-dns', PageInfrastructureDns)
