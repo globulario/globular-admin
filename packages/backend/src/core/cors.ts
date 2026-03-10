@@ -1,15 +1,115 @@
 /**
  * cors.ts — CORS policy management for Globular services and the gateway.
  *
- * Per-service CORS: uses plain HTTP — GET /api/services-cors to read,
- *                   POST /api/service-cors to write. No gRPC / no ScyllaDB needed.
- * Gateway CORS:     uses plain HTTP — GET /config to read, POST /api/save-config to write.
- *
- * The gateway stores AllowedOrigins as a []string (not comma-separated).
- * ["*"] is normalised to allowAllOrigins:true; saving allowAllOrigins:true writes ["*"].
+ * v2 (structured): GET/POST /api/cors-policy, /api/services-cors-policy, etc.
+ * v1 (legacy):     GET /api/services-cors, POST /api/service-cors — kept for compat.
  */
 
 import { requireBaseUrl } from './endpoints'
+
+// ── Structured CORS types (v2) ──────────────────────────────────────────────
+
+export interface CorsPolicy {
+  enabled: boolean
+  mode: string                // "gateway" | "inherit" | "override" | "disabled"
+  allow_all_origins: boolean
+  allowed_origins: string[]
+  allow_credentials: boolean
+  allowed_methods: string[]
+  allowed_headers: string[]
+  exposed_headers: string[]
+  max_age_seconds: number
+  allow_private_network: boolean
+  grpc_web_enabled: boolean
+}
+
+export interface ServiceCorsPolicySummary {
+  id: string
+  name: string
+  service: CorsPolicy
+  effective: CorsPolicy
+}
+
+// ── v2 Gateway CORS ─────────────────────────────────────────────────────────
+
+/** GET /api/cors-policy — structured gateway CORS policy. */
+export async function fetchStructuredGatewayCorsPolicy(): Promise<CorsPolicy> {
+  const base = requireBaseUrl()
+  const res = await fetch(`${base}/api/cors-policy`)
+  if (!res.ok) throw new Error(`GET /api/cors-policy failed: ${res.status}`)
+  return res.json() as Promise<CorsPolicy>
+}
+
+/** POST /api/set-cors-policy — save structured gateway CORS policy. */
+export async function saveStructuredGatewayCorsPolicy(policy: CorsPolicy): Promise<{ saved?: boolean; warnings?: string[] }> {
+  const base = requireBaseUrl()
+  const token = sessionStorage.getItem('__globular_token__') ?? ''
+  const res = await fetch(`${base}/api/set-cors-policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', token },
+    body: JSON.stringify(policy),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText)
+    throw new Error(`POST /api/set-cors-policy failed (${res.status}): ${msg}`)
+  }
+  // 204 = success, 200 = success with warnings
+  if (res.status === 200) {
+    return res.json()
+  }
+  return {}
+}
+
+// ── v2 Per-service CORS ─────────────────────────────────────────────────────
+
+/** GET /api/services-cors-policy — all services with effective policies. */
+export async function fetchStructuredServicesCorsPolicy(): Promise<ServiceCorsPolicySummary[]> {
+  const base = requireBaseUrl()
+  const res = await fetch(`${base}/api/services-cors-policy`)
+  if (!res.ok) throw new Error(`GET /api/services-cors-policy failed: ${res.status}`)
+  return res.json() as Promise<ServiceCorsPolicySummary[]>
+}
+
+/** POST /api/set-service-cors-policy?id=... — save per-service CORS policy. */
+export async function saveStructuredServiceCorsPolicy(id: string, policy: CorsPolicy): Promise<void> {
+  const base = requireBaseUrl()
+  const token = sessionStorage.getItem('__globular_token__') ?? ''
+  const res = await fetch(`${base}/api/set-service-cors-policy?id=${encodeURIComponent(id)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', token },
+    body: JSON.stringify(policy),
+  })
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText)
+    throw new Error(`POST /api/set-service-cors-policy failed (${res.status}): ${msg}`)
+  }
+}
+
+// ── CORS Diagnostics ─────────────────────────────────────────────────────────
+
+export interface CorsDiagResult {
+  origin: string
+  service_id: string
+  allowed: boolean
+  effective_policy: CorsPolicy
+  enforcement_layer: string  // "gateway+envoy" | "service" | "disabled"
+  warnings: string[]
+  curl_example: string
+}
+
+/** GET /api/cors-diagnostics?origin=...&service=...&method=... */
+export async function fetchCorsDiagnostics(origin: string, serviceId?: string, method?: string): Promise<CorsDiagResult> {
+  const base = requireBaseUrl()
+  const params = new URLSearchParams()
+  if (origin) params.set('origin', origin)
+  if (serviceId) params.set('service', serviceId)
+  if (method) params.set('method', method)
+  const res = await fetch(`${base}/api/cors-diagnostics?${params}`)
+  if (!res.ok) throw new Error(`GET /api/cors-diagnostics failed: ${res.status}`)
+  return res.json() as Promise<CorsDiagResult>
+}
+
+// ── Legacy types (v1) — kept for backward compatibility ─────────────────────
 
 export interface ServiceCorsPolicy {
   id: string
