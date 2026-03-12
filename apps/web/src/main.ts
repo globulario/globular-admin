@@ -19,6 +19,8 @@ import {
   Backend,
   getEventClient,
   setNavigateHandler,
+  restoreSession,
+  enableVisibilityAutoRefresh,
 } from "@globular/backend";
 
 import { startRouter, navigateTo } from './router'
@@ -29,5 +31,10 @@ Backend.init(() => getEventClient());
 
 applyTheme();
 watchSystemTheme();
+
+// Restore token from sessionStorage and start the refresh timer.
+// Without this, the token expires silently and the user is bounced to login.
+restoreSession();
+enableVisibilityAutoRefresh();
 
 startRouter()

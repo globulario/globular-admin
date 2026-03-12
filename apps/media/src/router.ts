@@ -125,7 +125,12 @@ export function mountRoute(route?: string) {
     }
     page.style.display = 'block'
   } else {
-    // Non-persistent route (e.g. login): clear app area and render fresh
+    // Non-persistent route (e.g. login): clear cached pages and render fresh.
+    // Without this, cached elements become detached from the DOM but stay in
+    // the pageCache map. After re-login the router finds them, sets
+    // display:block, but they're not in the DOM — so pages like Watching
+    // become invisible.
+    clearPageCache()
     target.innerHTML = ''
     target.appendChild(getRouteHandler(resolved)())
   }
