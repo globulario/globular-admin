@@ -1,20 +1,21 @@
 // src/pages/services_catalog.ts
 //
-// Service Rollout page — Desired state (controller) vs. Installed state (runtime).
-// When a repository layer becomes available it will be merged as a third source.
+// Service Rollout page — 4-layer state alignment view.
 //
-// Availability semantics:
-//   _ccAvailable      — GetClusterHealthV1 RPC succeeded (null return = unreachable)
-//   _ccHasPlan        — controller returned ≥1 desired entry
-//   _runtimeAvailable — /config returned ≥1 service
+// Data sources:
+//   1. Artifact state      — listArtifacts() / listBundles() from repository
+//   2. Desired release     — getClusterHealthV1Full() from controller
+//   3. Installed observed  — fetchInstalledPackages() from installed-state registry (etcd)
+//   4. Runtime health      — getConfig() from gateway /config endpoint
 //
-// Status derivation (from {desired, installed}):
-//   Managed & current    — desired==installed, rollout 100%
-//   Managed & progressing— rollout < 100% or upgrading > 0
-//   Managed & drift      — rollout 100% but installed version ≠ desired
-//   Desired — not installed — desired exists, not installed on this node
-//   Unmanaged            — installed, controller reachable, not in plan
-//   Installed            — installed, controller unreachable (state unknown)
+// Status labels (from docs/repository_state_alignment.md):
+//   Available       — artifact exists, no desired release
+//   Planned         — desired release exists, not yet installed everywhere
+//   Installed       — desired release exists, installed version matches
+//   Drifted         — desired version differs from installed version
+//   Unmanaged       — installed package exists, but no desired release
+//   Missing in repo — desired/installed exists, but artifact not in repo
+//   Orphaned        — artifact exists, no desired release, no installation
 
 import {
   getClusterHealthV1Full,
@@ -28,9 +29,13 @@ import {
   seedDesiredState,
   triggerReconcileAll,
   listBundles,
+  listArtifacts,
+  fetchInstalledPackages,
   validateArtifact,
   previewDesiredServices,
   type BundleSummary,
+  type ArtifactManifest,
+  type InstalledPackage,
   type ServiceCatalogEntry,
   type ClusterNode,
   type NodeHealthV1,
@@ -45,7 +50,7 @@ import {
 // renders CatalogItem[] so adding artifacts later only requires extending the
 // load() function, not the rendering code.
 
-type CatalogItemKind = 'bundle' // | 'artifact'  // uncomment when artifacts land
+type CatalogItemKind = 'bundle' | 'artifact'
 
 interface CatalogItem {
   kind:          CatalogItemKind
@@ -65,9 +70,11 @@ interface CatalogItem {
 
 interface CatalogRow {
   name: string
-  // From /config (runtime)
+  // From installed-state registry (canonical observed state) or /config (runtime)
   installedVersion: string | null
   installedState:   string | null
+  // From repository artifacts (artifact layer)
+  repoVersion:      string | null
   // From controller (undefined = controller unreachable or service not in plan)
   desiredVersion:   string | undefined
   nodesAtDesired:   number | undefined
@@ -78,61 +85,109 @@ interface CatalogRow {
   canApplyPrivileged:   boolean | undefined
 }
 
-// ─── Status derivation ────────────────────────────────────────────────────────
+// ─── Status derivation (4-layer model) ───────────────────────────────────────
+//
+// Labels match the design doc (docs/repository_state_alignment.md):
+//
+//   Available       — artifact exists in repo, no desired release
+//   Planned         — desired release exists, not yet installed everywhere
+//   Installed       — desired release exists, installed version matches
+//   Drifted         — desired version differs from installed version
+//   Unmanaged       — installed package exists, but no desired release
+//   Missing in repo — desired/installed exists, but artifact not in repo
+//   Orphaned        — artifact exists, no desired release, no installation
+//
+// Operational sub-states (retained for actionability):
+//   Progressing             — plan actively running
+//   Failed                  — plan failed
+//   Awaiting privileged apply — node lacks privilege
 
 type LifecycleState =
-  | 'applied'                      // green — desired == applied, running
-  | 'managed-pending'              // yellow — desired set, not yet applied
-  | 'staged'                       // blue — artifacts ready, not activated
-  | 'awaiting-privileged-apply'    // orange — node lacks privilege
-  | 'progressing'                  // yellow — plan actively running
-  | 'drifted'                      // red — applied diverged from desired
-  | 'failure'                      // red — plan failed
-  | 'unmanaged'                    // gray — installed without desired entry (legacy)
-  | 'not-selected'                 // muted — not installed, not desired
+  | 'installed'                     // green — desired == installed, fully converged
+  | 'planned'                       // yellow — desired set, not yet installed everywhere
+  | 'available'                     // blue — in repo, no desired release
+  | 'awaiting-privileged-apply'     // orange — node lacks privilege
+  | 'progressing'                   // yellow — plan actively running
+  | 'drifted'                       // red — installed diverged from desired
+  | 'failed'                        // red — plan failed
+  | 'unmanaged'                     // gray — installed without desired entry
+  | 'missing-in-repo'              // orange — desired/installed but not in repository
+  | 'orphaned'                      // muted — in repo, not desired, not installed
 
-function deriveStatus(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean): LifecycleState {
-  const { installedVersion, desiredVersion, nodesTotal = 0, nodesAtDesired = 0, upgrading = 0 } = row
+function deriveStatus(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean, repoKnown: boolean): LifecycleState {
+  const { installedVersion, desiredVersion, repoVersion, nodesTotal = 0, nodesAtDesired = 0, upgrading = 0 } = row
   const installed = !!installedVersion
   const desired   = desiredVersion !== undefined
+  const inRepo    = !!repoVersion
 
+  // "missing-in-repo" should only be reported when we KNOW the repo state.
+  // If both listArtifacts() and listBundles() failed (Envoy routing not
+  // ready on Day-0), repo is unknown — don't mark everything as missing.
+  const missingInRepo = !inRepo && repoKnown
+
+  // ── Controller unreachable — can only report local observations ──────
   if (!ccAvailable) {
-    return installed ? 'unmanaged' : 'not-selected'
+    if (installed && missingInRepo) return 'missing-in-repo'
+    if (installed) return 'unmanaged'
+    if (inRepo) return 'available'
+    return 'orphaned'
   }
 
+  // ── No desired release ──────────────────────────────────────────────
   if (!desired) {
-    if (!ccHasPlan) return installed ? 'unmanaged' : 'not-selected'
-    return installed ? 'unmanaged' : 'not-selected'
+    if (installed && missingInRepo) return 'missing-in-repo'
+    if (installed) return 'unmanaged'
+    if (inRepo) return 'available'
+    return 'orphaned'
   }
 
-  // Desired exists — check convergence
+  // ── Desired release exists — check convergence ──────────────────────
+
+  // Missing in repo: desired exists but artifact not found in repository
+  if (missingInRepo) return 'missing-in-repo'
+
   const phase = (row.planPhase ?? '').toUpperCase()
 
-  if (nodesTotal > 0 && nodesAtDesired === nodesTotal && installedVersion === desiredVersion) {
-    return 'applied'
+  // Fully converged: installed version matches desired version.
+  // The version match is the authoritative signal — cluster-wide node
+  // counts may lag behind (controller hasn't synced yet on Day-0, or
+  // stale counts from removed infra/cmd packages). Trust the versions.
+  if (installed && installedVersion === desiredVersion) {
+    return 'installed'
   }
 
-  // Plan phase overrides
-  if (phase.includes('AWAITING_PRIVILEGED_APPLY') || (row.canApplyPrivileged === false && desiredVersion !== installedVersion)) {
-    return 'awaiting-privileged-apply'
-  }
-  if (phase.includes('FAILED')) {
-    return 'failure'
-  }
-  if (phase.includes('RUNNING') || phase.includes('ROLLING_BACK')) {
-    return 'progressing'
+  // Plan phase overrides — only meaningful when this service actually
+  // needs work (installed version differs from desired, or not installed).
+  // The plan phase is a global aggregate; don't let it override services
+  // that are individually converged or simply not yet installed.
+  const needsWork = installed && installedVersion !== desiredVersion
+  if (needsWork) {
+    if (phase.includes('AWAITING_PRIVILEGED_APPLY') || row.canApplyPrivileged === false) {
+      return 'awaiting-privileged-apply'
+    }
+    if (phase.includes('FAILED')) {
+      return 'failed'
+    }
+    if (phase.includes('RUNNING') || phase.includes('ROLLING_BACK')) {
+      return 'progressing'
+    }
   }
 
-  // Divergence checks
+  // Not installed on this node — it's planned, not progressing.
+  if (!installed) {
+    return 'planned'
+  }
+
+  // Divergence checks (installed but wrong version)
   if (upgrading > 0 || (nodesTotal > 0 && nodesAtDesired < nodesTotal)) {
     return 'progressing'
   }
-  if (installed && installedVersion !== desiredVersion && nodesTotal > 0) {
+  if (installedVersion !== desiredVersion && nodesTotal > 0) {
     return 'drifted'
   }
 
-  // Desired but not yet applied anywhere
-  return 'managed-pending'
+  // Desired but not yet converged everywhere
+  return 'planned'
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -159,21 +214,22 @@ function badge(label: string, color: string): string {
 }
 
 const STATUS_META: Record<LifecycleState, { label: string; color: string }> = {
-  'applied':                    { label: 'Applied',                   color: 'var(--success-color)' },
-  'managed-pending':            { label: 'Managed — pending',        color: '#f59e0b' },
-  'staged':                     { label: 'Staged',                    color: '#3b82f6' },
+  'installed':                  { label: 'Installed',                 color: 'var(--success-color)' },
+  'planned':                    { label: 'Planned',                   color: '#f59e0b' },
+  'available':                  { label: 'Available',                 color: '#3b82f6' },
   'awaiting-privileged-apply':  { label: 'Awaiting privileged apply', color: '#f97316' },
   'progressing':                { label: 'Progressing',               color: '#f59e0b' },
-  'drifted':                    { label: 'Drift',                     color: 'var(--error-color)' },
-  'failure':                    { label: 'Failed',                    color: 'var(--error-color)' },
+  'drifted':                    { label: 'Drifted',                   color: 'var(--error-color)' },
+  'failed':                     { label: 'Failed',                    color: 'var(--error-color)' },
   'unmanaged':                  { label: 'Unmanaged',                 color: 'var(--secondary-text-color)' },
-  'not-selected':               { label: '—',                         color: 'var(--secondary-text-color)' },
+  'missing-in-repo':            { label: 'Missing in repo',           color: '#f97316' },
+  'orphaned':                   { label: 'Orphaned',                  color: 'var(--secondary-text-color)' },
 }
 
-function statusBadge(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean): string {
-  const key = deriveStatus(row, ccAvailable, ccHasPlan)
+function statusBadge(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean, repoKnown: boolean): string {
+  const key = deriveStatus(row, ccAvailable, ccHasPlan, repoKnown)
   const { label, color } = STATUS_META[key]
-  if (key === 'not-selected') return `<span class="sc-muted">—</span>`
+  if (key === 'orphaned') return `<span class="sc-muted">${label}</span>`
   return badge(label, color)
 }
 
@@ -187,8 +243,13 @@ function desiredCell(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean):
 function installedCell(row: CatalogRow): string {
   if (!row.installedVersion) return `<span class="sc-muted">—</span>`
   const state = (row.installedState ?? '').toLowerCase()
-  const color = state === 'running' || state === 'active'
-    ? 'var(--success-color)' : 'var(--secondary-text-color)'
+  // Green when running/active, or when state is unknown but version matches
+  // desired (the service is converged — it's running even if /config doesn't
+  // report state for infrastructure daemons).
+  const converged = row.desiredVersion !== undefined && row.installedVersion === row.desiredVersion
+  const color = state === 'running' || state === 'active' || (converged && !state)
+    ? 'var(--success-color)' : state === 'stopped' || state === 'closed'
+    ? 'var(--error-color)' : 'var(--secondary-text-color)'
   return badge(row.installedVersion, color)
 }
 
@@ -229,6 +290,7 @@ class PageServicesCatalog extends HTMLElement {
   private _activeTab         = 'rollout'   // 'rollout' | 'repository'
   private _catalog:          CatalogItem[] = []
   private _repoAvailable     = false
+  private _repoKnown         = false   // true when at least one repo call succeeded
   private _repoError         = ''
   private _repoSearch        = ''
   private _repoExpandedKey   = ''
@@ -256,7 +318,8 @@ class PageServicesCatalog extends HTMLElement {
   private async load() {
     try {
       let bundleError = ''
-      const [healthV1Result, nodes, cfg, bundleResult] = await Promise.all([
+      let artifactsOk = false
+      const [healthV1Result, nodes, cfg, bundleResult, artifactResult, installedResult] = await Promise.all([
         getClusterHealthV1Full().catch(() => null),
         listClusterNodes().catch(() => [] as ClusterNode[]),
         getConfig().catch(() => null),
@@ -264,6 +327,8 @@ class PageServicesCatalog extends HTMLElement {
           bundleError = normalizeError(e).message
           return null
         }),
+        listArtifacts().then(r => { artifactsOk = true; return r }).catch((): ArtifactManifest[] => []),
+        fetchInstalledPackages().catch((): InstalledPackage[] => []),
       ])
 
       this._nodes         = nodes
@@ -272,6 +337,7 @@ class PageServicesCatalog extends HTMLElement {
       const nodeHealths: NodeHealthV1[] = healthV1Result?.nodeHealths ?? []
       this._ccHasPlan     = catalogEntries.length > 0
       this._repoAvailable = bundleResult !== null
+      this._repoKnown     = bundleResult !== null || artifactsOk
       this._repoError     = bundleError
 
       // Convert BundleSummary[] → CatalogItem[]
@@ -288,6 +354,71 @@ class PageServicesCatalog extends HTMLElement {
         bundleData:  b,
       }))
 
+      // Merge only SERVICE artifacts into the catalog. This page is for gRPC
+      // microservices only; infrastructure, commands belong in Repository > Catalog.
+      // Artifact kinds: 1=SERVICE, 5=INFRASTRUCTURE, 6=COMMAND.
+      const SERVICE_KIND = 1
+      const catalogKeys = new Set(this._catalog.map(c =>
+        `${normalizeForMatch(c.name)}%${c.version}%${c.platform}`))
+      for (const a of artifactResult) {
+        const ref = a.ref
+        if (!ref?.name || !ref?.version) continue
+        if (ref.kind !== SERVICE_KIND && ref.kind !== 0) continue
+        const dedupKey = `${normalizeForMatch(ref.name)}%${ref.version}%${ref.platform ?? ''}`
+        if (catalogKeys.has(dedupKey)) continue
+        catalogKeys.add(dedupKey)
+        this._catalog.push({
+          kind:        'artifact',
+          id:          `${ref.publisherId ?? ''}%${ref.name}%${ref.version}%${ref.platform ?? ''}`,
+          name:        ref.name,
+          version:     ref.version,
+          platform:    ref.platform ?? '',
+          publisherId: ref.publisherId ?? '',
+          publishedAt: a.modifiedUnix ?? 0,
+          sizeBytes:   a.sizeBytes ?? 0,
+          checksum:    a.checksum ?? '',
+        })
+      }
+
+      // Build repo version map from ALL artifacts (any kind) + bundles.
+      // The version map is used for status derivation — we need to know if a
+      // package exists in the repo regardless of its kind classification.
+      // (The _catalog is filtered to SERVICE-only for display, but version
+      // presence must cover all kinds to avoid false "MissingInRepo".)
+      const repoVersionMap = new Map<string, string>()
+      for (const a of artifactResult) {
+        const name = normalizeForMatch(a.ref?.name ?? '')
+        if (!name) continue
+        const ver = a.ref?.version ?? ''
+        const existing = repoVersionMap.get(name)
+        if (!existing || ver.localeCompare(existing, undefined, { numeric: true }) > 0) {
+          repoVersionMap.set(name, ver)
+        }
+      }
+      for (const item of this._catalog) {
+        const key = normalizeForMatch(item.name)
+        if (!key) continue
+        const existing = repoVersionMap.get(key)
+        if (!existing || item.version.localeCompare(existing, undefined, { numeric: true }) > 0) {
+          repoVersionMap.set(key, item.version)
+        }
+      }
+
+      // Build installed-state registry map (name → version) for canonical
+      // observed state. This supplements runtime /config data.
+      // This page is for gRPC microservices only. Infrastructure daemons
+      // and CLI tools are visible in Repository > Catalog.
+      const NON_SERVICE_KINDS = new Set(['COMMAND', 'INFRASTRUCTURE'])
+      const registryVersionMap = new Map<string, string>()
+      for (const pkg of installedResult) {
+        if (NON_SERVICE_KINDS.has((pkg.kind ?? '').toUpperCase())) continue
+        const key = normalizeForMatch(pkg.name ?? '')
+        if (!key) continue
+        if (!registryVersionMap.has(key)) {
+          registryVersionMap.set(key, pkg.version ?? '')
+        }
+      }
+
       // Aggregate node-health info: worst-case plan phase and overall privilege status
       let aggregatePlanPhase = ''
       let anyNodeLacksPrivilege = false
@@ -302,13 +433,26 @@ class PageServicesCatalog extends HTMLElement {
       const runtimeSvcs = Object.values(cfg?.Services ?? {}) as ServiceDesc[]
       this._runtimeAvailable = runtimeSvcs.length > 0
 
+      // Infrastructure names to exclude — these are daemons, not gRPC services.
+      const INFRA_NAMES = new Set([
+        'etcd', 'minio', 'envoy', 'xds', 'gateway',
+        'node-exporter', 'prometheus', 'scylladb',
+        'scylla-manager', 'scylla-manager-agent',
+        'keepalived', 'sidekick',
+      ])
+
       const ccMap = new Map<string, ServiceCatalogEntry>(
-        catalogEntries.map(e => [e.serviceName.toLowerCase(), e])
+        catalogEntries
+          .filter(e => !INFRA_NAMES.has(e.serviceName.toLowerCase()))
+          .map(e => [e.serviceName.toLowerCase(), e])
       )
 
+      // rowMap is keyed by normalizeForMatch(name) to prevent duplicates.
+      // The display name is stored in the row itself.
       const rowMap = new Map<string, CatalogRow>()
 
-      // Seed from runtime
+      // Seed from runtime — prefer installed-state registry version (canonical)
+      // over runtime /config version; use runtime only for state (running/stopped).
       for (const svc of runtimeSvcs) {
         const name = svc.Name ?? svc.Id ?? ''
         if (!name) continue
@@ -317,11 +461,15 @@ class PageServicesCatalog extends HTMLElement {
         // uses canonical kebab-case names (e.g. "ldap", "cluster-controller").
         // Strip the gRPC suffix and convert underscores → hyphens.
         const canonical = name.split('.')[0].toLowerCase().replaceAll('_', '-')
+        if (INFRA_NAMES.has(canonical)) continue
+        const nk  = normalizeForMatch(canonical)
         const cc  = ccMap.get(canonical) ?? ccMap.get(name.toLowerCase())
-        rowMap.set(canonical, {
+        const registryVer = registryVersionMap.get(nk)
+        rowMap.set(nk, {
           name: canonical,
-          installedVersion: (svc.Version as string) || null,
+          installedVersion: registryVer || (svc.Version as string) || null,
           installedState:   (svc.State  as string) || null,
+          repoVersion:      repoVersionMap.get(nk) ?? null,
           desiredVersion:   cc?.desiredVersion,
           nodesAtDesired:   cc?.nodesAtDesired,
           nodesTotal:       cc?.nodesTotal,
@@ -333,18 +481,44 @@ class PageServicesCatalog extends HTMLElement {
         ccMap.delete(name.toLowerCase())
       }
 
-      // Add controller entries not in runtime
+      // Add controller entries not in runtime.
+      // Skip command-line tools — they are not services.
       for (const [key, e] of ccMap) {
-        rowMap.set(key, {
+        if (e.serviceName.endsWith('-cmd')) continue
+        const nk = normalizeForMatch(key)
+        if (rowMap.has(nk)) continue
+        const registryVer = registryVersionMap.get(nk)
+        rowMap.set(nk, {
           name:             e.serviceName,
-          installedVersion: null,
+          installedVersion: registryVer || null,
           installedState:   null,
+          repoVersion:      repoVersionMap.get(normalizeForMatch(e.serviceName)) ?? null,
           desiredVersion:   e.desiredVersion,
           nodesAtDesired:   e.nodesAtDesired,
           nodesTotal:       e.nodesTotal,
           upgrading:        e.upgrading,
           planPhase:        aggregatePlanPhase,
           canApplyPrivileged: !anyNodeLacksPrivilege,
+        })
+      }
+
+      // Add installed-state registry entries not yet in runtime or controller.
+      // Only include SERVICE packages — this page is services-only.
+      for (const pkg of installedResult) {
+        if (NON_SERVICE_KINDS.has((pkg.kind ?? '').toUpperCase())) continue
+        const key = normalizeForMatch(pkg.name ?? '')
+        if (!key || rowMap.has(key)) continue
+        rowMap.set(key, {
+          name:             pkg.name,
+          installedVersion: pkg.version || null,
+          installedState:   null,
+          repoVersion:      repoVersionMap.get(key) ?? null,
+          desiredVersion:   undefined,
+          nodesAtDesired:   undefined,
+          nodesTotal:       undefined,
+          upgrading:        undefined,
+          planPhase:        undefined,
+          canApplyPrivileged: undefined,
         })
       }
 
@@ -369,18 +543,20 @@ class PageServicesCatalog extends HTMLElement {
         || (row.desiredVersion  ?? '').toLowerCase().includes(q)
         || (row.installedVersion ?? '').toLowerCase().includes(q)
 
-      const status = deriveStatus(row, this._ccAvailable, this._ccHasPlan)
+      const status = deriveStatus(row, this._ccAvailable, this._ccHasPlan, this._repoKnown)
       let matchesStatus = true
       switch (this._filterStatus) {
-        case 'managed':    matchesStatus = status === 'applied' || status === 'managed-pending'
+        case 'managed':    matchesStatus = status === 'installed' || status === 'planned'
                              || status === 'progressing' || status === 'awaiting-privileged-apply'
-                             || status === 'drifted' || status === 'failure'; break
+                             || status === 'drifted' || status === 'failed'; break
         case 'unmanaged':  matchesStatus = status === 'unmanaged'; break
         case 'drift':      matchesStatus = status === 'drifted' || status === 'progressing'
-                             || status === 'awaiting-privileged-apply' || status === 'failure'; break
-        case 'pending':    matchesStatus = status === 'managed-pending'
+                             || status === 'awaiting-privileged-apply' || status === 'failed'
+                             || status === 'missing-in-repo'; break
+        case 'pending':    matchesStatus = status === 'planned'
                              || status === 'awaiting-privileged-apply'; break
         case 'installed':  matchesStatus = !!row.installedVersion; break
+        case 'available':  matchesStatus = status === 'available' || status === 'orphaned'; break
       }
 
       return matchesSearch && matchesStatus
@@ -390,9 +566,9 @@ class PageServicesCatalog extends HTMLElement {
   // ─── Row expand panel ────────────────────────────────────────────────────
 
   private renderDetailPanel(row: CatalogRow): string {
-    const status   = deriveStatus(row, this._ccAvailable, this._ccHasPlan)
-    const managed  = status === 'applied' || status === 'progressing' || status === 'managed-pending'
-      || status === 'awaiting-privileged-apply' || status === 'drifted' || status === 'failure'
+    const status   = deriveStatus(row, this._ccAvailable, this._ccHasPlan, this._repoKnown)
+    const managed  = status === 'installed' || status === 'progressing' || status === 'planned'
+      || status === 'awaiting-privileged-apply' || status === 'drifted' || status === 'failed'
     const unmanaged = status === 'unmanaged'
 
     const addBtn = (unmanaged || (!this._ccHasPlan && !!row.installedVersion)) && this._ccAvailable
@@ -407,8 +583,8 @@ class PageServicesCatalog extends HTMLElement {
          </button>` : ''
 
     // Show apply-desired hint when node lacks privilege or service is pending
-    const needsApply = status === 'awaiting-privileged-apply' || status === 'managed-pending'
-      || status === 'drifted' || status === 'failure'
+    const needsApply = status === 'awaiting-privileged-apply' || status === 'planned'
+      || status === 'drifted' || status === 'failed'
     const applyCmd = needsApply ? 'globular services apply-desired' : ''
     const applyHint = applyCmd
       ? `<div class="sc-apply-hint">
@@ -494,16 +670,16 @@ class PageServicesCatalog extends HTMLElement {
         <td>${installedCell(row)}</td>
         <td>${this.repoLatestCell(row)}</td>
         <td>${rolloutCell(row, this._ccAvailable)}</td>
-        <td>${statusBadge(row, this._ccAvailable, this._ccHasPlan)}</td>
+        <td>${statusBadge(row, this._ccAvailable, this._ccHasPlan, this._repoKnown)}</td>
       </tr>
       ${expanded ? this.renderDetailPanel(row) : ''}`
   }
 
   // ─── Repo latest helper ──────────────────────────────────────────────────
 
-  /** Returns the latest published bundle version for a service name, or null if none. */
+  /** Returns the latest published version for a service name, or null if none. */
   private repoLatestVersion(serviceName: string): string | null {
-    if (!this._repoAvailable || this._catalog.length === 0) return null
+    if (!this._repoKnown || this._catalog.length === 0) return null
     const sn      = normalizeForMatch(serviceName)
     const matches = this._catalog.filter(item => normalizeForMatch(item.name) === sn)
     if (matches.length === 0) return null
@@ -673,7 +849,7 @@ class PageServicesCatalog extends HTMLElement {
 
     // Dynamic title
     const title    = 'Service Rollout'
-    const subtitle = 'Desired state (controller) vs. installed state (this node)'
+    const subtitle = 'Artifact, desired release, installed observed, and runtime health'
 
     // Empty-state message
     let emptyMsg = ''
@@ -922,7 +1098,8 @@ class PageServicesCatalog extends HTMLElement {
                 <option value="managed"${this._filterStatus === 'managed'   ? ' selected' : ''}>Managed</option>
                 <option value="unmanaged"${this._filterStatus === 'unmanaged' ? ' selected' : ''}>Unmanaged</option>
                 <option value="drift"${this._filterStatus === 'drift'     ? ' selected' : ''}>Drift / Needs action</option>
-                <option value="pending"${this._filterStatus === 'pending'   ? ' selected' : ''}>Pending apply</option>
+                <option value="pending"${this._filterStatus === 'pending'   ? ' selected' : ''}>Pending</option>
+                <option value="available"${this._filterStatus === 'available' ? ' selected' : ''}>Available in repo</option>
                 <option value="installed"${this._filterStatus === 'installed' ? ' selected' : ''}>Installed</option>
               </select>
               <span class="sc-count">
