@@ -343,6 +343,10 @@ class PageAdminBackups extends HTMLElement {
     el.querySelectorAll<HTMLButtonElement>('.bk-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         this._tab = btn.dataset.tab as Tab
+        // Clear job detail state when switching tabs so it doesn't
+        // auto-reopen on the next render cycle.
+        this.stopJobPoll()
+        this._selectedJob = null
         this.renderTabs()
         this.loadTab()
       })
@@ -500,6 +504,9 @@ class PageAdminBackups extends HTMLElement {
     const res = await listBackupJobs({ limit: 50 })
     this._jobs = res.jobs
     this._jobsTotal = res.total
+    // Stop any active detail poll and clear selection so the list view
+    // is shown instead of automatically opening the detail panel.
+    this.stopJobPoll()
     this._selectedJob = null
     // Keep overview in sync so stale jobs don't reappear when switching tabs
     this._recentJobs = res.jobs
@@ -1369,6 +1376,14 @@ class PageAdminBackups extends HTMLElement {
         // Stop polling once job reaches a terminal state
         if (job.state === 3 || job.state === 4 || job.state === 5) {
           this.stopRestorePoll()
+          // Refresh the jobs list so Recent Jobs / Jobs tab show the final state
+          // without requiring a manual page reload.
+          try {
+            const res = await listBackupJobs({ limit: 50 })
+            this._jobs = res.jobs
+            this._recentJobs = res.jobs
+            this._jobsTotal = res.total
+          } catch { /* best-effort refresh */ }
         }
       } catch { /* ignore poll errors */ }
     }
