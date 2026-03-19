@@ -273,6 +273,8 @@ export interface ServiceCatalogEntry {
   nodesTotal:     number
   /** Nodes currently mid-upgrade */
   upgrading:      number
+  /** Package kind: "SERVICE", "INFRASTRUCTURE", "APPLICATION", "COMMAND" */
+  kind:           string
 }
 
 export interface ClusterHealthV1Result {
@@ -307,6 +309,7 @@ export async function getClusterHealthV1Full(): Promise<ClusterHealthV1Result | 
       nodesAtDesired: s.getNodesAtDesired?.() ?? 0,
       nodesTotal:     s.getNodesTotal?.()     ?? 0,
       upgrading:      s.getUpgrading?.()      ?? 0,
+      kind:           s.getKind?.()           ?? 'SERVICE',
     }))
     const nodeHealths = (rsp.getNodesList?.() ?? []).map((n: any) => ({
       nodeId:                n.getNodeId?.()                ?? '',
@@ -531,7 +534,9 @@ export async function getNodeHealthDetail(nodeId: string): Promise<NodeHealthDet
 export interface ServiceDiffEntry {
   serviceId: string
   desired: string
+  desiredBuildNumber?: number
   installed: string
+  installedBuildNumber?: number
   action: 'install' | 'upgrade' | 'downgrade' | 'remove' | 'ok'
 }
 

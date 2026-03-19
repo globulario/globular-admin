@@ -82,7 +82,6 @@ interface CatalogRow {
   upgrading:        number | undefined
   // From NodeHealthV1 (lifecycle state derivation)
   planPhase:            string | undefined
-  canApplyPrivileged:   boolean | undefined
 }
 
 // ─── Status derivation (4-layer model) ───────────────────────────────────────
@@ -100,13 +99,11 @@ interface CatalogRow {
 // Operational sub-states (retained for actionability):
 //   Progressing             — plan actively running
 //   Failed                  — plan failed
-//   Awaiting privileged apply — node lacks privilege
 
 type LifecycleState =
   | 'installed'                     // green — desired == installed, fully converged
   | 'planned'                       // yellow — desired set, not yet installed everywhere
   | 'available'                     // blue — in repo, no desired release
-  | 'awaiting-privileged-apply'     // orange — node lacks privilege
   | 'progressing'                   // yellow — plan actively running
   | 'drifted'                       // red — installed diverged from desired
   | 'failed'                        // red — plan failed
@@ -162,9 +159,6 @@ function deriveStatus(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean,
   // that are individually converged or simply not yet installed.
   const needsWork = installed && installedVersion !== desiredVersion
   if (needsWork) {
-    if (phase.includes('AWAITING_PRIVILEGED_APPLY') || row.canApplyPrivileged === false) {
-      return 'awaiting-privileged-apply'
-    }
     if (phase.includes('FAILED')) {
       return 'failed'
     }
@@ -217,7 +211,6 @@ const STATUS_META: Record<LifecycleState, { label: string; color: string }> = {
   'installed':                  { label: 'Installed',                 color: 'var(--success-color)' },
   'planned':                    { label: 'Planned',                   color: '#f59e0b' },
   'available':                  { label: 'Available',                 color: '#3b82f6' },
-  'awaiting-privileged-apply':  { label: 'Awaiting privileged apply', color: '#f97316' },
   'progressing':                { label: 'Progressing',               color: '#f59e0b' },
   'drifted':                    { label: 'Drifted',                   color: 'var(--error-color)' },
   'failed':                     { label: 'Failed',                    color: 'var(--error-color)' },
@@ -421,29 +414,22 @@ class PageServicesCatalog extends HTMLElement {
 
       // Aggregate node-health info: worst-case plan phase and overall privilege status
       let aggregatePlanPhase = ''
-      let anyNodeLacksPrivilege = false
       for (const nh of nodeHealths) {
-        if (!nh.canApplyPrivileged) anyNodeLacksPrivilege = true
         const phase = nh.currentPlanPhase.toUpperCase()
-        if (phase.includes('AWAITING_PRIVILEGED_APPLY')) aggregatePlanPhase = nh.currentPlanPhase
-        else if (phase.includes('FAILED') && !aggregatePlanPhase.includes('AWAITING')) aggregatePlanPhase = nh.currentPlanPhase
+        if (phase.includes('FAILED') && !aggregatePlanPhase) aggregatePlanPhase = nh.currentPlanPhase
         else if (phase.includes('RUNNING') && !aggregatePlanPhase) aggregatePlanPhase = nh.currentPlanPhase
       }
 
       const runtimeSvcs = Object.values(cfg?.Services ?? {}) as ServiceDesc[]
       this._runtimeAvailable = runtimeSvcs.length > 0
 
-      // Infrastructure names to exclude — these are daemons, not gRPC services.
-      const INFRA_NAMES = new Set([
-        'etcd', 'minio', 'envoy', 'xds', 'gateway',
-        'node-exporter', 'prometheus', 'scylladb',
-        'scylla-manager', 'scylla-manager-agent',
-        'keepalived', 'sidekick',
-      ])
-
+      // Only show SERVICE entries — infrastructure, commands, etc. belong
+      // in Repository > Catalog. The controller now sends a `kind` field
+      // on each ServiceSummary so we filter dynamically instead of
+      // maintaining a hardcoded exclusion list.
       const ccMap = new Map<string, ServiceCatalogEntry>(
         catalogEntries
-          .filter(e => !INFRA_NAMES.has(e.serviceName.toLowerCase()))
+          .filter(e => (e.kind || 'SERVICE').toUpperCase() === 'SERVICE')
           .map(e => [e.serviceName.toLowerCase(), e])
       )
 
@@ -461,7 +447,9 @@ class PageServicesCatalog extends HTMLElement {
         // uses canonical kebab-case names (e.g. "ldap", "cluster-controller").
         // Strip the gRPC suffix and convert underscores → hyphens.
         const canonical = name.split('.')[0].toLowerCase().replaceAll('_', '-')
-        if (INFRA_NAMES.has(canonical)) continue
+        // Runtime /config only contains gRPC services — infrastructure
+        // daemons (etcd, minio, etc.) don't register there, so no
+        // additional filtering needed.
         const nk  = normalizeForMatch(canonical)
         const cc  = ccMap.get(canonical) ?? ccMap.get(name.toLowerCase())
         const registryVer = registryVersionMap.get(nk)
@@ -475,7 +463,6 @@ class PageServicesCatalog extends HTMLElement {
           nodesTotal:       cc?.nodesTotal,
           upgrading:        cc?.upgrading,
           planPhase:        cc ? aggregatePlanPhase : undefined,
-          canApplyPrivileged: cc ? !anyNodeLacksPrivilege : undefined,
         })
         ccMap.delete(canonical)
         ccMap.delete(name.toLowerCase())
@@ -498,7 +485,6 @@ class PageServicesCatalog extends HTMLElement {
           nodesTotal:       e.nodesTotal,
           upgrading:        e.upgrading,
           planPhase:        aggregatePlanPhase,
-          canApplyPrivileged: !anyNodeLacksPrivilege,
         })
       }
 
@@ -518,7 +504,6 @@ class PageServicesCatalog extends HTMLElement {
           nodesTotal:       undefined,
           upgrading:        undefined,
           planPhase:        undefined,
-          canApplyPrivileged: undefined,
         })
       }
 
@@ -547,14 +532,14 @@ class PageServicesCatalog extends HTMLElement {
       let matchesStatus = true
       switch (this._filterStatus) {
         case 'managed':    matchesStatus = status === 'installed' || status === 'planned'
-                             || status === 'progressing' || status === 'awaiting-privileged-apply'
+                             || status === 'progressing'
                              || status === 'drifted' || status === 'failed'; break
         case 'unmanaged':  matchesStatus = status === 'unmanaged'; break
         case 'drift':      matchesStatus = status === 'drifted' || status === 'progressing'
-                             || status === 'awaiting-privileged-apply' || status === 'failed'
+                             || status === 'failed'
                              || status === 'missing-in-repo'; break
         case 'pending':    matchesStatus = status === 'planned'
-                             || status === 'awaiting-privileged-apply'; break
+                             ; break
         case 'installed':  matchesStatus = !!row.installedVersion; break
         case 'available':  matchesStatus = status === 'available' || status === 'orphaned'; break
       }
@@ -568,7 +553,7 @@ class PageServicesCatalog extends HTMLElement {
   private renderDetailPanel(row: CatalogRow): string {
     const status   = deriveStatus(row, this._ccAvailable, this._ccHasPlan, this._repoKnown)
     const managed  = status === 'installed' || status === 'progressing' || status === 'planned'
-      || status === 'awaiting-privileged-apply' || status === 'drifted' || status === 'failed'
+      || status === 'drifted' || status === 'failed'
     const unmanaged = status === 'unmanaged'
 
     const addBtn = (unmanaged || (!this._ccHasPlan && !!row.installedVersion)) && this._ccAvailable
@@ -582,27 +567,7 @@ class PageServicesCatalog extends HTMLElement {
            Remove from desired state
          </button>` : ''
 
-    // Show apply-desired hint when node lacks privilege or service is pending
-    const needsApply = status === 'awaiting-privileged-apply' || status === 'planned'
-      || status === 'drifted' || status === 'failed'
-    const applyCmd = needsApply ? 'globular services apply-desired' : ''
-    const applyHint = applyCmd
-      ? `<div class="sc-apply-hint">
-           <span class="sc-apply-label">${status === 'awaiting-privileged-apply'
-             ? 'Node lacks privilege. Run on the target node:'
-             : 'Apply desired state on the target node:'}</span>
-           <div class="sc-apply-cmd">
-             <code>${applyCmd}</code>
-             <button class="sc-copy-btn" data-copy="${applyCmd}" title="Copy to clipboard">
-               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-               </svg>
-             </button>
-           </div>
-         </div>` : ''
-
-    const actionHtml = addBtn || removeBtn || applyHint
+    const actionHtml = addBtn || removeBtn
 
     return `
       <tr class="sc-detail">
@@ -650,7 +615,7 @@ class PageServicesCatalog extends HTMLElement {
             ${actionHtml ? `
             <section class="sc-detail-section">
               <div class="sc-detail-title">Actions</div>
-              ${addBtn}${removeBtn}${applyHint}
+              ${addBtn}${removeBtn}
             </section>` : ''}
 
           </div>
