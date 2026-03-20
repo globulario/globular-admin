@@ -169,6 +169,15 @@ class PageDashboard extends HTMLElement {
         } else if (typeof data === 'object') {
           parsed = data
         }
+        const incidentId = parsed?.incident_id
+        // When an incident resolves, remove earlier events for the same incident
+        // (e.g., remove "Admin Alert" when "Resolved" arrives).
+        if (incidentId && (ch === 'alert.incident.resolved' || ch === 'alert.incident.failed')) {
+          this._events = this._events.filter(e =>
+            e.correlationId !== incidentId || e.name === ch
+          )
+        }
+
         this._events.unshift({
           time: new Date().toLocaleTimeString(),
           name: ch,
@@ -178,7 +187,7 @@ class PageDashboard extends HTMLElement {
           message: parsed?.message || parsed?.summary,
           nodeId: parsed?.node_id,
           service: parsed?.service,
-          correlationId: parsed?.correlation_id || parsed?.incident_id,
+          correlationId: incidentId || parsed?.correlation_id,
           _parsed: parsed,
         })
         if (this._events.length > 50) this._events.pop()
