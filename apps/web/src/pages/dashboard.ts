@@ -351,12 +351,11 @@ class PageDashboard extends HTMLElement {
 
   private eventMatchesFilter(e: any): boolean {
     if (this._eventFilter === 'all') return true
-    const n = e.name || ''
+    const sev = (e.severity || '').toUpperCase()
     switch (this._eventFilter) {
-      case 'ai': return n.startsWith('alert.incident.') || n.startsWith('operation.remediation.') || n === 'alert.admin.notification'
-      case 'security': return n.startsWith('alert.auth.') || n === 'alert.dos.detected' || n === 'alert.error.spike'
-      case 'plan': return n.startsWith('plan_')
-      case 'service': return n.startsWith('service_apply_')
+      case 'error': return sev === 'ERROR'
+      case 'warn': return sev === 'WARN' || sev === 'WARNING'
+      case 'info': return sev === 'INFO' || sev === ''
       default: return true
     }
   }
@@ -475,12 +474,15 @@ class PageDashboard extends HTMLElement {
         /* ── events filter bar ── */
         .ev-filters { display:flex; gap:6px; padding:8px 16px; flex-wrap:wrap;
           border-bottom:1px solid var(--border-subtle-color); }
-        .ev-filter-btn { padding:3px 10px; border-radius:12px; font-size:.7rem; font-weight:600;
+        .ev-filter-btn { padding:4px 12px; border-radius:12px; font-size:.7rem; font-weight:600;
           border:1px solid var(--border-subtle-color); background:transparent;
-          color:var(--secondary-text-color); cursor:pointer; transition:all .15s; }
-        .ev-filter-btn:hover { border-color:var(--accent-color); color:var(--accent-color); }
-        .ev-filter-btn.active { background:var(--accent-color); color:#fff;
-          border-color:var(--accent-color); }
+          color:var(--secondary-text-color); cursor:pointer; transition:all .15s;
+          display:inline-flex; align-items:center; gap:5px; }
+        .ev-filter-btn:hover { border-color:var(--f-color, var(--accent-color));
+          color:var(--f-color, var(--accent-color)); }
+        .ev-filter-btn.active { background:var(--f-color, var(--accent-color)); color:#fff;
+          border-color:var(--f-color, var(--accent-color)); }
+        .ev-filter-btn.active .dot { background:#fff !important; }
 
         /* ── events feed ── */
         .ev-list { max-height:500px; overflow-y:auto; }
@@ -641,10 +643,9 @@ class PageDashboard extends HTMLElement {
               </div>
               <div class="ev-filters" id="ev-filters">
                 <button class="ev-filter-btn active" data-filter="all">All</button>
-                <button class="ev-filter-btn" data-filter="ai">AI Incidents</button>
-                <button class="ev-filter-btn" data-filter="security">Security</button>
-                <button class="ev-filter-btn" data-filter="plan">Plans</button>
-                <button class="ev-filter-btn" data-filter="service">Services</button>
+                <button class="ev-filter-btn" data-filter="error" style="--f-color:#ef4444"><span class="dot" style="background:#ef4444"></span> Critical</button>
+                <button class="ev-filter-btn" data-filter="warn" style="--f-color:#f59e0b"><span class="dot" style="background:#f59e0b"></span> Warning</button>
+                <button class="ev-filter-btn" data-filter="info" style="--f-color:#3b82f6"><span class="dot" style="background:#3b82f6"></span> Info</button>
               </div>
               <div class="ev-list" id="events-feed">
                 <p class="empty-msg">Waiting for cluster events…</p>
