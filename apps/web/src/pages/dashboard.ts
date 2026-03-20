@@ -113,6 +113,7 @@ class PageDashboard extends HTMLElement {
               nodeId: ev.dataJson?.node_id as string | undefined,
               service: ev.dataJson?.service as string | undefined,
               correlationId: (ev.dataJson?.correlation_id || ev.dataJson?.incident_id) as string | undefined,
+              _parsed: ev.dataJson,
             },
             seq: ev.sequence,
           })
@@ -176,6 +177,7 @@ class PageDashboard extends HTMLElement {
           nodeId: parsed?.node_id,
           service: parsed?.service,
           correlationId: parsed?.correlation_id || parsed?.incident_id,
+          _parsed: parsed,
         })
         if (this._events.length > 50) this._events.pop()
         this.renderEventsFeed()
@@ -185,38 +187,191 @@ class PageDashboard extends HTMLElement {
 
   private severityColor(sev?: string): string {
     const s = (sev || '').toUpperCase()
-    if (s === 'ERROR') return 'var(--error-color)'
-    if (s === 'WARN')  return '#f59e0b'
+    if (s === 'ERROR') return '#ef4444'
+    if (s === 'WARN' || s === 'WARNING') return '#f59e0b'
+    if (s === 'INFO') return '#3b82f6'
     return 'var(--secondary-text-color)'
+  }
+
+  /** Map raw event names to human-readable labels with icons. */
+  private formatEvent(e: any): { icon: string; label: string; detail: string; color: string } {
+    const p = e._parsed || {}
+    const sev = e.severity || 'INFO'
+    const color = this.severityColor(sev)
+
+    switch (e.name) {
+      // ── AI Incident Lifecycle ──
+      case 'alert.incident.resolved':
+        return {
+          icon: '\u2705', label: 'Incident Resolved',
+          detail: this.formatAIDiagnosis(p),
+          color,
+        }
+      case 'alert.incident.failed':
+        return {
+          icon: '\u274C', label: 'Incident Failed',
+          detail: p.summary || p.message || 'Remediation failed',
+          color,
+        }
+      case 'alert.incident.approval_required':
+        return {
+          icon: '\u270B', label: 'Approval Required',
+          detail: this.formatApprovalRequest(p),
+          color: '#ef4444',
+        }
+      case 'alert.incident.expired':
+        return {
+          icon: '\u23F0', label: 'Approval Expired',
+          detail: p.summary || 'Action expired before approval',
+          color: '#f59e0b',
+        }
+      case 'alert.incident.denied':
+        return {
+          icon: '\u{1F6AB}', label: 'Action Denied',
+          detail: p.summary || 'Operator denied the proposed action',
+          color,
+        }
+      case 'operation.remediation.completed':
+        return {
+          icon: '\u{1F527}', label: 'Remediation',
+          detail: this.formatRemediation(p),
+          color,
+        }
+
+      // ── Security Events ──
+      case 'alert.auth.denied':
+        return {
+          icon: '\u{1F6E1}', label: 'Auth Denied',
+          detail: `${p.subject || 'unknown'} blocked from ${p.method || 'unknown method'} \u2014 ${p.reason || ''}`,
+          color: '#f59e0b',
+        }
+      case 'alert.auth.failed':
+        return {
+          icon: '\u{1F512}', label: 'Login Failed',
+          detail: `Account "${p.account || 'unknown'}" \u2014 ${p.reason || 'invalid credentials'}`,
+          color: '#f59e0b',
+        }
+      case 'alert.dos.detected':
+        return {
+          icon: '\u26A0', label: 'DoS Detected',
+          detail: p.message || 'Request flood from single source',
+          color: '#ef4444',
+        }
+      case 'alert.error.spike':
+        return {
+          icon: '\u{1F4C8}', label: 'Error Spike',
+          detail: p.message || 'High error rate across service',
+          color: '#ef4444',
+        }
+      case 'alert.admin.notification':
+        return {
+          icon: '\u{1F4E3}', label: 'Admin Alert',
+          detail: this.formatAdminNotification(p),
+          color: '#ef4444',
+        }
+
+      // ── Plan Events ──
+      case 'plan_generated':
+        return { icon: '\u{1F4CB}', label: 'Plan Created', detail: p.message || 'New plan generated', color }
+      case 'plan_apply_started':
+        return { icon: '\u25B6', label: 'Plan Applying', detail: p.message || 'Plan execution started', color }
+      case 'plan_apply_succeeded':
+        return { icon: '\u2705', label: 'Plan Succeeded', detail: p.message || 'Plan applied successfully', color }
+      case 'plan_apply_failed':
+        return { icon: '\u274C', label: 'Plan Failed', detail: p.message || 'Plan execution failed', color: '#ef4444' }
+      case 'plan_blocked':
+      case 'plan_blocked_privileged':
+        return { icon: '\u23F8', label: 'Plan Blocked', detail: p.message || 'Plan requires manual action', color: '#f59e0b' }
+      case 'service_apply_started':
+        return { icon: '\u{1F504}', label: 'Service Update', detail: p.message || 'Service installation started', color }
+      case 'service_apply_succeeded':
+        return { icon: '\u2705', label: 'Service Installed', detail: p.message || 'Service installed successfully', color }
+      case 'service_apply_failed':
+        return { icon: '\u274C', label: 'Service Failed', detail: p.message || 'Service installation failed', color: '#ef4444' }
+
+      default:
+        return { icon: '\u2022', label: e.name, detail: e.message || e.data || '', color }
+    }
+  }
+
+  private formatAIDiagnosis(p: any): string {
+    const parts: string[] = []
+    if (p.root_cause) parts.push(`Root cause: ${p.root_cause}`)
+    if (p.confidence) parts.push(`(${Math.round(p.confidence * 100)}% confidence)`)
+    if (p.proposed_action) parts.push(`\u2192 ${this.humanAction(p.proposed_action)}`)
+    if (p.summary && !parts.length) parts.push(p.summary)
+    return parts.join(' ') || p.message || 'Incident diagnosed and resolved'
+  }
+
+  private formatApprovalRequest(p: any): string {
+    const parts = [p.summary || 'Action requires approval']
+    if (p.proposed_action) parts.push(`Proposed: ${this.humanAction(p.proposed_action)}`)
+    if (p.rationale) parts.push(`\u2014 ${p.rationale}`)
+    return parts.join('. ')
+  }
+
+  private formatRemediation(p: any): string {
+    const action = this.humanAction(p.action_type || '')
+    const status = (p.status || '').replace('ACTION_', '')
+    const target = (p.target || '').replace(/^restart_service:/, '')
+    if (target) return `${action} "${target}" \u2192 ${status}`
+    return `${action} \u2192 ${status}`
+  }
+
+  private formatAdminNotification(p: any): string {
+    const parts: string[] = []
+    if (p.summary) parts.push(p.summary)
+    if (p.root_cause) parts.push(`Root cause: ${p.root_cause}`)
+    if (p.rationale) parts.push(p.rationale)
+    return parts.join(' \u2014 ') || p.message || 'Admin notification'
+  }
+
+  private humanAction(action: string): string {
+    const map: Record<string, string> = {
+      'restart_service': 'Restart service',
+      'notify_admin': 'Notify admin',
+      'observe_and_record': 'Observe & record',
+      'drain_endpoint': 'Drain endpoint',
+      'block_ip': 'Block IP',
+      'tighten_circuit_breakers': 'Tighten circuit breakers',
+      'clear_corrupted_storage': 'Clear corrupted storage',
+      'cert_renew': 'Renew certificate',
+      'ACTION_RESTART_SERVICE': 'Restart service',
+      'ACTION_NOTIFY_ADMIN': 'Notify admin',
+      'ACTION_DRAIN_ENDPOINT': 'Drain endpoint',
+      'ACTION_BLOCK_IP': 'Block IP',
+      'ACTION_NONE': 'Observe',
+    }
+    // Handle "restart_service:unit_name" format
+    const base = action.split(':')[0]
+    return map[base] || map[action] || action
   }
 
   private renderEventsFeed() {
     const feed = this.querySelector('#events-feed')
     if (!feed) return
     if (this._events.length === 0) {
-      feed.innerHTML = '<p class="empty-msg">No events yet — waiting for cluster activity…</p>'
+      feed.innerHTML = '<p class="empty-msg">No events yet \u2014 waiting for cluster activity\u2026</p>'
       return
     }
     feed.innerHTML = this._events.slice(0, 20).map(e => {
-      const color = this.severityColor(e.severity)
-      const badge = e.name || 'event'
-      const typeBadge = `<span style="
-            display:inline-block; padding:1px 6px; border-radius:var(--md-shape-full); font-size:.68rem;
-            font-weight:700; letter-spacing:.03em;
-            background:color-mix(in srgb,${color} 15%,transparent);
-            color:${color}; border:1px solid color-mix(in srgb,${color} 30%,transparent);
-          ">${badge}</span>`
-      const msg = e.message || e.data
+      const fmt = this.formatEvent(e)
       const meta = [e.nodeId, e.service, e.correlationId].filter(Boolean)
       const metaHtml = meta.length > 0
-        ? `<div style="font-size:.65rem;color:var(--secondary-text-color);opacity:.7;grid-column:2/4;font-family:monospace">${meta.join(' · ')}</div>`
+        ? `<div class="ev-meta">${meta.join(' \u00b7 ')}</div>`
         : ''
       return `
         <div class="event-row">
           <span class="ev-time">${e.time}</span>
-          ${typeBadge}
-          <span class="ev-data" style="color:${e.severity === 'ERROR' ? 'var(--error-color)' : 'var(--on-surface-color)'}">${msg}</span>
-          ${metaHtml}
+          <div class="ev-badge" style="
+            background:color-mix(in srgb,${fmt.color} 12%,transparent);
+            color:${fmt.color};
+            border-color:color-mix(in srgb,${fmt.color} 25%,transparent);
+          ">${fmt.icon} ${fmt.label}</div>
+          <div class="ev-detail">
+            <span style="color:${e.severity === 'ERROR' ? '#ef4444' : 'var(--on-surface-color)'}">${fmt.detail}</span>
+            ${metaHtml}
+          </div>
         </div>
       `
     }).join('')
@@ -303,15 +458,19 @@ class PageDashboard extends HTMLElement {
         .btn-action.primary:hover { opacity:.9; }
 
         /* ── events feed ── */
-        .event-row { display:grid; grid-template-columns:60px 1fr 2fr;
-          gap:8px; padding:7px 16px; font-size:.78rem;
-          border-bottom:1px solid var(--border-subtle-color); }
+        .event-row { display:grid; grid-template-columns:55px auto 1fr;
+          gap:8px; padding:8px 16px; font-size:.8rem; align-items:start;
+          border-bottom:1px solid color-mix(in srgb, var(--border-subtle-color) 50%, transparent); }
+        .event-row:hover { background:color-mix(in srgb, var(--surface-color) 80%, transparent); }
         .event-row:last-child { border-bottom:none; }
-        .ev-time { color:var(--secondary-text-color); white-space:nowrap; }
-        .ev-name { font-weight:600; color:var(--accent-color); font-size:.72rem;
-          word-break:break-all; }
-        .ev-data { color:var(--on-surface-color); overflow:hidden;
-          text-overflow:ellipsis; white-space:nowrap; }
+        .ev-time { color:var(--secondary-text-color); white-space:nowrap; font-size:.72rem;
+          font-family:monospace; padding-top:2px; }
+        .ev-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px;
+          border-radius:6px; font-size:.72rem; font-weight:600; white-space:nowrap;
+          border:1px solid; }
+        .ev-detail { color:var(--on-surface-color); line-height:1.4; }
+        .ev-meta { font-size:.65rem; color:var(--secondary-text-color); opacity:.6;
+          font-family:monospace; margin-top:2px; }
 
         /* ── misc ── */
         .empty-msg { color:var(--secondary-text-color); font-size:.85rem;
