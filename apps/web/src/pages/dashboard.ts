@@ -170,12 +170,10 @@ class PageDashboard extends HTMLElement {
           parsed = data
         }
         const incidentId = parsed?.incident_id
-        // When an incident resolves, remove earlier events for the same incident
-        // (e.g., remove "Admin Alert" when "Resolved" arrives).
-        if (incidentId && (ch === 'alert.incident.resolved' || ch === 'alert.incident.failed')) {
-          this._events = this._events.filter(e =>
-            e.correlationId !== incidentId || e.name === ch
-          )
+        // When an incident resolves, remove ALL earlier events for the same
+        // incident (admin alerts, remediations, etc.) — no false urgency.
+        if (incidentId && ch === 'alert.incident.resolved') {
+          this._events = this._events.filter(e => e.correlationId !== incidentId)
         }
 
         this._events.unshift({
