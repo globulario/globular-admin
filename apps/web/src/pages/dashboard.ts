@@ -91,26 +91,28 @@ class PageDashboard extends HTMLElement {
 
     // Load recent control-plane events from history (survives page refresh).
     try {
-      const [planResult, serviceResult] = await Promise.allSettled([
+      const [planResult, serviceResult, incidentResult, remediationResult] = await Promise.allSettled([
         queryEvents({ nameFilter: 'plan_', limit: 50 }),
         queryEvents({ nameFilter: 'service_apply_', limit: 50 }),
+        queryEvents({ nameFilter: 'alert.incident.', limit: 50 }),
+        queryEvents({ nameFilter: 'operation.remediation.', limit: 50 }),
       ])
       type DashEvent = { time: string; name: string; data: string; severity?: string; type?: string; message?: string; nodeId?: string; service?: string; correlationId?: string }
       const allHistorical: Array<{ ev: DashEvent; seq: number }> = []
-      for (const r of [planResult, serviceResult]) {
+      for (const r of [planResult, serviceResult, incidentResult, remediationResult]) {
         if (r.status !== 'fulfilled') continue
         for (const ev of r.value.events) {
           allHistorical.push({
             ev: {
               time: ev.tsEpoch ? new Date(ev.tsEpoch * 1000).toLocaleTimeString() : '??:??',
               name: ev.name,
-              data: ev.dataJson?.message || (typeof ev.dataJson === 'object' ? JSON.stringify(ev.dataJson) : `${ev.data.length} bytes`),
+              data: ev.dataJson?.message || ev.dataJson?.summary || (typeof ev.dataJson === 'object' ? JSON.stringify(ev.dataJson) : `${ev.data.length} bytes`),
               severity: ev.dataJson?.severity as string | undefined,
               type: ev.name,
-              message: ev.dataJson?.message as string | undefined,
+              message: (ev.dataJson?.message || ev.dataJson?.summary) as string | undefined,
               nodeId: ev.dataJson?.node_id as string | undefined,
               service: ev.dataJson?.service as string | undefined,
-              correlationId: ev.dataJson?.correlation_id as string | undefined,
+              correlationId: (ev.dataJson?.correlation_id || ev.dataJson?.incident_id) as string | undefined,
             },
             seq: ev.sequence,
           })
@@ -143,6 +145,15 @@ class PageDashboard extends HTMLElement {
       'plan_generated', 'plan_apply_started', 'plan_blocked_privileged',
       'plan_apply_succeeded', 'plan_apply_failed', 'plan_blocked',
       'service_apply_started', 'service_apply_succeeded', 'service_apply_failed',
+      // AI incident lifecycle events
+      'alert.incident.resolved', 'alert.incident.failed',
+      'alert.incident.approval_required', 'alert.incident.expired',
+      'alert.incident.denied',
+      'operation.remediation.completed',
+      // Service crash / security events
+      'alert.auth.denied', 'alert.auth.failed',
+      'alert.dos.detected', 'alert.error.spike',
+      'alert.admin.notification',
     ]
     const channels = [...controlPlaneEvents]
     channels.forEach(ch => {
@@ -158,13 +169,13 @@ class PageDashboard extends HTMLElement {
         this._events.unshift({
           time: new Date().toLocaleTimeString(),
           name: ch,
-          data: parsed?.message || (typeof data === 'string' ? data : JSON.stringify(data)),
+          data: parsed?.message || parsed?.summary || (typeof data === 'string' ? data : JSON.stringify(data)),
           severity: parsed?.severity,
           type: ch,
-          message: parsed?.message,
+          message: parsed?.message || parsed?.summary,
           nodeId: parsed?.node_id,
           service: parsed?.service,
-          correlationId: parsed?.correlation_id,
+          correlationId: parsed?.correlation_id || parsed?.incident_id,
         })
         if (this._events.length > 50) this._events.pop()
         this.renderEventsFeed()
