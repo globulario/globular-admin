@@ -205,9 +205,9 @@ class PageDashboard extends HTMLElement {
       // ── AI Incident Lifecycle ──
       case 'alert.incident.resolved':
         return {
-          icon: '\u2705', label: 'Incident Resolved',
-          detail: this.formatAIDiagnosis(p),
-          color,
+          icon: '\u2705', label: 'Resolved',
+          detail: p.message || this.formatAIDiagnosis(p),
+          color: '#22c55e', // green — no longer urgent
         }
       case 'alert.incident.failed':
         return {
