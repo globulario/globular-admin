@@ -93,15 +93,14 @@ class PageDashboard extends HTMLElement {
 
     // Load recent control-plane events from history (survives page refresh).
     try {
-      const [planResult, serviceResult, incidentResult, remediationResult] = await Promise.allSettled([
+      const [planResult, serviceResult, incidentResult] = await Promise.allSettled([
         queryEvents({ nameFilter: 'plan_', limit: 50 }),
         queryEvents({ nameFilter: 'service_apply_', limit: 50 }),
         queryEvents({ nameFilter: 'alert.incident.', limit: 50 }),
-        queryEvents({ nameFilter: 'operation.remediation.', limit: 50 }),
       ])
       type DashEvent = { time: string; name: string; data: string; severity?: string; type?: string; message?: string; nodeId?: string; service?: string; correlationId?: string }
       const allHistorical: Array<{ ev: DashEvent; seq: number }> = []
-      for (const r of [planResult, serviceResult, incidentResult, remediationResult]) {
+      for (const r of [planResult, serviceResult, incidentResult]) {
         if (r.status !== 'fulfilled') continue
         for (const ev of r.value.events) {
           allHistorical.push({
@@ -152,7 +151,6 @@ class PageDashboard extends HTMLElement {
       'alert.incident.resolved', 'alert.incident.failed',
       'alert.incident.approval_required', 'alert.incident.expired',
       'alert.incident.denied',
-      'operation.remediation.completed',
       // Service crash / security events
       'alert.auth.denied', 'alert.auth.failed',
       'alert.dos.detected', 'alert.error.spike',
