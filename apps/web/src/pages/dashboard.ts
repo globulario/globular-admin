@@ -47,7 +47,9 @@ class PageDashboard extends HTMLElement {
     time: string; name: string; data: string;
     severity?: string; type?: string; message?: string;
     nodeId?: string; service?: string; correlationId?: string;
+    _parsed?: any;
   }> = []
+  private _eventFilter = 'all'
   private _latestSequence = 0
   private _health: ClusterHealth | null = null
   private _nodes: ClusterNode[] = []
@@ -347,14 +349,27 @@ class PageDashboard extends HTMLElement {
     return map[base] || map[action] || action
   }
 
+  private eventMatchesFilter(e: any): boolean {
+    if (this._eventFilter === 'all') return true
+    const n = e.name || ''
+    switch (this._eventFilter) {
+      case 'ai': return n.startsWith('alert.incident.') || n.startsWith('operation.remediation.') || n === 'alert.admin.notification'
+      case 'security': return n.startsWith('alert.auth.') || n === 'alert.dos.detected' || n === 'alert.error.spike'
+      case 'plan': return n.startsWith('plan_')
+      case 'service': return n.startsWith('service_apply_')
+      default: return true
+    }
+  }
+
   private renderEventsFeed() {
     const feed = this.querySelector('#events-feed')
     if (!feed) return
-    if (this._events.length === 0) {
-      feed.innerHTML = '<p class="empty-msg">No events yet \u2014 waiting for cluster activity\u2026</p>'
+    const filtered = this._events.filter(e => this.eventMatchesFilter(e))
+    if (filtered.length === 0) {
+      feed.innerHTML = `<p class="empty-msg">${this._events.length === 0 ? 'No events yet \u2014 waiting for cluster activity\u2026' : 'No events match this filter'}</p>`
       return
     }
-    feed.innerHTML = this._events.slice(0, 20).map(e => {
+    feed.innerHTML = filtered.slice(0, 30).map(e => {
       const fmt = this.formatEvent(e)
       const meta = [e.nodeId, e.service, e.correlationId].filter(Boolean)
       const metaHtml = meta.length > 0
@@ -457,20 +472,34 @@ class PageDashboard extends HTMLElement {
           border-color:var(--accent-color); }
         .btn-action.primary:hover { opacity:.9; }
 
+        /* ── events filter bar ── */
+        .ev-filters { display:flex; gap:6px; padding:8px 16px; flex-wrap:wrap;
+          border-bottom:1px solid var(--border-subtle-color); }
+        .ev-filter-btn { padding:3px 10px; border-radius:12px; font-size:.7rem; font-weight:600;
+          border:1px solid var(--border-subtle-color); background:transparent;
+          color:var(--secondary-text-color); cursor:pointer; transition:all .15s; }
+        .ev-filter-btn:hover { border-color:var(--accent-color); color:var(--accent-color); }
+        .ev-filter-btn.active { background:var(--accent-color); color:#fff;
+          border-color:var(--accent-color); }
+
         /* ── events feed ── */
-        .event-row { display:grid; grid-template-columns:55px auto 1fr;
-          gap:8px; padding:8px 16px; font-size:.8rem; align-items:start;
-          border-bottom:1px solid color-mix(in srgb, var(--border-subtle-color) 50%, transparent); }
-        .event-row:hover { background:color-mix(in srgb, var(--surface-color) 80%, transparent); }
+        .ev-list { max-height:500px; overflow-y:auto; }
+        .event-row { display:grid; grid-template-columns:55px 140px 1fr;
+          gap:12px; padding:10px 16px; font-size:.8rem; align-items:start;
+          border-bottom:1px solid color-mix(in srgb, var(--border-subtle-color) 40%, transparent); }
+        .event-row:hover { background:color-mix(in srgb, var(--accent-color) 5%, transparent); }
         .event-row:last-child { border-bottom:none; }
-        .ev-time { color:var(--secondary-text-color); white-space:nowrap; font-size:.72rem;
-          font-family:monospace; padding-top:2px; }
-        .ev-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px;
+        .ev-time { color:var(--secondary-text-color); white-space:nowrap; font-size:.7rem;
+          font-family:monospace; padding-top:3px; }
+        .ev-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px;
           border-radius:6px; font-size:.72rem; font-weight:600; white-space:nowrap;
-          border:1px solid; }
-        .ev-detail { color:var(--on-surface-color); line-height:1.4; }
+          border:1px solid; min-width:110px; }
+        .ev-detail { color:var(--on-surface-color); line-height:1.5; font-size:.8rem; }
         .ev-meta { font-size:.65rem; color:var(--secondary-text-color); opacity:.6;
-          font-family:monospace; margin-top:2px; }
+          font-family:monospace; margin-top:3px; }
+
+        /* ── animations ── */
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
 
         /* ── misc ── */
         .empty-msg { color:var(--secondary-text-color); font-size:.85rem;
@@ -606,10 +635,18 @@ class PageDashboard extends HTMLElement {
             <!-- Events feed -->
             <div class="panel">
               <div class="panel-header">
-                <span class="dot" style="background:var(--accent-color)"></span>
+                <span class="dot" style="background:var(--accent-color);animation:pulse 2s infinite"></span>
                 Live Events
+                <span style="margin-left:auto;font-size:.65rem;font-weight:400;text-transform:none;letter-spacing:0">${this._events.length} events</span>
               </div>
-              <div id="events-feed">
+              <div class="ev-filters" id="ev-filters">
+                <button class="ev-filter-btn active" data-filter="all">All</button>
+                <button class="ev-filter-btn" data-filter="ai">AI Incidents</button>
+                <button class="ev-filter-btn" data-filter="security">Security</button>
+                <button class="ev-filter-btn" data-filter="plan">Plans</button>
+                <button class="ev-filter-btn" data-filter="service">Services</button>
+              </div>
+              <div class="ev-list" id="events-feed">
                 <p class="empty-msg">Waiting for cluster events…</p>
               </div>
             </div>
@@ -665,6 +702,16 @@ class PageDashboard extends HTMLElement {
       window.location.hash = '#/admin/diagnostics'
     })
     this.querySelector('#btnMaintenance')?.addEventListener('click', () => this.handleMaintenance())
+
+    // Event filter buttons
+    this.querySelectorAll('.ev-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.querySelectorAll('.ev-filter-btn').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        this._eventFilter = (btn as HTMLElement).dataset.filter || 'all'
+        this.renderEventsFeed()
+      })
+    })
 
     // Re-render events feed without full re-render
     this.renderEventsFeed()
