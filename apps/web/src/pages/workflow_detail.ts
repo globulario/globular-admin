@@ -31,25 +31,38 @@ const LANES: Lane[] = [
   { id: 5, label: 'runtime',     color: '#f59e0b' },
 ]
 
-const LANE_W    = 200   // width of each lane column
-const LANE_PAD  = 16    // padding inside lane
-const BOX_W     = LANE_W - LANE_PAD * 2
 const BOX_H     = 56
 const BOX_R     = 8
-const ROW_GAP   = 24    // vertical gap between rows
-const PHASE_H   = 28    // height of phase divider
-const HEADER_H  = 40    // lane header row height
-const MARGIN_L  = 12    // left margin
+const ROW_GAP   = 24
+const PHASE_H   = 28
+const HEADER_H  = 40
+const MARGIN_L  = 12
+const LANE_PAD  = 16
 
-const TOTAL_LANE_W = LANES.length * LANE_W
+// Layout computed from available width
+interface Layout {
+  laneW: number; boxW: number; totalW: number
+  laneX(actor: number): number
+  laneCx(actor: number): number
+  boxX(actor: number): number
+}
 
 function laneIdx(actor: number): number {
   const i = LANES.findIndex(l => l.id === actor)
   return i >= 0 ? i : 1
 }
-function laneX(actor: number): number { return MARGIN_L + laneIdx(actor) * LANE_W }
-function laneCx(actor: number): number { return laneX(actor) + LANE_W / 2 }
-function boxX(actor: number): number { return laneX(actor) + LANE_PAD }
+
+function makeLayout(containerW: number): Layout {
+  const laneW = Math.max(160, Math.floor((containerW - MARGIN_L * 2) / LANES.length))
+  const boxW = laneW - LANE_PAD * 2
+  const totalW = LANES.length * laneW
+  return {
+    laneW, boxW, totalW,
+    laneX:  (a: number) => MARGIN_L + laneIdx(a) * laneW,
+    laneCx: (a: number) => MARGIN_L + laneIdx(a) * laneW + laneW / 2,
+    boxX:   (a: number) => MARGIN_L + laneIdx(a) * laneW + LANE_PAD,
+  }
+}
 
 // ─── Status colors ──────────────────────────────────────────────────────────
 
@@ -71,7 +84,7 @@ function fmtDur(ms: number): string {
 
 interface PlacedStep { step: WorkflowStep; x: number; y: number; cx: number; cy: number }
 
-function buildFlowchart(steps: WorkflowStep[], selectedSeq: number): { svg: string; height: number } {
+function buildFlowchart(steps: WorkflowStep[], selectedSeq: number, L: Layout): { svg: string; height: number } {
   if (steps.length === 0) return { svg: '', height: 100 }
 
   const sorted = [...steps].sort((a, b) => a.seq - b.seq)
@@ -80,7 +93,7 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number): { svg: stri
   let lastPhase = -1
   const parts: string[] = []
 
-  // Arrowhead marker
+  // Arrowhead markers
   parts.push(`
     <defs>
       <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -97,16 +110,16 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number): { svg: stri
 
   // Lane backgrounds
   for (let i = 0; i < LANES.length; i++) {
-    const x = MARGIN_L + i * LANE_W
-    parts.push(`<rect x="${x}" y="0" width="${LANE_W}" height="100%" fill="${i % 2 === 0 ? '#ffffff03' : '#ffffff06'}" />`)
+    const x = MARGIN_L + i * L.laneW
+    parts.push(`<rect x="${x}" y="0" width="${L.laneW}" height="100%" fill="${i % 2 === 0 ? '#ffffff03' : '#ffffff06'}" />`)
   }
 
   // Lane headers
   for (let i = 0; i < LANES.length; i++) {
-    const cx = MARGIN_L + i * LANE_W + LANE_W / 2
+    const cx = MARGIN_L + i * L.laneW + L.laneW / 2
     parts.push(`
-      <line x1="${MARGIN_L + i * LANE_W}" y1="${HEADER_H}" x2="${MARGIN_L + (i + 1) * LANE_W}" y2="${HEADER_H}" stroke="${LANES[i].color}" stroke-width="2" opacity=".6"/>
-      <text x="${cx}" y="${HEADER_H - 10}" text-anchor="middle" fill="${LANES[i].color}" font-size="11" font-weight="700" font-family="system-ui" text-transform="uppercase">${LANES[i].label}</text>
+      <line x1="${MARGIN_L + i * L.laneW}" y1="${HEADER_H}" x2="${MARGIN_L + (i + 1) * L.laneW}" y2="${HEADER_H}" stroke="${LANES[i].color}" stroke-width="2" opacity=".6"/>
+      <text x="${cx}" y="${HEADER_H - 10}" text-anchor="middle" fill="${LANES[i].color}" font-size="11" font-weight="700" font-family="system-ui">${LANES[i].label}</text>
     `)
   }
 
@@ -119,9 +132,9 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number): { svg: stri
       curY += (i === 0 ? 0 : 8)
       const divY = curY + PHASE_H / 2
       parts.push(`
-        <line x1="${MARGIN_L}" y1="${divY}" x2="${MARGIN_L + TOTAL_LANE_W}" y2="${divY}" stroke="#ffffff15" stroke-width="1"/>
-        <rect x="${MARGIN_L + TOTAL_LANE_W / 2 - 40}" y="${divY - 9}" width="80" height="18" rx="9" fill="#ffffff0d"/>
-        <text x="${MARGIN_L + TOTAL_LANE_W / 2}" y="${divY + 4}" text-anchor="middle" fill="#888" font-size="9" font-weight="600" font-family="system-ui">${phaseLabel(step.phase).toUpperCase()}</text>
+        <line x1="${MARGIN_L}" y1="${divY}" x2="${MARGIN_L + L.totalW}" y2="${divY}" stroke="#ffffff15" stroke-width="1"/>
+        <rect x="${MARGIN_L + L.totalW / 2 - 40}" y="${divY - 9}" width="80" height="18" rx="9" fill="#ffffff0d"/>
+        <text x="${MARGIN_L + L.totalW / 2}" y="${divY + 4}" text-anchor="middle" fill="#888" font-size="9" font-weight="600" font-family="system-ui">${phaseLabel(step.phase).toUpperCase()}</text>
       `)
       curY += PHASE_H
       lastPhase = step.phase
@@ -132,7 +145,7 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number): { svg: stri
       const prev = placed[i - 1]
       const fromCx = prev.cx
       const fromY = prev.y + BOX_H
-      const toCx = laneCx(step.actor)
+      const toCx = L.laneCx(step.actor)
       const toY = curY
       const markerId = prev.step.status === 2 ? 'ah-ok' : prev.step.status === 3 ? 'ah-err' : 'ah'
       const color = arrowColor(prev.step.status)
@@ -148,20 +161,20 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number): { svg: stri
     }
 
     // Step box
-    const bx = boxX(step.actor)
+    const bx = L.boxX(step.actor)
     const isSelected = step.seq === selectedSeq
     const isRunning = step.status === 1
     const isFailed = step.status === 3
 
-    placed.push({ step, x: bx, y: curY, cx: laneCx(step.actor), cy: curY + BOX_H / 2 })
+    placed.push({ step, x: bx, y: curY, cx: L.laneCx(step.actor), cy: curY + BOX_H / 2 })
 
     parts.push(`
       <g class="wf-step-g" data-step-seq="${step.seq}" style="cursor:pointer">
-        <rect x="${bx}" y="${curY}" width="${BOX_W}" height="${BOX_H}" rx="${BOX_R}"
+        <rect x="${bx}" y="${curY}" width="${L.boxW}" height="${BOX_H}" rx="${BOX_R}"
               fill="${sFill(step.status)}" stroke="${sStroke(step.status)}" stroke-width="${isSelected ? 2.5 : 1.5}"
               ${isRunning ? 'opacity=".85"' : ''}/>
-        ${isSelected ? `<rect x="${bx - 3}" y="${curY - 3}" width="${BOX_W + 6}" height="${BOX_H + 6}" rx="${BOX_R + 2}" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="4,2"/>` : ''}
-        <foreignObject x="${bx}" y="${curY}" width="${BOX_W}" height="${BOX_H}">
+        ${isSelected ? `<rect x="${bx - 3}" y="${curY - 3}" width="${L.boxW + 6}" height="${BOX_H + 6}" rx="${BOX_R + 2}" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="4,2"/>` : ''}
+        <foreignObject x="${bx}" y="${curY}" width="${L.boxW}" height="${BOX_H}">
           <div xmlns="http://www.w3.org/1999/xhtml" style="padding:6px 10px;height:100%;display:flex;flex-direction:column;justify-content:center;font-family:system-ui;overflow:hidden">
             <div style="font-size:11px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${step.title || step.stepKey}</div>
             <div style="font-size:9px;color:#888;margin-top:2px;display:flex;gap:6px;align-items:center">
@@ -179,7 +192,7 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number): { svg: stri
     // Decision diamond after retryable failure
     if (isFailed && step.retryable) {
       curY += BOX_H + 8
-      const dx = laneCx(step.actor)
+      const dx = L.laneCx(step.actor)
       const dy = curY + 14
       parts.push(`
         <g transform="translate(${dx},${dy}) rotate(45)">
@@ -349,8 +362,10 @@ export class WorkflowDetailPanel extends HTMLElement {
   private renderRun(run: WorkflowRun): string {
     const ctx = run.context
     const isFailed = run.status === 9 || run.status === 11
-    const { svg, height } = buildFlowchart(this._steps, this._selectedStep?.seq ?? -1)
-    const svgW = MARGIN_L + TOTAL_LANE_W + MARGIN_L
+    const estW = this._fullscreen ? (window.innerWidth - 300 - 32) : Math.min(1200 - 300 - 32, window.innerWidth - 64)
+    const L = makeLayout(Math.max(600, estW))
+    const { svg, height } = buildFlowchart(this._steps, this._selectedStep?.seq ?? -1, L)
+    const svgW = MARGIN_L + L.totalW + MARGIN_L
 
     return `
       <div class="wf-hdr">
