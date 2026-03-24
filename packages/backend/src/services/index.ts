@@ -14,3 +14,4 @@ export * from "../cms/files_cache";
 export * from "../persistence/persistence";
 export * from "../search/search_document";
 export * from "../cluster_doctor/clusterdoctor_client";
+export * from "../workflow/workflow";
