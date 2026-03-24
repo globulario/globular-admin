@@ -273,6 +273,8 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/monitoring/monitoring_pb',
         'globular-web-client/backup_manager/backup_manager_grpc_web_pb',
         'globular-web-client/backup_manager/backup_manager_pb',
+        'globular-web-client/workflow/workflow_grpc_web_pb',
+        'globular-web-client/workflow/workflow_pb',
         'globular-web-client/resource/globular_auth_pb',
         'google-protobuf/google/protobuf/descriptor_pb',
       ],
