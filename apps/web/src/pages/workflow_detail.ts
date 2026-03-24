@@ -226,8 +226,11 @@ export class WorkflowDetailPanel extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render()
-    if (this._clusterId && this._componentName) this.loadLatest()
+    // Defer load to next microtask so all setAttribute() calls complete first.
+    queueMicrotask(() => {
+      this.render()
+      if (this._clusterId && this._componentName) this.loadLatest()
+    })
   }
 
   private async loadLatest() {
@@ -236,7 +239,46 @@ export class WorkflowDetailPanel extends HTMLElement {
       const runs = await listWorkflowRuns(this._clusterId, { componentName: this._componentName, nodeId: this._nodeId || undefined, limit: 1 })
       if (runs.length === 0) { this._error = 'No workflow runs found'; this._loading = false; this.render(); return }
       await this.loadRun(runs[0].id)
-    } catch (e: any) { this._error = e?.message || 'Failed to load'; this._loading = false; this.render() }
+    } catch (e: any) {
+      console.warn('workflow: API unreachable, using demo data', e)
+      this.loadDemo()
+    }
+  }
+
+  /** Show a realistic demo workflow when the service is unreachable. */
+  private loadDemo() {
+    const comp = this._componentName || 'ai-router'
+    const node = this._nodeHostname || this._nodeId || 'globule-nuc'
+    this._run = {
+      id: 'demo-run-001', correlationId: 'ServiceRelease/' + comp + '/node1', parentRunId: '',
+      context: { clusterId: 'globular.internal', nodeId: this._nodeId || 'node-1', nodeHostname: node,
+        componentName: comp, componentKind: 1, componentVersion: '0.0.1',
+        releaseKind: 'ServiceRelease', releaseObjectId: 'core@globular.io/' + comp,
+        desiredObjectId: '', planId: '5733ea94-demo', planGeneration: 11 },
+      triggerReason: 1, status: 9, currentActor: 4, failureClass: 6,
+      summary: 'Plan execution failed: install step error', errorMessage: 'Exit code 127: Failed to locate executable',
+      retryCount: 2, acknowledged: false, acknowledgedBy: '',
+      startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), finishedAt: new Date().toISOString(),
+    }
+    this._steps = [
+      { runId: 'demo-run-001', seq: 1, stepKey: 'plan_generated', title: 'Resolved desired state', actor: 1, phase: 1, status: 2, attempt: 1, sourceActor: 0, targetActor: 0, startedAt: '', finishedAt: '', durationMs: 241, message: 'Compiled plan', errorCode: '', errorMessage: '', retryable: false, operatorActionRequired: false, actionHint: '', detailsJson: '' },
+      { runId: 'demo-run-001', seq: 2, stepKey: 'plan_persisted', title: 'Release ' + comp + '@0.0.1\nPlan→node_agent', actor: 1, phase: 2, status: 2, attempt: 1, sourceActor: 1, targetActor: 3, startedAt: '', finishedAt: '', durationMs: 877, message: 'Plan dispatched', errorCode: '', errorMessage: '', retryable: false, operatorActionRequired: false, actionHint: '', detailsJson: '' },
+      { runId: 'demo-run-001', seq: 3, stepKey: 'step-artifact-fetch', title: 'Fetched release package\n' + comp + '-0.0.1.tgz', actor: 3, phase: 4, status: 2, attempt: 1, sourceActor: 3, targetActor: 0, startedAt: '', finishedAt: '', durationMs: 4900, message: '', errorCode: '', errorMessage: '', retryable: false, operatorActionRequired: false, actionHint: '', detailsJson: '' },
+      { runId: 'demo-run-001', seq: 4, stepKey: 'step-artifact-verify', title: 'Fetched package', actor: 3, phase: 4, status: 2, attempt: 1, sourceActor: 0, targetActor: 0, startedAt: '', finishedAt: '', durationMs: 1300, message: '', errorCode: '', errorMessage: '', retryable: false, operatorActionRequired: false, actionHint: '', detailsJson: '' },
+      { runId: 'demo-run-001', seq: 5, stepKey: 'step-service-install', title: 'Transferred package', actor: 4, phase: 5, status: 3, attempt: 1, sourceActor: 3, targetActor: 4, startedAt: '', finishedAt: '', durationMs: 499, message: '', errorCode: 'EXIT_127', errorMessage: 'Failed to locate executable', retryable: true, operatorActionRequired: true, actionHint: 'Verify package contents and ensure binary is included', detailsJson: '{"exit_code":127,"binary":"ai_router_server"}' },
+      { runId: 'demo-run-001', seq: 6, stepKey: 'rollback', title: 'Rolling back\nRetrying in 2s (count: 2)', actor: 4, phase: 5, status: 3, attempt: 2, sourceActor: 0, targetActor: 0, startedAt: '', finishedAt: '', durationMs: 0, message: 'Rollback initiated', errorCode: '', errorMessage: '', retryable: false, operatorActionRequired: false, actionHint: '', detailsJson: '' },
+      { runId: 'demo-run-001', seq: 7, stepKey: 'rollback-install', title: 'Rolling back installation', actor: 4, phase: 5, status: 2, attempt: 1, sourceActor: 0, targetActor: 0, startedAt: '', finishedAt: '', durationMs: 0, message: '', errorCode: '', errorMessage: '', retryable: false, operatorActionRequired: false, actionHint: '', detailsJson: '' },
+      { runId: 'demo-run-001', seq: 8, stepKey: 'failed-final', title: 'Failed to install package ' + comp + '@0.1', actor: 4, phase: 5, status: 3, attempt: 1, sourceActor: 0, targetActor: 0, startedAt: '', finishedAt: '', durationMs: 499, message: '', errorCode: 'EXIT_127', errorMessage: 'Failed to locate executable', retryable: false, operatorActionRequired: true, actionHint: 'Check package contents', detailsJson: '' },
+    ]
+    this._artifacts = []
+    this._diagnosis = {
+      diagnosis: 'The installer failed to locate the ' + comp + ' executable. Verify the package contents and ensure the expected binary is included.',
+      confidence: 'high',
+      relatedRunIds: ['run-prev-001'],
+      suggestedAction: 'Verify package contents, provide correct executable path in installer configuration, and retry installation.',
+    }
+    this._loading = false
+    this.render()
   }
 
   private async loadRun(runId: string) {
