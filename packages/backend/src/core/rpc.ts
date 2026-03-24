@@ -7,14 +7,17 @@ import * as grpcWeb from "grpc-web";
 export interface UnaryOpts { timeoutMs?: number, base?: string }
 export interface StreamOpts { base?: string, onCall?: (call: grpcWeb.ClientReadableStream<any>) => void }
 
-/** Heuristic to detect auth expiry across different backends/messages */
+/** Heuristic to detect auth expiry or invalid tokens across different backends/messages */
 function looksExpired(err: any): boolean {
   const m = (err?.message || err?.toString?.() || "").toLowerCase();
   return m.includes("token is expired")
     || m.includes("expired token")
     || m.includes("unauthenticated")
     || m.includes("jwt expired")
-    || m.includes("no token found in context metadata");
+    || m.includes("no token found in context metadata")
+    || m.includes("signature is invalid")
+    || m.includes("ed25519")
+    || m.includes("invalid token");
 }
 
 /**

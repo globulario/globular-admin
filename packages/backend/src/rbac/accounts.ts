@@ -263,7 +263,9 @@ export type ListAccountsOptions = BasicListOptions
 
 export async function listAccounts(opts: ListAccountsOptions = {}): Promise<ListResult<AccountVM>> {
   const normalized = normalizeListOptions(opts)
+
   const rq = new resource.GetAccountsRqst()
+
   const queryString = toJsonString(normalized.query)
   if (queryString && typeof (rq as any).setQuery === "function") {
     (rq as any).setQuery(queryString)

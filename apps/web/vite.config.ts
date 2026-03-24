@@ -153,7 +153,67 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/repository.PackageRepository': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
         '/admin': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/torrent.TorrentService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/search.SearchService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/title.TitleService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/blog.BlogService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/conversation.ConversationService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/storage.StorageService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/sql.SqlService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/ldap.LdapService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/mail.MailService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/catalog.CatalogService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/spc.SpcService': {
           target,
           changeOrigin: true,
           secure: false,
@@ -213,6 +273,8 @@ export default defineConfig(({ mode }) => {
         'globular-web-client/monitoring/monitoring_pb',
         'globular-web-client/backup_manager/backup_manager_grpc_web_pb',
         'globular-web-client/backup_manager/backup_manager_pb',
+        'globular-web-client/resource/globular_auth_pb',
+        'google-protobuf/google/protobuf/descriptor_pb',
       ],
     },
     resolve: {

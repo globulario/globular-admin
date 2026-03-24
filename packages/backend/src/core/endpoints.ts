@@ -149,6 +149,17 @@ function normalizeGatewayBase(raw: string): string {
 export function grpcWebHostUrl(base = requireBaseUrl()): string {
   const b = base ?? '';
   try {
+    // In dev mode (Vite dev server on localhost), route gRPC-Web through the
+    // dev proxy so Vite forwards to the real backend.
+    if (typeof window !== 'undefined') {
+      const loc = window.location;
+      const isDevServer = (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1')
+        && loc.port && loc.port !== '443' && loc.port !== '80';
+      if (isDevServer) {
+        return loc.origin;
+      }
+    }
+
     const u = new URL(b);
     const hadPath = u.pathname && u.pathname !== '/';
     if (hadPath && !warnedPathyGrpcHost) {
@@ -158,6 +169,10 @@ export function grpcWebHostUrl(base = requireBaseUrl()): string {
     u.pathname = '';
     u.search = '';
     u.hash = '';
+    // gRPC-Web must go through Envoy (port 443), never the gateway (8443).
+    if (u.protocol === 'https:' && u.port && u.port !== '443') {
+      u.port = '';
+    }
     return u.toString().replace(/\/+$/, '');
   } catch {
     return b.replace(/\/+$/, '');
@@ -240,6 +255,9 @@ export async function saveServiceConfig(
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText);
+    if (res.status === 401 || msg.includes("signature is invalid") || msg.includes("ed25519") || msg.includes("invalid token")) {
+      throw new Error("Your session token is no longer valid. Please log out, log back in, and try again.");
+    }
     throw new Error(`save-service-config: ${res.status} — ${msg}`);
   }
 }
