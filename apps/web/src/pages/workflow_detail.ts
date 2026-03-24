@@ -212,6 +212,7 @@ export class WorkflowDetailPanel extends HTMLElement {
   private _loading = true
   private _error = ''
   private _selectedStep: WorkflowStep | null = null
+  private _fullscreen = false
 
   static get observedAttributes() { return ['cluster-id', 'node-id', 'node-hostname', 'component-name', 'run-id'] }
 
@@ -298,7 +299,12 @@ export class WorkflowDetailPanel extends HTMLElement {
     this.innerHTML = `
       <style>
         .wf-overlay { position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.65);display:flex;justify-content:center;align-items:flex-start;padding:24px 12px;overflow-y:auto }
-        .wf-panel { background:var(--md-surface-container-low,#1a1a2e);border:1px solid var(--border-subtle-color,#333);border-radius:12px;width:100%;max-width:1200px;box-shadow:0 24px 48px rgba(0,0,0,.4) }
+        .wf-panel { background:var(--md-surface-container-low,#1a1a2e);border:1px solid var(--border-subtle-color,#333);border-radius:12px;width:100%;max-width:1200px;box-shadow:0 24px 48px rgba(0,0,0,.4);transition:all .2s ease }
+        .wf-fs .wf-overlay { padding:0 }
+        .wf-fs .wf-panel { max-width:100%;border-radius:0;border:0;height:100vh;display:flex;flex-direction:column }
+        .wf-fs .wf-body { flex:1;min-height:0 }
+        .wf-fs .wf-flow { max-height:100% }
+        .wf-fs .wf-sb { max-height:100% }
         .wf-hdr { border-bottom:1px solid var(--border-subtle-color,#333);padding:14px 20px 10px }
         .wf-hdr-top { display:flex;align-items:center;gap:10px }
         .wf-hdr h3 { margin:0;font-size:1rem;font-weight:400 } .wf-hdr strong { font-weight:700 }
@@ -326,6 +332,7 @@ export class WorkflowDetailPanel extends HTMLElement {
         .wf-empty { padding:32px;text-align:center;color:var(--secondary-text-color,#888) }
         .wf-err { padding:20px;color:var(--error-color,#ef4444);font-size:.85rem }
       </style>
+      <div class="${this._fullscreen ? 'wf-fs' : ''}">
       <div class="wf-overlay" id="wfOverlay">
         <div class="wf-panel">
           ${this._loading ? '<div class="wf-empty">Loading workflow…</div>' : ''}
@@ -333,6 +340,7 @@ export class WorkflowDetailPanel extends HTMLElement {
           ${!this._loading && !this._error && run ? this.renderRun(run) : ''}
           ${!this._loading && !this._error && !run && !this._error ? '<div class="wf-empty">No workflow data</div>' : ''}
         </div>
+      </div>
       </div>
     `
     this.bindEvents()
@@ -349,6 +357,7 @@ export class WorkflowDetailPanel extends HTMLElement {
         <div class="wf-hdr-top">
           <h3>Service: <strong>${ctx?.componentName ?? this._componentName}</strong></h3>
           <span class="wf-badge" style="background:${runStatusColor(run.status)}">${runStatusLabel(run.status)}</span>
+          <button class="wf-x" id="wfToggleFs" title="${this._fullscreen ? 'Exit fullscreen' : 'Fullscreen'}">${this._fullscreen ? '⊟' : '⊞'}</button>
           <button class="wf-x" id="wfClose">✕</button>
         </div>
         <div class="wf-meta">
@@ -400,6 +409,7 @@ export class WorkflowDetailPanel extends HTMLElement {
 
   private bindEvents() {
     this.querySelector('#wfClose')?.addEventListener('click', () => this.close())
+    this.querySelector('#wfToggleFs')?.addEventListener('click', () => { this._fullscreen = !this._fullscreen; this.render() })
     this.querySelector('#wfOverlay')?.addEventListener('click', (e) => { if ((e.target as HTMLElement).id === 'wfOverlay') this.close() })
     this.querySelectorAll<HTMLElement>('[data-step-seq]').forEach(el => {
       el.addEventListener('click', (e) => {
