@@ -11,6 +11,7 @@ import {
   type NodeReconciliationDiff,
   type ServiceDiffEntry,
 } from '@globular/backend'
+import { openWorkflowDetail } from './workflow_detail'
 
 // ─── DriftCategory constants (numeric, from generated proto enums) ───────────
 
@@ -204,6 +205,7 @@ class PageClusterReconciliation extends HTMLElement {
         }
         .cr-copy-btn:hover { color: var(--accent-color); }
         .cr-copy-btn.cr-copy-ok { color: var(--success-color); }
+        .cr-svc-row:hover { background: var(--md-state-hover); }
         .cr-section-label {
           font-size: .72rem; font-weight: 700; text-transform: uppercase;
           letter-spacing: .06em; color: var(--secondary-text-color);
@@ -287,10 +289,10 @@ class PageClusterReconciliation extends HTMLElement {
               </thead>
               <tbody>
                 ${diffServices.map(s => `
-                <tr>
+                <tr class="cr-svc-row" data-service="${s.serviceId}" data-node="${row.node.nodeId}" data-hostname="${row.node.hostname || ''}" style="cursor:pointer" title="Click to view workflow">
                   <td class="cr-mono">${s.serviceId}</td>
-                  <td class="cr-mono" style="color:var(--success-color)">${s.desired || '—'}</td>
-                  <td class="cr-mono" style="color:${s.action === 'ok' ? 'var(--on-surface-color)' : actionColor(s.action)}">${s.installed || '—'}</td>
+                  <td class="cr-mono" style="color:var(--success-color)">${(s.desired || '—') + (s.desiredBuildNumber ? '+b' + s.desiredBuildNumber : '')}</td>
+                  <td class="cr-mono" style="color:${s.action === 'ok' ? 'var(--on-surface-color)' : actionColor(s.action)}">${(s.installed || '—') + (s.installedBuildNumber ? '+b' + s.installedBuildNumber : '')}</td>
                   <td>${badge(s.action.toUpperCase(), actionColor(s.action))}</td>
                 </tr>`).join('')}
               </tbody>
@@ -322,11 +324,9 @@ class PageClusterReconciliation extends HTMLElement {
               </tbody>
             </table>` : ''}
 
-            ${hasHashMismatch ? `
+            ${hasHashMismatch && !nodeCanPriv ? `
             <div class="md-banner-warn" style="margin:8px 14px 14px;font-size:.82rem">
-              ${!nodeCanPriv
-                ? `<strong>Awaiting privileged apply</strong> — this node cannot apply privileged operations (systemd unit installation).`
-                : `<strong>Apply required</strong> — the node-agent cannot install systemd units.`}
+              <strong>Awaiting privileged apply</strong> — this node cannot apply privileged operations (systemd unit installation).
               Run on the target node:<br>
               <span class="cr-cmd-wrap">
                 <code>globular services apply-desired</code>
@@ -351,6 +351,19 @@ class PageClusterReconciliation extends HTMLElement {
     `
 
     this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+
+    // Service row click → open workflow detail
+    this.querySelectorAll<HTMLElement>('.cr-svc-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const service = row.dataset.service ?? ''
+        const nodeId = row.dataset.node ?? ''
+        const hostname = row.dataset.hostname ?? ''
+        if (service) {
+          openWorkflowDetail('globular.internal', nodeId, hostname, service)
+        }
+      })
+    })
+
     this.querySelectorAll<HTMLElement>('[data-copy]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
