@@ -1,5 +1,5 @@
-import "@globular/components/search/searchBar.js";
-import "@globular/components/search/searchResults.js";
+import "@globular/media/search/searchBar.js";
+import "@globular/media/search/searchResults.js";
 
 class PageMediaSearch extends HTMLElement {
   connectedCallback() {

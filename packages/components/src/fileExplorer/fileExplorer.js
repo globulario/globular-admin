@@ -26,14 +26,14 @@ import { getMediaInfo } from "./fileMediaCache.js";
 import { FilesListView } from "./filesListView.js";
 import { FilesIconView } from "./filesIconView.js";
 import { PermissionsManager } from "../permissionManager/permissionManager.js";
-import { InformationsManager } from "../informationManager/informationsManager.js";
+import { InformationsManager } from "@globular/media/informationManager/informationsManager.js";
 import { ImageViewer } from "../image.js";
 import { GlobularFileReader } from "./fileReader.js";
 
 import { fireResize } from '../utility.js';
 import { DiskSpaceManager } from "./diskSpaceManager.js"
-import { playVideo } from "../video.js";
-import { playAudio } from "../audio.js";
+import { playVideo } from "@globular/media/video.js";
+import { playAudio } from "@globular/media/audio.js";
 import { SharePanel } from "../share/sharePanel.js"
 import { ShareResourceWizard } from "../share/shareResourceWizard.js"
 import { Dialog } from '../dialog.js';
@@ -1572,6 +1572,11 @@ export class FileExplorer extends HTMLElement {
       try {
         if (isPublicContext) {
           let publicPath = rawValue;
+          // If the user typed a relative name (no leading /), resolve against
+          // the current browsing directory so the server receives a full path.
+          if (!publicPath.startsWith("/") && this._path) {
+            publicPath = `${this._path.replace(/\/+$/, "")}/${publicPath}`;
+          }
           if (!publicPath.startsWith("/")) publicPath = `/${publicPath}`;
           await addPublicDir(publicPath);
           displayMessage(`Directory "${publicPath}" added to public list.`, 3000);

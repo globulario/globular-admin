@@ -11,6 +11,7 @@
   "dependencies": {
     "@globular/sdk": "workspace:*",
     "@globular/components": "workspace:*",
+    "@globular/media": "workspace:*",
     "@globular/ui": "workspace:*",
     "@fortawesome/fontawesome-free": "^7.1.0",
     "toastify-js": "^1.12.0"

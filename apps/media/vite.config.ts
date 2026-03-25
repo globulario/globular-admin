@@ -22,8 +22,7 @@ export default defineConfig(({ mode }) => {
       open: true,
       fs: {
         allow: [
-          '.',
-          path.resolve(__dirname, '../../packages/components'),
+          path.resolve(__dirname, '../..'),
           protoDir,
         ],
       },
@@ -84,6 +83,31 @@ export default defineConfig(({ mode }) => {
           secure: false,
         },
         '/media.MediaService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/title.TitleService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/search.SearchService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/blog.BlogService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/conversation.ConversationService': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/torrent.TorrentService': {
           target,
           changeOrigin: true,
           secure: false,

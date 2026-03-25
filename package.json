@@ -17,9 +17,6 @@
     "node": ">=18.0.0"
   },
   "packageManager": "pnpm@9.0.0",
-  "dependencies": {
-    "dom-to-image": "^2.6.0"
-  },
   "devDependencies": {
     "rimraf": "^6.0.0",
     "typescript": "^5.9.3"

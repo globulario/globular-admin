@@ -3,14 +3,14 @@ import { randomUUID } from "../utility.js";
 import { FilesListView } from "./filesListView.js";
 import { FilesIconView } from "./filesIconView.js";
 import { PermissionsManager } from "../permissionManager/permissionManager.js";
-import { InformationsManager } from "../informationManager/informationsManager.js";
+import { InformationsManager } from "@globular/media/informationManager/informationsManager.js";
 import { ImageViewer } from "../image.js";
 import { GlobularFileReader } from "./fileReader.js";
 
 import { fireResize } from '../utility.js';
 import { DiskSpaceManager } from "./diskSpaceManager.js"
-import { playVideo } from "../video.js";
-import { playAudio } from "../audio.js";
+import { playVideo } from "@globular/media/video.js";
+import { playAudio } from "@globular/media/audio.js";
 import { SharePanel } from "../share/sharePanel.js"
 
 // Import sub-components

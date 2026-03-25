@@ -1,4 +1,4 @@
-import "@globular/components/watching.js";
+import "@globular/media/watching.js";
 
 class PageMediaWatching extends HTMLElement {
   connectedCallback() {

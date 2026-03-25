@@ -25,7 +25,7 @@ import { getMediaInfo, mergeMediaInfo } from "./fileMediaCache.js";
 // UI deps
 
 // Optional preview
-import { VideoPreview } from "../fileExplorer/videoPreview";
+import { VideoPreview } from "@globular/media/fileExplorer/videoPreview.js";
 
 const ICON_SIZE_DEFAULT = "48px";
 const FOLDER_ICON = "icons:folder";

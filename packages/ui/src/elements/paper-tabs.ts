@@ -56,6 +56,8 @@ class PaperTabs extends HTMLElement {
   get selected(): number { return parseInt(this.getAttribute('selected') || '0', 10) }
   set selected(v: number) { this.setAttribute('selected', String(v)) }
 
+  get items(): HTMLElement[] { return Array.from(this.querySelectorAll('paper-tab')) }
+
   private _onClick = (e: Event) => {
     const tabs = Array.from(this.querySelectorAll('paper-tab'))
     const target = (e.target as HTMLElement).closest('paper-tab')

@@ -19,8 +19,8 @@ import { readText } from "@globular/sdk";
 // Bounded LRU cache — media metadata lives here, NOT on the file proto
 import { getMediaInfo } from "./fileMediaCache.js";
 
-import { playVideos } from "../video";
-import { playAudios } from "../audio";
+import { playVideos } from "@globular/media/video.js";
+import { playAudios } from "@globular/media/audio.js";
 import "./fileIconView";
 
 // ---------- small shared utilities ----------

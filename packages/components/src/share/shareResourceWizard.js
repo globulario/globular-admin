@@ -21,8 +21,8 @@ import { permissionsVMToProto } from "../permissionManager/permissionsUtils.js";
 import { clearPermissionsCache } from "./sharedResources.js";
 
 // Optional global “info” helpers (kept as-is)
-import { showGlobalTitleInfo } from "../search/searchTitleCard.js";
-import { showGlobalVideoInfo } from "../search/searchVideoCard.js";
+import { showGlobalTitleInfo } from "@globular/media/search/searchTitleCard.js";
+import { showGlobalVideoInfo } from "@globular/media/search/searchVideoCard.js";
 
 // UI deps (Polymer)
 

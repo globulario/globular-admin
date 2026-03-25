@@ -44,20 +44,7 @@
     "@types/google-protobuf": "^3.15.0",
     "grpc-web": "^1.4.2",
     "toastify-js": "^1.12.0",
-    "@types/toastify-js": "^1.12.4",
-    "dom-to-image": "^2.6.0",
-    "highlight.js": "^11.11.1",
-    "hljs": "^6.2.3",
-    "hls.js": "^1.6.14",
-    "iptv-playlist-parser": "^0.15.1",
-    "jmespath": "^0.16.0",
-    "jmespath-edit": "^0.3.2",
-    "lodash": "^4.17.21",
-    "markdown-it": "14.0.0",
-    "plyr": "^3.8.3",
-    "uuid": "^13.0.0",
-    "uuid-by-string": "^4.0.0",
-    "wavesurfer.js": "^7.11.1"
+    "@types/toastify-js": "^1.12.4"
   },
   "devDependencies": {
     "@types/node": "^22.9.4",

@@ -9,6 +9,9 @@ class PaperCheckbox extends HTMLElement {
   connectedCallback() { this._render(); this._bind() }
   attributeChangedCallback() { this._syncState() }
 
+  get name(): string { return this.getAttribute('name') || '' }
+  set name(v: string) { this.setAttribute('name', v) }
+
   get checked(): boolean { return this.hasAttribute('checked') }
   set checked(v: boolean) {
     v ? this.setAttribute('checked', '') : this.removeAttribute('checked')

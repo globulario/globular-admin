@@ -325,8 +325,10 @@ export class SearchVideoCard extends HTMLElement {
    */
   _buildPreviewUrl(videoPath) {
     let previewPath = videoPath;
-    if (previewPath.toLowerCase().endsWith(".mp4")) {
-      previewPath = previewPath.substring(0, previewPath.lastIndexOf("."));
+    // Strip any known video extension so the .hidden dir name is extension-free.
+    const extMatch = previewPath.match(/\.(mp4|mkv|avi|webm|mov|m4v|mpg|mpeg|flv|wmv|m2ts|ts)$/i);
+    if (extMatch) {
+      previewPath = previewPath.substring(0, previewPath.length - extMatch[0].length);
     }
     previewPath =
       `${previewPath.substring(0, previewPath.lastIndexOf("/") + 1)}.hidden` +

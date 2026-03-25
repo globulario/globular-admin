@@ -23,9 +23,6 @@ import './markdown.js'
 import './notification/notificationsPanel.ts'
 import './notification/notificationEditor.ts'
 
-// ── Media (delegated to @globular/media) ────────────────────────────────────
-import '@globular/media'
-
 // ── File Explorer ───────────────────────────────────────────────────────────
 import './fileExplorer/fileExplorer.js'
 
