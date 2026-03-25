@@ -1,21 +1,8 @@
-// router.ts
-type RouteHandler = () => HTMLElement
-
-// --- Import page components ---
-import './pages/login'
-import './pages/medias_search'
-import './pages/medias_settings'
-import './pages/medias_watching'
-import './pages/medias_about'
-// ------------------------------
+// router.ts — lazy route-based code-splitting
+type RouteHandler = () => Promise<HTMLElement> | HTMLElement
 
 // --- Auth helpers (tiny & framework-agnostic) ---
 function hasToken(): boolean {
-  // Check that a token exists, but don't hard-fail on expiry here.
-  // The gRPC layer (ensureFreshToken / rpc retry) handles refresh
-  // transparently.  Checking freshness in the router caused spurious
-  // redirects to login during long video playback when the scheduled
-  // refresh hadn't run yet.
   try { return !!sessionStorage.getItem('__globular_token__') } catch { return false }
 }
 
@@ -25,8 +12,22 @@ const PUBLIC_ROUTES = new Set<string>(['#/login'])
 const DEFAULT_ROUTE = '#/media/search'
 const LOGIN_ROUTE = '#/login'
 
+// --- Lazy loader ---
+const moduleCache = new Map<string, Promise<any>>()
+
+function lazy(loader: () => Promise<any>, tagName: string): RouteHandler {
+  return async () => {
+    if (!moduleCache.has(tagName)) {
+      moduleCache.set(tagName, loader())
+    }
+    await moduleCache.get(tagName)
+    return document.createElement(tagName)
+  }
+}
+
 const routes: Record<string, RouteHandler> = {
-  '#/login': () => {
+  '#/login': async () => {
+    await import('./pages/login')
     const el = document.createElement('page-login')
     el.setAttribute('app-name', 'Globular Media')
     el.setAttribute('logo-src', './img/logo.png')
@@ -34,14 +35,13 @@ const routes: Record<string, RouteHandler> = {
     return el
   },
 
-  '#/media/search':   () => document.createElement('page-media-search'),
-  '#/media/settings': () => document.createElement('page-media-settings'),
-  '#/media/watching': () => document.createElement('page-media-watching'),
-  '#/media/about':    () => document.createElement('page-media-about'),
+  '#/media/search':   lazy(() => import('./pages/medias_search'), 'page-media-search'),
+  '#/media/settings': lazy(() => import('./pages/medias_settings'), 'page-media-settings'),
+  '#/media/watching': lazy(() => import('./pages/medias_watching'), 'page-media-watching'),
+  '#/media/about':    lazy(() => import('./pages/medias_about'), 'page-media-about'),
 }
 
 // Routes whose page instances are kept alive between navigations.
-// Login is excluded — it must always render fresh.
 const PERSISTENT_ROUTES = new Set([
   '#/media/search',
   '#/media/settings',
@@ -67,57 +67,42 @@ function normalizeHash(raw?: string): string {
 
 function resolveRoute(raw?: string): string {
   const requested = normalizeHash(raw || window.location.hash || DEFAULT_ROUTE)
-
-  // Public routes allowed always
   if (PUBLIC_ROUTES.has(requested)) return requested
-
-  // Non-public: require fresh token only (any logged-in user can access media)
   if (hasToken()) return requested
-
-  // Otherwise force login
   return LOGIN_ROUTE
 }
 
-export function mountRoute(route?: string) {
+export async function mountRoute(route?: string) {
   const target = document.getElementById('app')!
   const resolved = resolveRoute(route)
 
   if (PERSISTENT_ROUTES.has(resolved)) {
-    // Remove any non-cached elements (e.g. the login page) that may still
-    // be in the container from a previous non-persistent route render.
     const cachedEls = new Set(pageCache.values())
     Array.from(target.children).forEach(child => {
       if (!cachedEls.has(child as HTMLElement)) child.remove()
     })
 
-    // Hide all cached pages, show (or create) the target one
     pageCache.forEach(el => { el.style.display = 'none' })
 
     let page = pageCache.get(resolved)
     if (!page) {
-      page = getRouteHandler(resolved)()
+      page = await getRouteHandler(resolved)()
       target.appendChild(page)
       pageCache.set(resolved, page)
     }
     page.style.display = 'block'
   } else {
-    // Non-persistent route (e.g. login): clear cached pages and render fresh.
-    // Without this, cached elements become detached from the DOM but stay in
-    // the pageCache map. After re-login the router finds them, sets
-    // display:block, but they're not in the DOM — so pages like Watching
-    // become invisible.
     clearPageCache()
     target.innerHTML = ''
-    target.appendChild(getRouteHandler(resolved)())
+    const el = await getRouteHandler(resolved)()
+    target.appendChild(el)
   }
 
-  // Reflect the resolved route in the URL bar
   if (window.location.hash !== resolved) {
     history.replaceState(null, '', resolved)
   }
 }
 
-// Small navigation helper for other modules (e.g., login.ts)
 export function navigateTo(path: string) {
   const dest = resolveRoute(path)
   if (window.location.hash !== dest) {
@@ -127,19 +112,17 @@ export function navigateTo(path: string) {
 }
 
 export function startRouter() {
-  // First render: go to login if unauthenticated
   const initial = resolveRoute(window.location.hash || DEFAULT_ROUTE)
   if (window.location.hash !== initial) {
     history.replaceState(null, '', initial)
   }
   mountRoute(initial)
 
-  // Listen to hash changes
   window.addEventListener('hashchange', () => {
     mountRoute(window.location.hash)
   })
 
-  // Sidebar event delegation (supports nested custom elements via composedPath)
+  // Sidebar event delegation
   document.addEventListener('click', (ev) => {
     const path = (ev.composedPath && ev.composedPath()) as Array<EventTarget & { tagName?: string, getAttribute?: (n: string) => string | null }> || []
     const item = path.find((el) => el?.tagName?.toLowerCase?.() === 'globular-sidebar-menu-item')
@@ -151,7 +134,7 @@ export function startRouter() {
         history.pushState(null, '', dest)
         mountRoute(dest)
       } else {
-        mountRoute(dest) // ensure rerender if same hash
+        mountRoute(dest)
       }
       ev.preventDefault()
       ev.stopPropagation()
