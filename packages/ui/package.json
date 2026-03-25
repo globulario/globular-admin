@@ -21,6 +21,8 @@
   },
   "dependencies": {
     "@globular/sdk": "workspace:*",
-    "@globular/components": "workspace:*"
+    "@globular/components": "workspace:*",
+    "toastify-js": "^1.12.0",
+    "@types/toastify-js": "^1.12.4"
   }
 }
