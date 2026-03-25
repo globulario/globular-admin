@@ -1,13 +1,10 @@
-import '@polymer/paper-button/paper-button.js';
-import '@polymer/paper-slider/paper-slider.js';
-import '@polymer/iron-icon/iron-icon.js';
 
 import { createThumbmail, fireResize } from './utility';
 import domtoimage from 'dom-to-image';
 
 // ✅ new: use the refactored file backend helpers (names align with your latest files.ts)
-import { getFile as getFileMeta, buildFileUrl } from '@globular/backend';
-import { displayError, displayMessage } from '@globular/backend';
+import { getFile as getFileMeta, buildFileUrl } from '@globular/sdk';
+import { displayError, displayMessage } from '@globular/sdk';
 
 /**
  * Custom Web Component for an image cropper.
@@ -438,9 +435,15 @@ export class PanZoomCanvas extends HTMLElement {
     trackTransforms(this.ctx);
 
     this.image.onload = () => {
+      this._broken = false;
       this._resizeToHost();
       this._ensurePanZoom();
       this._fitToView();  // 1x or fit, centered (no upscale)
+    };
+
+    this.image.onerror = () => {
+      this._broken = true;
+      console.warn("PanZoomCanvas: image failed to load", this.image.src);
     };
 
     if (this.hasAttribute("src")) {
@@ -592,6 +595,7 @@ export class PanZoomCanvas extends HTMLElement {
     const p2 = ctx.transformedPoint(canvas.width, canvas.height);
     ctx.clearRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
 
+    if (this._broken || !this.image.complete || !this.image.naturalWidth) return;
     ctx.drawImage(this.image, 0, 0);
   }
 }
@@ -657,11 +661,13 @@ export class ImageViewer extends HTMLElement {
         flex:1;
         position:relative;
         background-color: var(--surface-color);
+        overflow:hidden;
       }
 
       globular-pan-zoom-canvas {
         position:absolute;
         inset:0;
+        z-index:0;
         width:100%;
         height:100%;
       }
@@ -826,23 +832,29 @@ export class ImageViewer extends HTMLElement {
 
       #zoomBtns {
         position:absolute;
-        top:14px;
+        top:60px;
         right:72px;
+        z-index:10;
         user-select:none;
-        display:flex;
-        gap:4px;
-        padding:4px 6px;
-        border-radius:999px;
-        background-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+        display:inline-flex;
+        align-items:center;
+        gap:2px;
+        padding:2px 4px;
+        border-radius:8px;
+        background-color: color-mix(in srgb, var(--on-surface-color) 16%, transparent);
+        backdrop-filter: blur(10px);
         border:1px solid var(--border-subtle-color);
       }
 
       #zoomBtns iron-icon {
         cursor:pointer;
+        width:20px;
+        height:20px;
+        color: var(--on-surface-color, #fff);
       }
 
       #zoomBtns iron-icon:hover {
-        filter:brightness(1.12);
+        filter:brightness(1.3);
       }
     </style>
       <div id="imageViewer" class="modal" >
@@ -857,16 +869,15 @@ export class ImageViewer extends HTMLElement {
             <paper-icon-button icon="icons:chevron-left"  id="leftA"  class="button"></paper-icon-button>
             <paper-icon-button icon="icons:chevron-right" id="rightA" class="button"></paper-icon-button>
 
-            <div id="zoomBtns">
-              <iron-icon id="zoomInBtn"  class="btn" icon="icons:add"></iron-icon>
-              <iron-icon id="zoomOutBtn" class="btn" icon="icons:remove"></iron-icon>
-            </div>
-
             <!-- filename / resolution -->
             <div id="metaBar">
               <span id="metaName"></span>
               <span id="metaDot">•</span>
               <span id="metaSize"></span>
+            </div>
+            <div id="zoomBtns">
+              <iron-icon id="zoomInBtn"  class="btn" icon="icons:add"></iron-icon>
+              <iron-icon id="zoomOutBtn" class="btn" icon="icons:remove"></iron-icon>
             </div>
           </div>
         </div>

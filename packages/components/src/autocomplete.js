@@ -1,7 +1,3 @@
-import '@polymer/iron-icons/iron-icons.js';
-import '@polymer/paper-icon-button/paper-icon-button.js';
-import '@polymer/paper-input/paper-input.js'; // Assuming this import makes paper-input available
-import '@polymer/paper-card/paper-card.js';
 
 /**
  * The `globular-autocomplete` Web Component provides type-ahead suggestions for a text input.

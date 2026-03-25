@@ -2,9 +2,8 @@
 // Selection action bar: appears when there are selected items in the active view
 // and exposes Cut / Copy / Delete / Download / Share actions.
 
-import '@polymer/paper-button/paper-button.js';
-import { Backend } from '@globular/backend';
-import { displayError } from '@globular/backend';
+import { Backend } from '@globular/sdk';
+import { displayError } from '@globular/sdk';
 
 export class SelectionBar extends HTMLElement {
   /** @type {any} */

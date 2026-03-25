@@ -5,11 +5,11 @@
 // JS version
 
 import { randomUUID } from "./utility.js"
-import { Backend } from "@globular/backend"
-import { displayError, displayMessage } from "@globular/backend"
+import { Backend } from "@globular/sdk"
+import { displayError, displayMessage } from "@globular/sdk"
 
-import { getFileTitlesInfo, getFileVideosInfo, getFileAudiosInfo } from "@globular/backend"
-import { getFile } from "@globular/backend"
+import { getFileTitlesInfo, getFileVideosInfo, getFileAudiosInfo } from "@globular/sdk"
+import { getFile } from "@globular/sdk"
 
 /**
  * Custom element for a filesystem link/shortcut.

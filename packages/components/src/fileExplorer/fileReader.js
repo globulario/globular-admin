@@ -1,8 +1,6 @@
 // components/fileReader.js — token-safe, PDF-proof (blob + wrapper, conditional sandbox)
-import "@polymer/paper-icon-button/paper-icon-button.js";
-import "@polymer/iron-icons/iron-icons.js";
-import { getBaseUrl } from "@globular/backend";
-import { Backend } from "@globular/backend";
+import { getBaseUrl } from "@globular/sdk";
+import { Backend } from "@globular/sdk";
 import { pathOf, mimeOf, nameOf as vmNameOf } from "./filevm-helpers";
 
 /* ----------------------------- constants ------------------------------ */

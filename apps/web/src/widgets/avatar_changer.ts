@@ -1,5 +1,5 @@
 // src/components/avatar-changer.ts
-import { updateAccount } from "@globular/backend";
+import { updateAccount } from "@globular/sdk";
 
 // TypeScript declaration for Vite's import.meta.glob
 interface ImportMeta {

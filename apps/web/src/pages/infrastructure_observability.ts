@@ -2,7 +2,7 @@
 import {
   getPrometheusScrapeHealth, fetchAdminServices,
   type PrometheusScrapeHealth, type ServicesResponse,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 import {
   INFRA_STYLES, badge, stateBadge, stateColor, esc,

@@ -1,6 +1,4 @@
 // Polymer dependencies
-import '@polymer/iron-icons/iron-icons.js';
-import '@polymer/paper-icon-button/paper-icon-button.js';
 
 // Assuming these are external utility functions
 import { setResizeable } from "./resizeable.js";

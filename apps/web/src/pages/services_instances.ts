@@ -1,5 +1,5 @@
 // src/pages/services_instances.ts
-import { getConfig, saveServiceConfig, type ServiceDesc } from '@globular/backend'
+import { getConfig, saveServiceConfig, type ServiceDesc } from '@globular/sdk'
 import { alertDialog } from '../utils/confirm_dialog'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -1,12 +1,10 @@
 // src/components/search/searchDocumentBar.js
 
-import { displayMessage, displayError } from "@globular/backend";
+import { displayMessage, displayError } from "@globular/sdk";
 // Use typed wrappers instead of wildcard import
-import { readDir, getFile } from "@globular/backend";
-import { searchDocuments } from "@globular/backend"; // facade wrapper
+import { readDir, getFile } from "@globular/sdk";
+import { searchDocuments } from "@globular/sdk"; // facade wrapper
 
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/paper-icon-button/paper-icon-button.js";
 
 /**
  * The search document bar component.

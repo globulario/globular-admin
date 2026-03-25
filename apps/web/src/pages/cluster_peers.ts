@@ -1,8 +1,6 @@
 // src/pages/cluster_peers.ts
 import '../widgets/peer_discovery'            // registers <peer-discovery>
 import "@globular/components/markdown.js";                  // registers <globular-markdown>
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
 
 class PageClusterPeers extends HTMLElement {
   private infoBtn!: HTMLElement

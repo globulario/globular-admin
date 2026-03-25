@@ -72,8 +72,6 @@ export class DialogHandle extends HTMLElement {
         previewContent.classList.add("text-preview");
         this._previewContainer.appendChild(previewContent);
       }
-    } else {
-      console.warn("DialogHandle: Could not refresh preview. Dialog or preview method missing.");
     }
   }
 
@@ -795,6 +793,8 @@ export class Dockbar extends HTMLElement {
   _dialogs = [];
   _dockbarContainer = null;
   _mainContainer = null;
+  _autoHideTimer = null;
+  _hoverZone = null;
 
   constructor() {
     super();
@@ -802,7 +802,46 @@ export class Dockbar extends HTMLElement {
     this._renderHTML();
   }
 
-  connectedCallback() { this._cacheElements(); }
+  connectedCallback() {
+    this._cacheElements();
+    this._hoverZone = this.shadowRoot.getElementById('hover-zone');
+
+    // Auto-hide after 3 seconds of no interaction
+    this._onContainerEnter = () => this._showDockbar();
+    this._onContainerLeave = () => this._scheduleHide();
+    this._onHoverZoneEnter = () => this._showDockbar();
+
+    if (this._mainContainer) {
+      this._mainContainer.addEventListener('mouseenter', this._onContainerEnter);
+      this._mainContainer.addEventListener('mouseleave', this._onContainerLeave);
+    }
+    if (this._hoverZone) {
+      this._hoverZone.addEventListener('mouseenter', this._onHoverZoneEnter);
+    }
+  }
+
+  disconnectedCallback() {
+    if (this._autoHideTimer) clearTimeout(this._autoHideTimer);
+    if (this._mainContainer) {
+      this._mainContainer.removeEventListener('mouseenter', this._onContainerEnter);
+      this._mainContainer.removeEventListener('mouseleave', this._onContainerLeave);
+    }
+    if (this._hoverZone) {
+      this._hoverZone.removeEventListener('mouseenter', this._onHoverZoneEnter);
+    }
+  }
+
+  _showDockbar() {
+    if (this._autoHideTimer) { clearTimeout(this._autoHideTimer); this._autoHideTimer = null; }
+    if (this._mainContainer) this._mainContainer.classList.remove('dockbar-hidden');
+  }
+
+  _scheduleHide() {
+    if (this._autoHideTimer) clearTimeout(this._autoHideTimer);
+    this._autoHideTimer = setTimeout(() => {
+      if (this._mainContainer) this._mainContainer.classList.add('dockbar-hidden');
+    }, 3000);
+  }
 
   getDialogs() { return this._dialogs; }
 
@@ -833,6 +872,9 @@ export class Dockbar extends HTMLElement {
     this._setupDialogListeners(dialog, handlesGroup, dialogHandle);
 
     if (this._dockbarContainer) this._dockbarContainer.style.display = "flex";
+    // Show briefly, then auto-hide after 3s
+    this._showDockbar();
+    this._scheduleHide();
   }
 
   getCoords() {
@@ -847,13 +889,34 @@ export class Dockbar extends HTMLElement {
                 position: fixed;
                 z-index: 10000;
                 bottom: 0px;
-                margin-left: 50%;
-                transform: translateX(-50%);
+                left: 50%;
+                transform: translateX(-50%) translateY(0);
                 display: flex;
                 flex-direction: row;
                 align-items: center;
                 justify-content: center;
                 user-select: none;
+                transition: transform .35s ease, opacity .35s ease;
+            }
+
+            /* Auto-hide: slide down when idle */
+            #container.dockbar-hidden {
+                transform: translateX(-50%) translateY(calc(100% - 6px));
+                opacity: 0.4;
+            }
+            #container.dockbar-hidden:hover {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+
+            /* Hover trigger zone: invisible strip at the bottom */
+            #hover-zone {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 8px;
+                z-index: 9999;
             }
 
             #dockbar {
@@ -862,13 +925,15 @@ export class Dockbar extends HTMLElement {
                 flex-direction: row;
                 align-items: center;
                 padding: 10px;
-                border-radius: 5px;
+                border-radius: var(--md-shape-md, 12px);
                 background-color: var(--surface-color);
                 border: 1px solid var(--divider-color);
+                box-shadow: var(--dockbar-shadow, 0 6px 18px rgba(0,0,0,.12));
                 color: var(--on-surface-color);
                 height: auto;
                 min-width: 400px;
                 margin-bottom: 10px;
+                overflow: visible;
             }
 
             #dockbar ::slotted(globular-dialog-handles) {
@@ -881,9 +946,15 @@ export class Dockbar extends HTMLElement {
                     left: 0;
                     right: 0;
                     width: 100%;
-                    margin-left: 0;
-                    transform: none;
+                    transform: translateY(0);
                     bottom: env(safe-area-inset-bottom, 0px);
+                }
+
+                #container.dockbar-hidden {
+                    transform: translateY(calc(100% - 6px));
+                }
+                #container.dockbar-hidden:hover {
+                    transform: translateY(0);
                 }
 
                 #dockbar {
@@ -900,9 +971,11 @@ export class Dockbar extends HTMLElement {
                 }
             }
         </style>
+        <div id="hover-zone"></div>
         <div id="container">
-            <paper-card id="dockbar">
-                <slot></slot> </paper-card>
+            <div id="dockbar">
+                <slot></slot>
+            </div>
         </div>
         `;
   }

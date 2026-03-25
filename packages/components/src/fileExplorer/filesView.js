@@ -2,8 +2,8 @@
 import { ShareResourceMenu } from "../share/shareResourceMenu";
 import { DropdownMenu } from "../menu.js";
 
-import { displayError, displayMessage } from "@globular/backend";
-import { Backend } from "@globular/backend";
+import { displayError, displayMessage } from "@globular/sdk";
+import { Backend } from "@globular/sdk";
 
 // FS + media wrappers (only what exists in your refactor)
 import {
@@ -16,7 +16,7 @@ import {
   createArchive,
   copyFiles,
   moveFiles
-} from "@globular/backend";
+} from "@globular/sdk";
 
 import {
   convertVideoToMpeg4H264,
@@ -25,17 +25,18 @@ import {
   createVideoPreview,
   startProcessVideo,
   uploadVideoByUrl,
-} from "@globular/backend";
+} from "@globular/sdk";
 
 import {
   createTitleAndAssociate,
   createVideoAndAssociate,
   getImdbInfo,
-} from "@globular/backend";
+} from "@globular/sdk";
 
-import { Title, Poster, Video } from "globular-web-client/title/title_pb";
+import { titlePb } from "@globular/sdk";
+const { Title, Poster, Video } = titlePb;
 
-import { getBaseUrl } from "@globular/backend";
+import { getBaseUrl } from "@globular/sdk";
 import { getCoords, copyToClipboard, randomUUID } from "../utility.js";
 
 // DRY helpers for proto/VM getters
@@ -47,23 +48,13 @@ import {
   thumbOf,
   hasPlaylistManifest,
 } from "./filevm-helpers.js";
-import { getFileVideosInfo, getFileTitlesInfo, getFileAudiosInfo } from "@globular/backend";
+import { getFileVideosInfo, getFileTitlesInfo, getFileAudiosInfo } from "@globular/sdk";
 import { mergeMediaInfo, getMediaInfo } from "./fileMediaCache.js";
-import { downloadTorrent } from "@globular/backend";
+import { downloadTorrent } from "@globular/sdk";
 
 // UI deps
-import "@polymer/paper-input/paper-input.js";
-import "@polymer/paper-radio-group/paper-radio-group.js";
-import "@polymer/paper-radio-button/paper-radio-button.js";
-import "@polymer/paper-button/paper-button.js";
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/iron-icons/iron-icons.js";
-import "@polymer/iron-icons/maps-icons.js";
-import "@polymer/paper-progress/paper-progress.js";
-import "@polymer/paper-card/paper-card.js";
 
 import { FileExplorer } from "./fileExplorer.js";
-import { get } from "@polymer/polymer/lib/utils/path";
 
 // ---- helpers to build HTTP file URL (replaces getUrl(globule)) ----
 function buildFileHttpUrl(path, isHls) {
@@ -921,7 +912,7 @@ export class FilesView extends HTMLElement {
             Backend.eventHub.publish("public_change_permission_event", null, true);
           }
 
-          reloadTargets.forEach((path) => Backend.eventHub.publish("reload_dir_event", path, false));
+          reloadTargets.forEach((path) => Backend.eventHub.publish("reload_dir_event", path, true));
 
           const message =
             removedPublicEntries && !deletedRegularItems
@@ -1232,7 +1223,7 @@ export class FilesView extends HTMLElement {
       await createVideoPreview(absPath, 80, 20);
       displayMessage("Preview created successfully!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
-      Backend.eventHub.publish("reload_dir_event", parent, false);
+      Backend.eventHub.publish("reload_dir_event", parent, true);
     } catch (err) {
       displayError(`Failed to generate preview: ${err?.message || err}`, 3000);
     } finally {
@@ -1254,7 +1245,7 @@ export class FilesView extends HTMLElement {
       await convertVideoToMpeg4H264(absPath);
       displayMessage("Conversion to MP4 done!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
-      Backend.eventHub.publish("reload_dir_event", parent, false);
+      Backend.eventHub.publish("reload_dir_event", parent, true);
     } catch (err) {
       displayError(`Failed to convert to MP4: ${err?.message || err}`, 3000);
     } finally {
@@ -1276,7 +1267,7 @@ export class FilesView extends HTMLElement {
       await convertVideoToHls(absPath);
       displayMessage("Conversion to HLS done!", 3000);
       const parent = pathOf(file).substring(0, pathOf(file).lastIndexOf("/"));
-      Backend.eventHub.publish("reload_dir_event", parent, false);
+      Backend.eventHub.publish("reload_dir_event", parent, true);
     } catch (err) {
       displayError(`Failed to convert to HLS: ${err?.message || err}`, 3000);
     } finally {
@@ -1364,7 +1355,7 @@ export class FilesView extends HTMLElement {
       try {
         await renameFile(parentPath, newName, currentName);
         displayMessage(`Renamed ${currentName} to ${newName}`, 2500);
-        Backend.eventHub.publish("reload_dir_event", parentPath, false);
+        Backend.eventHub.publish("reload_dir_event", parentPath, true);
       } catch (err) {
         displayError(`Failed to rename: ${err?.message || err}`, 3000);
       }

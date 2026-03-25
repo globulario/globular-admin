@@ -1,7 +1,7 @@
 // src/components/fileIconViewSection.js
 
-import { Backend } from "@globular/backend";
-import { displayMessage, displayError } from "@globular/backend";
+import { Backend } from "@globular/sdk";
+import { displayMessage, displayError } from "@globular/sdk";
 import { copyToClipboard } from "../utility.js";
 
 // ✅ Use the shared FileVM helpers (DRY)
@@ -14,17 +14,11 @@ import {
 } from "./filevm-helpers";
 
 // Proper backend wrappers (no direct HTTP fetch)
-import { readText } from "@globular/backend";
+import { readText } from "@globular/sdk";
 
 // Bounded LRU cache — media metadata lives here, NOT on the file proto
 import { getMediaInfo } from "./fileMediaCache.js";
 
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/paper-checkbox/paper-checkbox.js";
-import "@polymer/iron-icons/image-icons";
-import "@polymer/iron-icons/av-icons";
-import "@polymer/iron-icons/image-icons";
-import "@polymer/iron-icons/editor-icons";
 import { playVideos } from "../video";
 import { playAudios } from "../audio";
 import "./fileIconView";

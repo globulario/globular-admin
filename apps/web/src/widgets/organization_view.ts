@@ -7,7 +7,7 @@ import {
   getGroupById,
   type AccountVM, 
   type OrganizationVM
-} from "@globular/backend";
+} from "@globular/sdk";
 import { GroupView } from "./group_view";                 // ensures <globular-group-view> is registered
 import "./user_view";                                      // ensures <globular-user-view> is registered
 

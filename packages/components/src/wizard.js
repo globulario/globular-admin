@@ -1,18 +1,6 @@
-import '@polymer/iron-icons/iron-icons.js';
-import '@polymer/paper-icon-button/paper-icon-button.js';
-import '@polymer/paper-input/paper-input.js';
-import '@polymer/paper-card/paper-card.js';
-import '@polymer/paper-button/paper-button.js';
-import '@polymer/paper-checkbox/paper-checkbox.js';
-import '@polymer/paper-badge/paper-badge.js';
-import '@polymer/paper-tooltip/paper-tooltip.js';
-import '@polymer/paper-radio-button/paper-radio-button.js';
-import '@polymer/paper-radio-group/paper-radio-group.js';
-import '@polymer/paper-toggle-button/paper-toggle-button.js';
-import '@polymer/paper-spinner/paper-spinner.js';
 
 import { fireResize } from './utility'; // Assuming this is functional
-import { Backend } from '@globular/backend'; // Assuming Backend is configured
+import { Backend } from '@globular/sdk'; // Assuming Backend is configured
 
 // --- Constants for CSS Classes ---
 const CLASS_STEP_NUMBER = 'step-number';

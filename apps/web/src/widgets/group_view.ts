@@ -6,7 +6,7 @@ import {
   getAccount,
   type AccountVM, 
   type GroupVM 
-} from "@globular/backend";
+} from "@globular/sdk";
 
 import "./user_view"                                                         // ensures <globular-user-view> is registered
 

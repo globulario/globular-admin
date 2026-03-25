@@ -9,11 +9,8 @@ import {
   displaySuccess,
   setPassword,
   setRootPassword,
-} from "@globular/backend";
+} from "@globular/sdk";
 import { getBase64FromImageUrl } from "@globular/components/utility.js";
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-collapse/iron-collapse.js'
 import "@globular/components/table.js"     // <globular-table>
 import "@globular/components/markdown.js"  // <globular-markdown> (optional)
 import '../widgets/avatar_changer' // <avatar-changer>

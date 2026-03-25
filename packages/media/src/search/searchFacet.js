@@ -1,0 +1,642 @@
+import getUuidByString from "uuid-by-string";
+import { playAudios } from "../audio"; // Assuming playAudios exists
+import { playVideos } from "../video"; // Assuming playVideos exists
+import { displayError } from "@globular/sdk"; // Assuming displayError exists
+
+// Polymer component imports
+
+/**
+ * Custom element that acts as a container for displaying multiple search facets (filters).
+ */
+export class FacetSearchFilter extends HTMLElement {
+    // Private instance properties
+    _page = null; // Reference to the parent search results page component
+    _panels = {}; // Stores instances of SearchFacetPanel, keyed by facet field UUID
+    _facetContexts = {}; // Map of panel IDs to contexts
+    _contextEnabled = {}; // Track which contexts are visible
+    _facetData = {}; // Aggregated facet values per field
+
+    /**
+     * Constructor for the FacetSearchFilter custom element.
+     * @param {HTMLElement} page - The parent search results page component.
+     */
+    constructor(page) {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this._page = page; // Store reference to the parent page
+        this._facetData = {}; // Aggregate facets across contexts
+
+        // Render immediately so setFacets can populate before the element is connected
+        this._renderInitialStructure();
+    }
+
+    /**
+     * Called when the element is inserted into the document's DOM.
+     * Performs initial rendering.
+     */
+    connectedCallback() {
+        // No-op: structure already rendered in constructor
+    }
+
+    /**
+     * Renders the initial HTML structure of the facet search filter.
+     * @private
+     */
+    _renderInitialStructure() {
+        this.shadowRoot.innerHTML = `
+            <style>
+                #container {
+                    font-size: 1.17rem;
+                    padding: 10px;
+                    padding-right: 30px;
+                    max-width: 235px;
+                    background-color: var(--surface-color);
+                    color: var(--primary-text-color);
+                    box-sizing: border-box;
+                }
+
+                ::-webkit-scrollbar {
+                    width: 10px;
+                }
+                ::-webkit-scrollbar-track {
+                    background: var(--scroll-track, var(--surface-color));
+                }
+                ::-webkit-scrollbar-thumb {
+                    background: var(--scroll-thumb, var(--palette-divider));
+                    border-radius: 6px;
+                }
+
+                @media (max-width: 600px) {
+                    #container {
+                        position: initial; /* Unset fixed/absolute if needed */
+                        height: 180px; /* Fixed height for mobile */
+                        max-width: 100%; /* Take full width */
+                        padding-right: 10px; /* Adjust padding */
+                    }
+                }
+            </style>
+            <div id="container">
+               <slot name="facets"></slot> </div>
+        `;
+    }
+
+    /**
+     * Refreshes the display of all contained SearchFacetPanel components.
+     */
+    refresh() {
+        for (const key in this._panels) {
+            this._panels[key].refresh(); // Call refresh method on each panel
+        }
+    }
+
+    /**
+     * Sets the facets data and updates the display of SearchFacetPanel components.
+     * @param {Object} facets - The facets object from search results.
+     */
+    setFacets(facets, context = "global") {
+        if (!facets || typeof facets.getFacetsList !== "function") {
+            console.warn("FacetSearchFilter: Invalid facets data provided.");
+            return;
+        }
+
+        const facetList = facets.getFacetsList();
+        if (facetList.length === 0) {
+            this._facetData = {};
+            Object.values(this._panels).forEach(panel => panel.remove());
+            this._panels = {};
+            this._facetContexts = {};
+            return;
+        }
+
+        if (context && this._contextEnabled[context] === undefined) {
+            this._contextEnabled[context] = true;
+        }
+
+        facetList.forEach(facet => {
+            const total = typeof facet.getTotal === "function" ? facet.getTotal() : 0;
+            if (total === 0) {
+                return; // Skip facets that have no results at all
+            }
+            const aggregated = this._accumulateFacetData(facet);
+            const fieldName = aggregated.getField();
+            const id = `_${getUuidByString(fieldName)}`;
+
+            let panel = this._panels[id];
+            if (!panel) {
+                panel = new SearchFacetPanel(this._page); // Pass parent page
+                this._panels[id] = panel;
+                panel.slot = "facets"; // Assign to slot
+                this.appendChild(panel); // Append to DOM
+            }
+
+            if (!this._facetContexts[id]) {
+                this._facetContexts[id] = new Set();
+            }
+            if (context) {
+                this._facetContexts[id].add(context);
+            }
+
+            panel.setFacet(aggregated);
+            panel.style.display = '';
+        });
+
+        this._updatePanelVisibility();
+    }
+
+    _accumulateFacetData(facet) {
+        const field = facet.getField();
+        if (!field) {
+            return facet;
+        }
+
+        if (!this._facetData[field]) {
+            this._facetData[field] = {
+                total: 0,
+                other: 0,
+                terms: new Map(),
+            };
+        }
+
+        const store = this._facetData[field];
+        store.total += facet.getTotal ? facet.getTotal() : 0;
+        store.other += facet.getOther ? facet.getOther() : 0;
+
+        if (typeof facet.getTermsList === "function") {
+            facet.getTermsList().forEach(term => {
+                if (!term) return;
+                const name = typeof term.getTerm === "function" ? term.getTerm() : "";
+                const count = typeof term.getCount === "function" ? term.getCount() : 0;
+                if (!name) return;
+                store.terms.set(name, (store.terms.get(name) ?? 0) + count);
+            });
+        }
+
+        if (store.terms.size === 0 && field.toLowerCase() === "rating") {
+            this._populateRatingTerms(store);
+        }
+
+        return {
+            getField: () => field,
+            getTotal: () => store.total,
+            getOther: () => store.other,
+            getTermsList: () => Array.from(store.terms.entries()).map(([name, count]) => ({
+                getTerm: () => name,
+                getCount: () => count,
+            })),
+        };
+    }
+
+    _populateRatingTerms(store) {
+        const low = this._page.countElementByClassName("low");
+        const medium = this._page.countElementByClassName("medium");
+        const high = this._page.countElementByClassName("high");
+
+        if (low + medium + high === 0) {
+            return;
+        }
+
+        store.terms.set("low", low);
+        store.terms.set("medium", medium);
+        store.terms.set("high", high);
+    }
+
+    setContextEnabled(context, enabled) {
+        this._contextEnabled[context] = enabled;
+        this._updatePanelVisibility();
+    }
+
+    _updatePanelVisibility() {
+        Object.entries(this._panels).forEach(([id, panel]) => {
+            const contexts = this._facetContexts[id];
+            if (!contexts || contexts.size === 0) {
+                panel.style.display = '';
+                return;
+            }
+            const isVisible = Array.from(contexts).some(ctx => this._contextEnabled[ctx] !== false);
+            panel.style.display = isVisible ? '' : 'none';
+        });
+    }
+}
+customElements.define('globular-facet-search-filter', FacetSearchFilter);
+
+
+/**
+ * Custom element to display information and controls for a single search facet.
+ */
+export class SearchFacetPanel extends HTMLElement {
+    // Private instance properties
+    _page = null; // Reference to the parent search results page component
+    _facet = null; // The facet object for this panel
+    _terms = {}; // Stores references to rendered terms (checkboxes) for quick update
+
+    // DOM element references
+    _facetListDiv = null; // Container for facet terms checkboxes
+    _fieldSpan = null; // Span for facet field name
+    _totalSpan = null; // Span for facet total count
+    _playFacetBtn = null; // Button to play all media in this facet
+    _mainCheckbox = null; // Main checkbox for this facet field
+    _collapseBtn = null; // Button to collapse/expand the term list
+    _collapsed = true; // Whether the term list is currently collapsed
+
+    /**
+     * Constructor for the SearchFacetPanel custom element.
+     * @param {HTMLElement} page - The parent search results page component.
+     */
+    constructor(page) {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this._page = page; // Store reference to the parent page
+
+        // Render immediately so setters can manipulate DOM safely
+        this._renderInitialStructure();
+        this._getDomReferences();
+        this._bindEventListeners();
+    }
+
+    /**
+     * Called when the element is inserted into the document's DOM.
+     * Performs initial rendering and sets up event listeners.
+     */
+    connectedCallback() {
+        // All initialization performed in constructor to support early setFacet calls
+    }
+
+    /**
+     * Renders the initial HTML structure of the search facet panel.
+     * @private
+     */
+    _renderInitialStructure() {
+        this.shadowRoot.innerHTML = `
+            <style>
+                .facet-list {
+                    font-size: 1rem;
+                    display: flex;
+                    flex-direction: column; /* Stack terms vertically */
+                    overflow: hidden;
+                    max-height: 2000px; /* large enough for any list */
+                    transition: max-height 0.25s ease, padding-bottom 0.25s ease;
+                }
+                .facet-list.collapsed {
+                    max-height: 0;
+                    padding-bottom: 0;
+                }
+
+                #collapse-btn {
+                    margin-left: auto;
+                    flex-shrink: 0;
+                    --iron-icon-fill-color: var(--secondary-text-color);
+                    width: 28px;
+                    height: 28px;
+                    padding: 2px;
+                    transition: transform 0.2s ease;
+                }
+                #collapse-btn.collapsed {
+                    transform: rotate(-90deg);
+                }
+
+                .facet-label-main { /* Style for the main facet checkbox label */
+                    display: flex;
+                    align-items: center;
+                    font-size: 1.1rem; /* Slightly larger font for main label */
+                    font-weight: 500;
+                    margin-bottom: 10px; /* Space below main label */
+                    cursor: pointer;
+                    user-select: none;
+                }
+                .facet-label-main paper-checkbox {
+                    margin-top: 0; /* Align with play button */
+                    margin-bottom: 0;
+                    --paper-checkbox-checked-color: var(--accent-color);
+                    --paper-checkbox-checkmark-color: var(--on-primary-color);
+                    --paper-checkbox-label-color: var(--primary-text-color);
+                }
+
+                .facet-label-main span { /* Specific span within main label */
+                    margin-left: 10px;
+                }
+
+                #play_facet_btn {
+                    --iron-icon-fill-color: var(--accent-color);
+                    display: none; /* Hidden by default */
+                    margin-right: 5px; /* Space from checkbox */
+                }
+                #play_facet_btn:hover { cursor: pointer; }
+
+
+                .term-item {
+                    display: flex;
+                    align-items: center;
+                    margin-left: 25px; /* Indent terms */
+                    margin-top: 8px; /* Space between terms */
+                    font-size: 0.95rem; /* Smaller font for terms */
+                }
+                .term-item.zero-count {
+                    opacity: 0.65;
+                }
+                .term-item paper-checkbox {
+                    --paper-checkbox-checked-color: var(--accent-color);
+                    --paper-checkbox-checkmark-color: var(--on-primary-color);
+                    --paper-checkbox-label-color: var(--primary-text-color);
+                }
+                .term-item paper-icon-button {
+                    --iron-icon-fill-color: var(--accent-color);
+                    color: var(--accent-color);
+                }
+                .term-count-span {
+                    margin-left: 8px;
+                    font-style: italic;
+                    color: var(--secondary-text-color);
+                }
+
+            </style>
+
+            <div style="display: flex; flex-direction: column;">
+                <div class="facet-label-main">
+                    <paper-icon-button id="play_facet_btn" icon="av:play-arrow"></paper-icon-button>
+                    <paper-checkbox id="main-checkbox" checked>
+                        <span id='field_span'></span>
+                        <span id='total_span'></span>
+                    </paper-checkbox>
+                    <paper-icon-button id="collapse-btn" icon="hardware:keyboard-arrow-down" title="Collapse/expand"></paper-icon-button>
+                </div>
+                <div class="facet-list">
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Retrieves references to all necessary DOM elements.
+     * @private
+     */
+    _getDomReferences() {
+        this._facetListDiv = this.shadowRoot.querySelector(".facet-list");
+        this._mainCheckbox = this.shadowRoot.querySelector("#main-checkbox");
+        this._fieldSpan = this.shadowRoot.querySelector("#field_span");
+        this._totalSpan = this.shadowRoot.querySelector("#total_span");
+        this._playFacetBtn = this.shadowRoot.querySelector("#play_facet_btn");
+        this._collapseBtn = this.shadowRoot.querySelector("#collapse-btn");
+    }
+
+    /**
+     * Binds event listeners to interactive elements.
+     * @private
+     */
+    _bindEventListeners() {
+        if (this._mainCheckbox) {
+            this._mainCheckbox.addEventListener('click', this._handleMainCheckboxClick.bind(this));
+            this._mainCheckbox.addEventListener('change', this._handleMainCheckboxChange.bind(this)); // For controlled updates
+        }
+        if (this._playFacetBtn) {
+            this._playFacetBtn.addEventListener('click', this._handlePlayFacetClick.bind(this));
+        }
+        const header = this.shadowRoot.querySelector('.facet-label-main');
+        if (header) {
+            header.addEventListener('click', (e) => {
+                if (e.target.closest('#main-checkbox') || e.target.closest('#play_facet_btn')) return;
+                this._toggleCollapse();
+            });
+        }
+    }
+
+    /**
+     * Refreshes the display of the facet panel, particularly term counts.
+     */
+    refresh() {
+        this._totalSpan.textContent = `(${this._page.getTotal()})`; // Update total count for this facet panel
+
+        for (const key in this._terms) {
+            const termData = this._terms[key];
+            const count = this._page.countElementByClassName(termData.className);
+
+            if (count > 0) {
+                termData.countSpan.textContent = `(${count})`;
+            } else {
+                termData.countSpan.textContent = `(0)`;
+            }
+
+            if (termData.itemElement) {
+                termData.itemElement.dataset.count = String(count);
+                termData.itemElement.style.display = count === 0 ? 'none' : '';
+            }
+        }
+    }
+
+    /**
+     * Sets the facet data for this panel and renders its terms.
+     * @param {Object} facet - The facet object (from search results).
+     */
+    setFacet(facet) {
+        this._facet = facet;
+        this.id = `_${getUuidByString(facet.getField())}`; // Set unique ID for the panel
+
+        this._fieldSpan.textContent = facet.getField();
+        this._totalSpan.textContent = `(${this._page.getTotal()})`; // Update total count
+
+        this._renderTerms(); // Render the individual terms (checkboxes)
+    }
+
+    /**
+     * Renders the individual terms (checkboxes) within this facet panel.
+     * @private
+     */
+    _renderTerms() {
+        if (!this._facetListDiv) return;
+
+        // Clear existing terms before re-rendering
+        this._facetListDiv.innerHTML = "";
+        this._terms = {}; // Reset internal terms map
+
+        // Apply current collapsed state to the list and chevron
+        this._facetListDiv.classList.toggle('collapsed', this._collapsed);
+        if (this._collapseBtn) this._collapseBtn.classList.toggle('collapsed', this._collapsed);
+
+        const terms = this._facet.getTermsList().sort((a, b) => {
+            // Sort alphabetically by term
+            return a.getTerm().localeCompare(b.getTerm());
+        });
+
+        // Show play facet button if any media is associated with this field
+        const audiosInFacet = this._page.getAudios(this._facet.getField());
+        const videosInFacet = this._page.getVideos(this._facet.getField(), this._facet.getField()); // Pass field as context
+        this._playFacetBtn.style.display = (audiosInFacet.length > 0 || videosInFacet.length > 0) ? "block" : "none";
+
+
+        terms.forEach(termObj => {
+            let termText = termObj.getTerm();
+            let className = termObj.getTerm(); // Class name for filtering
+
+            if (termText.startsWith("{")) {
+                try {
+                    const obj = JSON.parse(termText);
+                    termText = `${obj.name} ${obj.min}-${obj.max}`;
+                    className = obj.name;
+                } catch (e) {
+                    console.warn("SearchFacetPanel: Failed to parse JSON term:", termText, e);
+                }
+            }
+
+            const uuid = `_${getUuidByString(className)}`;
+            const count = this._page.countElementByClassName(className); // Initial count
+
+            // Create the term item HTML
+            const itemElement = document.createElement('div');
+            itemElement.id = `${uuid}_div`;
+            itemElement.classList.add('term-item');
+            itemElement.innerHTML = `
+                <paper-icon-button id="${uuid}_play_btn" icon="av:play-arrow" style="display: none;"></paper-icon-button>
+                <paper-checkbox id="${uuid}" class="${className}" checked>
+                    <div class="facet-label">${termText} <span id="${uuid}_total" class="term-count-span">(${count})</span></div>
+                </paper-checkbox>
+            `;
+
+            if (count === 0) itemElement.style.display = 'none';
+            this._facetListDiv.appendChild(itemElement);
+
+            // Store references
+            const checkbox = itemElement.querySelector(`#${uuid}`);
+            const playBtn = itemElement.querySelector(`#${uuid}_play_btn`);
+            const countSpan = itemElement.querySelector(`#${uuid}_total`);
+
+            this._terms[uuid] = {
+                itemElement: itemElement,
+                checkbox: checkbox,
+                playBtn: playBtn,
+                countSpan: countSpan,
+                className: className,
+                termData: termObj // Store original term data
+            };
+
+            // Bind individual term event listeners
+            this._bindTermEventListeners(this._terms[uuid]);
+
+            // Show play button for individual term if media exists
+            const audiosForTerm = this._page.getAudios(className);
+            const videosForTerm = this._page.getVideos(className, this._facet.getField());
+            playBtn.style.display = (audiosForTerm.length > 0 || videosForTerm.length > 0) ? "block" : "none";
+        });
+    }
+
+    /**
+     * Binds event listeners for individual term checkboxes and play buttons.
+     * @param {Object} termData - The object containing references for a specific term item.
+     * @private
+     */
+    _bindTermEventListeners(termData) {
+        const { itemElement, checkbox, playBtn, className, termData: originalTermData } = termData;
+
+        // Checkbox click/change handler
+        checkbox.addEventListener('click', () => { // Use click for immediate action
+            this._page.hideAll(); // Hide all results initially
+            if (!checkbox.checked) {
+                // If unchecking, ensure main checkbox is also unchecked if no other terms are checked
+                const checkedTerms = Object.values(this._terms).filter(t => t.checkbox.checked);
+                if (checkedTerms.length === 0) {
+                    this._mainCheckbox.checked = false;
+                }
+            } else {
+                // If checking, re-check main checkbox
+                this._mainCheckbox.checked = true;
+            }
+
+            // Iterate over all terms to apply filter
+            Object.values(this._terms).forEach(t => {
+                if (t.checkbox.checked) {
+                    this._page.showAll(t.className); // Show elements matching the checked term
+                }
+            });
+
+            this._page.offset = 0; // Reset pagination
+            this._page.refresh(); // Refresh total count and navigator
+            this._page.refreshNavigatorAndContextSelector(); // Refresh context selector if needed
+        });
+
+        // Play button for individual term
+        playBtn.addEventListener('click', () => {
+            const audios = this._page.getAudios(className);
+            const videos = this._page.getVideos(className, this._facet.getField()); // Pass field as context
+
+            if (audios.length > 0) {
+                playAudios(audios, termData.termData.getTerm()); // Play only audios for this term
+            } else if (videos.length > 0) {
+                playVideos(videos, termData.termData.getTerm()); // Play only videos for this term
+            } else {
+                displayError("No media found for this filter!", 3000);
+            }
+        });
+    }
+
+    /**
+     * Toggles the collapsed/expanded state of the term list.
+     * @private
+     */
+    _toggleCollapse() {
+        this._collapsed = !this._collapsed;
+        if (this._facetListDiv) this._facetListDiv.classList.toggle('collapsed', this._collapsed);
+        if (this._collapseBtn) this._collapseBtn.classList.toggle('collapsed', this._collapsed);
+    }
+
+    /**
+     * Handles the click event for the main facet checkbox.
+     * Toggles visibility of all search results or specific ones.
+     * @private
+     */
+    _handleMainCheckboxClick() {
+        // This is a click event, so checkbox.checked reflects the *new* state
+        if (this._mainCheckbox.checked) {
+            this._page.showAll(); // Show all elements if main is checked
+        } else {
+            this._page.hideAll(); // Hide all if main is unchecked
+        }
+        // Then, set/unset all sub-checkboxes
+        Object.values(this._terms).forEach(termData => {
+            termData.checkbox.checked = this._mainCheckbox.checked;
+        });
+
+        this._page.offset = 0;
+        this._page.refresh();
+        this._page.refreshNavigatorAndContextSelector();
+    }
+
+    _handlePlayFacetClick() {
+        if (!this._facet) {
+            displayError("No facet data available to play", 3000);
+            return;
+        }
+
+        const field = this._facet.getField();
+        const audios = this._page.getAudios(field);
+        const videos = this._page.getVideos(field, field);
+
+        if (audios && audios.length > 0) {
+            playAudios(audios, field);
+        } else if (videos && videos.length > 0) {
+            playVideos(videos, field);
+        } else {
+            displayError("No media found for this facet", 3000);
+        }
+    }
+
+    /**
+     * Handles the change event for the main facet checkbox.
+     * Used for controlled updates of sub-checkboxes' states.
+     * @private
+     */
+    _handleMainCheckboxChange() {
+        // The click handler already handles the main logic,
+        // this is more for reacting to state changes.
+        // It ensures internal state aligns after any click.
+    }
+
+
+    // Public getters for media lists (delegating to _page)
+    getAudios(className) {
+        return this._page.getAudios(className);
+    }
+
+    getVideos(className, field) {
+        return this._page.getVideos(className, field);
+    }
+}
+
+customElements.define('globular-facet', SearchFacetPanel);

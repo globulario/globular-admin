@@ -2,7 +2,7 @@
 import {
   fetchAdminEnvoy,
   type EnvoyResponse, type EnvoyCluster, type EnvoyListener,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 import {
   INFRA_STYLES, badge, stateBadge, stateColor, esc,

@@ -1,7 +1,4 @@
 import "@globular/components/markdown.js"
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-collapse/iron-collapse.js'
 import { navigateTo } from '../router'
 import {
   fetchGatewayStats,
@@ -58,7 +55,7 @@ import {
   type GatewayStats,
   type ApplicationPath,
   type InfraDetail,
-} from '@globular/backend'
+} from '@globular/sdk'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 

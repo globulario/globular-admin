@@ -1,8 +1,8 @@
 // widgets/user_view.ts
 // <globular-user-view>
 
-import type { AccountVM } from "@globular/backend"
-// e.g. "@globular/backend" if that’s where AccountVM is exported
+import type { AccountVM } from "@globular/sdk"
+// e.g. "@globular/sdk" if that’s where AccountVM is exported
 
 // Legacy proto-like shape (optional backward compat)
 type AccountProtoLike = {

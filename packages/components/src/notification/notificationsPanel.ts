@@ -9,18 +9,11 @@ import {
   getCurrentAccount,
   getAccount,
   type AccountVM,
-} from "@globular/backend";
-import { NotificationType, Notification } from "globular-web-client/resource/resource_pb";
+} from "@globular/sdk";
+import { resourcePb } from "@globular/sdk";
+const { NotificationType, Notification } = resourcePb;
 import { NotificationEditor } from "./notificationEditor";
 
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/iron-icons/iron-icons.js";
-import "@polymer/iron-icons/social-icons.js";
-import "@polymer/paper-card/paper-card.js";
-import "@polymer/paper-button/paper-button.js";
-import "@polymer/paper-icon-button/paper-icon-button.js";
-import "@polymer/paper-ripple/paper-ripple.js";
-import "@polymer/iron-collapse/iron-collapse.js";
 
 export class NotificationsPanel extends HTMLElement {
   private _listeners: Record<string, any> = {};

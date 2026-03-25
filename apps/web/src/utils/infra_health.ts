@@ -7,7 +7,7 @@ import type {
   StorageResponse, EnvoyResponse,
   PrometheusScrapeHealth, ClusterReport,
   ServiceInstance,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 // ─── Health state types ─────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ import {
   type RetentionStatus, type BackupValidationIssue, type RestoreStep,
   type MinioBucketInfo, type ScheduleStatus, type ScyllaConnectionCheck,
   type ValidationReportData, type RestoreTestReportData, type NodeCoverageReportData,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

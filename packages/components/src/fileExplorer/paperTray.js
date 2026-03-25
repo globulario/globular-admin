@@ -2,11 +2,10 @@
 // Lightweight clipboard UI for FileExplorer: shows current Cut/Copy selection
 // and lets user paste into the currently opened directory.
 
-import { Backend } from '@globular/backend';
-import { displayError, displayMessage } from '@globular/backend';
-import { copyFiles, moveFiles, createLink } from '@globular/backend';
+import { Backend } from '@globular/sdk';
+import { displayError, displayMessage } from '@globular/sdk';
+import { copyFiles, moveFiles, createLink } from '@globular/sdk';
 
-import '@polymer/paper-button/paper-button.js';
 
 export class PaperTray extends HTMLElement {
   /** @type {any} */

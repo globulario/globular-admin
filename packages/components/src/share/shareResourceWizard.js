@@ -9,9 +9,9 @@ import {
   getResourcePermissions,
   setResourcePermissions,
   toPermissionsVM,
-} from "@globular/backend";
-import { getCurrentAccount } from "@globular/backend"; // used only for sender id in notifications
-import { getGroupById, listGroupMembers } from "@globular/backend"; // resolve members for notifications
+} from "@globular/sdk";
+import { getCurrentAccount } from "@globular/sdk"; // used only for sender id in notifications
+import { getGroupById, listGroupMembers } from "@globular/sdk"; // resolve members for notifications
 
 // Local UI building blocks
 import { GlobularSubjectsSelected } from "./subjectsSelected.js";
@@ -25,10 +25,6 @@ import { showGlobalTitleInfo } from "../search/searchTitleCard.js";
 import { showGlobalVideoInfo } from "../search/searchVideoCard.js";
 
 // UI deps (Polymer)
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/paper-icon-button/paper-icon-button.js";
-import "@polymer/paper-checkbox/paper-checkbox.js";
-import "@polymer/paper-button/paper-button.js";
 
 /**
  * Wizard to share one or many resources:

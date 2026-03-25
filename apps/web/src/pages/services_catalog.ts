@@ -42,7 +42,7 @@ import {
   type ServiceDesc,
   type ValidationIssue,
   type PlanPreview,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 // ─── Neutral catalog model ────────────────────────────────────────────────────
 // CatalogItem is a kind-agnostic row that can represent a bundle (V1) or an
@@ -556,6 +556,13 @@ class PageServicesCatalog extends HTMLElement {
       || status === 'drifted' || status === 'failed'
     const unmanaged = status === 'unmanaged'
 
+    const isAvailable = status === 'available' || status === 'orphaned'
+
+    const installBtn = isAvailable && this._ccAvailable && row.repoVersion
+      ? `<button class="md-btn md-btn-filled" data-action="repo-add" data-name="${row.name}" data-version="${row.repoVersion}">
+           Install ${row.name}
+         </button>` : ''
+
     const addBtn = (unmanaged || (!this._ccHasPlan && !!row.installedVersion)) && this._ccAvailable
       ? `<button class="sc-action-btn sc-action-live" data-action="add" data-name="${row.name}" data-version="${row.installedVersion ?? ''}">
            + Add to desired state (${row.installedVersion})
@@ -567,7 +574,7 @@ class PageServicesCatalog extends HTMLElement {
            Remove from desired state
          </button>` : ''
 
-    const actionHtml = addBtn || removeBtn
+    const actionHtml = installBtn || addBtn || removeBtn
 
     return `
       <tr class="sc-detail">
@@ -615,7 +622,7 @@ class PageServicesCatalog extends HTMLElement {
             ${actionHtml ? `
             <section class="sc-detail-section">
               <div class="sc-detail-title">Actions</div>
-              ${addBtn}${removeBtn}
+              ${installBtn}${addBtn}${removeBtn}
             </section>` : ''}
 
           </div>

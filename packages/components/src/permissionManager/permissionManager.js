@@ -1,25 +1,19 @@
 // src/widgets/permissions_manager.js — refactored to the new backend (JS)
 
-import { displayError, displayMessage, displaySuccess } from "@globular/backend"
+import { displayError, displayMessage, displaySuccess } from "@globular/sdk"
 
 // New RBAC wrapper (adjust path if different in your repo)
-import { getResourcePermissions, setResourcePermissions } from "@globular/backend"
+import { getResourcePermissions, setResourcePermissions } from "@globular/sdk"
 
-// Still using proto shapes for UI panels
-import { Permission, Permissions } from "globular-web-client/rbac/rbac_pb"
+// Proto shapes for UI panels
+import { rbacPb } from "@globular/sdk"
+const { Permission, Permissions } = rbacPb
 import { permissionsProtoToVM, permissionsVMToProto } from "./permissionsUtils.js"
 
 import  "./permissionPanel.js"
 import {PermissionsViewer} from "./permissionsViewer.js"
 
 // Polymer deps
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-collapse/iron-collapse.js'
-import '@polymer/iron-icon/iron-icon.js'
-import '@polymer/paper-ripple/paper-ripple.js'
-import '@polymer/paper-radio-group/paper-radio-group.js'
-import '@polymer/paper-radio-button/paper-radio-button.js'
-import '@polymer/paper-card/paper-card.js'
 import { PermissionPanel } from "./permissionPanel.js"
 
 /**

@@ -4,7 +4,7 @@ import {
   queryPrometheus, type PromQueryResponse,
   type StorageResponse, type ServicesResponse,
   type MountInfo, type ApplicationPath,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 import {
   INFRA_STYLES, badge, stateBadge, stateColor, esc,

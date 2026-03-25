@@ -5,13 +5,9 @@ import getUuidByString from "uuid-by-string"
 // New backend VM + setter
 // PermissionVM = { name: string, accounts?: string[], groups?: string[], applications?: string[], organizations?: string[], peers?: string[] }
 // ResourcePermissionsVM = { owners?: PermissionVM, allowed: PermissionVM[], denied: PermissionVM[] }
-import { setResourcePermissions } from "@globular/backend"
+import { setResourcePermissions } from "@globular/sdk"
 
 // UI
-import '@polymer/iron-icon/iron-icon.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/iron-icons/social-icons.js'
 
 /** tiny getters tolerant to proto/VM/plain objects */
 const getStr = (o, getter, key) => o?.[getter]?.() ?? o?.[key] ?? ""

@@ -1,4 +1,4 @@
-import { queryLogs, parseLogEvent, type LogEntry, type QueryLogsOpts, Backend } from '@globular/backend'
+import { queryLogs, parseLogEvent, type LogEntry, type QueryLogsOpts, Backend } from '@globular/sdk'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

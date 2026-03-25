@@ -1,24 +1,20 @@
 // src/widgets/permissionsViewer.js — VM-based + direct backend save (JS)
 
 // New backend list wrappers (adjust paths if your repo differs)
-import { listAccounts } from "@globular/backend"
-import { listGroups } from "@globular/backend"
-import { listOrganizations } from "@globular/backend"
-import { listApplications } from "@globular/backend"; // NEW apps accessor (ApplicationVM[])
-import { listPeers } from "@globular/backend"
+import { listAccounts } from "@globular/sdk"
+import { listGroups } from "@globular/sdk"
+import { listOrganizations } from "@globular/sdk"
+import { listApplications } from "@globular/sdk"; // NEW apps accessor (ApplicationVM[])
+import { listPeers } from "@globular/sdk"
 
 // VM persistence utilities
-import { setResourcePermissions } from "@globular/backend"
+import { setResourcePermissions } from "@globular/sdk"
 import { permissionsProtoToVM, permissionsVMToProto } from "./permissionsUtils.js"
 
 // Optional UI feedback (adjust if your notify helpers live elsewhere)
-import { displayError, displayMessage } from "@globular/backend"
+import { displayError, displayMessage } from "@globular/sdk"
 
 // UI deps
-import '@polymer/iron-icon/iron-icon.js'
-import '@polymer/iron-icons/social-icons.js'
-import '@polymer/iron-icons/hardware-icons.js'
-import '@polymer/iron-icons/iron-icons.js'
 
 // -------------------- tiny access helpers / id parsing --------------------
 const callIf = (o, m) => (o && typeof o[m] === "function") ? o[m]() : undefined

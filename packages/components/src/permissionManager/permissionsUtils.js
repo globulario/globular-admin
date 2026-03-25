@@ -1,4 +1,4 @@
-import * as rbac from "globular-web-client/rbac/rbac_pb"
+import { rbacPb as rbac } from "@globular/sdk"
 
 const cloneList = (list) => Array.isArray(list) ? list.slice() : []
 

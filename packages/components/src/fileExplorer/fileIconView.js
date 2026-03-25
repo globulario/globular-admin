@@ -1,11 +1,11 @@
 // src/components/fileIconView.js
-import { Backend } from "@globular/backend";
+import { Backend } from "@globular/sdk";
 import { getCoords } from "../utility.js";
-import { displayError, displayMessage } from "@globular/backend";
+import { displayError, displayMessage } from "@globular/sdk";
 
 // Proper backend wrappers
-import { getHiddenFiles, readText, getDisplayFileForLink, isLinkFile } from "@globular/backend";
-import { getTitleInfo, getFileTitlesInfo, getFileVideosInfo, getFileAudiosInfo } from "@globular/backend";
+import { getHiddenFiles, readText, getDisplayFileForLink, isLinkFile } from "@globular/sdk";
+import { getTitleInfo, getFileTitlesInfo, getFileVideosInfo, getFileAudiosInfo } from "@globular/sdk";
 
 // FileVM helpers (DRY)
 import {
@@ -23,10 +23,6 @@ import {
 import { getMediaInfo, mergeMediaInfo } from "./fileMediaCache.js";
 
 // UI deps
-import "@polymer/paper-checkbox/paper-checkbox.js";
-import "@polymer/paper-ripple/paper-ripple.js";
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/paper-icon-button/paper-icon-button.js";
 
 // Optional preview
 import { VideoPreview } from "../fileExplorer/videoPreview";
@@ -89,13 +85,12 @@ export class FileIconView extends HTMLElement {
     this._cacheDom();
     this._wireEvents();
     await this._render();
-    // Load media metadata and update the label before the icon is revealed so
-    // the user always sees the human-friendly title rather than the filename.
-    await this._hydrateLabel();
     this._hideThumbtack();
 
-    // Reveal with a short CSS fade-in (opacity 0 → 1 via transition on :host).
+    // Reveal immediately with basic info (icon + filename), then upgrade
+    // the label in the background once title/video metadata arrives.
     this.classList.remove("icon-pending");
+    this._hydrateLabel();
   }
 
   setActive() { this.classList.add("active"); }

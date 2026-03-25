@@ -34,6 +34,12 @@ import './pages/observability_logs'
 import './pages/observability_events'
 // Repository & Admin Tools
 import './pages/repo_market'
+import './pages/repo_installed'
+import './pages/repo_package_detail'
+import './pages/repo_namespaces'
+import './pages/repo_trusted_publishers'
+import './pages/repo_install_policy'
+import './pages/repo_audit'
 import './pages/admin_diagnostics'
 import './pages/admin_upgrades'
 import './pages/admin_backups'
@@ -144,7 +150,13 @@ const routes: Record<string, RouteHandler> = {
   '#/observability/events':  () => document.createElement('page-observability-events'),
 
   // Repository
-  '#/repository': () => document.createElement('page-repository'),
+  '#/repository':                    () => document.createElement('page-repository'),
+  '#/repository/catalog':            () => document.createElement('page-repository'),
+  '#/repository/namespaces':         () => document.createElement('page-repo-namespaces'),
+  '#/repository/trusted-publishers': () => document.createElement('page-repo-trusted-publishers'),
+  '#/repository/install-policy':     () => document.createElement('page-repo-install-policy'),
+  '#/repository/audit':              () => document.createElement('page-repo-audit'),
+  '#/repository/installed':          () => document.createElement('page-repo-installed'),
 
   // Admin Tools
   '#/admin/diagnostics': () => document.createElement('page-admin-diagnostics'),
@@ -157,6 +169,8 @@ const SERVICE_DETAIL_EXCLUSIONS = new Set<string>([
   '#/services/catalog',
   '#/services/instances',
 ])
+
+const REPO_PACKAGE_PREFIX = '#/repository/package/'
 
 const DEFAULT_ROUTE = '#/dashboard'
 const LOGIN_ROUTE = '#/login'
@@ -174,8 +188,24 @@ function createServiceDetailHandler(route: string): RouteHandler | null {
   }
 }
 
+function createRepoPackageDetailHandler(route: string): RouteHandler | null {
+  if (!route.startsWith(REPO_PACKAGE_PREFIX)) return null
+  const raw = route.slice(REPO_PACKAGE_PREFIX.length)
+  if (!raw) return null
+  const parts = raw.split('/')
+  if (parts.length < 2) return null
+  const publisher = decodeURIComponent(parts[0])
+  const name = decodeURIComponent(parts[1])
+  return () => {
+    const el = document.createElement('page-repo-package-detail')
+    el.setAttribute('publisher', publisher)
+    el.setAttribute('pkg-name', name)
+    return el
+  }
+}
+
 function getRouteHandler(route: string): RouteHandler {
-  return createServiceDetailHandler(route) ?? routes[route] ?? routes[DEFAULT_ROUTE]
+  return createServiceDetailHandler(route) ?? createRepoPackageDetailHandler(route) ?? routes[route] ?? routes[DEFAULT_ROUTE]
 }
 
 function normalizeHash(raw?: string): string {

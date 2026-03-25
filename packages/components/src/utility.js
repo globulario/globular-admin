@@ -1,6 +1,4 @@
 
-import * as authPb from 'globular-web-client/authentication/authentication_pb';
-
 export function fireResize() {
     if (document.createEvent) {
         // W3C

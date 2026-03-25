@@ -1,4 +1,4 @@
-import { listArtifacts, ArtifactKind, type ArtifactManifest } from '@globular/backend'
+import { listArtifacts, ArtifactKind, type ArtifactManifest } from '@globular/sdk'
 
 // ── Constants ───────────────────────────────────────────────────────────────
 

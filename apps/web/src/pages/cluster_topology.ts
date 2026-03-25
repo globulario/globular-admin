@@ -7,7 +7,7 @@ import {
   type NodeHealth,
   type NodeCapabilities,
   type DriftItem,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

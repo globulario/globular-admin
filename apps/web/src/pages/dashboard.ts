@@ -5,7 +5,7 @@ import {
   Backend,
   type ClusterHealth,
   type ClusterNode,
-} from '@globular/backend'
+} from '@globular/sdk'
 import { alertDialog } from '../utils/confirm_dialog'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

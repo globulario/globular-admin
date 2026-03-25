@@ -1,6 +1,4 @@
 // src/widgets/markdown.js
-import '@polymer/paper-icon-button/paper-icon-button.js';
-import '@polymer/iron-icons/iron-icons.js';
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 

@@ -1,4 +1,4 @@
-import { Backend } from '@globular/backend'; // include getUrl
+import { Backend } from '@globular/sdk'; // include getUrl
 import { randomUUID } from "../utility.js";
 import { FilesListView } from "./filesListView.js";
 import { FilesIconView } from "./filesIconView.js";
@@ -11,12 +11,6 @@ import { fireResize } from '../utility.js';
 import { DiskSpaceManager } from "./diskSpaceManager.js"
 import { playVideo } from "../video.js";
 import { playAudio } from "../audio.js";
-import '@polymer/paper-input/paper-input.js';
-import '@polymer/paper-button/paper-button.js';
-import '@polymer/paper-radio-group/paper-radio-group.js';
-import '@polymer/paper-radio-button/paper-radio-button.js';
-import '@polymer/iron-icon/iron-icon.js';
-import '@polymer/paper-progress/paper-progress.js';
 import { SharePanel } from "../share/sharePanel.js"
 
 // Import sub-components
@@ -40,7 +34,7 @@ import {
   displayMessage,
   getCurrentAccount,
   getFileAudiosInfo
-} from "@globular/backend";
+} from "@globular/sdk";
 
 // use session-driven account VM
 import { FilesUploader } from './fileUploader';

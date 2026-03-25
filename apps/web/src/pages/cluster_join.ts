@@ -1,12 +1,9 @@
 // src/pages/cluster_join.ts
 import "@globular/components/markdown.js"
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-collapse/iron-collapse.js'
 import {
   listJoinRequests, approveJoin, rejectJoin, createJoinToken,
   type JoinRequest, type NodeCapabilities,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return '—'

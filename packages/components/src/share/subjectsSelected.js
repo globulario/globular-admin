@@ -1,8 +1,6 @@
 // src/widgets/subjectsSelected.js
 
 // Polymer / Custom Element deps
-import "@polymer/iron-icon/iron-icon.js";       // account-circle, social:people
-import "@polymer/paper-icon-button/paper-icon-button.js";
 
 /**
  * Selected subjects panel (accounts & groups).

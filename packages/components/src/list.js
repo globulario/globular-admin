@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import getUuidByString from "uuid-by-string";
 import { fireResize } from "./utility"; // Assuming this utility is available
-import '@polymer/paper-button/paper-button.js';
 
 /**
  * `globular-editable-string-list` Web Component.

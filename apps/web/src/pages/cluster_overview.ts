@@ -1,8 +1,6 @@
 // src/pages/cluster_overview.ts
 import '../widgets/network_config'
 import "@globular/components/markdown.js"
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
 import {
   getClusterReport, type ClusterReport, type Finding,
   getClusterHealth, type ClusterHealth,
@@ -10,7 +8,7 @@ import {
   getDriftReport, type DriftReport,
   getClusterHealthV1Full, type NodeHealthV1,
   explainFinding, type FindingExplanation,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

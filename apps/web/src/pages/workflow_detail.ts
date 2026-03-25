@@ -18,7 +18,7 @@ import {
   type WorkflowStep,
   type WorkflowArtifact,
   type DiagnoseResult,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 // ─── Lane / layout constants ────────────────────────────────────────────────
 

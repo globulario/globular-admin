@@ -1,7 +1,7 @@
 // filevm-helpers.js
 // Generic helpers for File VM / proto-like objects (FileInfo-compatible)
 
-import { metadata } from "@globular/backend";
+import { metadata } from "@globular/sdk";
 
 export function pathOf(v) {
   if (!v) return "";

@@ -4,8 +4,8 @@ import {
   fetchStructuredServicesCorsPolicy,
   saveStructuredServiceCorsPolicy,
   fetchCorsDiagnostics,
-} from '@globular/backend'
-import type { CorsPolicy, ServiceCorsPolicySummary, CorsDiagResult } from '@globular/backend'
+} from '@globular/sdk'
+import type { CorsPolicy, ServiceCorsPolicySummary, CorsDiagResult } from '@globular/sdk'
 
 const GATEWAY_ID = '__gateway__'
 

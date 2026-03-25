@@ -1,0 +1,229 @@
+/* packages/ui — shared base styles
+ *
+ * Common layout, scrollbar, auth-page, spinner, and legacy styles
+ * used by all Globular apps.  App-specific overrides belong in each
+ * app's own styles.css.
+ */
+
+:root {
+  color-scheme: light dark;
+}
+
+/* -- Scrollbar ------------------------------------------------------------ */
+::-webkit-scrollbar       { width: 10px; }
+::-webkit-scrollbar-track { background: var(--scroll-track, var(--surface-color)); }
+::-webkit-scrollbar-thumb {
+  background:    var(--scroll-thumb, var(--palette-divider));
+  border-radius: var(--md-shape-xs, 4px);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover, var(--palette-divider));
+}
+
+/* -- Base ----------------------------------------------------------------- */
+html, body {
+  height:      100%;
+  margin:      0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, Arial, sans-serif;
+  background:  var(--background-color);
+  color:       var(--primary-text-color);
+}
+
+html { overflow: hidden; }
+
+#app {
+  padding:    16px;
+  min-height: 100%;
+}
+
+/* -- Page layout helpers -------------------------------------------------- */
+.page, .wrap {
+  padding:    16px;
+  color:      var(--on-surface-color);
+  background: var(--background-color);
+  box-sizing: border-box;
+}
+.wrap, .page { min-height: 100%; }
+
+.header {
+  display:       flex;
+  align-items:   center;
+  gap:           .5rem;
+  margin-bottom: .5rem;
+}
+.header h2 {
+  margin: 0;
+  font:   var(--md-typescale-headline-small, 700 24px/1.33 inherit);
+}
+.subtitle {
+  margin:  .25rem 0 1rem;
+  opacity: .85;
+}
+.spacer { flex: 1; }
+
+/* -- Generic card / docs container ---------------------------------------- */
+.docs {
+  margin-top:    12px;
+  border-radius: var(--md-shape-md, 12px);
+  background:    var(--surface-color);
+  color:         var(--on-surface-color);
+  box-shadow:    var(--md-elevation-1, 0 1px 2px rgba(0,0,0,.10));
+  border:        1px solid var(--border-subtle-color);
+  padding:       0;
+  overflow:      hidden;
+}
+.docs[hidden] { display: none; }
+
+.card {
+  border-radius: var(--md-shape-md, 12px);
+  background:    var(--md-surface-container-low, var(--surface-color));
+  color:         var(--on-surface-color);
+  border:        1px solid var(--border-subtle-color);
+  box-shadow:    var(--md-elevation-1, none);
+}
+
+.info { margin: 10px 0; }
+
+/* -- Auth page ------------------------------------------------------------ */
+.auth-page {
+  display:        grid;
+  place-items:    center;
+  padding:        4vh 16px;
+  min-height:     100%;
+  min-width:      0;
+  overflow-wrap:  anywhere;
+  font-family:    'Roboto', system-ui, sans-serif;
+}
+
+.auth-card {
+  width:         100%;
+  max-width:     420px;
+  padding:       28px;
+  background:    var(--md-surface-container-low, var(--surface-color));
+  border-radius: var(--md-shape-lg, 16px);
+  box-shadow:    var(--md-elevation-2, 0 8px 28px rgba(0,0,0,.12));
+  border:        1px solid var(--border-subtle-color);
+}
+
+.brand {
+  display:         flex;
+  align-items:     center;
+  gap:             12px;
+  margin-bottom:   12px;
+  justify-content: center;
+}
+.brand-title { font-weight: 700; font-size: 1.05rem; }
+.brand img   { height: 56px; width: auto; }
+
+.auth-card form { display: grid; gap: 12px; }
+
+.field { display: grid; gap: 6px; }
+.field label {
+  font:  var(--md-typescale-body-small, 400 12px/1.33 inherit);
+  color: var(--secondary-text-color);
+}
+
+.auth-card input {
+  padding:       10px 12px;
+  border-radius: var(--md-shape-sm, 8px);
+  border:        1px solid var(--border-strong-color);
+  background:    var(--md-surface-container-lowest, var(--surface-color));
+  color:         var(--on-surface-color);
+  outline:       none;
+  font:          var(--md-typescale-body-medium, 400 14px/1.43 inherit);
+  transition:    border-color .12s, box-shadow .12s;
+}
+.auth-card input:focus {
+  border-color: var(--accent-color);
+  box-shadow:   var(--md-focus-ring, 0 0 0 3px rgba(59,130,246,.28));
+}
+
+.addr-field { display: grid; gap: 6px; margin-bottom: 6px; }
+
+.pwd-row {
+  display:               grid;
+  grid-template-columns: 1fr auto;
+  align-items:           center;
+  gap:                   8px;
+}
+
+.toggle {
+  border:        1px solid var(--border-strong-color);
+  background:    transparent;
+  color:         var(--on-surface-color);
+  border-radius: var(--md-shape-sm, 8px);
+  padding:       8px 10px;
+  cursor:        pointer;
+}
+.toggle:hover { background: var(--md-state-hover, rgba(0,0,0,.06)); }
+
+.submit {
+  margin-top:      6px;
+  background:      var(--accent-color);
+  color:           #fff;
+  border:          none;
+  border-radius:   var(--md-shape-full, 9999px);
+  padding:         10px 24px;
+  font:            var(--md-typescale-label-large, 500 14px/1.43 inherit);
+  cursor:          pointer;
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             .5rem;
+  transition:      background .12s;
+}
+.submit:hover:not([disabled]) {
+  background: color-mix(in srgb, var(--accent-color) 88%, #000);
+}
+.submit:focus-visible { box-shadow: var(--md-focus-ring); }
+.submit[disabled]     { opacity: .7; cursor: default; }
+
+.err {
+  min-height:   20px;
+  color:        var(--error-color);
+  font:         var(--md-typescale-body-small, 400 12px/1.33 inherit);
+  margin-top:   6px;
+  text-align:   center;
+  overflow-wrap: anywhere;
+  word-break:   break-word;
+  white-space:  normal;
+  display:      -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow:     hidden;
+}
+
+.meta {
+  margin-top:      16px;
+  font:            var(--md-typescale-body-small, 400 12px/1.33 inherit);
+  color:           var(--secondary-text-color);
+  text-align:      center;
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+}
+.meta img { height: 64px; width: auto; margin-right: 8px; display: none; }
+
+/* -- Spinner -------------------------------------------------------------- */
+.spinner {
+  display:       inline-block;
+  width:         16px;
+  height:        16px;
+  border:        2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation:     spin 800ms linear infinite;
+  vertical-align: -2px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* -- Legacy Polymer ------------------------------------------------------- */
+paper-card globular-informations-manager {
+  display:       block;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb, var(--palette-divider)) var(--scroll-track, var(--surface-color));
+}
+
+globular-image-viewer,
+globular-file-reader { min-height: 640px; }

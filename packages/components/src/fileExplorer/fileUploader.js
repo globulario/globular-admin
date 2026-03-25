@@ -1,24 +1,18 @@
 // components/filesUploader.js
 
 import getUuidByString from "uuid-by-string"
-import { Backend } from "@globular/backend"
+import { Backend } from "@globular/sdk"
 
 // New torrent wrapper (no direct *_pb imports here)
-import { dropTorrent, getTorrentLinks, streamTorrentInfos } from "@globular/backend"
+import { dropTorrent, getTorrentLinks, streamTorrentInfos } from "@globular/sdk"
 
 // Use helpers from files.ts (size string)
-import { getFileSizeString } from "@globular/backend"
-import { getBaseUrl } from "@globular/backend"
+import { getFileSizeString } from "@globular/sdk"
+import { getBaseUrl } from "@globular/sdk"
 
 import { formatBytes } from "../utility"
 
-import "@polymer/iron-icon/iron-icon.js"
-import "@polymer/iron-collapse/iron-collapse.js"
-import "@polymer/paper-progress/paper-progress.js"
-import "@polymer/paper-icon-button/paper-icon-button.js"
-import "@polymer/paper-ripple/paper-ripple.js"
-import "@polymer/paper-button/paper-button.js"
-import { displayError, displayMessage } from "@globular/backend"
+import { displayError, displayMessage } from "@globular/sdk"
 
 const TRANSFER_TYPES = {
   FILE: "file",
@@ -995,7 +989,7 @@ export class FilesUploader extends HTMLElement {
       if (index >= files.length) {
         this._activeFileUploads = Math.max(0, this._activeFileUploads - files.length)
         this._emitActivityState()
-        Backend.eventHub.publish("reload_dir_event", path, false)
+        Backend.eventHub.publish("reload_dir_event", path, true)
         this._updateGlobalStatusAfterChange()
         return
       }

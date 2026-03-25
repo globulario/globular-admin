@@ -10,7 +10,7 @@ import {
   type NodeCapabilities,
   type NodeHealthDetail,
   type NodeHealthCheck,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return '—'

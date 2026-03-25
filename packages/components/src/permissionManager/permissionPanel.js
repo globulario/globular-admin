@@ -3,20 +3,15 @@
 import { randomUUID } from "../utility.js"
 
 // New backend wrappers (adjust paths if your repo differs)
-import { listAccounts } from "@globular/backend"
-import { listGroups } from "@globular/backend"
-import { listOrganizations } from "@globular/backend"
-import { listApplications } from "@globular/backend"; // NEW apps accessor (ApplicationVM[])
-import { listPeers } from "@globular/backend"
+import { listAccounts } from "@globular/sdk"
+import { listGroups } from "@globular/sdk"
+import { listOrganizations } from "@globular/sdk"
+import { listApplications } from "@globular/sdk"; // NEW apps accessor (ApplicationVM[])
+import { listPeers } from "@globular/sdk"
 
-import { displayError } from "@globular/backend"
+import { displayError } from "@globular/sdk"
 
 // UI deps
-import '@polymer/iron-collapse/iron-collapse.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-icon/iron-icon.js'
-import '@polymer/paper-ripple/paper-ripple.js'
-import '@polymer/paper-card/paper-card.js'
 
 // Specific SearchableList types
 import {

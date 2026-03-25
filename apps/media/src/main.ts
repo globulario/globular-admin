@@ -1,26 +1,17 @@
+import '@globular/ui/styles/theme.css'
+import '@globular/ui/styles/components.css'
 import './styles/styles.css'
-import './styles/theme.css'
 
 import "@globular/components/applicationLayout.js"
-import './widgets/user_toolbar'
-import './widgets/theme_toggle'
+import '@globular/ui' // registers theme-toggle, user-toolbar
 
 import "@fortawesome/fontawesome-free/css/all.min.css"
 import 'toastify-js/src/toastify.css'
 
-import { applyTheme, watchSystemTheme } from './theme/theme'
-import { Backend, getEventClient, setNavigateHandler, restoreSession, enableVisibilityAutoRefresh } from "@globular/backend"
+import { initGlobularApp } from '@globular/ui'
 import { startRouter, navigateTo, clearPageCache } from './router'
 
-setNavigateHandler(navigateTo)
-Backend.init(() => getEventClient())
-applyTheme()
-watchSystemTheme()
-
-// Restore token from sessionStorage and start the refresh timer.
-// Without this, the token expires silently and the user is bounced to login.
-restoreSession()
-enableVisibilityAutoRefresh()
+initGlobularApp({ onNavigate: navigateTo })
 
 startRouter()
 

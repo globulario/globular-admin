@@ -20,11 +20,8 @@ import {
   RoleVM as Role,
   AccountVM,
   OrganizationVM as Organization,
-} from "@globular/backend";
+} from "@globular/sdk";
 
-import "@polymer/iron-icons/iron-icons.js";
-import "@polymer/paper-icon-button/paper-icon-button.js";
-import "@polymer/iron-collapse/iron-collapse.js";
 
 import "@globular/components/table.js";         // <globular-table>
 import "./action_view";      // <globular-action-view>

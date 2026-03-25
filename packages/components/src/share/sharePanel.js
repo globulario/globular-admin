@@ -3,9 +3,6 @@
 import { SharedResources } from './sharedResources.js'
 
 // Polymer components
-import '@polymer/paper-card/paper-card.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-icon/iron-icon.js'
 
 // Subjects picker
 import './subjectsView.js' // <globular-subjects-view>

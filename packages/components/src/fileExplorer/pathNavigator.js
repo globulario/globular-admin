@@ -4,13 +4,11 @@
 // - Dropdown respects hidden rules from legacy (skip dot-dirs, skip HLS pseudo dirs)
 // - Labels replace current account id@domain with displayName when segment matches
 
-import { Backend } from "@globular/backend";
-import { readDir, getPublicDirs, markAsPublic } from "@globular/backend";
-import { getCurrentAccount } from "@globular/backend";
-import { displayError } from "@globular/backend";
+import { Backend } from "@globular/sdk";
+import { readDir, getPublicDirs, markAsPublic } from "@globular/sdk";
+import { getCurrentAccount } from "@globular/sdk";
+import { displayError } from "@globular/sdk";
 
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/paper-card/paper-card.js";
 
 // DRY helpers used across file components
 import { pathOf, nameOf, isDir, mimeOf } from "./filevm-helpers";

@@ -10,37 +10,13 @@ import './pages/medias_about'
 // ------------------------------
 
 // --- Auth helpers (tiny & framework-agnostic) ---
-function getToken(): string | null {
-  try { return sessionStorage.getItem('__globular_token__') } catch { return null }
-}
-
-function decodeJwtPayload(token: string): any | null {
-  try {
-    const [, payload] = token.split('.')
-    if (!payload) return null
-    const b64 = payload.replace(/-/g, '+').replace(/_/g, '/')
-    const json = decodeURIComponent(
-      atob(b64).split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join(''),
-    )
-    return JSON.parse(json)
-  } catch {
-    return null
-  }
-}
-
-function isTokenFresh(token: string | null): boolean {
-  if (!token) return false
-  const p = decodeJwtPayload(token)
-  if (!p) return false
-  if (typeof p.exp !== 'number') return true // if no exp, assume usable; server still enforces
-  const now = Math.floor(Date.now() / 1000)
-  return p.exp > now
-}
-
 function hasToken(): boolean {
-  return isTokenFresh(getToken())
+  // Check that a token exists, but don't hard-fail on expiry here.
+  // The gRPC layer (ensureFreshToken / rpc retry) handles refresh
+  // transparently.  Checking freshness in the router caused spurious
+  // redirects to login during long video playback when the scheduled
+  // refresh hadn't run yet.
+  try { return !!sessionStorage.getItem('__globular_token__') } catch { return false }
 }
 
 // Which routes can be seen without being authenticated

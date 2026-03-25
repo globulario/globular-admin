@@ -8,15 +8,9 @@ import {
   getAvailableSpace,
   setAllocatedSpace,
   SubjectType,
-} from "@globular/backend";
+} from "@globular/sdk";
 
 // Polymer imports
-import "@polymer/paper-card/paper-card.js";
-import "@polymer/paper-progress/paper-progress.js";
-import "@polymer/paper-tooltip/paper-tooltip.js";
-import "@polymer/paper-input/paper-input.js";
-import "@polymer/paper-button/paper-button.js";
-import "@polymer/paper-spinner/paper-spinner.js";
 
 /**
  * Manages and displays disk space usage for an account or application.

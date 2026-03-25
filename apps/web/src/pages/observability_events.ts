@@ -1,4 +1,4 @@
-import { queryEvents, type HistoricalEvent, type QueryEventsResult } from '@globular/backend'
+import { queryEvents, type HistoricalEvent, type QueryEventsResult } from '@globular/sdk'
 
 function fmtTime(epoch: number): string {
   if (!epoch) return '—'

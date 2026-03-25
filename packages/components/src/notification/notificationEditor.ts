@@ -6,16 +6,13 @@ import {
   getCurrentAccount,
   type AccountVM,
   createNotification,
-} from "@globular/backend";
+} from "@globular/sdk";
 import { randomUUID } from "../utility.js";
-import { Notification, NotificationType } from "globular-web-client/resource/resource_pb";
+import { resourcePb } from "@globular/sdk";
+const { Notification, NotificationType } = resourcePb;
 import { setMoveable } from "../moveable.js";
 import { setResizeable } from "../resizeable.js";
 
-import "@polymer/paper-card/paper-card.js";
-import "@polymer/paper-icon-button/paper-icon-button.js";
-import "@polymer/iron-autogrow-textarea/iron-autogrow-textarea.js";
-import "@polymer/iron-icon/iron-icon.js";
 
 type SubjectsViewEl = HTMLElement & {
   on_account_click?: (div: HTMLElement, account: AccountVM) => void;

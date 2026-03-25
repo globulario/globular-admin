@@ -2,8 +2,8 @@
 // and wired to your newer wrappers
 
 import getUuidByString from "uuid-by-string";
-import { Backend } from "@globular/backend";
-import { displayError, displayMessage } from "@globular/backend";
+import { Backend } from "@globular/sdk";
+import { displayError, displayMessage } from "@globular/sdk";
 
 // FS wrappers
 import {
@@ -12,11 +12,11 @@ import {
   markAsPublic,       // (vm) => void
   markAsShare,        // (vm) => void
   listPublicDirs,     // () => Promise<string[]>
-} from "@globular/backend";
+} from "@globular/sdk";
 
 // RBAC wrappers
-import { getAccount, getCurrentAccount } from "@globular/backend";
-import { getSharedResources, SubjectType } from "@globular/backend";
+import { getAccount, getCurrentAccount } from "@globular/sdk";
+import { getSharedResources, SubjectType } from "@globular/sdk";
 
 // VM helpers
 import {
@@ -29,11 +29,6 @@ import {
 } from "./filevm-helpers";
 
 // UI deps
-import "@polymer/paper-spinner/paper-spinner.js";
-import "@polymer/paper-input/paper-input.js";
-import "@polymer/paper-button/paper-button.js";
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/paper-ripple/paper-ripple.js";
 
 /* ----------------------------- utils ----------------------------- */
 
@@ -603,7 +598,7 @@ export class FileNavigator extends HTMLElement {
         // Real directories: navigate normally
         this._fileExplorer?.publishSetDirEvent?.(path);
         this._selectRow(path);
-        if (this._fileExplorer?._informationManager?.parentNode) {
+        if (this._fileExplorer?._informationsManager?.parentNode) {
           this._fileExplorer._informationsManager.style.display = "none";
         }
       });

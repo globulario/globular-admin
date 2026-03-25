@@ -3,25 +3,19 @@
 import getUuidByString from "uuid-by-string"
 
 // New backend wrappers (no globule/controllers)
-import { getCurrentAccount, listAccounts } from "@globular/backend"
-import { listGroups } from "@globular/backend"
-import { listOrganizations } from "@globular/backend"
+import { getCurrentAccount, listAccounts } from "@globular/sdk"
+import { listGroups } from "@globular/sdk"
+import { listOrganizations } from "@globular/sdk"
 
 // Applications are optional; we'll dynamically import to avoid hard dependency
 let listApplications = null
-import("@globular/backend").then(m => { listApplications = m.listApplications }).catch(() => {})
+import("@globular/sdk").then(m => { listApplications = m.listApplications }).catch(() => {})
 
 // UI helpers
-import { displayError } from "@globular/backend"
+import { displayError } from "@globular/sdk"
 import { fireResize } from "../utility.js"
 
 // Polymer elements
-import "@polymer/iron-icon/iron-icon.js"
-import "@polymer/iron-collapse/iron-collapse.js"
-import "@polymer/paper-ripple/paper-ripple.js"
-import "@polymer/iron-icons/social-icons.js"
-import "@polymer/iron-icons/maps-icons.js"
-import "@polymer/iron-icons/hardware-icons.js"
 
 /**
  * Lists selectable subjects (Accounts, Groups, Organizations, Applications).

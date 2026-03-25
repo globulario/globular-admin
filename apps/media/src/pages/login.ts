@@ -7,7 +7,7 @@ import {
   setBaseUrl,
   displayError,
   displaySuccess,
-} from "@globular/backend";
+} from "@globular/sdk";
 import { navigateTo } from '../router'
 
 /**

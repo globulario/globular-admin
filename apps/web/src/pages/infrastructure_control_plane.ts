@@ -5,7 +5,7 @@ import {
   type ServicesResponse, type ClusterHealth,
   type ClusterHealthV1Result, type ClusterReport,
   type ServiceLogsResponse,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 import {
   INFRA_STYLES, badge, stateBadge, stateColor, esc,

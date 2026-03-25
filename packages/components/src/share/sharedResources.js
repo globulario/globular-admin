@@ -1,9 +1,9 @@
 // src/widgets/shared_resources.js — new-backend (JS)
 
 import getUuidByString from "uuid-by-string"
-import { displayError, displayMessage} from "@globular/backend";
+import { displayError, displayMessage} from "@globular/sdk";
 
-import * as rbacPb from "globular-web-client/rbac/rbac_pb"
+import { rbacPb } from "@globular/sdk"
 const { SubjectType } = rbacPb
 
 // ---- New backend wrappers (adjust import paths to your repo) -------------
@@ -15,21 +15,17 @@ import {
   removeSubjectFromShare,
   getResourcePermissions,
   toPermissionsVM,
-} from "@globular/backend"
+} from "@globular/sdk"
 
 // Current account helper (or keep your AccountController.account if you prefer)
-import { getCurrentAccount } from "@globular/backend"
+import { getCurrentAccount } from "@globular/sdk"
 
 // Files backend: getFile(path, { width, height }) -> Promise<FileVM|proto>
-import { getFile } from "@globular/backend"
+import { getFile } from "@globular/sdk"
 
 // UI
 import { Link } from "../link"
-import { Backend } from "@globular/backend"
-import '@polymer/paper-tabs/paper-tabs.js'
-import '@polymer/paper-tabs/paper-tab.js'
-import '@polymer/paper-ripple/paper-ripple.js'
-import '@polymer/paper-badge/paper-badge.js'
+import { Backend } from "@globular/sdk"
 
 // -------------------------------------------------------------------------
 // subject helpers (shape-based; avoids proto instanceof)

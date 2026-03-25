@@ -1,15 +1,12 @@
 // src/pages/admin_diagnostics.ts
 import "@globular/components/markdown.js"
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-collapse/iron-collapse.js'
 import {
   getClusterReport, type ClusterReport,
   getNodeReport, type NodeReport,
   getDriftReport, type DriftReport,
   explainFinding, type FindingExplanation, type Finding, type DriftItem,
   clusterdoctorpb,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

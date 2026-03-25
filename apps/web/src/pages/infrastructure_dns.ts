@@ -1,8 +1,5 @@
 // src/pages/infrastructure_dns.ts
 import "@globular/components/markdown.js"
-import '@polymer/iron-icons/iron-icons.js'
-import '@polymer/paper-icon-button/paper-icon-button.js'
-import '@polymer/iron-collapse/iron-collapse.js'
 
 import {
   fetchAdminServices, getClusterHealth,
@@ -11,7 +8,7 @@ import {
   fetchDomainSpecs, saveDomainSpec, deleteDomainSpec,
   type ServicesResponse, type ClusterHealth, type DnsRecord,
   type DNSProviderConfig, type DomainSpecWithStatus,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 import {
   INFRA_STYLES, badge, stateBadge, stateColor, esc,
@@ -180,22 +177,35 @@ class PageInfrastructureDns extends HTMLElement {
     }
 
     // Zone present — full tabbed UI
-    body.innerHTML = `
-      <div class="infra-tabs">
-        <button class="infra-tab ${this._tab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
-        <button class="infra-tab ${this._tab === 'records' ? 'active' : ''}" data-tab="records">Records</button>
-        <button class="infra-tab ${this._tab === 'external' ? 'active' : ''}" data-tab="external">External Domains</button>
-      </div>
-      <div id="dnsTabContent"></div>
-    `
-    body.querySelectorAll('.infra-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this._tab = (btn as HTMLElement).dataset.tab as DnsTab
-        this.render()
-      })
-    })
+    // If tabs already exist, update the active class and only rebuild the content
+    // for non-external tabs. External tab does incremental updates to preserve forms.
+    let content = body.querySelector('#dnsTabContent') as HTMLElement
+    const tabsExist = content !== null
 
-    const content = body.querySelector('#dnsTabContent') as HTMLElement
+    if (!tabsExist) {
+      body.innerHTML = `
+        <div class="infra-tabs">
+          <button class="infra-tab ${this._tab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
+          <button class="infra-tab ${this._tab === 'records' ? 'active' : ''}" data-tab="records">Records</button>
+          <button class="infra-tab ${this._tab === 'external' ? 'active' : ''}" data-tab="external">External Domains</button>
+        </div>
+        <div id="dnsTabContent"></div>
+      `
+      body.querySelectorAll('.infra-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          this._tab = (btn as HTMLElement).dataset.tab as DnsTab
+          this.render()
+        })
+      })
+      content = body.querySelector('#dnsTabContent') as HTMLElement
+    } else {
+      // Update active tab styling
+      body.querySelectorAll('.infra-tab').forEach(btn => {
+        const tab = (btn as HTMLElement).dataset.tab
+        btn.classList.toggle('active', tab === this._tab)
+      })
+    }
+
     if (this._tab === 'overview') {
       this.renderOverview(content)
     } else if (this._tab === 'records') {
@@ -480,8 +490,39 @@ class PageInfrastructureDns extends HTMLElement {
   // ─── External Domains Tab ──────────────────────────────────────────────────
 
   private renderExternal(el: HTMLElement) {
+    // Incremental update: if the external tab DOM already exists, only refresh
+    // the data-driven lists and error banner — preserve forms, help panels, listeners.
+    const alreadyMounted = el.querySelector('#extProviderList') !== null
+
+    if (alreadyMounted) {
+      // Update error banner
+      const errSlot = el.querySelector('#extErrorBanner') as HTMLElement
+      if (errSlot) errSlot.innerHTML = this._extError
+        ? `<div class="dns-banner dns-banner--error">${esc(this._extError)}</div>` : ''
+
+      // Update lists (only if no form is open — avoid losing context)
+      if (!this._showProviderForm) {
+        const pl = el.querySelector('#extProviderList') as HTMLElement
+        if (pl) {
+          pl.innerHTML = this.renderProviderList()
+          this.wireProviderListButtons(el)
+        }
+      }
+      if (!this._showDomainForm) {
+        const dl = el.querySelector('#extDomainList') as HTMLElement
+        if (dl) {
+          dl.innerHTML = this.renderDomainList()
+          this.wireDomainListButtons(el)
+        }
+      }
+      return
+    }
+
+    // First mount — full DOM build
     el.innerHTML = `
-      ${this._extError ? `<div class="dns-banner dns-banner--error">${esc(this._extError)}</div>` : ''}
+      <div id="extErrorBanner">
+        ${this._extError ? `<div class="dns-banner dns-banner--error">${esc(this._extError)}</div>` : ''}
+      </div>
 
       <div class="ext-section">
         <div class="ext-section-header">
@@ -557,7 +598,11 @@ class PageInfrastructureDns extends HTMLElement {
       this.renderDomainForm(el.querySelector('#extDomainForm') as HTMLElement)
     }
 
-    // Wire delete/edit buttons
+    this.wireProviderListButtons(el)
+    this.wireDomainListButtons(el)
+  }
+
+  private wireProviderListButtons(el: HTMLElement) {
     el.querySelectorAll('.ext-del-provider').forEach(btn => {
       btn.addEventListener('click', async () => {
         const name = (btn as HTMLElement).dataset.name!
@@ -579,6 +624,9 @@ class PageInfrastructureDns extends HTMLElement {
         this.renderProviderForm(el.querySelector('#extProviderForm') as HTMLElement)
       })
     })
+  }
+
+  private wireDomainListButtons(el: HTMLElement) {
     el.querySelectorAll('.ext-del-domain').forEach(btn => {
       btn.addEventListener('click', async () => {
         const fqdn = (btn as HTMLElement).dataset.fqdn!

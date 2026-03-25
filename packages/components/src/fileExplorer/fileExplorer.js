@@ -20,7 +20,7 @@ import {
   getFileAudiosInfo,
   clearAllTitleCaches,
   invalidateFileCaches,
-} from "@globular/backend"; // include getUrl
+} from "@globular/sdk"; // include getUrl
 import { randomUUID } from "../utility.js";
 import { getMediaInfo } from "./fileMediaCache.js";
 import { FilesListView } from "./filesListView.js";
@@ -34,12 +34,6 @@ import { fireResize } from '../utility.js';
 import { DiskSpaceManager } from "./diskSpaceManager.js"
 import { playVideo } from "../video.js";
 import { playAudio } from "../audio.js";
-import '@polymer/paper-input/paper-input.js';
-import '@polymer/paper-button/paper-button.js';
-import '@polymer/paper-radio-group/paper-radio-group.js';
-import '@polymer/paper-radio-button/paper-radio-button.js';
-import '@polymer/iron-icon/iron-icon.js';
-import '@polymer/paper-progress/paper-progress.js';
 import { SharePanel } from "../share/sharePanel.js"
 import { ShareResourceWizard } from "../share/shareResourceWizard.js"
 import { Dialog } from '../dialog.js';
@@ -370,6 +364,7 @@ export class FileExplorer extends HTMLElement {
       #file-selection-panel {
         background-color: var(--surface-color);
         color: var(--on-surface-color);
+        overflow: auto;
       }
 
       #file-navigation-panel {
@@ -1585,7 +1580,7 @@ export class FileExplorer extends HTMLElement {
         } else {
           await createDir(this._path, rawValue);
           displayMessage(`Folder "${rawValue}" created!`, 3000);
-          Backend.eventHub.publish("reload_dir_event", this._path, false);
+          Backend.eventHub.publish("reload_dir_event", this._path, true);
         }
       } catch (err) {
         const prefix = isPublicContext ? "Failed to add public directory" : "Failed to create folder";
@@ -1615,7 +1610,7 @@ export class FileExplorer extends HTMLElement {
         try {
           await upload(this._path, fileInput.files);
           displayMessage("Files uploaded successfully!", 3000);
-          Backend.eventHub.publish("reload_dir_event", this._path, false);
+          Backend.eventHub.publish("reload_dir_event", this._path, true);
         } catch (err) {
           displayError(`Upload failed: ${err?.message || err}`, 4000);
         }
@@ -2397,7 +2392,7 @@ export class FileExplorer extends HTMLElement {
     try {
       await createLink(dest, linkName, (file && file.serializeBinary) ? file : file);
       displayMessage(`Link "${linkName}" created!`, 3000);
-      Backend.eventHub.publish("reload_dir_event", dest, false);
+      Backend.eventHub.publish("reload_dir_event", dest, true);
     } catch (err) {
       displayError(`Failed to create link: ${err.message}`, 3000);
     }

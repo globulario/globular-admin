@@ -6,20 +6,14 @@ import getUuidByString from "uuid-by-string";
 import { SearchableList } from "../list.js";
 
 // Newer backend wrappers (adjust paths if yours differ)
-import { listAccounts } from "@globular/backend";
-import { listGroups }   from "@globular/backend";
-import { listRoles }    from "@globular/backend";
-import { listOrganizations } from "@globular/backend";
-import { listPeers }    from "@globular/backend";   // NEW peers accessor (PeerVM[])
-import { listApplications } from "@globular/backend"; // NEW apps accessor (ApplicationVM[])
+import { listAccounts } from "@globular/sdk";
+import { listGroups }   from "@globular/sdk";
+import { listRoles }    from "@globular/sdk";
+import { listOrganizations } from "@globular/sdk";
+import { listPeers }    from "@globular/sdk";   // NEW peers accessor (PeerVM[])
+import { listApplications } from "@globular/sdk"; // NEW apps accessor (ApplicationVM[])
 
 // UI deps
-import '@polymer/paper-card/paper-card.js';
-import '@polymer/paper-icon-button/paper-icon-button.js';
-import '@polymer/iron-icon/iron-icon.js';
-import '@polymer/iron-icons/social-icons.js';
-import '@polymer/iron-icons/hardware-icons.js';
-import '@polymer/iron-icons/iron-icons.js';
 import '../autocomplete.js';
 
 /* -----------------------------------------------------------------------------

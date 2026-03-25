@@ -2,22 +2,15 @@
 
 import { FilesView } from "./filesView.js";
 import getUuidByString from "uuid-by-string";
-import "@polymer/paper-checkbox/paper-checkbox.js";
-import "@polymer/iron-icon/iron-icon.js";
-import "@polymer/paper-ripple/paper-ripple.js";
-import "@polymer/paper-icon-button/paper-icon-button.js"; // menu button
 
 // Icon packs so iron-icon can resolve "icons:*", "av:*", "editor:*"
-import "@polymer/iron-icons/iron-icons.js";   // icons:folder, icons:folder
-import "@polymer/iron-icons/av-icons.js";     // av:movie, av:music-note
-import "@polymer/iron-icons/editor-icons.js"; // editor:folder
 
-import { displayError } from "@globular/backend";
-import { Backend } from "@globular/backend";
+import { displayError } from "@globular/sdk";
+import { Backend } from "@globular/sdk";
 
 // New backend wrappers
-import { getHiddenFiles, readText, isLinkFile, loadLinkTarget } from "@globular/backend";
-import { getFileAudiosInfo, getFileVideosInfo, getTitleInfo } from "@globular/backend";
+import { getHiddenFiles, readText, isLinkFile, loadLinkTarget } from "@globular/sdk";
+import { getFileAudiosInfo, getFileVideosInfo, getTitleInfo } from "@globular/sdk";
 
 // DRY helpers
 import {

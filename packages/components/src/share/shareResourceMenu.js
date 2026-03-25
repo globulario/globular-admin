@@ -1,8 +1,6 @@
 // src/widgets/shareResourceMenu.js — refactored to new wizard API (no globule deps)
 
 import { ShareResourceWizard } from "./shareResourceWizard"
-import '@polymer/iron-icon/iron-icon.js'
-import '@polymer/iron-icons/social-icons.js'
 
 /**
  * Tiny share icon that launches the ShareResourceWizard.

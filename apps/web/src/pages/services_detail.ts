@@ -1,4 +1,4 @@
-import { getConfig, queryLogs, type ServiceDesc, type LogEntry } from '@globular/backend'
+import { getConfig, queryLogs, type ServiceDesc, type LogEntry } from '@globular/sdk'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

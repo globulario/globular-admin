@@ -10,7 +10,7 @@ import {
   type NodeHealthV1,
   type NodeReconciliationDiff,
   type ServiceDiffEntry,
-} from '@globular/backend'
+} from '@globular/sdk'
 import { openWorkflowDetail } from './workflow_detail'
 
 // ─── DriftCategory constants (numeric, from generated proto enums) ───────────

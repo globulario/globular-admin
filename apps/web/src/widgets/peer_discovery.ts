@@ -6,7 +6,7 @@ import {
   pingPeer,
   registerPeer,
   type DiscoveredHost,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 function toHostSafe(h: any): DiscoveredHost {
   // allow raw objects too

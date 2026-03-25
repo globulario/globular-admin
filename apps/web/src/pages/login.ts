@@ -7,7 +7,7 @@ import {
   setBaseUrl,
   displayError,
   displaySuccess,
-} from "@globular/backend";
+} from "@globular/sdk";
 
 /**
  * <page-login>
@@ -42,6 +42,10 @@ class PageLogin extends HTMLElement {
         <div class="card auth-card" part="card">
           <div class="brand">
             <div class="brand-title">${appName}</div>
+          </div>
+
+          <div id="logoutMsg" style="display:none;background:color-mix(in srgb, var(--success-color, #22c55e) 12%, transparent);color:var(--success-color, #22c55e);border:1px solid color-mix(in srgb, var(--success-color, #22c55e) 30%, transparent);border-radius:8px;padding:10px 16px;margin-bottom:12px;font-size:.85rem;text-align:center;font-weight:500">
+            You have been signed out successfully. See you next time!
           </div>
 
           <form id="loginForm" novalidate>
@@ -80,6 +84,19 @@ class PageLogin extends HTMLElement {
         this.userInput = this.querySelector('#username') as HTMLInputElement
         this.toggleBtn = this.querySelector('#togglePwd') as HTMLButtonElement
         this.addrInput = this.querySelector('#backend') as HTMLInputElement
+
+        // Show goodbye message if redirected from logout
+        const hash = window.location.hash || ''
+        if (hash.includes('logout=1')) {
+            const msg = this.querySelector('#logoutMsg') as HTMLElement
+            if (msg) {
+                msg.style.display = 'block'
+                // Auto-hide after 5 seconds
+                setTimeout(() => { msg.style.display = 'none' }, 5000)
+            }
+            // Clean up the hash so refreshing doesn't show the message again
+            window.location.hash = '#/login'
+        }
 
         // Autofocus username or backend depending on state
         queueMicrotask(() => {

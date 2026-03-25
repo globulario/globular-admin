@@ -1,29 +1,26 @@
 // src/widgets/resources_permissions.js — new-backend (JS)
 
 import getUuidByString from "uuid-by-string"
-import { Backend } from "@globular/backend"
-import { displayError, displayMessage } from "@globular/backend"
+import { Backend } from "@globular/sdk"
+import { displayError, displayMessage } from "@globular/sdk"
 
 // Only used to publish tiny payloads on eventHub
-import { Permissions } from "globular-web-client/rbac/rbac_pb"
+import { rbacPb } from "@globular/sdk"
+const { Permissions } = rbacPb
 
 // ---- New backend wrappers ----
 import {
   listResourcePermissionsByType,
   deleteResourcePermissions,
-} from "@globular/backend"
+} from "@globular/sdk"
 
 // ---- Resource getters (update paths if yours differ) ----
-import { listApplications } from "@globular/backend"
-import { listGroups } from "@globular/backend"
-import { listOrganizations } from "@globular/backend"
-import { listRoles } from "@globular/backend"
+import { listApplications } from "@globular/sdk"
+import { listGroups } from "@globular/sdk"
+import { listOrganizations } from "@globular/sdk"
+import { listRoles } from "@globular/sdk"
 
 // Polymer deps
-import '@polymer/paper-card/paper-card.js'
-import '@polymer/iron-icon/iron-icon.js'
-import '@polymer/paper-ripple/paper-ripple.js'
-import '@polymer/iron-collapse/iron-collapse.js'
 
 // Local editor/viewer
 import { PermissionsManager } from "./permissionsManager.js"
@@ -294,7 +291,6 @@ customElements.define('globular-resources-permissions-type', ResourcesPermission
 // ======================================================================
 // ResourcePermissions
 // ======================================================================
-import '@polymer/paper-icon-button/paper-icon-button.js'
 import { PermissionsManager as _PM } from "./permissionsManager.js" // ensure definition is loaded
 
 export class ResourcePermissions extends HTMLElement {

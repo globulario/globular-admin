@@ -7,7 +7,7 @@ import {
   type ServicesResponse, type StorageResponse, type EnvoyResponse,
   type ClusterHealth, type PrometheusScrapeHealth,
   type ClusterHealthV1Result, type ClusterReport,
-} from '@globular/backend'
+} from '@globular/sdk'
 
 import {
   INFRA_STYLES, badge, stateBadge, stateColor, esc,

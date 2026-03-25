@@ -1,10 +1,9 @@
 // components/filesIconView.js — DRY with filevm-helper and shared menu from FilesView
 import "./fileIconViewSection.js";
-import "@polymer/iron-icon/iron-icon.js";
 import "./fileIconView.js";
 import getUuidByString from "uuid-by-string";
-import { Backend } from "@globular/backend";
-import { displayError } from "@globular/backend";
+import { Backend } from "@globular/sdk";
+import { displayError } from "@globular/sdk";
 import { FilesView } from "./filesView.js";
 
 // DRY helpers
