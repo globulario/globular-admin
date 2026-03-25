@@ -236,4 +236,23 @@ export function startRouter() {
   window.addEventListener('hashchange', () => {
     mountRoute(window.location.hash)
   })
+
+  // Sidebar menu item click delegation
+  document.addEventListener('click', (ev) => {
+    const path = (ev.composedPath && ev.composedPath()) as Array<EventTarget & { tagName?: string, getAttribute?: (n: string) => string | null }> || []
+    const item = path.find((el) => el?.tagName?.toLowerCase?.() === 'globular-sidebar-menu-item')
+    if (!item) return
+    const route = item.getAttribute && item.getAttribute('route')
+    if (route) {
+      const dest = resolveRoute(route)
+      if (window.location.hash !== dest) {
+        history.pushState(null, '', dest)
+        mountRoute(dest)
+      } else {
+        mountRoute(dest)
+      }
+      ev.preventDefault()
+      ev.stopPropagation()
+    }
+  }, { capture: true })
 }
