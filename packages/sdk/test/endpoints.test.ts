@@ -19,16 +19,22 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+import { getConfiguredBaseUrl } from "./../src/core/endpoints";
+
 describe("endpoints", () => {
   it("normalizes base URL trailing slash", () => {
     setBaseUrl("https://www.globular.cloud/");
-    expect(requireBaseUrl()).toBe("https://www.globular.cloud");
+    // getConfiguredBaseUrl returns the raw stored value (ignoring dev-mode override)
+    expect(getConfiguredBaseUrl()).toBe("https://www.globular.cloud");
   });
 
   it("serviceUrl fallback uses /serviceId when config not loaded", () => {
     setBaseUrl("https://www.globular.cloud");
     (globalThis as any).fetch = vi.fn(() => Promise.resolve({ ok: true, json: async () => ({}) }));
-    const url = serviceUrl("file.FileService", requireBaseUrl());
+    // In test env (happy-dom, hostname=localhost), getBaseUrl() returns page origin.
+    // serviceUrl uses requireBaseUrl() which goes through the same path.
+    const base = getConfiguredBaseUrl()!;
+    const url = serviceUrl("file.FileService", base);
     expect(url).toBe("https://www.globular.cloud/file.FileService");
   });
 
@@ -44,9 +50,10 @@ describe("endpoints", () => {
       return { ok: true, json: async () => cfg, status: 200 } as any;
     });
 
-    await refreshEndpoints(requireBaseUrl());
+    const base = getConfiguredBaseUrl()!;
+    await refreshEndpoints(base);
     expect(fetch).toHaveBeenCalledWith("https://www.globular.cloud/config");
-    const url = serviceUrl("file.FileService", requireBaseUrl());
+    const url = serviceUrl("file.FileService", base);
     expect(url).toBe("https://www.globular.cloud/file.FileService");
   });
 

@@ -263,6 +263,12 @@ export function newPermission(name?: string): rbac.Permission {
   return p
 }
 
+/** Deserialize a Permissions proto from binary (for event payloads). */
+export function deserializePermissions(bin: Uint8Array): rbac.Permissions {
+  const Ctor: any = (rbac as any).Permissions
+  return Ctor.deserializeBinary(bin)
+}
+
 // Optional helpers to mutate a Permission entry (kept simple, callers can call the proto setters directly)
 export const setPermissionSubjects = (perm: rbac.Permission, lists: Partial<PermissionSubjectLists>) => {
   if (lists.accounts) perm.setAccountsList?.(lists.accounts)

@@ -3,11 +3,7 @@
 import { displayError, displayMessage, displaySuccess } from "@globular/sdk"
 
 // New RBAC wrapper (adjust path if different in your repo)
-import { getResourcePermissions, setResourcePermissions } from "@globular/sdk"
-
-// Proto shapes for UI panels
-import { rbacPb } from "@globular/sdk"
-const { Permission, Permissions } = rbacPb
+import { getResourcePermissions, setResourcePermissions, newPermissions, newPermission } from "@globular/sdk"
 import { permissionsProtoToVM, permissionsVMToProto } from "./permissionsUtils.js"
 
 import  "./permissionPanel.js"
@@ -75,7 +71,7 @@ export class PermissionsManager extends HTMLElement {
   get path() { return this._path }
 
   set permissions(permissions) {
-    this._permissions = permissions || new Permissions()
+    this._permissions = permissions || newPermissions()
     this._renderPermissionsContent()
     this._refreshSectionSummaries()
   }
@@ -355,7 +351,7 @@ export class PermissionsManager extends HTMLElement {
     const panel = new PermissionPanel(this)
     panel.setAttribute("id", `permission_${name}_${type}_panel`)
 
-    const permission = new Permission()
+    const permission = newPermission()
     permission.setName(name)
     panel.setPermission(permission)
 
@@ -406,7 +402,9 @@ export class PermissionsManager extends HTMLElement {
     try {
       const rsp = await getResourcePermissions(path)
       const perms = rsp?.getPermissions?.() ?? rsp
-      if (perms instanceof Permissions) {
+      // perms is a proto object from the gRPC response — use it directly.
+      // If it has proto getters (getPath, setPath), it's a real proto message.
+      if (perms && typeof perms.getPath === "function") {
         this._permissions = perms
       } else {
         this._permissions = permissionsVMToProto(perms || { path })
@@ -416,9 +414,9 @@ export class PermissionsManager extends HTMLElement {
         this._permissions.path = path
       }
     } catch (err) {
-      this._permissions = new Permissions()
+      this._permissions = newPermissions()
       this._permissions.setPath(path)
-      const owner = new Permission()
+      const owner = newPermission()
       owner.setName("owner")
       // setOwners vs setOwner depending on schema
       this._permissions.setOwners?.(owner) || this._permissions.setOwner?.(owner)
@@ -450,7 +448,7 @@ export class PermissionsManager extends HTMLElement {
     ownersPanel.id = "permission_owners_panel"
     let ownerPermission = this._permissions.getOwners?.() ?? this._permissions.getOwner?.()
     if (!ownerPermission) {
-      ownerPermission = new Permission()
+      ownerPermission = newPermission()
       ownerPermission.setName("owner")
       if (this._permissions.setOwners) {
         this._permissions.setOwners(ownerPermission)
@@ -490,8 +488,8 @@ export class PermissionsManager extends HTMLElement {
   // ---------------- Helpers ----------------
   _ensurePermissions() {
     if (!this._permissions) {
-      this._permissions = new Permissions()
-      const owner = new Permission()
+      this._permissions = newPermissions()
+      const owner = newPermission()
       owner.setName("owner")
       this._permissions.setOwners?.(owner) || this._permissions.setOwner?.(owner)
     }

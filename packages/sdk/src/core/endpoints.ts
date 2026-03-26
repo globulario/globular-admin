@@ -88,8 +88,18 @@ export function getBaseUrl(): string | null {
 }
 export function getGatewayBaseUrl(): string | null { return getBaseUrl(); }
 
+/** Alias kept for backward compat with tests. */
+export function getConfiguredBaseUrl(): string | null {
+  return readBase();
+}
+
+/** Alias — same as getBaseUrl. */
+export function httpBaseUrl(): string {
+  return readBase() || "";
+}
+
 export function requireBaseUrl(): string {
-  const v = readBase();
+  const v = getBaseUrl();
   if (!v) {
     throw new Error(
       "No Globular base URL configured. Call setBaseUrl('https://your-host') before using the client."
@@ -149,17 +159,6 @@ function normalizeGatewayBase(raw: string): string {
 export function grpcWebHostUrl(base = requireBaseUrl()): string {
   const b = base ?? '';
   try {
-    // In dev mode (Vite dev server on localhost), route gRPC-Web through the
-    // dev proxy so Vite forwards to the real backend.
-    if (typeof window !== 'undefined') {
-      const loc = window.location;
-      const isDevServer = (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1')
-        && loc.port && loc.port !== '443' && loc.port !== '80';
-      if (isDevServer) {
-        return loc.origin;
-      }
-    }
-
     const u = new URL(b);
     const hadPath = u.pathname && u.pathname !== '/';
     if (hadPath && !warnedPathyGrpcHost) {

@@ -8,6 +8,8 @@ import {
   removeRoleFromAccount,
   addRoleToOrganization,
   removeRoleFromOrganization,
+  addRoleToGroup,
+  removeRoleFromGroup,
   addRoleActions,
   removeRoleAction,
   getRoleById,
@@ -16,10 +18,12 @@ import {
   displaySuccess,
   listAccounts,
   listOrganizations as listOrgs,
+  listGroups,
   listActions,
   RoleVM as Role,
   AccountVM,
   OrganizationVM as Organization,
+  GroupVM,
 } from "@globular/sdk";
 
 
@@ -29,6 +33,7 @@ import "./action_view";      // <globular-action-view>
 import { UserView } from "./user_view.js"; // <globular-user-view>
 
 import { OrganizationView } from "./organization_view"; // <globular-organization-view>
+import { GroupView } from "./group_view"; // <globular-group-view>
 
 
 /* ---------- table row ---------- */
@@ -75,12 +80,15 @@ class RoleInlineEditor extends HTMLElement {
   private potentialMembersPane?: HTMLElement;
   private orgsPane?: HTMLElement;
   private potentialOrgsPane?: HTMLElement;
+  private groupsPane?: HTMLElement;
+  private potentialGroupsPane?: HTMLElement;
   private actionsPane?: HTMLElement;
   private potentialActionsPane?: HTMLElement;
 
   // data caches
   private allAccounts: AccountVM[] = [];
   private allOrgs: Organization[] = [];
+  private allGroups: GroupVM[] = [];
   private allActions: string[] = [];
 
   // staging
@@ -88,6 +96,8 @@ class RoleInlineEditor extends HTMLElement {
   private stagedAccRems = new Set<string>();
   private stagedOrgAdds = new Set<string>();
   private stagedOrgRems = new Set<string>();
+  private stagedGrpAdds = new Set<string>();
+  private stagedGrpRems = new Set<string>();
   private stagedActAdds = new Set<string>();
   private stagedActRems = new Set<string>();
 
@@ -205,6 +215,21 @@ class RoleInlineEditor extends HTMLElement {
           </div>
         </div>
 
+        <!-- Groups -->
+        <div class="block">
+          <h4>Groups</h4>
+          <div class="lists">
+            <div>
+              <div class="hint">In role</div>
+              <div class="pane" id="groups-pane"><slot name="groups"></slot></div>
+            </div>
+            <div>
+              <div class="hint">Potential Groups</div>
+              <div class="pane" id="potential-groups"><slot name="potential-groups"></slot></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Actions -->
         <div class="block">
           <h4>Actions</h4>
@@ -242,6 +267,8 @@ class RoleInlineEditor extends HTMLElement {
     this.potentialMembersPane = this.shadow.getElementById("potential-members") as HTMLElement;
     this.orgsPane = this.shadow.getElementById("orgs-pane") as HTMLElement;
     this.potentialOrgsPane = this.shadow.getElementById("potential-orgs") as HTMLElement;
+    this.groupsPane = this.shadow.getElementById("groups-pane") as HTMLElement;
+    this.potentialGroupsPane = this.shadow.getElementById("potential-groups") as HTMLElement;
     this.actionsPane = this.shadow.getElementById("actions-pane") as HTMLElement;
     this.potentialActionsPane = this.shadow.getElementById("potential-actions") as HTMLElement;
 
@@ -286,6 +313,7 @@ class RoleInlineEditor extends HTMLElement {
     // reset staging
     this.stagedAccAdds.clear(); this.stagedAccRems.clear();
     this.stagedOrgAdds.clear(); this.stagedOrgRems.clear();
+    this.stagedGrpAdds.clear(); this.stagedGrpRems.clear();
     this.stagedActAdds.clear(); this.stagedActRems.clear();
 
     const role = r ?? ({} as Role);
@@ -299,11 +327,13 @@ class RoleInlineEditor extends HTMLElement {
     await Promise.all([
       (async () => { this.allAccounts = await listAccounts(); })(),
       (async () => { this.allOrgs = await listOrgs({}); })(),
+      (async () => { this.allGroups = await listGroups({}); })(),
       (async () => { this.allActions = await listActions(); })(),
     ]);
 
     await this._renderMembersPanes();
     await this._renderOrganizationsPanes();
+    await this._renderGroupsPanes();
     await this._renderActionsPanes();
   }
 
@@ -395,6 +425,54 @@ class RoleInlineEditor extends HTMLElement {
         this._renderOrganizationsPanes();
       });
       this.appendChild(ov);
+    }
+  }
+
+  /* ------------------------- Groups panes ------------------------- */
+  private async _renderGroupsPanes() {
+    this.querySelectorAll('globular-group-view[slot="groups"]').forEach(el => el.remove());
+    this.querySelectorAll('globular-group-view[slot="potential-groups"]').forEach(el => el.remove());
+
+    const base = new Set<string>(this._role?.groups || []);
+    for (const id of this.stagedGrpAdds) base.add(id);
+    for (const id of this.stagedGrpRems) base.delete(id);
+
+    // in role
+    for (const grp of this.allGroups) {
+      const gid = grp.id;
+      if (!gid || !base.has(gid)) continue;
+      const gv = new GroupView(grp as any);
+      gv.slot = "groups";
+      gv.setAttribute("summary", "true");
+      gv.setAttribute("closeable", "true");
+      (gv as any).onClose = () => {
+        if ((this._role?.groups || []).includes(gid)) this.stagedGrpRems.add(gid);
+        this.stagedGrpAdds.delete(gid);
+        this._renderGroupsPanes();
+      };
+      this.appendChild(gv);
+    }
+
+    // potential groups
+    for (const grp of this.allGroups) {
+      const gid = grp.id;
+      if (!gid || base.has(gid)) continue;
+      const gv = new GroupView(grp as any);
+      gv.slot = "potential-groups";
+      gv.setAttribute("summary", "true");
+      gv.setAttribute("closeable", "false");
+      gv.setAttribute("addable", "true");
+      (gv as any).onAdd = () => {
+        if (!(this._role?.groups || []).includes(gid)) this.stagedGrpAdds.add(gid);
+        this.stagedGrpRems.delete(gid);
+        this._renderGroupsPanes();
+      };
+      gv.addEventListener("click", () => {
+        if (!(this._role?.groups || []).includes(gid)) this.stagedGrpAdds.add(gid);
+        this.stagedGrpRems.delete(gid);
+        this._renderGroupsPanes();
+      });
+      this.appendChild(gv);
     }
   }
 
@@ -492,6 +570,8 @@ class RoleInlineEditor extends HTMLElement {
         const accRems = Array.from(this.stagedAccRems);
         const orgAdds = Array.from(this.stagedOrgAdds);
         const orgRems = Array.from(this.stagedOrgRems);
+        const grpAdds = Array.from(this.stagedGrpAdds);
+        const grpRems = Array.from(this.stagedGrpRems);
         const actAdds = Array.from(this.stagedActAdds);
         const actRems = Array.from(this.stagedActRems);
 
@@ -503,6 +583,10 @@ class RoleInlineEditor extends HTMLElement {
         for (const id of orgAdds) await addRoleToOrganization(roleId, id);
         for (const id of orgRems) await removeRoleFromOrganization(roleId, id);
 
+        // groups
+        for (const id of grpAdds) await addRoleToGroup(roleId, id);
+        for (const id of grpRems) await removeRoleFromGroup(roleId, id);
+
         // actions (batch add & 1-by-1 remove to mirror available RPCs)
         if (actAdds.length > 0) await addRoleActions(roleId, actAdds);
         for (const a of actRems) await removeRoleAction(roleId, a);
@@ -510,6 +594,7 @@ class RoleInlineEditor extends HTMLElement {
         // Clear staging & reflect new state locally
         this.stagedAccAdds.clear(); this.stagedAccRems.clear();
         this.stagedOrgAdds.clear(); this.stagedOrgRems.clear();
+        this.stagedGrpAdds.clear(); this.stagedGrpRems.clear();
         this.stagedActAdds.clear(); this.stagedActRems.clear();
 
         // Update the local role model to match staged effects
@@ -520,6 +605,7 @@ class RoleInlineEditor extends HTMLElement {
           domain: body.domain,
           members: Array.from(new Set([...(this._role?.members || this._role?.members || []), ...accAdds].filter(a => !accRems.includes(a)))),
           organizations: Array.from(new Set([...(this._role?.organizations || []), ...orgAdds].filter(o => !orgRems.includes(o)))),
+          groups: Array.from(new Set([...(this._role?.groups || []), ...grpAdds].filter(g => !grpRems.includes(g)))),
           actions: Array.from(new Set([...(this._role?.actions || []), ...actAdds].filter(a => !actRems.includes(a)))),
         } as Role;
 
@@ -539,6 +625,7 @@ class RoleInlineEditor extends HTMLElement {
             domain: body.domain,
             members: Array.from(new Set([...(this._role?.members || []), ...accAdds].filter(a => !accRems.includes(a)))),
             organizations: Array.from(new Set([...(this._role?.organizations || []), ...orgAdds].filter(o => !orgRems.includes(o)))),
+            groups: Array.from(new Set([...(this._role?.groups || []), ...grpAdds].filter(g => !grpRems.includes(g)))),
             actions: Array.from(new Set([...(this._role?.actions || []), ...actAdds].filter(a => !actRems.includes(a)))),
           } as Role;
         }
@@ -546,6 +633,7 @@ class RoleInlineEditor extends HTMLElement {
         // Re-render panes using the up-to-date role
         await this._renderMembersPanes();
         await this._renderOrganizationsPanes();
+        await this._renderGroupsPanes();
         await this._renderActionsPanes();
 
         displaySuccess(isNew ? "Role created." : "Role updated.");

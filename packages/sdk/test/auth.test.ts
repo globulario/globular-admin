@@ -39,8 +39,10 @@ describe("auth token lifecycle", () => {
     expect(getToken()).toBe("abc");
   });
 
-  it("metadata returns Bearer header", () => {
+  it("metadata returns auth headers including Bearer", () => {
     setToken("abc");
-    expect(metadata()).toEqual({ authorization: "Bearer abc" });
+    const md = metadata();
+    expect(md.authorization).toBe("Bearer abc");
+    expect(md.token).toBe("abc");
   });
 });

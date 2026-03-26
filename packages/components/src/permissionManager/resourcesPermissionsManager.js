@@ -4,12 +4,9 @@ import getUuidByString from "uuid-by-string"
 import { Backend } from "@globular/sdk"
 import { displayError, displayMessage } from "@globular/sdk"
 
-// Only used to publish tiny payloads on eventHub
-import { rbacPb } from "@globular/sdk"
-const { Permissions } = rbacPb
-
 // ---- New backend wrappers ----
 import {
+  deserializePermissions,
   listResourcePermissionsByType,
   deleteResourcePermissions,
 } from "@globular/sdk"
@@ -64,7 +61,7 @@ export class ResourcesPermissionsManager extends HTMLElement {
       (uuid) => { this._listeners["delete"] = uuid },
       (bin) => {
         try {
-          const p = Permissions.deserializeBinary(bin)
+          const p = deserializePermissions(bin)
           const el = this.querySelector(`#${p.getResourceType()}-permissions`)
           if (el && typeof el.deletePermissions === "function") {
             el.deletePermissions(p)
@@ -83,7 +80,7 @@ export class ResourcesPermissionsManager extends HTMLElement {
       (uuid) => { this._listeners["set"] = uuid },
       (bin) => {
         try {
-          const p = Permissions.deserializeBinary(bin)
+          const p = deserializePermissions(bin)
           const el = this.querySelector(`#${p.getResourceType()}-permissions`)
           if (el && typeof el.setPermissions === "function") {
             el.setPermissions(p)

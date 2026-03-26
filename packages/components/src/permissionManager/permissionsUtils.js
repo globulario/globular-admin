@@ -1,4 +1,4 @@
-import { rbacPb as rbac } from "@globular/sdk"
+import { newPermissions, newPermission } from "@globular/sdk"
 
 const cloneList = (list) => Array.isArray(list) ? list.slice() : []
 
@@ -88,7 +88,7 @@ const applyList = (permission, listName, fallbackPropName, value) => {
 }
 
 const entryToPermission = (entry) => {
-  const p = new rbac.Permission()
+  const p = newPermission()
   p.setName?.(entry.name ?? "")
   applyList(p, "Accounts", "accounts", entry.accounts || [])
   applyList(p, "Groups", "groups", entry.groups || [])
@@ -100,7 +100,7 @@ const entryToPermission = (entry) => {
 
 export function permissionsVMToProto(vmInput) {
   const vm = vmInput || {}
-  const perms = new rbac.Permissions()
+  const perms = newPermissions()
   const path = vm.path || ""
   perms.setPath?.(path)
   perms.path = path

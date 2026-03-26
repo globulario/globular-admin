@@ -3,8 +3,7 @@
 import getUuidByString from "uuid-by-string"
 import { displayError, displayMessage} from "@globular/sdk";
 
-import { rbacPb } from "@globular/sdk"
-const { SubjectType } = rbacPb
+import { SubjectType } from "@globular/sdk"
 
 // ---- New backend wrappers (adjust import paths to your repo) -------------
 // Expectation:
