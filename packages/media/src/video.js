@@ -46,8 +46,9 @@ const MP4_TOKEN_REFRESH_INTERVAL_MS = 30_000   // fallback poll when expiry unkn
 const MP4_TOKEN_EXPIRY_PAD_MS = 180_000        // refresh 3 min before expiry
 const PLAY_ATTEMPT_COOLDOWN_MS = 50
 const HLS_MANIFEST_TIMEOUT_MS = 10_000         // definite HLS sources (user navigated to .m3u8)
-const HLS_PROBE_TIMEOUT_MS = 3_000             // opportunistic HLS probe (raw .mp4 → try playlist)
+const HLS_PROBE_TIMEOUT_MS = 2_000             // opportunistic HLS probe (raw .mp4 → try playlist)
 const HLS_SERVER_COOLDOWN_MS = 500             // wait after destroy before requesting a new stream
+const HLS_SEEK_STALL_MS = 2_500               // switch to MP4 if HLS seek stalls this long
 
 // Module-level: shared across VideoPlayer instances so close→reopen respects the cooldown
 let _lastHlsDestroyAt = 0
@@ -854,7 +855,7 @@ export class VideoPlayer extends HTMLElement {
             // If still waiting for data after 4s, the HLS transcode is stalling
             if (!this.videoElement || this.videoElement.readyState >= 3) return
             this._switchToDirectMp4(this.videoElement.currentTime)
-          }, 4_000)
+          }, HLS_SEEK_STALL_MS)
         }
       }, 150)
     }
@@ -1768,26 +1769,12 @@ export class VideoPlayer extends HTMLElement {
       this._networkRetryNonce = 0  // consumed
     }
 
-    // For non-HLS file sources (raw .mp4 / .mkv), try the HLS playlist first.
-    // HLS segments start playing in ~2s regardless of moov-atom position.
-    // If the playlist doesn't exist the HLS error handler falls back to the raw MP4.
-    // Skip this probe when we recently destroyed an HLS instance (close→reopen)
-    // because the server is still cleaning up ffmpeg — the probe would just hang
-    // until HLS_PROBE_TIMEOUT_MS and delay playback for no reason.
+    // For raw video files (.mp4, .mkv, etc.), use direct byte-range serving.
+    // Direct MP4 gives near-instant seeking via HTTP Range requests, while
+    // HLS live transcoding freezes on every seek (server must restart ffmpeg).
+    // HLS is only used for directories (pre-transcoded) or explicit .m3u8 URLs.
     this._fallbackMp4Url = null
     this._directMp4Url = null
-    const recentHlsDestroy = (Date.now() - _lastHlsDestroyAt) < 5_000
-    if (!isHlsSource && !isDirectoryPath && !recentHlsDestroy) {
-      const tryPlaylistUrl = getPlaylistUrl()
-      if (tryPlaylistUrl) {
-        this._fallbackMp4Url = urlToPlay   // remembered for silent fallback on HLS load error
-        this._directMp4Url = urlToPlay     // kept for seek stall → direct MP4 fallback
-        this._forceHlsSource = true
-        urlToPlay = tryPlaylistUrl
-        isHlsSource = true
-        this._stopMp4TokenMaintenance()    // HLS injects token per-segment; no maintenance needed
-      }
-    }
 
     // Same-path resume behavior preserved — but skip when we're retrying with a nonce
     // so the URL is rebuilt with the cache-bust param before playContent is called.
