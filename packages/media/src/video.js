@@ -45,8 +45,9 @@ const { Poster, Video } = titlePb
 const MP4_TOKEN_REFRESH_INTERVAL_MS = 30_000   // fallback poll when expiry unknown
 const MP4_TOKEN_EXPIRY_PAD_MS = 180_000        // refresh 3 min before expiry
 const PLAY_ATTEMPT_COOLDOWN_MS = 50
-const HLS_MANIFEST_TIMEOUT_MS = 15_000
-const HLS_SERVER_COOLDOWN_MS = 1_500           // wait after destroy before requesting a new stream
+const HLS_MANIFEST_TIMEOUT_MS = 10_000         // definite HLS sources (user navigated to .m3u8)
+const HLS_PROBE_TIMEOUT_MS = 3_000             // opportunistic HLS probe (raw .mp4 → try playlist)
+const HLS_SERVER_COOLDOWN_MS = 500             // wait after destroy before requesting a new stream
 
 // Module-level: shared across VideoPlayer instances so close→reopen respects the cooldown
 let _lastHlsDestroyAt = 0
@@ -755,6 +756,7 @@ export class VideoPlayer extends HTMLElement {
     }
     this._mp4TokenPath = ''
     this._mp4TokenIsHttpSource = false
+    this._mp4FreshTokenUrl = null
   }
 
   _scheduleMp4TokenRefresh() {
@@ -826,6 +828,10 @@ export class VideoPlayer extends HTMLElement {
         clearTimeout(this._hlsSeekTimer)
         this._hlsSeekTimer = null
       }
+      if (this._hlsSeekStallTimer) {
+        clearTimeout(this._hlsSeekStallTimer)
+        this._hlsSeekStallTimer = null
+      }
       this.hls.stopLoad()
     }
 
@@ -836,16 +842,69 @@ export class VideoPlayer extends HTMLElement {
         this._hlsSeekTimer = null
         if (!this.hls || !this.videoElement) return
         this.hls.startLoad(this.videoElement.currentTime)
+
+        // If we have a direct MP4 fallback and the HLS seek stalls (server
+        // restarting ffmpeg), switch to direct MP4 for instant byte-range seek.
+        if (this._directMp4Url) {
+          if (this._hlsSeekStallTimer) clearTimeout(this._hlsSeekStallTimer)
+          this._hlsSeekStallTimer = setTimeout(() => {
+            this._hlsSeekStallTimer = null
+            // If still waiting for data after 4s, the HLS transcode is stalling
+            if (!this.videoElement || this.videoElement.readyState >= 3) return
+            this._switchToDirectMp4(this.videoElement.currentTime)
+          }, 4_000)
+        }
       }, 150)
+    }
+
+    // Clear the stall timer when data arrives (seek succeeded via HLS)
+    const onCanPlay = () => {
+      if (this._hlsSeekStallTimer) {
+        clearTimeout(this._hlsSeekStallTimer)
+        this._hlsSeekStallTimer = null
+      }
     }
 
     this.videoElement.addEventListener('seeking', onSeeking)
     this.videoElement.addEventListener('seeked', onSeeked)
+    this.videoElement.addEventListener('canplay', onCanPlay)
 
     // Store cleanup so _destroyHls can remove the listeners
     this._hlsSeekCleanup = () => {
       this.videoElement?.removeEventListener('seeking', onSeeking)
       this.videoElement?.removeEventListener('seeked', onSeeked)
+      this.videoElement?.removeEventListener('canplay', onCanPlay)
+      if (this._hlsSeekStallTimer) {
+        clearTimeout(this._hlsSeekStallTimer)
+        this._hlsSeekStallTimer = null
+      }
+    }
+  }
+
+  /**
+   * Switch from HLS (live transcode) to direct MP4 byte-range serving.
+   * Called when an HLS seek stalls because the server is restarting ffmpeg.
+   * Direct MP4 seeks are near-instant for files with a properly placed moov atom.
+   */
+  _switchToDirectMp4(seekTime) {
+    if (!this._directMp4Url || !this.videoElement) return
+
+    const url = withToken(this._directMp4Url)
+    const wasPaused = this.videoElement.paused
+
+    this._destroyHls()
+    this._forceHlsSource = false
+
+    // Re-enable MP4 token maintenance
+    this._startMp4TokenMaintenance(this.path, isHttpUrl(this.path))
+
+    if (seekTime > 0) this._pendingSeekTime = seekTime
+    this.videoElement.src = url
+
+    if (!wasPaused) {
+      this.videoElement.addEventListener('canplay', () => {
+        this.videoElement.play().catch(() => {})
+      }, { once: true })
     }
   }
 
@@ -880,24 +939,29 @@ export class VideoPlayer extends HTMLElement {
     // HLS handles token per-segment via makeTokenLoader/getAuthToken — no action.
     if (this.hls) return
 
-    // Skip if the src already carries this token.
-    const srcToken = (() => {
-      try { return new URL(this.videoElement.src).searchParams.get('token') } catch { return null }
-    })()
-    if (newToken === srcToken) return
+    // DON'T swap videoElement.src during normal playback.  The browser already
+    // has an open HTTP connection with buffered data — replacing src forces a
+    // full re-request (moov atom re-parse, visible rebuffer stall).  The token
+    // in the URL was only needed to authorize the initial request; once the
+    // connection is open, the server doesn't re-check it per byte-range.
+    //
+    // Instead, just update the cached URL so that IF the connection drops
+    // (network error, seek beyond buffer) the retry/error handler will use
+    // the fresh token.  _retryPlaybackAfterFailure() already handles this.
+    this._mp4FreshTokenUrl = this._buildMp4UrlWithToken(newToken)
+  }
 
-    const newUrl = this._buildMp4UrlWithToken(newToken)
-    if (!newUrl) return
+  /**
+   * Force-swap the video src with fresh token.  Only called from error/retry
+   * paths — never during normal playback.
+   */
+  _forceSwapMp4Src(newUrl) {
+    if (!newUrl || !this.videoElement) return
 
     const wasPaused = this.videoElement.paused
     const preservedTime = this.videoElement.currentTime || 0
 
-    // Store the seek target so _handleVideoLoadedData restores it via the
-    // existing _pendingSeekTime mechanism (spec-correct: waits for loadeddata).
     if (preservedTime > 0) this._pendingSeekTime = preservedTime
-
-    // Swap src — browser issues a new range request from the seek position.
-    // _mediaSetupDone stays true so subtitle/audio-track setup doesn't repeat.
     this.videoElement.src = newUrl
 
     if (!wasPaused) {
@@ -929,7 +993,17 @@ export class VideoPlayer extends HTMLElement {
     if (!mediaError) return
 
     const networkCode = typeof MediaError !== 'undefined' ? MediaError.MEDIA_ERR_NETWORK : 2
-    if (mediaError.code === networkCode) this._retryPlaybackAfterFailure()
+    if (mediaError.code === networkCode) {
+      // If we have a pre-built fresh-token URL, try a quick src swap first
+      // before the heavier full retry path.
+      if (this._mp4FreshTokenUrl) {
+        const url = this._mp4FreshTokenUrl
+        this._mp4FreshTokenUrl = null
+        this._forceSwapMp4Src(url)
+        return
+      }
+      this._retryPlaybackAfterFailure()
+    }
   }
 
   _handleVideoLoadedData = async () => {
@@ -1570,7 +1644,9 @@ export class VideoPlayer extends HTMLElement {
       this.titleInfo = null
     }
 
-    await getFreshToken(60_000)
+    // Best-effort token refresh — don't block video start; the token in
+    // sessionStorage is already valid from login / background refresh.
+    getFreshToken(60_000).catch(() => {})
 
     this._forceHlsSource = false
 
@@ -1640,11 +1716,17 @@ export class VideoPlayer extends HTMLElement {
     // For non-HLS file sources (raw .mp4 / .mkv), try the HLS playlist first.
     // HLS segments start playing in ~2s regardless of moov-atom position.
     // If the playlist doesn't exist the HLS error handler falls back to the raw MP4.
+    // Skip this probe when we recently destroyed an HLS instance (close→reopen)
+    // because the server is still cleaning up ffmpeg — the probe would just hang
+    // until HLS_PROBE_TIMEOUT_MS and delay playback for no reason.
     this._fallbackMp4Url = null
-    if (!isHlsSource && !isDirectoryPath) {
+    this._directMp4Url = null
+    const recentHlsDestroy = (Date.now() - _lastHlsDestroyAt) < 5_000
+    if (!isHlsSource && !isDirectoryPath && !recentHlsDestroy) {
       const tryPlaylistUrl = getPlaylistUrl()
       if (tryPlaylistUrl) {
-        this._fallbackMp4Url = urlToPlay   // remembered for silent fallback
+        this._fallbackMp4Url = urlToPlay   // remembered for silent fallback on HLS load error
+        this._directMp4Url = urlToPlay     // kept for seek stall → direct MP4 fallback
         this._forceHlsSource = true
         urlToPlay = tryPlaylistUrl
         isHlsSource = true
@@ -1838,10 +1920,27 @@ export class VideoPlayer extends HTMLElement {
         }
       })
 
+      // Use a short timeout for opportunistic HLS probes (raw MP4 → try playlist);
+      // use the full timeout for definite HLS sources (.m3u8 / directory).
+      const manifestTimeout = this._fallbackMp4Url ? HLS_PROBE_TIMEOUT_MS : HLS_MANIFEST_TIMEOUT_MS
       let manifestTimer = window.setTimeout(() => {
-        displayError('HLS manifest load timed out. Check network/auth/CORS.', 6000)
-        this._hideLoadingOverlay()
-      }, HLS_MANIFEST_TIMEOUT_MS)
+        // Only show error for definite HLS sources — probes fail silently
+        if (!this._fallbackMp4Url) {
+          displayError('HLS manifest load timed out. Check network/auth/CORS.', 6000)
+          this._hideLoadingOverlay()
+        }
+        // For probes, trigger the fallback by synthesizing a fatal error
+        if (this._fallbackMp4Url && this.hls) {
+          const fallback = this._fallbackMp4Url
+          this._fallbackMp4Url = null
+          this._forceHlsSource = false
+          try { this.hls.destroy() } catch {}
+          this.hls = null
+          this._startMp4TokenMaintenance(this.path, isHttpUrl(this.path))
+          this.videoElement.src = fallback
+          this._playVideoElement()
+        }
+      }, manifestTimeout)
 
       const clearManifestTimer = () => {
         if (manifestTimer) {
