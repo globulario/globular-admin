@@ -604,6 +604,8 @@ export class VideoPlayer extends HTMLElement {
     this.videoElement?.removeEventListener('loadeddata', this._handleVideoLoadedData)
     this.videoElement?.removeEventListener('timeupdate', this._handleVideoTimeUpdate)
     this.videoElement?.removeEventListener('error', this._handleVideoElementError)
+    this.videoElement?.removeEventListener('seeking', this._handleDeferredTokenSwap)
+    this.videoElement?.removeEventListener('pause', this._handleDeferredTokenSwap)
     this.audioTrackSelector?.removeEventListener('change', this._handleAudioTrackChange)
 
     this.shadowRoot.querySelectorAll('.plyr__controls__item.custom-control').forEach(el => el.remove())
@@ -939,16 +941,58 @@ export class VideoPlayer extends HTMLElement {
     // HLS handles token per-segment via makeTokenLoader/getAuthToken — no action.
     if (this.hls) return
 
-    // DON'T swap videoElement.src during normal playback.  The browser already
-    // has an open HTTP connection with buffered data — replacing src forces a
-    // full re-request (moov atom re-parse, visible rebuffer stall).  The token
-    // in the URL was only needed to authorize the initial request; once the
-    // connection is open, the server doesn't re-check it per byte-range.
-    //
-    // Instead, just update the cached URL so that IF the connection drops
-    // (network error, seek beyond buffer) the retry/error handler will use
-    // the fresh token.  _retryPlaybackAfterFailure() already handles this.
+    // Skip if the src already carries this token.
+    const srcToken = (() => {
+      try { return new URL(this.videoElement.src).searchParams.get('token') } catch { return null }
+    })()
+    if (newToken === srcToken) return
+
+    // Always cache the fresh URL for error/retry paths.
     this._mp4FreshTokenUrl = this._buildMp4UrlWithToken(newToken)
+
+    // The Gateway validates the token on every HTTP Range request, so we MUST
+    // update the src before the old token expires.  However, swapping src
+    // while the browser is actively streaming causes a rebuffer.
+    //
+    // Strategy: if the video is paused or has enough buffer ahead (≥30s),
+    // swap immediately — the browser will resume from the buffered position
+    // without a visible stutter.  If actively playing with little buffer,
+    // defer the swap to the next 'seeking' event (user scrubs) or 'pause'.
+    const bufferedAhead = this._getBufferedAhead()
+    if (this.videoElement.paused || bufferedAhead >= 30) {
+      this._doSrcSwap(this._mp4FreshTokenUrl)
+      this._mp4FreshTokenUrl = null
+    } else {
+      // Defer: swap on next seek or pause (whichever comes first)
+      this._pendingTokenSwap = true
+    }
+  }
+
+  /** How many seconds of video are buffered ahead of currentTime. */
+  _getBufferedAhead() {
+    if (!this.videoElement) return 0
+    const buf = this.videoElement.buffered
+    const ct = this.videoElement.currentTime
+    for (let i = 0; i < buf.length; i++) {
+      if (buf.start(i) <= ct && buf.end(i) > ct) {
+        return buf.end(i) - ct
+      }
+    }
+    return 0
+  }
+
+  /** Swap src preserving position + play state. Minimal disruption. */
+  _doSrcSwap(newUrl) {
+    if (!newUrl || !this.videoElement) return
+    const wasPaused = this.videoElement.paused
+    const pos = this.videoElement.currentTime || 0
+    if (pos > 0) this._pendingSeekTime = pos
+    this.videoElement.src = newUrl
+    if (!wasPaused) {
+      this.videoElement.addEventListener('canplay', () => {
+        this.videoElement.play().catch(() => {})
+      }, { once: true })
+    }
   }
 
   /**
@@ -969,6 +1013,14 @@ export class VideoPlayer extends HTMLElement {
         this.videoElement.play().catch(() => {})
       }, { once: true })
     }
+  }
+
+  _handleDeferredTokenSwap = () => {
+    if (!this._pendingTokenSwap || !this._mp4FreshTokenUrl) return
+    if (this.hls) return   // HLS handles tokens per-segment
+    this._pendingTokenSwap = false
+    this._doSrcSwap(this._mp4FreshTokenUrl)
+    this._mp4FreshTokenUrl = null
   }
 
   _handleVideoTimeUpdate = () => {
@@ -1302,9 +1354,6 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _initPlyrEventListeners() {
-    // Token updates are handled proactively by _scheduleMp4TokenRefresh, not on user events.
-    // Triggering src changes on seeked/play would cause disruptive reloads whenever
-    // auth.ts refreshes the token in the background between user interactions.
     this.player.on('exitfullscreen', () => this.container.restore && this.container.restore())
 
     this.container.addEventListener('dialog-maximized', () => {
@@ -1316,6 +1365,12 @@ export class VideoPlayer extends HTMLElement {
     this.videoElement.addEventListener('timeupdate', this._handleVideoTimeUpdate)
     this.videoElement.addEventListener('error', this._handleVideoElementError)
     this.audioTrackSelector.addEventListener('change', this._handleAudioTrackChange)
+
+    // Deferred token swap: when a token refresh happened during active playback
+    // and couldn't swap src immediately, do it on the next seek or pause —
+    // natural moments where a brief rebuffer is expected / invisible.
+    this.videoElement.addEventListener('seeking', this._handleDeferredTokenSwap)
+    this.videoElement.addEventListener('pause', this._handleDeferredTokenSwap)
 
     this.videoElement.onended = () => {
       this._playbackCompleted = true
