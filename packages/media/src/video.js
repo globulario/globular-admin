@@ -1919,10 +1919,17 @@ export class VideoPlayer extends HTMLElement {
       this._loadTitleInfoAndRestorePosition(path, token)
     }
 
-    // Timeline thumbnails (non-blocking)
+    // Timeline thumbnails — deferred until video is actually playing.
+    // Loading 100+ thumbnail images concurrently with the video saturates
+    // disk I/O on HDDs and starves the video byte-range requests.
     const normalized = normalizePath(path)
     if (isVideoLikePath(normalized)) {
-      this._loadSignedPreviewThumbnails(normalized, token)
+      const loadThumbs = () => {
+        this.videoElement.removeEventListener('playing', loadThumbs)
+        // Additional delay to let the video buffer fill first
+        setTimeout(() => this._loadSignedPreviewThumbnails(normalized, token), 3_000)
+      }
+      this.videoElement.addEventListener('playing', loadThumbs, { once: true })
     }
 
     if (shouldUseHls) {
