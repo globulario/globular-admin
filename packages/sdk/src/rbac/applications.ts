@@ -1,6 +1,7 @@
 // src/backend/apps.ts
 import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
+import { metadata } from '../core/auth'
 
 // ---- Generated stubs (adjust import paths if needed) ----
 import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb"
@@ -59,14 +60,6 @@ function repositoryClient(): repoGrpc.PackageRepositoryClient {
   return new repoGrpc.PackageRepositoryClient(base, null, { withCredentials: true })
 }
 
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem('__globular_token__')
-    return t ? { token: t } : {}
-  } catch {
-    return {}
-  }
-}
 
 // ------------------------------ utils ------------------------------
 /** Try multiple names for a request class in a given namespace; fallback to {} if not found */
@@ -278,7 +271,7 @@ export type CreateApplicationInput = Partial<Pick<ApplicationVM,
 >>
 
 export async function createApplication(input: CreateApplicationInput): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.create.rq)
 
   // rq.application = new Application()
@@ -310,7 +303,7 @@ export type UpdateApplicationInput = {
   values: string
 }
 export async function updateApplication(input: UpdateApplicationInput): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.update.rq)
   rq.setApplicationid?.(input.applicationId)
   rq.setValues?.(input.values ?? '{}')
@@ -318,14 +311,14 @@ export async function updateApplication(input: UpdateApplicationInput): Promise<
 }
 
 export async function deleteApplication(applicationId: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.delete.rq)
   rq.setApplicationid?.(applicationId)
   await unary(clientFactory, pickMethod(clientFactory(), SERVICE_METHODS.delete.method), rq, undefined, md)
 }
 
 export async function addApplicationActions(applicationId: string, actions: string[]): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.addActions.rq)
   rq.setApplicationid?.(applicationId)
   rq.setActionsList?.(actions ?? [])
@@ -333,7 +326,7 @@ export async function addApplicationActions(applicationId: string, actions: stri
 }
 
 export async function removeApplicationAction(applicationId: string, action: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.removeAction.rq)
   rq.setApplicationid?.(applicationId)
   rq.setAction?.(action)
@@ -341,14 +334,14 @@ export async function removeApplicationAction(applicationId: string, action: str
 }
 
 export async function removeApplicationsAction(action: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.removeAllAction.rq)
   rq.setAction?.(action)
   await unary(clientFactory, pickMethod(clientFactory(), SERVICE_METHODS.removeAllAction.method), rq, undefined, md)
 }
 
 export async function getApplicationVersion(applicationId: string): Promise<string> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.getVersion.rq)
   rq.setId?.(applicationId)
   const rsp: any = await unary(clientFactory, pickMethod(clientFactory(), SERVICE_METHODS.getVersion.method), rq, undefined, md)
@@ -368,7 +361,7 @@ const APPMGR_METHODS = {
 } as const
 
 export async function startApplication(applicationId: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = appMgrClient()
   const rq = newRqIn(appmgr, APPMGR_METHODS.start.rq)
   rq.setApplicationid?.(applicationId)
@@ -376,7 +369,7 @@ export async function startApplication(applicationId: string): Promise<void> {
   await unary(() => c, pickMethod(c, APPMGR_METHODS.start.method), rq, undefined, md)
 }
 export async function stopApplication(applicationId: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = appMgrClient()
   const rq = newRqIn(appmgr, APPMGR_METHODS.stop.rq)
   rq.setApplicationid?.(applicationId)
@@ -384,7 +377,7 @@ export async function stopApplication(applicationId: string): Promise<void> {
   await unary(() => c, pickMethod(c, APPMGR_METHODS.stop.method), rq, undefined, md)
 }
 export async function restartApplication(applicationId: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = appMgrClient()
   const rq = newRqIn(appmgr, APPMGR_METHODS.restart.rq)
   rq.setApplicationid?.(applicationId)
@@ -392,7 +385,7 @@ export async function restartApplication(applicationId: string): Promise<void> {
   await unary(() => c, pickMethod(c, APPMGR_METHODS.restart.method), rq, undefined, md)
 }
 export async function getApplicationStatus(applicationId: string): Promise<string | number> {
-  const md = await meta()
+  const md = metadata()
   const c = appMgrClient()
   const rq = newRqIn(appmgr, APPMGR_METHODS.status.rq)
   rq.setApplicationid?.(applicationId)
@@ -419,7 +412,7 @@ export type InstallApplicationInput = {
 }
 
 export async function installApplication(input: InstallApplicationInput): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = discoveryClient()
   const rq = newRqIn(discovery, DISCOVERY_METHODS.install.rq)
   rq.setApplicationid?.(input.applicationId)
@@ -435,7 +428,7 @@ export async function installApplication(input: InstallApplicationInput): Promis
 }
 
 export async function uninstallApplication(applicationId: string, target?: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = discoveryClient()
   const rq = newRqIn(discovery, DISCOVERY_METHODS.uninstall.rq)
   rq.setApplicationid?.(applicationId)
@@ -463,7 +456,7 @@ export type PublishApplicationInput = {
 }
 
 export async function publishApplication(input: PublishApplicationInput): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = repositoryClient()
   const rq = newRqIn(repo, REPO_METHODS.publish.rq)
   rq.setApplicationid?.(input.applicationId)
@@ -484,7 +477,7 @@ export type UploadBundleInput = {
 }
 
 export async function uploadBundle(input: UploadBundleInput): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = repositoryClient()
   const rq = newRqIn(repo, REPO_METHODS.upload.rq)
 
@@ -507,7 +500,7 @@ export type DownloadBundleInput = {
 }
 
 export async function downloadBundle(input: DownloadBundleInput): Promise<Uint8Array> {
-  const md = await meta()
+  const md = metadata()
   const c = repositoryClient()
   const rq = newRqIn(repo, REPO_METHODS.download.rq)
   rq.setApplicationid?.(input.applicationId)

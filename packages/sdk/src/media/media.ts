@@ -1,6 +1,7 @@
 // src/backend/media.ts
 import { getBaseUrl, grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 // ---- stubs ----
 import * as mediaGrpc from "globular-web-client/media/media_grpc_web_pb";
@@ -11,15 +12,6 @@ export type MediaFilePB = mediapb.MediaFile;
 function clientFactory(): mediaGrpc.MediaServiceClient {
   const base = grpcWebHostUrl();
   return new mediaGrpc.MediaServiceClient(base, null, { withCredentials: true });
-}
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
 }
 
 function pickMethod(c: any, names: readonly string[]): string {
@@ -37,21 +29,21 @@ function newRq(names: readonly string[]): any {
 /* ------------------------------ API ------------------------------ */
 
 export async function convertVideoToMpeg4H264(absPath: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.ConvertVideoToMpeg4H264Request();
   rq.setPath(absPath);
   await unary(clientFactory, "convertVideoToMpeg4H264", rq, undefined, md);
 }
 
 export async function convertVideoToHls(absPath: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.ConvertVideoToHlsRequest();
   rq.setPath(absPath);
   await unary(clientFactory, "convertVideoToHls", rq, undefined, md);
 }
 
 export async function createVideoTimeLine(absPath: string, width = 180, fps = 0.2): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.CreateVideoTimeLineRequest();
   rq.setPath(absPath);
   rq.setWidth(width);
@@ -60,7 +52,7 @@ export async function createVideoTimeLine(absPath: string, width = 180, fps = 0.
 }
 
 export async function createVideoPreview(absPath: string, height = 128, nb = 20): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.CreateVideoPreviewRequest();
   rq.setPath(absPath);
   rq.setHeight(height);
@@ -69,14 +61,14 @@ export async function createVideoPreview(absPath: string, height = 128, nb = 20)
 }
 
 export async function startProcessVideo(absPath: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.StartProcessVideoRequest();
   rq.setPath(absPath);
   await unary(clientFactory, "startProcessVideo", rq, undefined, md);
 }
 
 export async function startProcessAudio(absPath: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.StartProcessAudioRequest();
   rq.setPath(absPath);
   await unary(clientFactory, "startProcessAudio", rq, undefined, md);
@@ -89,7 +81,7 @@ export async function uploadVideoByUrl(
   format: "mp4" | "mp3",
   onMsg?: (m: mediapb.UploadVideoResponse) => void
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.UploadVideoRequest();
   rq.setDest(destDir);
   rq.setUrl(url);
@@ -125,7 +117,7 @@ export async function listMediaFiles(
 // -------------------------- Channel sync ---------------------------
 
 export async function syncChannelFromPlaylist(playlistJson: string): Promise<mediapb.Channel | null> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.SyncChannelFromPlaylistRequest();
   rq.setPlaylistJson(playlistJson);
   const rsp: any = await unary(clientFactory, "syncChannelFromPlaylist", rq, undefined, md);
@@ -133,7 +125,7 @@ export async function syncChannelFromPlaylist(playlistJson: string): Promise<med
 }
 
 export async function getChannel(id: string, path?: string): Promise<mediapb.Channel | null> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.GetChannelRequest();
   rq.setId(id);
   if (path) rq.setPath(path);
@@ -142,7 +134,7 @@ export async function getChannel(id: string, path?: string): Promise<mediapb.Cha
 }
 
 export async function listChannels(path?: string, extractor?: string): Promise<mediapb.Channel[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.ListChannelsRequest();
   if (path) rq.setPath(path);
   if (extractor) rq.setExtractor(extractor);
@@ -157,21 +149,21 @@ export async function listChannels(path?: string, extractor?: string): Promise<m
 
 /** Start the background video processing worker (no specific path). */
 export async function startVideoWorker(): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.StartProcessVideoRequest();
   await unary(clientFactory, "startProcessVideo", rq, undefined, md);
 }
 
 /** Stop the background video processing worker. */
 export async function stopVideoWorker(): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.StopProcessVideoRequest();
   await unary(clientFactory, "stopProcessVideo", rq, undefined, md);
 }
 
 /** Check if the background video processing worker is running. */
 export async function isVideoProcessingRunning(): Promise<boolean> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.IsProcessVideoRequest();
   const rsp: any = await unary(clientFactory, "isProcessVideo", rq, undefined, md);
 
@@ -187,7 +179,7 @@ export async function isVideoProcessingRunning(): Promise<boolean> {
 
 /** Enable/disable automatic video conversion (to MP4). */
 export async function setVideoConversion(enabled: boolean): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.SetVideoConversionRequest();
   rq.setValue(enabled);
   await unary(clientFactory, "setVideoConversion", rq, undefined, md);
@@ -195,7 +187,7 @@ export async function setVideoConversion(enabled: boolean): Promise<void> {
 
 /** Enable/disable automatic stream conversion (MP4 → HLS). */
 export async function setVideoStreamConversion(enabled: boolean): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.SetVideoStreamConversionRequest();
   rq.setValue(enabled);
   await unary(clientFactory, "setVideoStreamConversion", rq, undefined, md);
@@ -203,7 +195,7 @@ export async function setVideoStreamConversion(enabled: boolean): Promise<void> 
 
 /** Set the daily start hour for automatic conversions ("HH:MM"). */
 export async function setStartVideoConversionHour(value: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.SetStartVideoConversionHourRequest();
   rq.setValue(value);
   await unary(clientFactory, "setStartVideoConversionHour", rq, undefined, md);
@@ -211,7 +203,7 @@ export async function setStartVideoConversionHour(value: string): Promise<void> 
 
 /** Set the maximum duration for automatic conversions ("HH:MM"). */
 export async function setMaximumVideoConversionDelay(value: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.SetMaximumVideoConversionDelayRequest();
   rq.setValue(value);
   await unary(clientFactory, "setMaximumVideoConversionDelay", rq, undefined, md);
@@ -224,7 +216,7 @@ export type VideoConversionErrorPB = mediapb.VideoConversionError;
 
 /** Get all video conversion logs. */
 export async function getVideoConversionLogs(): Promise<VideoConversionLogPB[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.GetVideoConversionLogsRequest();
   const rsp: any = await unary(clientFactory, "getVideoConversionLogs", rq, undefined, md);
 
@@ -236,14 +228,14 @@ export async function getVideoConversionLogs(): Promise<VideoConversionLogPB[]> 
 
 /** Clear *all* conversion logs. */
 export async function clearVideoConversionLogs(): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.ClearVideoConversionLogsRequest();
   await unary(clientFactory, "clearVideoConversionLogs", rq, undefined, md);
 }
 
 /** Get all conversion errors. */
 export async function getVideoConversionErrors(): Promise<VideoConversionErrorPB[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.GetVideoConversionErrorsRequest();
   const rsp: any = await unary(clientFactory, "getVideoConversionErrors", rq, undefined, md);
 
@@ -255,7 +247,7 @@ export async function getVideoConversionErrors(): Promise<VideoConversionErrorPB
 
 /** Clear a single conversion error by path. */
 export async function clearVideoConversionError(path: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.ClearVideoConversionErrorRequest();
   rq.setPath(path);
   await unary(clientFactory, "clearVideoConversionError", rq, undefined, md);
@@ -263,7 +255,7 @@ export async function clearVideoConversionError(path: string): Promise<void> {
 
 /** Clear *all* conversion errors. */
 export async function clearVideoConversionErrors(): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new mediapb.ClearVideoConversionErrorsRequest();
   await unary(clientFactory, "clearVideoConversionErrors", rq, undefined, md);
 }

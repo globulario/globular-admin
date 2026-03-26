@@ -1,6 +1,7 @@
 // src/backend/blog.ts
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 // ---- stubs (adjust paths if needed) ----
 import * as blogGrpc from "globular-web-client/blog/blog_grpc_web_pb";
@@ -15,14 +16,6 @@ function clientFactory(): blogGrpc.BlogServiceClient {
   return new blogGrpc.BlogServiceClient(base, null, { withCredentials: true });
 }
 
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
-}
 
 /* =====================================================================================
  * Defaults + caches
@@ -126,7 +119,7 @@ export async function createBlogPost(params: {
   thumbnail?: string;
   text: string;
 }): Promise<blogpb.BlogPost> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.CreateBlogPostRequest();
   rq.setIndexpath(params.indexPath ?? DEFAULT_INDEX);
   rq.setAccountId(params.account_id);   // field: account_id
@@ -151,7 +144,7 @@ export async function saveBlogPost(params: {
   blog_post: blogpb.BlogPost;
   indexPath?: string;
 }): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.SaveBlogPostRequest();
   rq.setUuid(params.uuid);
   rq.setBlogPost(params.blog_post);
@@ -164,7 +157,7 @@ export async function saveBlogPost(params: {
 
 /** Delete a blog post by uuid. */
 export async function deleteBlogPost(uuid: string, indexPath = DEFAULT_INDEX): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.DeleteBlogPostRequest();
   rq.setUuid(uuid);
   rq.setIndexpath(indexPath);
@@ -184,7 +177,7 @@ export async function getBlogPostsByUUIDs(
 ): Promise<void> {
   if (!uuids?.length) return;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.GetBlogPostsRequest();
   rq.setUuidsList(uuids);
 
@@ -213,7 +206,7 @@ export async function getBlogPostsByAuthors(
 ): Promise<void> {
   if (!authors?.length) return;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.GetBlogPostsByAuthorsRequest();
   rq.setAuthorsList(authors);
   rq.setMax(max);
@@ -257,7 +250,7 @@ export async function searchBlogPosts(
   },
   handlers?: BlogSearchHandlers
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.SearchBlogPostsRequest();
   rq.setQuery(query);
   if (options?.fields?.length) rq.setFieldsList(options.fields);
@@ -301,7 +294,7 @@ export async function searchBlogPosts(
  * ===================================================================================== */
 
 export async function addEmoji(targetUuid: string, emoji: blogpb.Emoji): Promise<blogpb.Emoji | undefined> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.AddEmojiRequest();
   rq.setUuid(targetUuid);
   rq.setEmoji(emoji);
@@ -310,7 +303,7 @@ export async function addEmoji(targetUuid: string, emoji: blogpb.Emoji): Promise
 }
 
 export async function removeEmoji(targetUuid: string, emoji: blogpb.Emoji): Promise<blogpb.Emoji | undefined> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.RemoveEmojiRequest();
   rq.setUuid(targetUuid);
   rq.setEmoji(emoji);
@@ -319,7 +312,7 @@ export async function removeEmoji(targetUuid: string, emoji: blogpb.Emoji): Prom
 }
 
 export async function addComment(targetUuid: string, comment: blogpb.Comment): Promise<blogpb.Comment | undefined> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.AddCommentRequest();
   rq.setUuid(targetUuid);
   rq.setComment(comment);
@@ -328,7 +321,7 @@ export async function addComment(targetUuid: string, comment: blogpb.Comment): P
 }
 
 export async function removeComment(targetUuid: string, comment: blogpb.Comment): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new blogpb.RemoveCommentRequest();
   rq.setUuid(targetUuid);
   rq.setComment(comment);

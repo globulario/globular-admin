@@ -1,5 +1,6 @@
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 import * as persistenceGrpc from "globular-web-client/persistence/persistence_grpc_web_pb";
 import * as persistencepb from "globular-web-client/persistence/persistence_pb";
@@ -10,15 +11,6 @@ type ByteArray = Uint8Array<ArrayBufferLike>;
 function clientFactory(base?: string): persistenceGrpc.PersistenceServiceClient {
   const url = grpcWebHostUrl(base);
   return new persistenceGrpc.PersistenceServiceClient(url, null, { withCredentials: true });
-}
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const token = sessionStorage.getItem("__globular_token__");
-    return token ? { token } : {};
-  } catch {
-    return {};
-  }
 }
 
 function newRq(names: readonly string[]): any {
@@ -116,7 +108,7 @@ function extractData(resp?: persistencepb.FindResp): ByteArray {
 }
 
 export async function replaceOneDocument(opts: ReplaceOneOptions): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(["ReplaceOneRqst"]) as persistencepb.ReplaceOneRqst;
   rq.setId(opts.connectionId);
   rq.setDatabase(opts.database);
@@ -129,7 +121,7 @@ export async function replaceOneDocument(opts: ReplaceOneOptions): Promise<void>
 }
 
 export async function deleteOneDocument(opts: DeleteOneOptions): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(["DeleteOneRqst"]) as persistencepb.DeleteOneRqst;
   rq.setId(opts.connectionId);
   rq.setDatabase(opts.database);

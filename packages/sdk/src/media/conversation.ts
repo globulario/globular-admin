@@ -1,6 +1,7 @@
 // src/backend/conversation.ts
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 // ---- stubs (adjust paths if needed) ----
 import * as convoGrpc from "globular-web-client/conversation/conversation_grpc_web_pb";
@@ -13,15 +14,6 @@ import * as convpb from "globular-web-client/conversation/conversation_pb";
 function clientFactory(): convoGrpc.ConversationServiceClient {
   const base = grpcWebHostUrl();
   return new convoGrpc.ConversationServiceClient(base, null, { withCredentials: true });
-}
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
 }
 
 /* =====================================================================================
@@ -138,7 +130,7 @@ export function clearConversationCaches() {
  * ===================================================================================== */
 
 export async function stop(): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.StopRequest();
   await unary(clientFactory, "stop", rq, undefined, md);
 }
@@ -151,14 +143,14 @@ export async function connect(
   connectionUuid: string,
   onMessage: (r: convpb.ConnectResponse) => void
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.ConnectRequest();
   rq.setUuid(connectionUuid);
-  await stream(clientFactory, "connect", rq, onMessage, "conversation.ConversationService", md);
+  await stream(clientFactory, "connect", rq, onMessage, "conversation.ConversationService", { md });
 }
 
 export async function disconnect(connectionUuid: string): Promise<boolean> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.DisconnectRequest();
   rq.setUuid(connectionUuid);
   const rsp = await unary(clientFactory, "disconnect", rq, undefined, md) as convpb.DisconnectResponse;
@@ -174,7 +166,7 @@ export async function createConversation(params: {
   keywords?: string[];
   language?: string;
 }): Promise<convpb.Conversation> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.CreateConversationRequest();
   rq.setName(params.name);
   if (params.keywords?.length) rq.setKeywordsList(params.keywords);
@@ -188,7 +180,7 @@ export async function createConversation(params: {
 }
 
 export async function deleteConversation(conversation_uuid: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.DeleteConversationRequest();
   rq.setConversationUuid(conversation_uuid);
   await unary(clientFactory, "deleteConversation", rq, undefined, md);
@@ -200,7 +192,7 @@ export async function getConversation(id: string): Promise<convpb.Conversation |
   const cached = conversationsCache.get(id);
   if (cached) return cached;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.GetConversationRequest();
   rq.setId(id);
   const rsp = await unary(clientFactory, "getConversation", rq, undefined, md) as convpb.GetConversationResponse;
@@ -210,7 +202,7 @@ export async function getConversation(id: string): Promise<convpb.Conversation |
 }
 
 export async function getConversations(creator: string): Promise<convpb.Conversation[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.GetConversationsRequest();
   rq.setCreator(creator);
   const rsp = await unary(clientFactory, "getConversations", rq, undefined, md) as convpb.GetConversationsResponse;
@@ -226,7 +218,7 @@ export async function findConversations(params: {
   pageSize?: number;
   snippetSize?: number;
 }): Promise<convpb.Conversation[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.FindConversationsRequest();
   rq.setQuery(params.query ?? "");
   if (params.language) rq.setLanguage(params.language);
@@ -246,19 +238,19 @@ export async function joinConversation(
   connection_uuid: string,
   onMsg: (m: convpb.JoinConversationResponse) => void
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.JoinConversationRequest();
   rq.setConversationUuid(conversation_uuid);
   rq.setConnectionUuid(connection_uuid);
 
-  await stream(clientFactory, "joinConversation", rq, onMsg, "conversation.ConversationService", md);
+  await stream(clientFactory, "joinConversation", rq, onMsg, "conversation.ConversationService", { md });
 }
 
 export async function leaveConversation(
   conversation_uuid: string,
   connection_uuid: string
 ): Promise<convpb.Conversation | undefined> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.LeaveConversationRequest();
   rq.setConversationUuid(conversation_uuid);
   rq.setConnectionUuid(connection_uuid);
@@ -270,7 +262,7 @@ export async function leaveConversation(
 }
 
 export async function kickoutFromConversation(conversation_uuid: string, account: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.KickoutFromConversationRequest();
   rq.setConversationUuid(conversation_uuid);
   rq.setAccount(account);
@@ -282,35 +274,35 @@ export async function kickoutFromConversation(conversation_uuid: string, account
  * ===================================================================================== */
 
 export async function sendInvitation(inv: convpb.Invitation): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.SendInvitationRequest();
   rq.setInvitation(inv);
   await unary(clientFactory, "sendInvitation", rq, undefined, md);
 }
 
 export async function acceptInvitation(inv: convpb.Invitation): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.AcceptInvitationRequest();
   rq.setInvitation(inv);
   await unary(clientFactory, "acceptInvitation", rq, undefined, md);
 }
 
 export async function declineInvitation(inv: convpb.Invitation): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.DeclineInvitationRequest();
   rq.setInvitation(inv);
   await unary(clientFactory, "declineInvitation", rq, undefined, md);
 }
 
 export async function revokeInvitation(inv: convpb.Invitation): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.RevokeInvitationRequest();
   rq.setInvitation(inv);
   await unary(clientFactory, "revokeInvitation", rq, undefined, md);
 }
 
 export async function getReceivedInvitations(account: string): Promise<convpb.Invitations | undefined> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.GetReceivedInvitationsRequest();
   rq.setAccount(account);
   const rsp = await unary(clientFactory, "getReceivedInvitations", rq, undefined, md) as convpb.GetReceivedInvitationsResponse;
@@ -318,7 +310,7 @@ export async function getReceivedInvitations(account: string): Promise<convpb.In
 }
 
 export async function getSentInvitations(account: string): Promise<convpb.Invitations | undefined> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.GetSentInvitationsRequest();
   rq.setAccount(account);
   const rsp = await unary(clientFactory, "getSentInvitations", rq, undefined, md) as convpb.GetSentInvitationsResponse;
@@ -330,14 +322,14 @@ export async function getSentInvitations(account: string): Promise<convpb.Invita
  * ===================================================================================== */
 
 export async function sendMessage(msg: convpb.Message): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.SendMessageRequest();
   rq.setMsg(msg);
   await unary(clientFactory, "sendMessage", rq, undefined, md);
 }
 
 export async function deleteMessage(conversation: string, uuid: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.DeleteMessageRequest();
   rq.setConversation(conversation);
   rq.setUuid(uuid);
@@ -349,7 +341,7 @@ export async function findMessages(
   keywords: string[],
   onMessage: (m: convpb.Message) => void
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.FindMessagesRequest();
   rq.setKeywordsList(keywords ?? []);
 
@@ -360,7 +352,7 @@ export async function findMessages(
 }
 
 export async function likeMessage(conversation: string, message: string, account: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.LikeMessageRqst();
   rq.setConversation(conversation);
   rq.setMessage(message);
@@ -369,7 +361,7 @@ export async function likeMessage(conversation: string, message: string, account
 }
 
 export async function dislikeMessage(conversation: string, message: string, account: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.DislikeMessageRqst();
   rq.setConversation(conversation);
   rq.setMessage(message);
@@ -378,7 +370,7 @@ export async function dislikeMessage(conversation: string, message: string, acco
 }
 
 export async function setMessageRead(conversation: string, message: string, account: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new convpb.SetMessageReadRqst();
   rq.setConversation(conversation);
   rq.setMessage(message);

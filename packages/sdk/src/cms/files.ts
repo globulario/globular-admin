@@ -4,6 +4,7 @@
 
 import { getBaseUrl, grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 // Use bundler worker pipeline (Vite-style) to emit a proper JS worker asset
 // so the browser never fetches a TS file or HTML fallback.
 import ReadDirWorker from "./readDirWorker?worker";
@@ -334,15 +335,6 @@ function clientFactory(): fileGrpc.FileServiceClient {
   return new fileGrpc.FileServiceClient(base, null, { withCredentials: true });
 }
 
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem('__globular_token__');
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
-}
-
 /** Pick a method name from candidates that exists on the client */
 function pickMethod(client: any, candidates: ReadonlyArray<string>): string {
   for (const m of candidates) if (typeof (client as any)[m] === 'function') return m;
@@ -585,7 +577,7 @@ export function readDirFresh(
   });
 
   const promise = (async () => {
-    const md = await meta();
+    const md = metadata();
     const rq: any = newRq(["ReadDirRequest"]);
     const encodedPath = encodeURI(requestedPath);
     try {
@@ -695,7 +687,7 @@ export function readDirFresh(
 }
 /** Fetch a single file’s info */
 export async function getFile(path: string): Promise<FileVM | null> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.getInfo.rq);
   if (typeof rq.setPath === 'function') rq.setPath(path);
   else rq.path = path;
@@ -744,7 +736,7 @@ export async function readFile(path: string, onChunk: (b: Uint8Array) => void): 
 
 /** Save a complete file (overwrite) */
 export async function saveFile(path: string, data: Uint8Array): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.save.rq);
   if (typeof rq.setPath === 'function') rq.setPath(path);
   else rq.path = path;
@@ -758,7 +750,7 @@ export async function saveFile(path: string, data: Uint8Array): Promise<void> {
 
 /** Create a directory under `parentPath` with `name` */
 export async function createDir(parentPath: string, name: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.createDir.rq);
   if (typeof rq.setPath === 'function') rq.setPath(parentPath);
   else rq.path = parentPath;
@@ -772,7 +764,7 @@ export async function createDir(parentPath: string, name: string): Promise<void>
 
 /** Add a public directory (FileService domain-wide) */
 export async function addPublicDir(path: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.addPublicDir.rq);
   if (typeof rq.setPath === 'function') rq.setPath(path);
   else rq.path = path;
@@ -795,7 +787,7 @@ function extractPathFromTarget(target: any): string | undefined {
 
 async function fetchFileInfoProto(path: string): Promise<any | null> {
   if (!path) return null;
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.getInfo.rq);
   if (typeof rq.setPath === 'function') rq.setPath(path);
   else rq.path = path;
@@ -895,7 +887,7 @@ async function resolveLinkPayload(targetInfo: any): Promise<string> {
 /** Create a .lnk pointing to a serialized FileInfo */
 export async function createLink(destDir: string, linkName: string, targetInfo: any): Promise<void> {
   const lnkBytes = await resolveLinkPayload(targetInfo);
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.createLnk.rq);
   if (typeof rq.setPath === 'function') rq.setPath(destDir);
   else rq.path = destDir;
@@ -913,7 +905,7 @@ export async function createLink(destDir: string, linkName: string, targetInfo: 
 /* ------------------------------ Convenience wrappers (api.js) ------------------------------ */
 
 export async function removeFile(path: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.deleteFile.rq);
   if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'));
   else rq.path = encodeURI(path || '/');
@@ -923,7 +915,7 @@ export async function removeFile(path: string): Promise<void> {
 }
 
 export async function removeDir(path: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.deleteDir.rq);
   if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'));
   else rq.path = encodeURI(path || '/');
@@ -933,7 +925,7 @@ export async function removeDir(path: string): Promise<void> {
 }
 
 export async function renameFile(path: string, newName: string, oldName?: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.rename.rq);
   if (typeof rq.setPath === 'function') rq.setPath(encodeURI(path || '/'));
   else rq.path = encodeURI(path || '/');
@@ -953,12 +945,12 @@ export async function renameFile(path: string, newName: string, oldName?: string
 }
 
 export async function upload(path: string, files: FileList | File[]): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   await apiUploadFiles(path, files as any, () => { }, (e: any) => { throw e }, md.token);
 }
 
 export async function download(url: string, fileName: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   await apiDownloadFileHttp(url, fileName, () => { }, md.token);
 }
 
@@ -1024,7 +1016,7 @@ export async function getFileSize(url: string): Promise<number> {
   requestUrl.searchParams.set('url', url);
 
   const headers: Record<string, string> = {};
-  const md = await meta();
+  const md = metadata();
   if (md.token) headers['token'] = md.token;
 
   const res = await fetch(requestUrl.toString(), {
@@ -1119,7 +1111,7 @@ export function markAsShare(node: any): void {
 }
 
 export async function listPublicDirs(): Promise<string[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.getPublicDirs.rq);
   const method = pickMethod(clientFactory(), SERVICE_METHODS.getPublicDirs.method);
   const rsp: any = await unary(clientFactory, method, rq, undefined, md);
@@ -1155,7 +1147,7 @@ export async function getPublicDirs(): Promise<string[]> {
 /* ------------------------------ NEW RPCs (per proto/Service) ------------------------------ */
 
 export async function getFileMetadata(path: string): Promise<any> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.getMetadata.rq);
   if (typeof rq.setPath === 'function') rq.setPath(path); else rq.path = path;
 
@@ -1165,7 +1157,7 @@ export async function getFileMetadata(path: string): Promise<any> {
 }
 
 export async function copyFiles(destPath: string, files: string[]): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.copy.rq);
   rq.setPath?.(destPath); rq.path ??= destPath;
   rq.setFilesList?.(files ?? []); if (!rq.setFilesList) rq.files = files ?? [];
@@ -1176,7 +1168,7 @@ export async function copyFiles(destPath: string, files: string[]): Promise<void
 }
 
 export async function moveFiles(destPath: string, files: string[]): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.move.rq);
   rq.setPath?.(destPath); rq.path ??= destPath;
   rq.setFilesList?.(files ?? []); if (!rq.setFilesList) rq.files = files ?? [];
@@ -1188,7 +1180,7 @@ export async function moveFiles(destPath: string, files: string[]): Promise<void
 
 /** RPC: create the archive on the server and return its server path (e.g., "/tmp/_uuid.tar.gz"). */
 export async function createArchive(paths: string[], name: string): Promise<string> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.createArchive.rq);
   rq.setPathsList?.(paths ?? []); if (!rq.setPathsList) rq.paths = paths ?? [];
   if (typeof rq.setName === 'function') rq.setName(name); else rq.name = name;
@@ -1215,7 +1207,7 @@ export async function downloadAsArchive(paths: string[], downloadName?: string):
   ).replace(/[-@]/g, "_");
 
   const archiveName = safeName || uuid;
-  const md = await meta();
+  const md = metadata();
 
   // 1) Create archive on server
   const archivePath = await createArchive(paths, archiveName);
@@ -1240,7 +1232,7 @@ export async function getThumbnails(
   opts: { recursive?: boolean; thumbnailWidth?: number; thumbnailHeight?: number } = {},
   onChunk?: (c: { data: Uint8Array; text?: string }) => void
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.getThumbnails.rq);
   rq.setPath?.(path); rq.path ??= path;
   rq.setRecursive?.(!!opts.recursive);
@@ -1255,14 +1247,14 @@ export async function getThumbnails(
     let text: string | undefined;
     try { text = new TextDecoder().decode(data); } catch { }
     onChunk?.({ data, text });
-  }, "file.FileService", md as any);
+  }, "file.FileService", { md });
 }
 
 export async function uploadFileFromUrl(
   params: { url: string; dest: string; name: string; domain?: string; isDir?: boolean },
   onProgress?: (p: { uploaded: number; total: number; info?: string }) => void
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.uploadFile.rq);
   rq.setUrl?.(params.url); rq.url ??= params.url;
   rq.setDest?.(params.dest); rq.dest ??= params.dest;
@@ -1279,11 +1271,11 @@ export async function uploadFileFromUrl(
     const total = Number(msg?.getTotal?.() ?? msg?.total ?? 0);
     const info = String(msg?.getInfo?.() ?? msg?.info ?? "");
     onProgress?.({ uploaded, total, info });
-  }, "file.FileService", md as any);
+  }, "file.FileService", { md });
 }
 
 export async function removePublicDir(path: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.removePublicDir.rq);
   rq.setPath?.(path); rq.path ??= path;
 
@@ -1293,7 +1285,7 @@ export async function removePublicDir(path: string): Promise<void> {
 }
 
 export async function writeExcelFile(path: string, dataJson: string): Promise<boolean> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.writeExcel.rq);
   rq.setPath?.(path); rq.path ??= path;
   rq.setData?.(dataJson); rq.data ??= dataJson;
@@ -1304,7 +1296,7 @@ export async function writeExcelFile(path: string, dataJson: string): Promise<bo
 }
 
 export async function htmlToPdf(html: string): Promise<Uint8Array> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.htmlToPdf.rq);
   rq.setHtml?.(html); rq.html ??= html;
 
@@ -1315,7 +1307,7 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
 }
 
 export async function stopFileService(): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.stop.rq);
   const method = pickMethod(clientFactory(), SERVICE_METHODS.stop.method);
   await unary(clientFactory, method, rq, undefined, md);
@@ -1351,7 +1343,7 @@ function strOrNumUndef(
 export async function getImages(
   files: Array<{ path?: string; getPath?: () => string }>
 ): Promise<HTMLImageElement[]> {
-  const md = await meta(); // gives us token & domain
+  const md = metadata(); // gives us token & domain
   const base = getBaseUrl() ?? '';
   const baseURL = new URL(base, typeof window !== 'undefined' ? window.location.href : 'http://localhost/');
 

@@ -6,6 +6,7 @@
  * ------------------------------------------------------------------ */
 import { grpcWebHostUrl } from "../core/endpoints"
 import { unary, stream } from "../core/rpc"
+import { metadata } from "../core/auth"
 
 // ---- Generated stubs (adjust paths if needed) ----
 import * as torrentGrpc from "globular-web-client/torrent/torrent_grpc_web_pb"
@@ -17,15 +18,6 @@ import * as tp from "globular-web-client/torrent/torrent_pb"
 function clientFactory(): torrentGrpc.TorrentServiceClient {
   const base = grpcWebHostUrl()
   return new torrentGrpc.TorrentServiceClient(base, null, { withCredentials: true })
-}
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__")
-    return t ? { token: t } : {}
-  } catch {
-    return {}
-  }
 }
 
 function pickMethod(client: any, candidates: ReadonlyArray<string>): string {
@@ -47,7 +39,7 @@ function newRq(names: readonly string[]): any {
 
 /** Fetch the list of known torrent links (server-side registry). */
 export async function getTorrentLinks(): Promise<any> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(["GetTorrentLnksRequest"])
   const method = pickMethod(clientFactory(), ["getTorrentLnks"])
   return unary(clientFactory, method, rq, undefined, md)
@@ -59,7 +51,7 @@ export async function downloadTorrent(
   seed = false
 ): Promise<void> {
   if (!link) throw new Error("Missing torrent link.");
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(["DownloadTorrentRequest"]);
   if (typeof rq.setLink === "function") rq.setLink(link);
   else (rq as any).link = link;
@@ -125,7 +117,7 @@ export async function streamTorrentInfos(
 
 /** Drop/remove an active torrent by its name. */
 export async function dropTorrent(name: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(["DropTorrentRequest"])
   if (typeof rq.setName === "function") rq.setName(name)
   else rq.name = name

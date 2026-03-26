@@ -1,6 +1,7 @@
 // /backend/rbac/roles.ts
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 // ---- Generated stubs ----
 import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb";
@@ -154,16 +155,6 @@ function clientFactory(): resourceGrpc.ResourceServiceClient {
   return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true });
 }
 
-/** Same token header convention used elsewhere */
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
-}
-
 /** Try multiple names for a request class; fallback to {} */
 function newRq(names: readonly string[]): any {
   for (const n of names) {
@@ -225,7 +216,7 @@ function toPartialUpdateValues(patch: UpdateRoleInput) {
 
 export async function listRoles(opts: BasicListOptions = {}): Promise<ListResult<RoleVM>> {
   const normalized = normalizeListOptions(opts);
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.list.rq);
   const queryString = toJsonString(normalized.query);
   if (queryString) rq.setQuery?.(queryString);
@@ -279,7 +270,7 @@ export async function getRoleById(id: string): Promise<RoleVM | null> {
 }
 
 export async function createRole(input: CreateRoleInput): Promise<RoleVM> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.create.rq);
 
   // Ensure Role submessage
@@ -308,7 +299,7 @@ export async function createRole(input: CreateRoleInput): Promise<RoleVM> {
 }
 
 export async function updateRole(roleId: string, patch: UpdateRoleInput): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.update.rq);
 
   // accommodate different field names
@@ -322,7 +313,7 @@ export async function updateRole(roleId: string, patch: UpdateRoleInput): Promis
 }
 
 export async function deleteRole(roleId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.delete.rq);
   rq.setRole?.(roleId);
   rq.setRoleid?.(roleId);
@@ -336,7 +327,7 @@ export async function deleteRole(roleId: string): Promise<void> {
 /* -------------------------- Membership: Accounts -------------------------- */
 
 export async function addRoleToAccount(roleId: string, accountId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.addAccount.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);
@@ -348,7 +339,7 @@ export async function addRoleToAccount(roleId: string, accountId: string): Promi
 }
 
 export async function removeRoleFromAccount(roleId: string, accountId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.removeAccount.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);
@@ -362,7 +353,7 @@ export async function removeRoleFromAccount(roleId: string, accountId: string): 
 /* ----------------------- Membership: Organizations ----------------------- */
 
 export async function addRoleToOrganization(roleId: string, organizationId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.addOrganization.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);
@@ -374,7 +365,7 @@ export async function addRoleToOrganization(roleId: string, organizationId: stri
 }
 
 export async function removeRoleFromOrganization(roleId: string, organizationId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.removeOrganization.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);
@@ -388,7 +379,7 @@ export async function removeRoleFromOrganization(roleId: string, organizationId:
 /* ------------------------------- Actions ------------------------------- */
 
 export async function addRoleActions(roleId: string, actions: string[]): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.addActions.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);
@@ -401,7 +392,7 @@ export async function addRoleActions(roleId: string, actions: string[]): Promise
 }
 
 export async function removeRoleAction(roleId: string, action: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.removeAction.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);
@@ -413,7 +404,7 @@ export async function removeRoleAction(roleId: string, action: string): Promise<
 }
 
 export async function addRoleToGroup(roleId: string, groupId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.addGroup.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);
@@ -425,7 +416,7 @@ export async function addRoleToGroup(roleId: string, groupId: string): Promise<v
 }
 
 export async function removeRoleFromGroup(roleId: string, groupId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.removeGroup.rq);
   rq.setRoleid?.(roleId);
   rq.setRoleId?.(roleId);

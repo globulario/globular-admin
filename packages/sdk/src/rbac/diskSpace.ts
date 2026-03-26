@@ -4,7 +4,8 @@
 import * as rbac from "globular-web-client/rbac/rbac_pb";
 
 // 🔽 Use your auth + unary helpers
-import { unary } from "../core/rpc";              // <- this is the file that exports the unary() helper you pasted
+import { unary } from "../core/rpc";
+import { metadata } from "../core/auth";
 import * as rbacGrpc from "globular-web-client/rbac/rbac_grpc_web_pb";
 import { grpcWebHostUrl } from "../core/endpoints";
 // (You don't need serviceHost/serviceUrl here because we reuse the ready client instance on globule.)
@@ -12,16 +13,6 @@ import { grpcWebHostUrl } from "../core/endpoints";
 function clientFactory(): rbacGrpc.RbacServiceClient {
   const base = grpcWebHostUrl()
   return new rbacGrpc.RbacServiceClient(base, null, { withCredentials: true })
-}
-
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem('__globular_token__')
-    return t ? { token: t } : {}
-  } catch {
-    return {}
-  }
 }
 
 
@@ -39,7 +30,7 @@ export async function getAllocatedSpace(
     "getSubjectAllocatedSpace",
     req,
     "rbac.RBACService",
-    await meta()
+    metadata()
   );
 
   return resp.getAllocatedSpace();
@@ -60,7 +51,7 @@ export async function getAvailableSpace(
       "getSubjectAvailableSpace",
       req,
       "rbac.RBACService",
-      await meta()
+      metadata()
     );
     return resp.getAvailableSpace();
   } catch (err: any) {
@@ -87,6 +78,6 @@ export async function setAllocatedSpace(
     "setSubjectAllocatedSpace",
     req,
     "rbac.RBACService",
-    await meta()
+    metadata()
   );
 }

@@ -1,6 +1,7 @@
 // src/backend/rbac/permissions.ts
 import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
+import { metadata } from '../core/auth'
 
 // ---- Generated stubs (adjust import paths if needed) ----
 import * as rbacGrpc from 'globular-web-client/rbac/rbac_grpc_web_pb'
@@ -15,14 +16,6 @@ function clientFactory(): rbacGrpc.RbacServiceClient {
   return new rbacGrpc.RbacServiceClient(base, null, { withCredentials: true })
 }
 
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem('__globular_token__')
-    return t ? { token: t } : {}
-  } catch {
-    return {}
-  }
-}
 
 // ------------------------------ utils ------------------------------
 /** Try multiple names for a request class; fallback to {} if not found */
@@ -142,7 +135,7 @@ export function toPermissionsVM(p: any): PermissionsVM {
  * Get permissions for a single resource path.
  */
 export async function getResourcePermissions(path: string): Promise<rbac.Permissions> {
-  const md = await meta()
+  const md = metadata()
   const c = clientFactory()
   const rq = newRq(rbac, METHODS.get.rq)
   rq.setPath?.(path)
@@ -158,7 +151,7 @@ export async function getResourcePermissions(path: string): Promise<rbac.Permiss
  */
 export async function setResourcePermissions(permissions: rbac.Permissions): Promise<void> {
 
-  const md = await meta()
+  const md = metadata()
   const c = clientFactory()
   const rq = newRq(rbac, METHODS.set.rq)
   rq.setPath?.(permissions.getPath?.() ?? '')
@@ -178,7 +171,7 @@ export async function setResourcePermissions(permissions: rbac.Permissions): Pro
  * Delete permissions for a resource path of a given type.
  */
 export async function deleteResourcePermissions(path: string, resourceType: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = clientFactory()
   const rq = newRq(rbac, METHODS.del.rq)
   rq.setPath?.(path)
@@ -222,7 +215,7 @@ export async function listResourcePermissionsByType(resourceType: string): Promi
  * Returns the repeated SharedResource list from the response.
  */
 export async function getSharedResources(ownerFqdn: string, subjectFqdn: string, type: number): Promise<any[]> {
-  const md = await meta()
+  const md = metadata()
   const c = clientFactory()
   const rq = newRq(rbac, METHODS.shared.rq)
   rq.setOwner?.(ownerFqdn)
@@ -244,7 +237,7 @@ export async function getSharedResources(ownerFqdn: string, subjectFqdn: string,
  * domain: resource owner domain (if your backend needs it in the request)
  */
 export async function removeSubjectFromShare(domain: string, path: string, type: number, subjectFqdn: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const c = clientFactory()
   const rq = newRq(rbac, METHODS.unshare.rq)
   rq.setDomain?.(domain)

@@ -1,6 +1,7 @@
 // src/backend/rbac/accounts.ts
 import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
+import { metadata, TOKEN_KEY } from '../core/auth'
 
 // ---- Generated stubs (adjust paths if needed) ----
 import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb"
@@ -95,16 +96,6 @@ function clientFactory(): resourceGrpc.ResourceServiceClient {
   return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true })
 }
 
-const TOKEN_KEY = '__globular_token__'
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem(TOKEN_KEY)
-    return t ? { token: t, authorization: "Bearer " + t } : {}
-  } catch {
-    return {}
-  }
-}
 
 /** Try multiple names for a request class; fall back to a plain {} if not found. */
 function newRq(names: readonly string[]): any {
@@ -317,7 +308,7 @@ export async function listAccounts(opts: ListAccountsOptions = {}): Promise<List
 }
 
 export async function createAccount(input: CreateAccountInput): Promise<AccountVM> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.create.rq)
   const acc = ensureRqAccount(rq)
 
@@ -347,7 +338,7 @@ export async function createAccount(input: CreateAccountInput): Promise<AccountV
 }
 
 export async function updateAccount(id: string, patch: UpdateAccountInput): Promise<AccountVM> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.update.rq)
   const acc = ensureRqAccount(rq)
 
@@ -372,7 +363,7 @@ export async function updateAccount(id: string, patch: UpdateAccountInput): Prom
 }
 
 export async function deleteAccount(id: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.delete.rq)
   rq.setId?.(id) // DeleteAccountRqst.id
 
@@ -382,7 +373,7 @@ export async function deleteAccount(id: string): Promise<void> {
 
 // Retrieve a single account by ID using GetAccountRqst
 export async function getAccount(id: string): Promise<AccountVM | null> {
-  const md = await meta()
+  const md = metadata()
   const rq = new resource.GetAccountRqst()
   rq.setAccountid?.(id)
 
@@ -432,7 +423,7 @@ export async function getAccountsByIds(
 }
 
 async function getAccountsByIdsOnce(ids: string[]): Promise<AccountVM[]> {
-  const md = await meta()
+  const md = metadata()
   const client = clientFactory()
 
   // 1) Try dedicated unary RPCs first

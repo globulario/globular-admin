@@ -140,7 +140,7 @@ export function getStoredTokenSync(): string | undefined {
 
 export function metadata(): Record<string, string> {
   const t = getStoredTokenSync();
-  return t ? { authorization: "Bearer " + t } : {};
+  return t ? { token: t, authorization: "Bearer " + t } : {};
 }
 
 export async function login(username: string, password: string): Promise<string> {

@@ -5,7 +5,7 @@ import * as grpcWeb from "grpc-web";
 
 
 export interface UnaryOpts { timeoutMs?: number, base?: string }
-export interface StreamOpts { base?: string, onCall?: (call: grpcWeb.ClientReadableStream<any>) => void }
+export interface StreamOpts { base?: string, onCall?: (call: grpcWeb.ClientReadableStream<any>) => void, md?: Record<string, string> }
 
 /** Heuristic to detect auth expiry or invalid tokens across different backends/messages */
 function looksExpired(err: any): boolean {
@@ -62,14 +62,15 @@ export async function unary<RQ, RS>(
       }
     });
 
+  const headers = { ...metadata(), ...md };
   try {
-    return await doCall(md);
+    return await doCall(headers);
   } catch (err: any) {
     if (looksExpired(err)) {
       try {
         // Force refresh and retry once with fresh headers
         await ensureFreshToken(0);
-        const freshMd = metadata();
+        const freshMd = { ...metadata(), ...md };
         return await doCall(freshMd);
       } catch { /* fall through to throw original error below */ }
     }
@@ -106,14 +107,14 @@ export async function stream<TReq, TMsg>(
     });
 
   try {
-    const md = metadata();
+    const md = { ...metadata(), ...(opts?.md ?? {}) };
     await startOnce(md);
   } catch (e: any) {
     // If the stream failed to start due to expiry, refresh and retry once
     if (looksExpired(e)) {
       try {
         await ensureFreshToken(0);
-        const fresh = metadata();
+        const fresh = { ...metadata(), ...(opts?.md ?? {}) };
         await startOnce(fresh);
         return;
       } catch { /* fall through */ }

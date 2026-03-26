@@ -4,6 +4,7 @@
 
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 // ---- Generated stubs (adjust paths if needed) ----
 import * as searchGrpc from "globular-web-client/search/search_grpc_web_pb";
@@ -16,15 +17,6 @@ import * as searchpb from "globular-web-client/search/search_pb";
 function clientFactory(): searchGrpc.SearchServiceClient {
   const base = grpcWebHostUrl();
   return new searchGrpc.SearchServiceClient(base, null, { withCredentials: true });
-}
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
 }
 
 /** Construct a request instance using the first constructor name that exists. */
@@ -199,7 +191,7 @@ export async function searchDocuments(opts: SearchQueryOptions): Promise<SearchD
 
 /** Get the search engine version message. */
 export async function getEngineVersion(): Promise<string> {
-  const md = await meta();
+  const md = metadata();
   const rq: any = newRq(SERVICE_METHODS.getEngineVersion.rq);
   const method = SERVICE_METHODS.getEngineVersion.method[0];
   const rsp: any = await unary(() => clientFactory(), method, rq, undefined, md);
@@ -219,7 +211,7 @@ export interface IndexJsonObjectOptions {
 
 /** Index a JSON object (or array) into a given path/database. */
 export async function indexJsonObject(opts: IndexJsonObjectOptions): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq: any = newRq(SERVICE_METHODS.indexJsonObject.rq);
 
   // tolerant setters to codegen variants
@@ -255,7 +247,7 @@ export async function indexJsonObject(opts: IndexJsonObjectOptions): Promise<voi
 
 /** Count documents in a given database/path. */
 export async function count(path: string): Promise<number> {
-  const md = await meta();
+  const md = metadata();
   const rq: any = newRq(SERVICE_METHODS.count.rq);
   if (typeof rq.setPath === "function") rq.setPath(path);
   else rq.path = path;
@@ -269,7 +261,7 @@ export async function count(path: string): Promise<number> {
 
 /** Delete a document by (path, id). */
 export async function deleteDocument(path: string, id: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq: any = newRq(SERVICE_METHODS.deleteDocument.rq);
 
   if (typeof rq.setPath === "function") rq.setPath(path);
@@ -284,7 +276,7 @@ export async function deleteDocument(path: string, id: string): Promise<void> {
 
 /** Ask the service to stop (admin/debug). */
 export async function stop(): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq: any = newRq(SERVICE_METHODS.stop.rq);
   const method = SERVICE_METHODS.stop.method[0];
   await unary(() => clientFactory(), method, rq, undefined, md);

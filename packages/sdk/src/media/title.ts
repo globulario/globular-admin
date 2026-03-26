@@ -1,6 +1,7 @@
 // src/backend/media/title.ts
 import { getBaseUrl, grpcWebHostUrl } from "../core/endpoints";
 import { stream, unary } from "../core/rpc";
+import { metadata } from "../core/auth";
 import { decodeJwtPayload } from "../core/session";
 
 // ---- stubs ----
@@ -21,15 +22,6 @@ const SERVICE_NAME = "title.TitleService";   // gRPC fully-qualified service nam
 function clientFactory(): titleGrpc.TitleServiceClient {
   const base = grpcWebHostUrl();
   return new titleGrpc.TitleServiceClient(base, null, { withCredentials: true });
-}
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
 }
 
 /* =====================================================================================
@@ -141,7 +133,7 @@ export async function createTitleAndAssociate(
   title: titlepb.Title,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
 
   // CreateTitle
   {
@@ -172,7 +164,7 @@ export async function createVideoAndAssociate(
   video: titlepb.Video,
   indexPath = DEFAULT_INDEXES.videos
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
 
   // CreateVideo
   {
@@ -207,7 +199,7 @@ export async function getTitleInfo(
   // cache-hit
   if (titlesCache.has(id)) return titlesCache.get(id)!;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.GetTitleByIdRequest();
   rq.setTitleid(id);
   rq.setIndexpath(indexPath);
@@ -229,7 +221,7 @@ export async function refreshTitleMetadata(
 
   const base = getBaseUrl() ?? "";
   const url = `${base.replace(/\/$/, "")}/api/refresh-title?id=${encodeURIComponent(titleId)}`;
-  const headers = await meta();
+  const headers = metadata();
   const reqHeaders: Record<string, string> = {
     "Content-Type": "application/json",
     ...(headers.token ? { token: headers.token, authorization: `Bearer ${headers.token}` } : {}),
@@ -257,7 +249,7 @@ export async function rebuildTitleIndexFromStore(
   collections?: string[],
   incremental = false
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.RebuildIndexRequest();
   if (collections && collections.length > 0) {
     rq.setCollectionsList(collections);
@@ -281,7 +273,7 @@ export async function getVideoInfo(
 ): Promise<titlepb.Video | undefined> {
   if (videosCache.has(id)) return videosCache.get(id)!;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.GetVideoByIdRequest();
   rq.setVideoid(id);
   rq.setIndexpath(indexPath);
@@ -298,7 +290,7 @@ export async function getAudioInfo(
 ): Promise<titlepb.Audio | undefined> {
   if (audiosCache.has(id)) return audiosCache.get(id)!;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.GetAudioByIdRequest();
   rq.setAudioid(id);
   rq.setIndexpath(indexPath);
@@ -319,7 +311,7 @@ export async function createOrUpdateAudio(
   audio: titlepb.Audio,
   indexPath: string = DEFAULT_INDEXES.audios
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
 
   const rq = new titlepb.CreateAudioRequest();
   rq.setAudio(audio);
@@ -354,7 +346,7 @@ export async function getFileTitlesInfo(
   const normalizedPath = normalizeMediaPath(filePath);
   if (fileTitlesCache.has(normalizedPath)) return fileTitlesCache.get(normalizedPath)!;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.GetFileTitlesRequest();
   rq.setFilepath(normalizedPath);
   rq.setIndexpath(indexPath);
@@ -394,7 +386,7 @@ export async function getFileVideosInfo(
 
   //  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
 
-  const md = await meta();
+  const md = metadata();
 
   const rq = new titlepb.GetFileVideosRequest();
   rq.setFilepath(safeFilePath);
@@ -435,7 +427,7 @@ export async function getFileAudiosInfo(
 
   if (fileAudiosCache.has(safeFilePath)) return fileAudiosCache.get(safeFilePath)!;
 
-  const md = await meta();
+  const md = metadata();
 
   const rq = new titlepb.GetFileAudiosRequest();
   rq.setFilepath(safeFilePath);
@@ -487,7 +479,7 @@ export async function getTitleFiles(
   titleId: string,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<string[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.GetTitleFilesRequest();
   rq.setTitleid(titleId);
   rq.setIndexpath(indexPath);
@@ -514,7 +506,7 @@ export async function getImdbInfo(id: string): Promise<any> {
   const pending = (async () => {
     const base = getBaseUrl() ?? "";
     const url = `${base.replace(/\/$/, "")}/api/get-imdb-titles?q=${encodeURIComponent(id)}`;
-    const headers = await meta();
+    const headers = metadata();
 
     const res = await fetch(url, {
       method: "GET",
@@ -559,7 +551,7 @@ export async function getSeriesEpisodes(
 ): Promise<titlepb.Title[]> {
   if (!seriesId) return [];
 
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.GetSeriesEpisodesRequest();
   rq.setSeriesid(seriesId);
   rq.setIndexpath(indexPath);
@@ -736,7 +728,7 @@ export async function deleteAudio(
   audioId: string,
   indexPath = DEFAULT_INDEXES.audios
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.DeleteAudioRequest();
   rq.setAudioid(audioId);
   rq.setIndexpath(indexPath);
@@ -752,7 +744,7 @@ export async function deleteVideo(
   videoId: string,
   indexPath = DEFAULT_INDEXES.videos
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.DeleteVideoRequest();
   rq.setVideoid(videoId);
   rq.setIndexpath(indexPath);
@@ -768,7 +760,7 @@ export async function deleteTitle(
   titleId: string,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.DeleteTitleRequest();
   rq.setTitleid(titleId);
   rq.setIndexpath(indexPath);
@@ -785,7 +777,7 @@ export async function deleteAlbum(
   albumId: string,
   indexPath = DEFAULT_INDEXES.audios
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.DeleteAlbumRequest();
   rq.setAlbumid(albumId);
   rq.setIndexpath(indexPath);
@@ -802,7 +794,7 @@ export async function updateVideoMetadata(
   video: titlepb.Video,
   indexPath = DEFAULT_INDEXES.videos
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.UpdateVideoMetadataRequest();
   rq.setVideo(video);
   rq.setIndexpath(indexPath);
@@ -818,7 +810,7 @@ export async function updateTitleMetadata(
   title: titlepb.Title,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.UpdateTitleMetadataRequest();
   rq.setTitle(title);
   rq.setIndexpath(indexPath);
@@ -839,7 +831,7 @@ export async function associateFileWithTitle(
   titleId: string,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.AssociateFileWithTitleRequest();
   rq.setFilepath(filePath);
   rq.setTitleid(titleId);
@@ -856,7 +848,7 @@ export async function dissociateFileWithTitle(
   titleId: string,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.DissociateFileWithTitleRequest();
   rq.setFilepath(filePath);
   rq.setTitleid(titleId);
@@ -880,7 +872,7 @@ export async function getPersonInfo(
 ): Promise<titlepb.Person | undefined> {
   if (personsCache.has(id)) return personsCache.get(id)!;
 
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.GetPersonByIdRequest();
   rq.setPersonid(id);
   rq.setIndexpath(indexPath);
@@ -895,7 +887,7 @@ export async function createOrUpdatePerson(
   person: titlepb.Person,
   indexPath = DEFAULT_PERSONS_INDEX
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.CreatePersonRequest();
   rq.setPerson(person);
   rq.setIndexpath(indexPath);
@@ -907,7 +899,7 @@ export async function deletePerson(
   personId: string,
   indexPath = DEFAULT_PERSONS_INDEX
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.DeletePersonRequest();
   rq.setPersonid(personId);
   rq.setIndexpath(indexPath);
@@ -975,7 +967,7 @@ export async function createOrUpdateTitle(
   t: titlepb.Title,
   indexPath = DEFAULT_INDEXES.titles
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.CreateTitleRequest();
   rq.setTitle(t);
   rq.setIndexpath(indexPath);
@@ -987,7 +979,7 @@ export async function createOrUpdateVideo(
   v: titlepb.Video,
   indexPath = DEFAULT_INDEXES.videos
 ): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.CreateVideoRequest();
   rq.setVideo(v);
   rq.setIndexpath(indexPath);
@@ -1147,7 +1139,7 @@ export async function getWatchingTitles(): Promise<any[]> {
   if (!ctx) return [];
 
   try {
-    const md = await meta();
+    const md = metadata();
     const rq = new titlepb.ListWatchingRequest();
     const rsp = await unary(clientFactory, "listWatching", rq, undefined, md) as titlepb.ListWatchingResponse;
     const items = rsp?.getItemsList?.() ?? [];
@@ -1177,7 +1169,7 @@ export async function getWatchingTitle(
       throw err;
     }
 
-    const md = await meta();
+    const md = metadata();
     const rq = new titlepb.GetWatchingRequest();
     rq.setTitleId(titleId);
     const entry = await unary(clientFactory, "getWatching", rq, undefined, md) as titlepb.WatchingEntry;
@@ -1201,7 +1193,7 @@ export async function removeWatchingTitle(title: { _id?: string } | string): Pro
   const id = typeof title === "string" ? title : title?._id;
   if (!id) throw new Error("Missing watching title identifier.");
 
-  const md = await meta();
+  const md = metadata();
   const rq = new titlepb.RemoveWatchingRequest();
   rq.setTitleId(id);
   await unary(clientFactory, "removeWatching", rq, undefined, md);
@@ -1215,7 +1207,7 @@ export async function saveWatchingTitle(entry: any): Promise<void> {
     throw new Error("Missing title identifier.");
   }
 
-  const md = await meta();
+  const md = metadata();
   const watchingEntry = new titlepb.WatchingEntry();
 
   const titleId = entry.titleId || entry.title_id || entry.id || entry._id;

@@ -2,6 +2,7 @@
 // Groups backend in the same style as src/backend/rbac/accounts.ts
 
 import { unary, stream } from "../core/rpc"
+import { metadata } from "../core/auth"
 import { grpcWebHostUrl } from "../core/endpoints"
 
 // ---- Generated stubs (adjust paths if needed) ----
@@ -76,15 +77,6 @@ const SERVICE_METHODS = {
 function clientFactory(): resourceGrpc.ResourceServiceClient {
   const base = grpcWebHostUrl()
   return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true })
-}
-
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__")
-    return t ? { token: t } : {}
-  } catch {
-    return {}
-  }
 }
 
 /** Try multiple names for a request class; fall back to plain object */
@@ -293,7 +285,7 @@ export async function getGroupById(id: string): Promise<GroupVM | null> {
 
 /** Create a group */
 export async function createGroup(input: CreateGroupInput): Promise<GroupVM> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.create.rq)
   const group = ensureRqGroup(rq)
 
@@ -316,7 +308,7 @@ export async function createGroup(input: CreateGroupInput): Promise<GroupVM> {
 
 /** Update a group (supports both full Group or $set-style JSON depending on backend) */
 export async function updateGroup(id: string, patch: UpdateGroupInput): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.update.rq)
 
   // Two common variants:
@@ -353,7 +345,7 @@ export async function updateGroup(id: string, patch: UpdateGroupInput): Promise<
 
 /** Delete a group */
 export async function deleteGroup(id: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.delete.rq)
 
   // Common fields: DeleteGroupRqst.group / .groupid / .id — try them safely
@@ -367,7 +359,7 @@ export async function deleteGroup(id: string): Promise<void> {
 
 /** Add an account to a group */
 export async function addGroupMember(groupId: string, accountId: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.addMember.rq)
 
   rq.setGroupid?.(groupId)
@@ -382,7 +374,7 @@ export async function addGroupMember(groupId: string, accountId: string): Promis
 
 /** Remove an account from a group */
 export async function removeGroupMember(groupId: string, accountId: string): Promise<void> {
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(SERVICE_METHODS.removeMember.rq)
 
   rq.setGroupid?.(groupId)
@@ -430,7 +422,7 @@ async function collectMemberIds(groupId: string): Promise<string[]> {
   if (groupMembers.length > 0) return groupMembers
 
   // Fallback to explicit RPC (handle multiple proto name variants)
-  const md = await meta()
+  const md = metadata()
   const rq = newRq(["ListGroupMembersRqst", "GetGroupMembersRqst", "GetGroupMembersRequest"])
 
   rq.setGroupid?.(groupId)

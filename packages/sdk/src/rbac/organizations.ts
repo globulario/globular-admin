@@ -1,6 +1,7 @@
 // /backend/rbac/organizations.ts
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 // ---- Generated stubs (adjust paths if needed) ----
 import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb";
@@ -78,15 +79,6 @@ function clientFactory(): resourceGrpc.ResourceServiceClient {
   return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true });
 }
 
-/** Same header style as accounts.ts (resource service expects { token }) */
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t } : {};
-  } catch {
-    return {};
-  }
-}
 
 /** Try multiple names for a request class; fall back to a plain {} if not found. */
 function newRq(names: readonly string[]): any {
@@ -210,7 +202,7 @@ function buildOptionsPayload(opts: { pageSize?: number; page?: number; offset?: 
 
 export async function listOrganizations(opts: BasicListOptions = {}): Promise<ListResult<OrganizationVM>> {
   const normalized = normalizeListOptions(opts);
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.list.rq);
   const queryString = toJsonString(normalized.query);
   if (queryString) rq.setQuery?.(queryString);
@@ -263,7 +255,7 @@ export async function getOrganizationById(id: string): Promise<OrganizationVM | 
 }
 
 export async function createOrganization(input: CreateOrgInput): Promise<OrganizationVM> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.create.rq);
 
   // Ensure Organization submessage
@@ -292,7 +284,7 @@ export async function createOrganization(input: CreateOrgInput): Promise<Organiz
 }
 
 export async function updateOrganization(orgId: string, patch: UpdateOrgInput): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.update.rq);
   rq.setOrganizationid?.(orgId);
   rq.setOrganizationId?.(orgId);
@@ -303,7 +295,7 @@ export async function updateOrganization(orgId: string, patch: UpdateOrgInput): 
 }
 
 export async function deleteOrganization(orgId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.delete.rq);
   rq.setOrganization?.(orgId);
   rq.setOrganizationid?.(orgId);
@@ -316,7 +308,7 @@ export async function deleteOrganization(orgId: string): Promise<void> {
 /* -------------------- Members / Groups -------------------- */
 
 export async function addOrganizationAccount(orgId: string, accountId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.addAccount.rq);
   rq.setOrganizationid?.(orgId);
   rq.setOrganizationId?.(orgId);
@@ -328,7 +320,7 @@ export async function addOrganizationAccount(orgId: string, accountId: string): 
 }
 
 export async function removeOrganizationAccount(orgId: string, accountId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.removeAccount.rq);
   rq.setOrganizationid?.(orgId);
   rq.setOrganizationId?.(orgId);
@@ -340,7 +332,7 @@ export async function removeOrganizationAccount(orgId: string, accountId: string
 }
 
 export async function addOrganizationGroup(orgId: string, groupId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.addGroup.rq);
   rq.setOrganizationid?.(orgId);
   rq.setOrganizationId?.(orgId);
@@ -352,7 +344,7 @@ export async function addOrganizationGroup(orgId: string, groupId: string): Prom
 }
 
 export async function removeOrganizationGroup(orgId: string, groupId: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.removeGroup.rq);
   rq.setOrganizationid?.(orgId);
   rq.setOrganizationId?.(orgId);

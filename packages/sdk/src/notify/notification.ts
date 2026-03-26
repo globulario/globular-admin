@@ -3,6 +3,7 @@
 
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
+import { metadata } from "../core/auth";
 
 import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb";
 import * as resource from "globular-web-client/resource/resource_pb";
@@ -20,14 +21,6 @@ function clientFactory(): resourceGrpc.ResourceServiceClient {
   return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true });
 }
 
-async function meta(): Promise<Record<string, string>> {
-  try {
-    const t = sessionStorage.getItem("__globular_token__");
-    return t ? { token: t, authorization: "Bearer " + t } : {};
-  } catch {
-    return {};
-  }
-}
 
 function newRq(names: readonly string[]): any {
   for (const n of names) {
@@ -77,7 +70,7 @@ function protoFromVM(vm: NotificationVM): any {
 }
 
 export async function createNotification(input: NotificationVM): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.create.rq);
   rq.setNotification?.(protoFromVM(input));
   const method = pickMethod(clientFactory(), SERVICE_METHODS.create.method);
@@ -85,7 +78,7 @@ export async function createNotification(input: NotificationVM): Promise<void> {
 }
 
 export async function deleteNotification(id: string, recipient: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.delete.rq);
   rq.setId?.(id); rq.id ??= id;
   rq.setRecipient?.(recipient); rq.recipient ??= recipient;
@@ -94,7 +87,7 @@ export async function deleteNotification(id: string, recipient: string): Promise
 }
 
 export async function clearAllNotifications(recipient: string): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.clearAll.rq);
   rq.setRecipient?.(recipient); rq.recipient ??= recipient;
   const method = pickMethod(clientFactory(), SERVICE_METHODS.clearAll.method);
@@ -102,7 +95,7 @@ export async function clearAllNotifications(recipient: string): Promise<void> {
 }
 
 export async function clearNotificationsByType(recipient: string, type: number): Promise<void> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.clearByType.rq);
   rq.setRecipient?.(recipient); rq.recipient ??= recipient;
   rq.setNotificationType?.(type); rq.notificationType ??= type;
@@ -111,7 +104,7 @@ export async function clearNotificationsByType(recipient: string, type: number):
 }
 
 export async function listNotifications(recipient: string, type?: number): Promise<NotificationVM[]> {
-  const md = await meta();
+  const md = metadata();
   const rq = newRq(SERVICE_METHODS.get.rq);
   rq.setRecipient?.(recipient); rq.recipient ??= recipient;
   if (type !== undefined) rq.setNotificationType?.(type);
