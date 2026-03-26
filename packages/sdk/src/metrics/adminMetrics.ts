@@ -221,19 +221,24 @@ export interface RDSRoute {
 
 // ─── Fetch functions ────────────────────────────────────────────────────────
 
-export async function fetchAdminServices(base = ''): Promise<ServicesResponse> {
+import { getBaseUrl } from "../core/endpoints"
+
+export async function fetchAdminServices(base?: string): Promise<ServicesResponse> {
+  if (base == null) base = getBaseUrl() || ''
   const resp = await fetch(`${base}/admin/metrics/services`)
   if (!resp.ok) throw new Error(`admin/metrics/services: ${resp.status}`)
   return resp.json()
 }
 
-export async function fetchAdminStorage(base = ''): Promise<StorageResponse> {
+export async function fetchAdminStorage(base?: string): Promise<StorageResponse> {
+  if (base == null) base = getBaseUrl() || ''
   const resp = await fetch(`${base}/admin/metrics/storage`)
   if (!resp.ok) throw new Error(`admin/metrics/storage: ${resp.status}`)
   return resp.json()
 }
 
-export async function fetchAdminEnvoy(base = ''): Promise<EnvoyResponse> {
+export async function fetchAdminEnvoy(base?: string): Promise<EnvoyResponse> {
+  if (base == null) base = getBaseUrl() || ''
   const resp = await fetch(`${base}/admin/metrics/envoy`)
   if (!resp.ok) throw new Error(`admin/metrics/envoy: ${resp.status}`)
   return resp.json()
@@ -255,8 +260,9 @@ export async function fetchAdminServiceLogs(
   unit: string,
   lines = 100,
   sinceSec = 3600,
-  base = '',
+  base?: string,
 ): Promise<ServiceLogsResponse> {
+  if (base == null) base = getBaseUrl() || ''
   const params = new URLSearchParams({ unit, lines: String(lines), since: String(sinceSec) })
   const resp = await fetch(`${base}/admin/service/logs?${params}`)
   if (!resp.ok) throw new Error(`admin/service/logs: ${resp.status}`)

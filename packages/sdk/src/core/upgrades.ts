@@ -89,14 +89,18 @@ export interface UpgradeJobStep {
 
 // ─── Fetch functions ────────────────────────────────────────────────────────
 
-export async function fetchUpgradesStatus(base = ''): Promise<UpgradesStatusResponse> {
-  const resp = await fetch(`${base}/admin/upgrades/status`)
+import { getBaseUrl } from "./endpoints"
+
+function base_(b?: string): string { return b ?? getBaseUrl() ?? '' }
+
+export async function fetchUpgradesStatus(base?: string): Promise<UpgradesStatusResponse> {
+  const resp = await fetch(`${base_(base)}/admin/upgrades/status`)
   if (!resp.ok) throw new Error(`admin/upgrades/status: HTTP ${resp.status}`)
   return resp.json()
 }
 
-export async function fetchUpgradePlan(services: string[], base = ''): Promise<UpgradePlanResponse> {
-  const resp = await fetch(`${base}/admin/upgrades/plan`, {
+export async function fetchUpgradePlan(services: string[], base?: string): Promise<UpgradePlanResponse> {
+  const resp = await fetch(`${base_(base)}/admin/upgrades/plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ services } as UpgradePlanRequest),
@@ -105,8 +109,8 @@ export async function fetchUpgradePlan(services: string[], base = ''): Promise<U
   return resp.json()
 }
 
-export async function applyUpgrades(services: string[], base = ''): Promise<UpgradeApplyResponse> {
-  const resp = await fetch(`${base}/admin/upgrades/apply`, {
+export async function applyUpgrades(services: string[], base?: string): Promise<UpgradeApplyResponse> {
+  const resp = await fetch(`${base_(base)}/admin/upgrades/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ services } as UpgradeApplyRequest),
@@ -115,8 +119,8 @@ export async function applyUpgrades(services: string[], base = ''): Promise<Upgr
   return resp.json()
 }
 
-export async function fetchUpgradeJobStatus(operationId: string, base = ''): Promise<UpgradeJobResponse> {
-  const resp = await fetch(`${base}/admin/upgrades/jobs?id=${encodeURIComponent(operationId)}`)
+export async function fetchUpgradeJobStatus(operationId: string, base?: string): Promise<UpgradeJobResponse> {
+  const resp = await fetch(`${base_(base)}/admin/upgrades/jobs?id=${encodeURIComponent(operationId)}`)
   if (!resp.ok) throw new Error(`admin/upgrades/jobs: HTTP ${resp.status}`)
   return resp.json()
 }
@@ -145,8 +149,8 @@ export interface UpgradeJobRecordService {
   to_build_number?: number
 }
 
-export async function fetchUpgradeHistory(limit = 50, base = ''): Promise<UpgradeHistoryResponse> {
-  const resp = await fetch(`${base}/admin/upgrades/history?limit=${limit}`)
+export async function fetchUpgradeHistory(limit = 50, base?: string): Promise<UpgradeHistoryResponse> {
+  const resp = await fetch(`${base_(base)}/admin/upgrades/history?limit=${limit}`)
   if (!resp.ok) throw new Error(`admin/upgrades/history: HTTP ${resp.status}`)
   return resp.json()
 }

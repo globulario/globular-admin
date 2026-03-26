@@ -11,7 +11,7 @@ import * as repoGrpc from 'globular-web-client/repository/repository_grpc_web_pb
 // repository_pb.js via: proto.repository = require('./repository_pb.js').
 // This avoids a dual ESM+CJS import of repository_pb that confuses Rollup's CJS plugin.
 import type * as repoPb from 'globular-web-client/repository/repository_pb'
-import { grpcWebHostUrl } from '../core/endpoints'
+import { grpcWebHostUrl, getBaseUrl } from '../core/endpoints'
 import { metadata, getStoredTokenSync } from '../core/auth'
 import { unary }          from '../core/rpc'
 
@@ -266,7 +266,8 @@ export interface StateAlignmentReport {
  * Fetch the 4-layer state alignment report from the admin REST endpoint.
  * Cross-references installed-state registry with repository artifacts.
  */
-export async function fetchStateAlignment(base = ''): Promise<StateAlignmentReport> {
+export async function fetchStateAlignment(base?: string): Promise<StateAlignmentReport> {
+  if (base == null) base = getBaseUrl() || ''
   const token = getStoredTokenSync() ?? ''
   const resp  = await fetch(`${base}/admin/state-alignment`, {
     headers: token ? { token } : {},
@@ -300,8 +301,9 @@ export interface InstalledPackage {
 export async function fetchInstalledPackages(
   nodeId?: string,
   kind?: string,
-  base = '',
+  base?: string,
 ): Promise<InstalledPackage[]> {
+  if (base == null) base = getBaseUrl() || ''
   const params = new URLSearchParams()
   if (nodeId) params.set('nodeId', nodeId)
   if (kind)   params.set('kind', kind)

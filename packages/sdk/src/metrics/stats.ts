@@ -49,7 +49,10 @@ export interface GatewayStats {
 
 // ── Fetch ───────────────────────────────────────────────────────────────────
 
-export async function fetchGatewayStats(base = ''): Promise<GatewayStats> {
+import { getBaseUrl } from "../core/endpoints"
+
+export async function fetchGatewayStats(base?: string): Promise<GatewayStats> {
+  if (base == null) base = getBaseUrl() || ''
   const res = await fetch(`${base}/stats`)
   if (!res.ok) throw new Error(`/stats: ${res.status} ${res.statusText}`)
   return res.json()
