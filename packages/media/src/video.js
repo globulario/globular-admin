@@ -827,13 +827,19 @@ export class VideoPlayer extends HTMLElement {
   _initHlsSeekHandling() {
     const onSeeking = () => {
       if (!this.hls) return
+
+      // If we have a direct MP4 URL (opportunistic HLS), switch to it
+      // immediately on first seek — HLS live transcoding would need to
+      // restart ffmpeg, which freezes for seconds.  Direct MP4 byte-range
+      // seeks are near-instant.
+      if (this._directMp4Url) {
+        this._switchToDirectMp4(this.videoElement.currentTime)
+        return
+      }
+
       if (this._hlsSeekTimer) {
         clearTimeout(this._hlsSeekTimer)
         this._hlsSeekTimer = null
-      }
-      if (this._hlsSeekStallTimer) {
-        clearTimeout(this._hlsSeekStallTimer)
-        this._hlsSeekStallTimer = null
       }
       this.hls.stopLoad()
     }
@@ -845,42 +851,16 @@ export class VideoPlayer extends HTMLElement {
         this._hlsSeekTimer = null
         if (!this.hls || !this.videoElement) return
         this.hls.startLoad(this.videoElement.currentTime)
-
-        // If we have a direct MP4 fallback and the HLS seek stalls (server
-        // restarting ffmpeg), switch to direct MP4 for instant byte-range seek.
-        if (this._directMp4Url) {
-          if (this._hlsSeekStallTimer) clearTimeout(this._hlsSeekStallTimer)
-          this._hlsSeekStallTimer = setTimeout(() => {
-            this._hlsSeekStallTimer = null
-            // If still waiting for data after 4s, the HLS transcode is stalling
-            if (!this.videoElement || this.videoElement.readyState >= 3) return
-            this._switchToDirectMp4(this.videoElement.currentTime)
-          }, HLS_SEEK_STALL_MS)
-        }
       }, 150)
-    }
-
-    // Clear the stall timer when data arrives (seek succeeded via HLS)
-    const onCanPlay = () => {
-      if (this._hlsSeekStallTimer) {
-        clearTimeout(this._hlsSeekStallTimer)
-        this._hlsSeekStallTimer = null
-      }
     }
 
     this.videoElement.addEventListener('seeking', onSeeking)
     this.videoElement.addEventListener('seeked', onSeeked)
-    this.videoElement.addEventListener('canplay', onCanPlay)
 
     // Store cleanup so _destroyHls can remove the listeners
     this._hlsSeekCleanup = () => {
       this.videoElement?.removeEventListener('seeking', onSeeking)
       this.videoElement?.removeEventListener('seeked', onSeeked)
-      this.videoElement?.removeEventListener('canplay', onCanPlay)
-      if (this._hlsSeekStallTimer) {
-        clearTimeout(this._hlsSeekStallTimer)
-        this._hlsSeekStallTimer = null
-      }
     }
   }
 
@@ -1769,12 +1749,24 @@ export class VideoPlayer extends HTMLElement {
       this._networkRetryNonce = 0  // consumed
     }
 
-    // For raw video files (.mp4, .mkv, etc.), use direct byte-range serving.
-    // Direct MP4 gives near-instant seeking via HTTP Range requests, while
-    // HLS live transcoding freezes on every seek (server must restart ffmpeg).
-    // HLS is only used for directories (pre-transcoded) or explicit .m3u8 URLs.
+    // For raw video files (.mp4, .mkv, etc.), try HLS first for fast startup
+    // (no moov-atom dependency), but keep the direct MP4 URL for seek fallback.
+    // When the user seeks and HLS stalls (ffmpeg restart), we automatically
+    // switch to direct MP4 byte-range serving for near-instant seeks.
     this._fallbackMp4Url = null
     this._directMp4Url = null
+    const recentHlsDestroy = (Date.now() - _lastHlsDestroyAt) < 5_000
+    if (!isHlsSource && !isDirectoryPath && !recentHlsDestroy) {
+      const tryPlaylistUrl = getPlaylistUrl()
+      if (tryPlaylistUrl) {
+        this._fallbackMp4Url = urlToPlay   // for HLS load error fallback
+        this._directMp4Url = urlToPlay     // for seek stall → instant MP4 fallback
+        this._forceHlsSource = true
+        urlToPlay = tryPlaylistUrl
+        isHlsSource = true
+        this._stopMp4TokenMaintenance()
+      }
+    }
 
     // Same-path resume behavior preserved — but skip when we're retrying with a nonce
     // so the URL is rebuilt with the cache-bust param before playContent is called.
