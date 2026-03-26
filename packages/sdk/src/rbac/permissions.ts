@@ -269,6 +269,27 @@ export function deserializePermissions(bin: Uint8Array): rbac.Permissions {
   return Ctor.deserializeBinary(bin)
 }
 
+// ------------------------------ Role Bindings ------------------------------
+
+/**
+ * Get the roles bound to a subject (account, service account, etc.)
+ * Returns the list of role names, or empty array if no binding exists.
+ */
+export async function getRoleBinding(subject: string): Promise<string[]> {
+  const md = metadata()
+  const c = clientFactory()
+  const rq = newRq(rbac, ['GetRoleBindingRqst'])
+  rq.setSubject?.(subject)
+
+  try {
+    const rsp: any = await unary(() => c, pickMethod(c, ['getRoleBinding']), rq, undefined, md)
+    const binding = rsp?.getBinding?.() ?? rsp?.binding
+    return binding?.getRolesList?.() ?? binding?.roles ?? []
+  } catch {
+    return []
+  }
+}
+
 // Optional helpers to mutate a Permission entry (kept simple, callers can call the proto setters directly)
 export const setPermissionSubjects = (perm: rbac.Permission, lists: Partial<PermissionSubjectLists>) => {
   if (lists.accounts) perm.setAccountsList?.(lists.accounts)

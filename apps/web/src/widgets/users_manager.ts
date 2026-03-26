@@ -9,6 +9,7 @@ import {
   displaySuccess,
   setPassword,
   setRootPassword,
+  getRoleBinding,
 } from "@globular/sdk";
 import { getBase64FromImageUrl } from "@globular/components/utility.js";
 import "@globular/components/table.js"     // <globular-table>
@@ -169,6 +170,11 @@ class UsersInlineEditor extends HTMLElement {
         <div class="row">
           <label>Domain</label>
           <input id="domain" type="text" />
+        </div>
+
+        <div class="row">
+          <label>Roles</label>
+          <span id="rolesDisplay" class="hint" style="flex:1;">(loading...)</span>
         </div>
 
         <!-- Passwords -->
@@ -443,6 +449,19 @@ class UsersInlineEditor extends HTMLElement {
     if (this.lastNameInput) this.lastNameInput.value = acc.lastName || ''
     if (this.emailInput) this.emailInput.value = acc.email || ''
     if (this.domainInput) this.domainInput.value = acc.domain || ''
+
+    // fetch and display role bindings
+    const rolesEl = this.shadow.getElementById('rolesDisplay')
+    if (rolesEl) {
+      rolesEl.textContent = '(loading...)'
+      if (acc.id) {
+        getRoleBinding(acc.id).then(roles => {
+          rolesEl.textContent = roles.length > 0 ? roles.join(', ') : '(none)'
+        })
+      } else {
+        rolesEl.textContent = '(new account)'
+      }
+    }
 
     // delete button visibility
     if (this.deleteBtn) this.deleteBtn.style.display = acc.id ? 'inline-block' : 'none'

@@ -411,6 +411,25 @@ describe("permissions", () => {
     expect(result).toHaveLength(1);
   });
 
+  it("getRoleBinding returns roles array for a subject", async () => {
+    mockUnary.mockResolvedValue({
+      getBinding: () => ({
+        getRolesList: () => ["globular-admin", "globular-operator"],
+        getSubject: () => "sa",
+      }),
+    });
+
+    const roles = await perms.getRoleBinding("sa");
+    expect(mockUnary).toHaveBeenCalledTimes(1);
+    expect(roles).toEqual(["globular-admin", "globular-operator"]);
+  });
+
+  it("getRoleBinding returns empty array on error", async () => {
+    mockUnary.mockRejectedValue(new Error("not found"));
+    const roles = await perms.getRoleBinding("nonexistent");
+    expect(roles).toEqual([]);
+  });
+
   it("removeSubjectFromShare calls unary", async () => {
     mockUnary.mockResolvedValue({});
     await perms.removeSubjectFromShare("test.com", "/users/sa/file.txt", 0, "bob@test.com");
