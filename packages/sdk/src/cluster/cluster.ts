@@ -580,9 +580,17 @@ export async function computeReconciliationDiff(): Promise<NodeReconciliationDif
       services.push({ serviceId: svcId, desired: desiredVer, installed: installedVer, action })
     }
 
-    // Check installed services not in desired (removals)
+    // Check installed services not in desired (removals).
+    // Infrastructure and tool packages are not managed through the desired-state
+    // model — they are installed by the Day-0 installer or joined via state machines.
+    // Do not show them as "remove" candidates.
+    const unmanaged = new Set([
+      'envoy', 'gateway', 'mcp', 'minio', 'xds',
+      'node-exporter', 'prometheus', 'sidekick', 'keepalived',
+      'scylla-manager', 'scylla-manager-agent',
+    ])
     for (const [svcId, installedVer] of Object.entries(installed)) {
-      if (!desiredMap.has(svcId)) {
+      if (!desiredMap.has(svcId) && !unmanaged.has(svcId)) {
         services.push({ serviceId: svcId, desired: '', installed: installedVer, action: 'remove' })
       }
     }
