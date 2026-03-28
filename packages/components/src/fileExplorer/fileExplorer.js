@@ -1878,7 +1878,27 @@ export class FileExplorer extends HTMLElement {
       return out || "/";
     };
     const norm = normalize(path);
-    return this._aliasToRealMap.get(norm) || "";
+    // Exact match
+    const exact = this._aliasToRealMap.get(norm);
+    if (exact) return exact;
+    // Prefix match: find the longest alias that is a prefix of the requested path
+    // and append the remainder to the corresponding real path
+    let bestAlias = null;
+    let bestReal = null;
+    for (const [alias, real] of this._aliasToRealMap.entries()) {
+      const prefix = alias === "/" ? "/" : `${alias}/`;
+      if (norm.startsWith(prefix) || norm === alias) {
+        if (!bestAlias || alias.length > bestAlias.length) {
+          bestAlias = alias;
+          bestReal = real;
+        }
+      }
+    }
+    if (bestAlias && bestReal) {
+      const remainder = norm.slice(bestAlias.length);
+      return `${bestReal}${remainder}`;
+    }
+    return "";
   }
 
   openSharedRoot() {

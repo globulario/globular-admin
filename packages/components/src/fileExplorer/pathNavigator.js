@@ -189,17 +189,17 @@ export class PathNavigator extends HTMLElement {
       .trim();
     if (dirPath.length > 1 && dirPath.endsWith("/")) dirPath = dirPath.slice(0, -1);
 
-    // ------- Strip internal path prefixes -------
-    // Try the file explorer's alias map first
+    // ------- Map internal paths to display paths -------
+    // Use the file explorer's alias map for public dirs (maps real → alias)
     if (this._fileExplorer?._syntheticPathForRealPath) {
       const alias = this._fileExplorer._syntheticPathForRealPath(dirPath);
       if (alias) dirPath = alias;
     }
-    // Strip /users/ prefix — users only see their own folder
-    dirPath = dirPath.replace(/^\/users\//, "/");
-    // Strip /mnt/<uuid>/ prefix for public dirs
-    dirPath = dirPath.replace(/^\/mnt\/[A-Fa-f0-9]+\//, "/");
-    // Clean up leading double-slashes
+    // Strip /users/ prefix — users only see their own home folder
+    if (dirPath.startsWith("/users/")) {
+      dirPath = "/" + dirPath.slice("/users/".length);
+    }
+    // Clean up
     dirPath = dirPath.replace(/^\/\/+/, "/");
     if (dirPath.length > 1 && dirPath.endsWith("/")) dirPath = dirPath.slice(0, -1);
 
@@ -404,8 +404,22 @@ export class PathNavigator extends HTMLElement {
         return;
       }
     }
-    const realPath =
-      this._fileExplorer._resolveRealPath?.(path) || path;
+    // Try alias map first (handles /public/... → /mnt/UUID/... with prefix matching)
+    let realPath = this._fileExplorer._resolveRealPath?.(path) || "";
+    if (!realPath) {
+      // If the display path was stripped of /users/, restore it
+      const withUsers = `/users${path}`;
+      realPath = this._fileExplorer._resolveRealPath?.(withUsers) || "";
+      if (!realPath) {
+        // Check if /users/<path> is a valid path directly
+        const currentPath = this._fileExplorer._path || "";
+        if (currentPath.startsWith("/users/")) {
+          realPath = withUsers;
+        } else {
+          realPath = path;
+        }
+      }
+    }
     this._fileExplorer.publishSetDirEvent?.(realPath);
   }
 }
