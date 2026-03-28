@@ -100,10 +100,11 @@ export class FileIconViewSection extends HTMLElement {
 
       /* ShadyCSS-friendly: NO nested var() here */
       paper-checkbox {
-        --paper-checkbox-unchecked-color: #999;
+        --paper-checkbox-unchecked-color: rgba(255,255,255,.25);
         --paper-checkbox-checked-color: #4dabf7;
         --paper-checkbox-checkmark-color: #fff;
         --paper-checkbox-label-color: inherit;
+        margin-right: 6px;
       }
 
       iron-icon {
@@ -119,29 +120,34 @@ export class FileIconViewSection extends HTMLElement {
       .file-type-section .title {
         display:flex;
         align-items:center;
-        font-size:1.2rem;
-        font-weight:400;
+        font-size:.75rem;
+        font-weight:600;
         text-transform:uppercase;
+        letter-spacing:.04em;
         width:100%;
         user-select:none;
-        padding-bottom:5px;
+        padding:4px 8px;
+        box-sizing:border-box;
 
-        background-color: var(--surface-color);
+        background: color-mix(in srgb, var(--on-surface-color) 5%, var(--surface-color));
         color: var(--secondary-text-color, var(--palette-text-secondary));
-        border-bottom: 1px solid var(--divider-color, var(--palette-divider));
+        border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
+        border-radius: 4px 4px 0 0;
       }
 
       .file-type-section .title iron-icon {
         user-select:none;
-        margin-left:5px;
+        height: 18px;
+        width: 18px;
+        opacity: .7;
       }
 
       .file-type-section .title span {
-        font-weight:400;
-        font-size:1rem;
+        font-weight:600;
+        font-size:.75rem;
         flex-grow:1;
         padding-left:5px;
-        color: var(--on-surface-color, black);
+        color: var(--secondary-text-color);
       }
 
       .file-type-section .content {
@@ -162,14 +168,17 @@ export class FileIconViewSection extends HTMLElement {
       }
 
       .playlist-actions iron-icon {
-        height:24px;
-        width:24px;
+        height:18px;
+        width:18px;
         cursor:pointer;
         fill: var(--secondary-text-color, var(--palette-text-secondary));
+        opacity: .5;
+        transition: opacity .2s;
       }
 
       .playlist-actions iron-icon:hover {
         fill: var(--accent-color);
+        opacity: 1;
       }
     </style>
 

@@ -299,9 +299,11 @@ export class FileIconView extends HTMLElement {
         box-shadow: 0 0 6px var(--secondary-color-light, rgba(76,175,80,.6));
       }
 
-      /* Slight hover lift */
+      /* Slight hover lift + glow */
       .file-icon-content:hover {
-        transform: translateY(-1px);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,.25);
+        border-color: color-mix(in srgb, var(--on-surface-color) 20%, transparent);
       }
       </style>
 

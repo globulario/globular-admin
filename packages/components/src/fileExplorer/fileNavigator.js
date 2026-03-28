@@ -199,8 +199,15 @@ export class FileNavigator extends HTMLElement {
       }
 
       .expand-toggle {
-        margin-right: 5px;
+        margin-right: 3px;
         cursor: pointer;
+        height: 14px;
+        width: 14px;
+        opacity: .5;
+        transition: opacity .2s;
+      }
+      .expand-toggle:hover {
+        opacity: 1;
       }
 
       .folder-icon {

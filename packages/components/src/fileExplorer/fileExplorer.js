@@ -456,9 +456,11 @@ export class FileExplorer extends HTMLElement {
       .card-actions.footer {
         display: flex !important;
         align-items: center;
-        background-color: var(--surface-color);
-        color: var(--on-surface-color);
+        background: color-mix(in srgb, var(--on-surface-color) 4%, var(--surface-color));
+        color: var(--secondary-text-color);
         border-top: 1px solid var(--fx-border-color);
+        font-size: .75rem;
+        padding: 2px 8px;
       }
 
       @media (max-width: 500px) {

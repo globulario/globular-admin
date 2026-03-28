@@ -70,35 +70,69 @@ export class PathNavigator extends HTMLElement {
       <style>
         :host { display: flex; }
         #path-navigator-box {
-          flex-grow: 1; background-color: var(--surface-color); color: var(--on-surface-color, var(--primary-text-color));
-          display: flex; align-items: center; user-select: none; flex-wrap: wrap;
-          padding: 0 5px; overflow-x: auto;
-          border-bottom: 1px solid var(--palette-divider);
+          flex-grow: 1;
+          background-color: var(--surface-color);
+          color: var(--on-surface-color, var(--primary-text-color));
+          display: flex; align-items: center; user-select: none; flex-wrap: nowrap;
+          padding: 2px 4px; overflow-x: auto;
+          font-size: .8rem;
+          gap: 2px;
         }
-        .path-segment { display: flex; align-items: center; position: relative; padding: 2px 0; }
-        .path-segment-text { max-width: 350px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; user-select: none; padding: 0 4px; }
-        .path-segment-text:hover { cursor: pointer; }
-        .path-separator-icon { --iron-icon-fill-color: var(--on-surface-color, var(--primary-text-color)); margin: 0 -2px; }
-        .path-separator-icon:hover { cursor: pointer; }
+        .path-segment {
+          display: flex; align-items: center; position: relative;
+        }
+        .path-segment-text {
+          max-width: 220px;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          overflow: hidden;
+          user-select: none;
+          padding: 3px 10px;
+          border-radius: 4px;
+          background: color-mix(in srgb, var(--on-surface-color) 8%, transparent);
+          color: var(--on-surface-color);
+          font-size: .78rem;
+          font-weight: 500;
+          transition: background .15s;
+        }
+        .path-segment-text:hover {
+          cursor: pointer;
+          background: color-mix(in srgb, var(--on-surface-color) 15%, transparent);
+        }
+        /* Highlight the last (current) segment */
+        .path-segment:last-child .path-segment-text {
+          background: color-mix(in srgb, var(--accent-color, #3b82f6) 20%, transparent);
+          color: var(--on-surface-color);
+        }
+        .path-separator-icon {
+          --iron-icon-fill-color: var(--secondary-text-color);
+          margin: 0 -1px;
+          height: 16px; width: 16px;
+          opacity: .35;
+          flex-shrink: 0;
+        }
+        .path-separator-icon:hover { cursor: pointer; opacity: .7; }
 
         /* Dropdown card is fixed to viewport; we set left/top from JS to the icon's bottom-left */
         .directories-selector {
           display: none;
           flex-direction: column;
-          position: fixed;              /* <-- fixed to viewport */
-          padding: 5px;
-          z-index: 10000;               /* keep above headers/overlays */
-          left: 0;                      /* computed in JS */
-          top: 0;                       /* computed in JS */
+          position: fixed;
+          padding: 4px 0;
+          z-index: 10000;
+          left: 0;
+          top: 0;
           background-color: var(--surface-color);
           color: var(--on-surface-color, var(--primary-text-color));
-          box-shadow: var(--shadow-elevation-2dp);
+          box-shadow: 0 4px 16px rgba(0,0,0,.4);
           max-height: 240px;
           overflow-y: auto;
           min-width: 180px;
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, var(--palette-divider));
         }
-        .subdirectory-item { padding: 4px 8px; white-space: nowrap; }
-        .subdirectory-item:hover { cursor: pointer; background-color: var(--palette-action-hover); }
+        .subdirectory-item { padding: 5px 12px; white-space: nowrap; font-size: .8rem; cursor: pointer; transition: background .12s; }
+        .subdirectory-item:hover { background: color-mix(in srgb, var(--on-surface-color) 10%, transparent); }
       </style>
       <div id="path-navigator-box"></div>
     `;
@@ -238,10 +272,9 @@ export class PathNavigator extends HTMLElement {
     setIcon(iconEl, ICON_EXPAND_MORE);
 
     if (!dropdownEl) {
-      const card = document.createElement("paper-card");
+      const card = document.createElement("div");
       card.className = "directories-selector";
-      show(card, true);
-      // Keep it as a child (shadow tree), but fixed positioning uses viewport coords
+      // Don't show yet — wait until items are added
       iconEl.parentElement.appendChild(card);
 
       try {
@@ -310,11 +343,16 @@ export class PathNavigator extends HTMLElement {
             card.appendChild(item);
           });
 
-        // Position after it renders to get width/height right
-        requestAnimationFrame(() => {
-          placeCard(card);
-          attachReposition(card);
-        });
+        // Only show if there are items; position after render
+        if (card.children.length > 0) {
+          show(card, true);
+          requestAnimationFrame(() => {
+            placeCard(card);
+            attachReposition(card);
+          });
+        } else {
+          setIcon(iconEl, ICON_CHEVRON_RIGHT);
+        }
 
         // Hide when leaving the card
         card.addEventListener("mouseleave", () => {
