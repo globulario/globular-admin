@@ -368,7 +368,7 @@ export class FileExplorer extends HTMLElement {
       }
 
       #file-navigation-panel {
-        border-right: 1px solid var(--fx-border-color);
+        border-right: 1px solid var(--divider-color, var(--palette-divider));
       }
 
       #file-explorer-content {
@@ -383,10 +383,33 @@ export class FileExplorer extends HTMLElement {
       #file-navigation-header {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 4px 8px;
+        gap: 4px;
+        padding: 2px 4px;
         border-bottom: 1px solid var(--fx-border-color);
         background-color: var(--surface-color);
+      }
+
+      #file-navigation-header paper-icon-button {
+        width: 28px;
+        height: 28px;
+        padding: 4px;
+      }
+
+      #show-share-panel-btn,
+      #navigation-cloud-upload-btn,
+      #navigation-create-dir-btn,
+      #navigation-refresh-btn {
+        width: 32px;
+        height: 32px;
+        padding: 4px;
+      }
+
+      #show-share-panel-btn iron-icon,
+      #navigation-cloud-upload-btn iron-icon,
+      #navigation-create-dir-btn iron-icon,
+      #navigation-refresh-btn iron-icon {
+        width: 18px;
+        height: 18px;
       }
 
       #file-explorer-layout {
@@ -1952,7 +1975,13 @@ export class FileExplorer extends HTMLElement {
     // Update active directory display
     const activeDirSpan = this.shadowRoot.querySelector("#active-directory");
     if (activeDirSpan) {
-      activeDirSpan.textContent = this._path || "/";
+      let displayPath = this._syntheticPathForRealPath(this._path) || this._path || "/";
+      if (displayPath.startsWith("/users/")) {
+        displayPath = "/" + displayPath.slice("/users/".length);
+      }
+      displayPath = displayPath.replace(/^\/mnt\/[^/]+\//, "/");
+      displayPath = displayPath.replace(/^\/\/+/, "/");
+      activeDirSpan.textContent = displayPath;
       activeDirSpan.style.display = "block";
     }
 

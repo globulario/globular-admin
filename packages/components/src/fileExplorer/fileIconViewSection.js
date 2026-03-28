@@ -33,6 +33,17 @@ const ICON_FOR_SECTION = {
   default: "icons:folder",
 };
 
+const LABEL_FOR_SECTION = {
+  folder: "Folders",
+  video: "Videos",
+  audio: "Audio",
+  image: "Images",
+  text: "Documents",
+  pdf: "PDF",
+  document: "Documents",
+  other: "Other",
+};
+
 function buildFileHttpUrl(path) {
   // Build a stable absolute URL to the file path served by your backend's file HTTP server.
   const base = (window.location && window.location.origin)
@@ -78,6 +89,7 @@ export class FileIconViewSection extends HTMLElement {
     this._filesIconView = this._fileExplorer?._filesIconView || null;
 
     this._setSectionIcon(this._fileType);
+    this._updateSectionLabel();
     this._setupPlaylistActions();
     this.updateCount();
   }
@@ -187,7 +199,7 @@ export class FileIconViewSection extends HTMLElement {
         <paper-checkbox id="select-all-checkbox"></paper-checkbox>
         <iron-icon id="section-type-icon"></iron-icon>
         <span>
-          ${this._fileType}
+          ${LABEL_FOR_SECTION[this._fileType] || this._fileType}
           <span id="section_count"></span>
         </span>
         <div id="playlist-actions" class="playlist-actions"></div>
@@ -205,6 +217,15 @@ export class FileIconViewSection extends HTMLElement {
     this._dom.fileSectionContent = $("#file_section_content");
     this._dom.playlistActionsDiv = $("#playlist-actions");
     this._dom.sectionTypeIcon = $("#section-type-icon");
+  }
+
+  _updateSectionLabel() {
+    const labelSpan = this.shadowRoot.querySelector(".title > span");
+    if (labelSpan) {
+      const label = LABEL_FOR_SECTION[this._fileType] || this._fileType;
+      labelSpan.innerHTML = `${label} <span id="section_count"></span>`;
+      this._dom.sectionCountSpan = this.shadowRoot.querySelector("#section_count");
+    }
   }
 
   _wireBasics() {
