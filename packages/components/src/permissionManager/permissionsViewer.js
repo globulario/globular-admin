@@ -176,45 +176,218 @@ export class PermissionsViewer extends HTMLElement {
       <style>
         #subjects-div { vertical-align: middle; text-align: center; }
         #permissions-div {
-          display: table; width: 100%; border-collapse: collapse; font-size: .95rem;
+          display: table;
+          width: 100%;
+          border-collapse: collapse;
+          font-size: .85rem;
         }
         #permissions-header {
-          display: table-row; font-size: 1rem; font-weight: 500;
-          color: var(--primary-text-color);
-          border-bottom: 2px solid var(--palette-divider);
-          background-color: var(--palette-background-dark);
+          display: table-row;
+          font-size: .75rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+          color: var(--secondary-text-color);
+          border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
+          background: color-mix(in srgb, var(--on-surface-color) 5%, var(--surface-color));
         }
         #permissions-header div {
-          display: table-cell; padding: 8px 5px; text-align: center; vertical-align: middle;
+          display: table-cell;
+          padding: 10px 8px;
+          text-align: center;
+          vertical-align: middle;
         }
         .subject-cell {
-          display: table-cell; padding: 5px; text-align: left; vertical-align: middle;
-          max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          display: table-cell;
+          padding: 8px;
+          text-align: left;
+          vertical-align: middle;
+          max-width: 250px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .permission-cell {
-          text-align: center; vertical-align: middle; padding: 5px; display: table-cell;
+          text-align: center;
+          vertical-align: middle;
+          padding: 6px;
+          display: table-cell;
         }
-        .permission-cell iron-icon { width: 24px; height: 24px; color: var(--secondary-text-color); }
-        .permission-cell iron-icon:hover { cursor: pointer; color: var(--accent-color); }
-        .permission-cell iron-icon[icon="icons:check"] { color: var(--palette-success-main); }
-        .permission-cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main); }
-        .permission-cell iron-icon[icon="icons:remove"] { color: var(--secondary-text-color); }
+        .permission-cell iron-icon {
+          width: 20px;
+          height: 20px;
+          color: var(--secondary-text-color);
+          opacity: .5;
+          transition: opacity .2s, color .2s;
+        }
+        .permission-cell iron-icon:hover { cursor: pointer; opacity: 1; color: var(--accent-color); }
+        .permission-cell iron-icon[icon="icons:check"] { color: var(--palette-success-main, #4caf50); opacity: 1; }
+        .permission-cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main, #f44336); opacity: .8; }
+        .permission-cell iron-icon[icon="icons:remove"] { color: var(--secondary-text-color); opacity: .35; }
 
-        .permission-row { display: table-row; border-bottom: 1px solid var(--palette-divider-light); }
+        .permission-row {
+          display: table-row;
+          border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 30%, transparent);
+          transition: background .15s;
+        }
         .permission-row:last-child { border-bottom: none; }
+        .permission-row:hover {
+          background: color-mix(in srgb, var(--on-surface-color) 4%, transparent);
+        }
 
-        .item-subject-display { display:flex; align-items:center; padding:2px; }
+        .item-subject-display { display: flex; align-items: center; padding: 4px 2px; gap: 8px; }
         .item-subject-icon {
-          width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
-          margin-right:5px; flex-shrink:0;
+          width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+          flex-shrink: 0;
         }
         .item-subject-icon-placeholder {
-          width: 32px; height: 32px; margin-right:5px; flex-shrink:0;
+          width: 28px; height: 28px; flex-shrink: 0;
+          fill: var(--palette-action-disabled);
           --iron-icon-fill-color: var(--palette-action-disabled);
         }
-        .item-subject-text { display:flex; flex-direction:column; font-size:.8em; flex-grow:1; min-width:0; }
-        .item-subject-text span:first-child { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .item-subject-text span:last-child  { font-size:.7em; color:var(--secondary-text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .item-subject-text {
+          display: flex;
+          flex-direction: column;
+          font-size: .82rem;
+          flex-grow: 1;
+          min-width: 0;
+          gap: 1px;
+        }
+        .item-subject-text span:first-child {
+          font-weight: 600;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .item-subject-text span:last-child {
+          font-size: .72rem;
+          color: var(--secondary-text-color);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          opacity: .8;
+        }
+
+        /* Action column (remove button) */
+        .action-col {
+          width: 32px;
+          min-width: 32px;
+        }
+        .remove-btn {
+          width: 18px; height: 18px;
+          fill: var(--secondary-text-color);
+          opacity: .3;
+          cursor: pointer;
+          transition: opacity .2s, fill .2s;
+        }
+        .remove-btn:hover {
+          fill: var(--palette-error-main, #f44336);
+          opacity: 1;
+        }
+
+        /* Add subject bar */
+        #add-subject-bar {
+          display: flex;
+          align-items: center;
+          padding: 4px 8px;
+          position: relative;
+        }
+        #add-subject-btn {
+          width: 32px; height: 32px;
+          color: var(--secondary-text-color);
+          opacity: .6;
+          transition: opacity .2s, color .2s;
+        }
+        #add-subject-btn:hover { color: var(--accent-color); opacity: 1; }
+
+        .add-popup {
+          position: absolute;
+          left: 8px;
+          top: 40px;
+          z-index: 200;
+          background: var(--surface-color);
+          border: 1px solid var(--palette-divider);
+          border-radius: 8px;
+          box-shadow: 0 4px 16px rgba(0,0,0,.25);
+          min-width: 220px;
+          overflow: hidden;
+        }
+        .add-popup-types {
+          display: flex;
+          flex-direction: column;
+        }
+        .add-popup-type {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 16px;
+          cursor: pointer;
+          font-size: .82rem;
+          font-weight: 500;
+          color: var(--primary-text-color);
+          transition: background .15s;
+        }
+        .add-popup-type:hover {
+          background: color-mix(in srgb, var(--on-surface-color) 8%, transparent);
+        }
+        .add-popup-type iron-icon {
+          width: 20px; height: 20px;
+          fill: var(--secondary-text-color);
+        }
+
+        #add-subject-search {
+          border-top: 1px solid var(--palette-divider);
+          padding: 8px;
+        }
+        #add-subject-input {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 6px 10px;
+          border: 1px solid var(--palette-divider);
+          border-radius: 6px;
+          background: color-mix(in srgb, var(--on-surface-color) 5%, var(--surface-color));
+          color: var(--primary-text-color);
+          font-size: .82rem;
+          outline: none;
+        }
+        #add-subject-input:focus { border-color: var(--accent-color); }
+        #add-subject-results {
+          max-height: 200px;
+          overflow-y: auto;
+          margin-top: 6px;
+          scrollbar-width: thin;
+        }
+        .add-result-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 8px;
+          cursor: pointer;
+          border-radius: 4px;
+          font-size: .8rem;
+          transition: background .15s;
+        }
+        .add-result-item:hover {
+          background: color-mix(in srgb, var(--on-surface-color) 8%, transparent);
+        }
+        .add-result-item iron-icon {
+          width: 22px; height: 22px;
+          fill: var(--secondary-text-color);
+          flex-shrink: 0;
+        }
+        .add-result-item img {
+          width: 22px; height: 22px;
+          border-radius: 50%;
+          object-fit: cover;
+          flex-shrink: 0;
+        }
+        .add-result-text {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+        }
+        .add-result-text span:first-child { font-weight: 500; }
+        .add-result-text span:last-child { font-size: .7rem; color: var(--secondary-text-color); }
       </style>
 
       <div>
@@ -223,6 +396,21 @@ export class PermissionsViewer extends HTMLElement {
           <div id="permissions-header">
             <div class="subject-cell">Subject</div>
             ${this._permissionsNames.map(n => `<div class="permission-cell">${n}</div>`).join('')}
+            <div class="permission-cell action-col"></div>
+          </div>
+        </div>
+        <div id="add-subject-bar">
+          <paper-icon-button id="add-subject-btn" icon="icons:add" title="Add subject"></paper-icon-button>
+          <div id="add-subject-popup" class="add-popup" style="display:none;">
+            <div class="add-popup-types">
+              <div class="add-popup-type" data-type="account"><iron-icon icon="account-circle"></iron-icon><span>Account</span></div>
+              <div class="add-popup-type" data-type="group"><iron-icon icon="social:people"></iron-icon><span>Group</span></div>
+              <div class="add-popup-type" data-type="organization"><iron-icon icon="social:domain"></iron-icon><span>Organization</span></div>
+            </div>
+            <div id="add-subject-search" style="display:none;">
+              <input id="add-subject-input" type="text" placeholder="Search..." />
+              <div id="add-subject-results"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -233,6 +421,170 @@ export class PermissionsViewer extends HTMLElement {
     this._subjectsDiv = this.shadowRoot.querySelector("#subjects-div")
     this._permissionsDiv = this.shadowRoot.querySelector("#permissions-div")
     this._permissionsHeader = this.shadowRoot.querySelector("#permissions-header")
+
+    // Add-subject UI
+    this._addBtn = this.shadowRoot.querySelector("#add-subject-btn")
+    this._addPopup = this.shadowRoot.querySelector("#add-subject-popup")
+    this._addSearch = this.shadowRoot.querySelector("#add-subject-search")
+    this._addInput = this.shadowRoot.querySelector("#add-subject-input")
+    this._addResults = this.shadowRoot.querySelector("#add-subject-results")
+
+    this._wireAddSubject()
+  }
+
+  // ----------------------------- add-subject wiring ---------------------------
+  _wireAddSubject() {
+    if (!this._addBtn) return
+
+    // Toggle popup
+    this._addBtn.addEventListener("click", (e) => {
+      e.stopPropagation()
+      const showing = this._addPopup.style.display !== "none"
+      this._closeAddPopup()
+      if (!showing) {
+        this._addPopup.style.display = ""
+        this._addSearch.style.display = "none"
+      }
+    })
+
+    // Close on outside click (use capture on shadow root host)
+    this.addEventListener("click", (e) => {
+      if (this._addPopup.style.display === "none") return
+      const path = e.composedPath()
+      const inPopup = path.includes(this._addPopup) || path.includes(this._addBtn)
+      if (!inPopup) this._closeAddPopup()
+    })
+
+    // Type buttons
+    this._addPopup.querySelectorAll(".add-popup-type").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        const type = btn.dataset.type
+        this._showSubjectSearch(type)
+      })
+    })
+
+    // Search input
+    this._addInput?.addEventListener("input", () => {
+      this._filterSearchResults(this._addInput.value)
+    })
+    this._addInput?.addEventListener("click", (e) => e.stopPropagation())
+  }
+
+  _closeAddPopup() {
+    if (this._addPopup) this._addPopup.style.display = "none"
+    if (this._addSearch) this._addSearch.style.display = "none"
+    if (this._addResults) this._addResults.innerHTML = ""
+    if (this._addInput) this._addInput.value = ""
+    this._addPopupEntities = []
+    this._addPopupType = ""
+  }
+
+  async _showSubjectSearch(type) {
+    this._addPopupType = type
+    this._addSearch.style.display = ""
+    this._addInput.value = ""
+    this._addInput.placeholder = `Search ${type}s...`
+    this._addResults.innerHTML = `<div style="padding:8px;font-size:.8rem;color:var(--secondary-text-color);">Loading...</div>`
+    this._addInput.focus()
+
+    // Fetch entities
+    let items = []
+    try {
+      if (type === "account") {
+        const r = await listAccounts({ pageSize: 2000 })
+        items = r?.items || []
+      } else if (type === "group") {
+        const r = await listGroups({ pageSize: 2000 })
+        items = r?.items || []
+      } else if (type === "organization") {
+        const r = await listOrganizations({ pageSize: 2000 })
+        items = r?.items || []
+      }
+    } catch (e) {
+      console.warn("Failed to load entities:", e)
+    }
+
+    // Filter out subjects already in the table
+    const existingKeys = new Set(Object.keys(this._subjects))
+    this._addPopupEntities = items.filter(item => {
+      const id = getId(item)
+      const domain = getDomain(item)
+      const fq = domain ? `${id}@${domain}` : id
+      return !existingKeys.has(`${fq}::${type}`) && !existingKeys.has(`${id}::${type}`)
+    })
+
+    this._filterSearchResults("")
+  }
+
+  _filterSearchResults(query) {
+    if (!this._addResults) return
+    this._addResults.innerHTML = ""
+    const q = (query || "").toLowerCase()
+    const type = this._addPopupType
+
+    const filtered = this._addPopupEntities.filter(item => {
+      const id = getId(item)
+      const name = getName(item)
+      const email = getEmail(item)
+      return !q || id.toLowerCase().includes(q) || name.toLowerCase().includes(q) || email.toLowerCase().includes(q)
+    })
+
+    if (filtered.length === 0) {
+      this._addResults.innerHTML = `<div style="padding:8px;font-size:.8rem;color:var(--secondary-text-color);">No results</div>`
+      return
+    }
+
+    filtered.slice(0, 30).forEach(item => {
+      const id = getId(item)
+      const domain = getDomain(item)
+      const fq = domain ? `${id}@${domain}` : id
+      const div = document.createElement("div")
+      div.className = "add-result-item"
+
+      let mainText = "", subText = "", iconName = "account-circle", iconUrl = ""
+      if (type === "account") {
+        const fn = getFirstName(item), ln = getLastName(item)
+        mainText = (fn && ln) ? `${fn} ${ln}` : (getName(item) || id)
+        subText = getEmail(item) || fq
+        iconUrl = getProfilePicture(item)
+      } else if (type === "group") {
+        mainText = getName(item) || id
+        subText = fq
+        iconName = "social:people"
+      } else if (type === "organization") {
+        mainText = getName(item) || id
+        subText = fq
+        iconName = "social:domain"
+      }
+
+      div.innerHTML = `
+        ${iconUrl ? `<img src="${iconUrl}" alt="">` : `<iron-icon icon="${iconName}"></iron-icon>`}
+        <div class="add-result-text">
+          <span>${mainText}</span>
+          <span>${subText}</span>
+        </div>
+      `
+
+      div.addEventListener("click", () => {
+        this._addSubjectToPermissions(fq, type)
+        this._closeAddPopup()
+      })
+
+      this._addResults.appendChild(div)
+    })
+  }
+
+  _addSubjectToPermissions(subjectId, type) {
+    if (!this._permissions) return
+
+    // Add to owners by default (will show as a row with owner=unset, user can toggle)
+    // Actually, just add the subject key so it appears — with all permissions unset
+    const key = `${subjectId}::${type}`
+    if (this._subjects[key]) return // already present
+
+    this._subjects[key] = { id: subjectId, type, permissions: {} }
+    this._renderPermissionsTable()
   }
 
   // ---------------------------- data prep --------------------------------
@@ -296,6 +648,19 @@ export class PermissionsViewer extends HTMLElement {
           const cell = this._createPermissionCell(status, permName, subject)
           row.appendChild(cell)
         })
+
+        // Remove button
+        const actionCell = document.createElement("div")
+        actionCell.className = "permission-cell action-col"
+        const removeIcon = document.createElement("iron-icon")
+        removeIcon.className = "remove-btn"
+        removeIcon.icon = "icons:close"
+        removeIcon.title = "Remove subject"
+        removeIcon.addEventListener("click", async () => {
+          await this._removeSubject(subject)
+        })
+        actionCell.appendChild(removeIcon)
+        row.appendChild(actionCell)
 
         return row
       })
@@ -470,6 +835,42 @@ export class PermissionsViewer extends HTMLElement {
     this._renderPermissionsTable()
 
     // Persist with backend
+    await this._persistPermissionsVM()
+  }
+
+  async _removeSubject(subject) {
+    if (!this._permissions) return
+    const subjId = subject.id
+    const type = subject.type
+
+    const removeFromList = (list) => list.filter(x => x !== subjId)
+    const removeFromEntries = (entries) => {
+      for (const entry of entries) {
+        if (type === "account") entry.accounts = removeFromList(entry.accounts || [])
+        else if (type === "group") entry.groups = removeFromList(entry.groups || [])
+        else if (type === "application") entry.applications = removeFromList(entry.applications || [])
+        else if (type === "organization") entry.organizations = removeFromList(entry.organizations || [])
+        else if (type === "peer") entry.peers = removeFromList(entry.peers || [])
+      }
+    }
+
+    // Remove from owners
+    const owners = this._permissions.owners
+    if (owners) {
+      if (type === "account") owners.accounts = removeFromList(owners.accounts || [])
+      else if (type === "group") owners.groups = removeFromList(owners.groups || [])
+      else if (type === "application") owners.applications = removeFromList(owners.applications || [])
+      else if (type === "organization") owners.organizations = removeFromList(owners.organizations || [])
+      else if (type === "peer") owners.peers = removeFromList(owners.peers || [])
+    }
+
+    // Remove from allowed and denied
+    removeFromEntries(this._permissions.allowed || [])
+    removeFromEntries(this._permissions.denied || [])
+
+    // Rebuild and persist
+    this._processPermissionsData()
+    this._renderPermissionsTable()
     await this._persistPermissionsVM()
   }
 

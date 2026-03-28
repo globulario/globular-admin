@@ -122,7 +122,7 @@ export class PersonEditor extends HTMLElement {
           border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
         }
         .header-text { flex-grow: 1; font-size: 1rem; font-weight: 600; margin-left: 6px; }
-        .content-area { display: flex; gap: 10px; min-width: 0; overflow: hidden; }
+        .content-area { display: flex; gap: 10px; min-width: 0; overflow: visible; }
         .image-column {
           display: flex;
           flex-direction: column;

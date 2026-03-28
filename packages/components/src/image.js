@@ -1267,7 +1267,7 @@ export class ImageSelector extends HTMLElement {
         }
 
         .image-selector{
-          max-width: var(--image-selector-max-width, 200px);
+          max-width: var(--image-selector-max-width, 170px);
           position:relative;
           border-radius:8px;
           box-shadow: 0 2px 6px rgba(0,0,0,0.12);
@@ -1277,18 +1277,16 @@ export class ImageSelector extends HTMLElement {
           ${url.length == 0 ? "display:none;" : "display:flex;"}
           z-index:100;
           position:absolute;
-          top:-10px;
-          left:-16px;
+          top:2px;
+          left:2px;
           background-color: color-mix(in srgb, #000 70%, transparent);
           --paper-icon-button-ink-color:white;
           --iron-icon-fill-color:white;
-          border-bottom:1px solid var(--palette-divider);
-          border-right:1px solid var(--palette-divider);
           padding:4px;
-          width:30px;
-          height:30px;
-          --iron-icon-width:20px;
-          --iron-icon-height:20px;
+          width:28px;
+          height:28px;
+          --iron-icon-width:18px;
+          --iron-icon-height:18px;
           border-radius:999px;
           align-items:center;
           justify-content:center;

@@ -150,6 +150,8 @@ export class FileNavigator extends HTMLElement {
       }
 
       .section-header {
+        display: flex;
+        align-items: center;
         background-color: var(--surface-subheader-color,
                                var(--surface-alt-color, var(--surface-color)));
         color: var(--secondary-text-color, var(--palette-text-secondary));
@@ -161,6 +163,24 @@ export class FileNavigator extends HTMLElement {
         text-transform: uppercase;
         font-size: 0.75rem;
         letter-spacing: 0.04em;
+      }
+      .section-header span { flex: 1; }
+      .section-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .section-actions iron-icon {
+        height: 18px;
+        width: 18px;
+        cursor: pointer;
+        fill: var(--secondary-text-color);
+        opacity: .5;
+        transition: opacity .2s, fill .2s;
+      }
+      .section-actions iron-icon:hover {
+        fill: var(--accent-color);
+        opacity: 1;
       }
 
       .directory-item {
@@ -210,10 +230,11 @@ export class FileNavigator extends HTMLElement {
         opacity: 1;
       }
 
-      .folder-icon {
+      .directory-item .folder-icon {
         margin-right: 4px;
         width: 16px;
         height: 16px;
+        fill: #e2a652;
         --iron-icon-fill-color: #e2a652;
       }
 
@@ -235,16 +256,22 @@ export class FileNavigator extends HTMLElement {
       }
 
       .directory-item.drag-over .folder-icon {
-        --iron-icon-fill-color: var(--accent-color);
+        fill: var(--accent-color) !important;
+        --iron-icon-fill-color: var(--accent-color) !important;
       }
     </style>
 
     <div id="file-navigator-div">
       <select id="peer-select"></select>
-      <div class="section-header">My Files</div>
+      <div class="section-header">
+        <span>My Files</span>
+        <div class="section-actions" id="my-files-actions">
+          <iron-icon id="nav-share-btn" icon="social:share" title="Shared resources"></iron-icon>
+        </div>
+      </div>
       <div id="user-files-div"></div>
-      <div class="section-header">Shared with me</div>
-      <div id="shared-files-div"></div>
+      <div class="section-header" id="shared-section-header" style="display:none;">Shared with me</div>
+      <div id="shared-files-div" style="display:none;"></div>
       <div class="section-header">Public</div>
       <div id="public-files-div"></div>
     </div>
@@ -257,6 +284,12 @@ export class FileNavigator extends HTMLElement {
     this._domRefs.userFilesDiv = this.shadowRoot.querySelector("#user-files-div");
     this._domRefs.sharedFilesDiv = this.shadowRoot.querySelector("#shared-files-div");
     this._domRefs.publicFilesDiv = this.shadowRoot.querySelector("#public-files-div");
+
+    // Action buttons in My Files header
+    this.shadowRoot.querySelector("#nav-share-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._fileExplorer?._handleSharePanelClick?.(new Event("click"));
+    });
   }
 
   _setupPeerSelector() {
@@ -630,6 +663,34 @@ export class FileNavigator extends HTMLElement {
     const cur = this._dirsCache.get(path);
     const curRow = cur && this.shadowRoot.getElementById(cur.id);
     curRow?.classList.add("selected");
+
+    // Sync folder icons: only the selected path and its ancestors show
+    // "folder-open"; every other folder reverts to "folder".
+    this._syncFolderIcons(path);
+  }
+
+  /**
+   * Walk every cached directory entry and set its icon to folder-open
+   * only if it is an ancestor of `activePath` (or `activePath` itself).
+   */
+  _syncFolderIcons(activePath) {
+    // Build the set of ancestor paths (including activePath itself)
+    const ancestors = new Set();
+    if (activePath) {
+      let cur = activePath;
+      while (cur) {
+        ancestors.add(cur);
+        const idx = cur.lastIndexOf("/");
+        if (idx <= 0) { ancestors.add("/"); break; }
+        cur = cur.substring(0, idx);
+      }
+    }
+
+    for (const [dirPath, entry] of this._dirsCache) {
+      const dirIco = this.shadowRoot.getElementById(`${entry.id}_directory_icon`);
+      if (!dirIco) continue;
+      dirIco.icon = ancestors.has(dirPath) ? "icons:folder-open" : "icons:folder";
+    }
   }
 
   async expandTo(targetPath) {

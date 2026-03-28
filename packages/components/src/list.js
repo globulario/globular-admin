@@ -1,304 +1,234 @@
-import { v4 as uuidv4 } from "uuid";
 import getUuidByString from "uuid-by-string";
-import { fireResize } from "./utility"; // Assuming this utility is available
 
 /**
  * `globular-editable-string-list` Web Component.
- * Displays a list of strings that can be edited, added, and removed.
- *
- * Properties:
- * - `list` (Array): Initial list of strings to display.
+ * Displays a list of strings as chips that can be edited, added, and removed.
  */
 export class EditableStringList extends HTMLElement {
-    // --- Internal Properties ---
     _items = [];
-    
-    // Cached DOM elements
     _stringListDiv = null;
     _addItemBtn = null;
 
-    // --- Constructor ---
     constructor(list) {
         super();
         this.attachShadow({ mode: 'open' });
-        this._renderHTML(); // Render HTML
-        this._cacheElements();
-        this.setItems(list || []); // Set initial items
-    }
-
-    // --- Lifecycle Callbacks ---
-    connectedCallback() {
+        this._renderHTML();
         this._cacheElements();
         this._setupEventListeners();
+        this.setItems(list || []);
     }
 
-    disconnectedCallback() {
-        this._cleanupEventListeners();
+    connectedCallback() {
+        this._cacheElements();
     }
 
-    // --- Public API Methods ---
-
-    /**
-     * Returns the list of strings currently in the component.
-     * @returns {string[]} An array of strings.
-     */
     getItems() {
-        const itemSpans = this.shadowRoot.querySelectorAll(".items");
-        return Array.from(itemSpans).map(span => span.textContent);
+        const chips = this.shadowRoot.querySelectorAll(".chip-text");
+        return Array.from(chips).map(el => el.textContent).filter(Boolean);
     }
 
-    /**
-     * Sets the list of strings to be displayed.
-     * @param {string[]} items An array of strings.
-     */
     setItems(items) {
-        this._items = items;
-        this.renderItems();
+        this._items = items || [];
+        this._renderChips();
     }
 
-    /**
-     * Sets the list of values (an alias for setItems).
-     * @param {string[]} values An array of strings.
-     */
-    setValues(values) {
-        this.setItems(values);
-    }
+    setValues(values) { this.setItems(values); }
+    getValues() { return this.getItems(); }
 
-    /**
-     * Gets the list of values (an alias for getItems).
-     * @returns {string[]} An array of strings.
-     */
-    getValues() {
-        return this.getItems();
-    }
-
-    /** Programmatically triggers the input to lose focus, hiding all text inputs. */
     blur() {
-        const inputs = this.shadowRoot.querySelectorAll("paper-input");
-        inputs.forEach(input => {
+        this.shadowRoot.querySelectorAll(".chip-input").forEach(input => {
+            const chip = input.closest(".chip");
+            const text = chip?.querySelector(".chip-text");
+            if (text) text.style.display = "";
             input.style.display = "none";
-            input.parentNode.querySelector('.items').style.display = "block";
         });
     }
-
-    // --- Private Helper Methods ---
 
     _renderHTML() {
         this.shadowRoot.innerHTML = `
         <style>
-            .string-list{
+            :host { display: inline-flex; }
+            .container {
                 display: flex;
+                align-items: center;
                 flex-wrap: wrap;
-                min-height: 25px;
+                gap: 6px;
             }
-
-            .string-item-wrapper {
+            .chip {
+                display: inline-flex;
+                align-items: center;
+                padding: 2px 6px 2px 10px;
+                border: 1px solid color-mix(in srgb, var(--on-surface-color) 20%, transparent);
+                border-radius: 999px;
+                font-size: .78rem;
+                color: var(--on-surface-color);
+                background: color-mix(in srgb, var(--on-surface-color) 6%, transparent);
+                cursor: pointer;
+                transition: background .1s ease;
+                gap: 4px;
+            }
+            .chip:hover {
+                background: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+            }
+            .chip-text {
+                white-space: nowrap;
+            }
+            .chip-input {
+                display: none;
+                border: none;
+                outline: none;
+                background: transparent;
+                color: var(--on-surface-color);
+                font-size: .78rem;
+                font-family: inherit;
+                width: 80px;
+                padding: 0;
+            }
+            .chip-remove {
+                width: 14px;
+                height: 14px;
+                cursor: pointer;
+                opacity: .5;
+                transition: opacity .15s;
+                fill: var(--on-surface-color);
+            }
+            .chip-remove:hover { opacity: 1; }
+            .add-btn {
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                border: 1px dashed color-mix(in srgb, var(--on-surface-color) 25%, transparent);
+                background: transparent;
+                color: var(--on-surface-color);
+                cursor: pointer;
+                display: flex;
                 align-items: center;
                 justify-content: center;
-                padding: 0px 4px 0px 4px;
-                margin-right: 5px;
-                margin-top: 5px;
-                border: 1px solid var(--palette-action-disabled);
-                display: flex; /* Ensure inner elements are aligned */
+                font-size: 1rem;
+                opacity: .5;
+                transition: opacity .15s, border-color .15s;
+                flex-shrink: 0;
             }
-
-            iron-icon {
-                width: 16px;
-                height: 16px;
-                margin-left: 2px;
-                cursor: pointer;
-            }
-            
-            paper-input {
-                display: none; /* Hidden by default */
+            .add-btn:hover {
+                opacity: 1;
+                border-color: var(--accent-color);
+                color: var(--accent-color);
             }
         </style>
-       
-        <div style="position: relative; display: flex; align-items: center;">
-            <paper-icon-button id="add-item-btn" icon="icons:add" style="position: absolute; left: -40px;"></paper-icon-button>
-            <div class="string-list">
-                </div>
+        <div class="container">
+            <div id="chips"></div>
+            <button class="add-btn" id="add-btn" title="Add genre">+</button>
         </div>
         `;
     }
 
     _cacheElements() {
-        this._stringListDiv = this.shadowRoot.querySelector(".string-list");
-        this._addItemBtn = this.shadowRoot.querySelector("#add-item-btn");
+        this._stringListDiv = this.shadowRoot.querySelector("#chips");
+        this._addItemBtn = this.shadowRoot.querySelector("#add-btn");
     }
 
     _setupEventListeners() {
-        if (this._stringListDiv) {
-            this._stringListDiv.addEventListener('click', this.blur.bind(this)); // Click on list blurs all
-        }
-        if (this._addItemBtn) {
-            this._addItemBtn.addEventListener('click', () => this._addItem("New value", true));
-        }
+        this._addItemBtn?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this._addChip("", true);
+        });
     }
 
-    _cleanupEventListeners() {
-        if (this._stringListDiv) {
-            this._stringListDiv.removeEventListener('click', this.blur.bind(this));
-        }
-        if (this._addItemBtn) {
-            this._addItemBtn.removeEventListener('click', () => this._addItem("New value", true));
-        }
+    _renderChips() {
+        if (!this._stringListDiv) return;
+        this._stringListDiv.innerHTML = "";
+        this._items.forEach(item => {
+            if (item) this._addChip(item, false);
+        });
     }
 
-    /**
-     * Adds an item to the list and renders it.
-     * @param {string} item The string value.
-     * @param {boolean} [edit=false] If true, immediately enters edit mode for the new item.
-     */
-    _addItem(item, edit = false) {
-        // Generate a unique ID for the item's container
-        const uuid = `_${getUuidByString(item)}`;
-        const existingItemDiv = this.shadowRoot.getElementById(uuid);
-        if (existingItemDiv) {
-            // If item already exists, focus it for editing instead of adding a duplicate
-            const itemSpan = existingItemDiv.querySelector('.items');
-            if (itemSpan) itemSpan.click();
-            return;
-        }
+    _addChip(value, editImmediately) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
 
-        const itemDiv = document.createElement('div');
-        itemDiv.id = uuid;
-        itemDiv.classList.add('string-item-wrapper');
+        const text = document.createElement("span");
+        text.className = "chip-text";
+        text.textContent = value;
 
-        const itemSpan = document.createElement('span');
-        itemSpan.classList.add('items');
-        itemSpan.textContent = item;
+        const input = document.createElement("input");
+        input.className = "chip-input";
+        input.type = "text";
+        input.value = value;
 
-        const itemInput = document.createElement('paper-input');
-        itemInput.setAttribute('no-label-float', '');
-        itemInput.style.display = 'none';
+        const remove = document.createElement("iron-icon");
+        remove.className = "chip-remove";
+        remove.setAttribute("icon", "icons:close");
 
-        const removeBtn = document.createElement('iron-icon');
-        removeBtn.setAttribute('icon', 'icons:close');
-        removeBtn.id = 'remove-btn';
+        chip.appendChild(text);
+        chip.appendChild(input);
+        chip.appendChild(remove);
+        this._stringListDiv.appendChild(chip);
 
-        itemDiv.appendChild(itemSpan);
-        itemDiv.appendChild(itemInput);
-        itemDiv.appendChild(removeBtn);
-
-        this._stringListDiv.appendChild(itemDiv);
-
-        // --- Event listeners for the new item ---
-        itemSpan.addEventListener('click', (evt) => {
-            evt.stopPropagation();
-            this._enterEditMode(itemDiv, itemSpan, itemInput);
+        // Click text to edit
+        text.addEventListener("click", (e) => {
+            e.stopPropagation();
+            text.style.display = "none";
+            input.style.display = "inline-block";
+            input.value = text.textContent;
+            input.focus();
+            input.select();
         });
 
-        removeBtn.addEventListener('click', (evt) => {
-            evt.stopPropagation();
-            itemDiv.remove();
-        });
-
-        itemInput.addEventListener('keyup', (evt) => {
-            evt.stopPropagation();
-            if (evt.key === 'Escape') {
-                this._exitEditMode(itemDiv, itemSpan, itemInput, item); // Revert to original
-            } else if (evt.key === 'Enter') {
-                this._exitEditMode(itemDiv, itemSpan, itemInput, itemInput.value); // Save value
+        // Save on Enter, cancel on Escape
+        input.addEventListener("keydown", (e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") {
+                e.preventDefault();
+                const v = input.value.trim();
+                if (v) {
+                    text.textContent = v;
+                    text.style.display = "";
+                    input.style.display = "none";
+                } else {
+                    chip.remove();
+                }
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                if (!value) { chip.remove(); return; }
+                text.style.display = "";
+                input.style.display = "none";
+                input.value = text.textContent;
             }
         });
 
-        itemInput.addEventListener('blur', () => {
-            this._exitEditMode(itemDiv, itemSpan, itemInput, itemInput.value);
+        // Save on blur
+        input.addEventListener("blur", () => {
+            setTimeout(() => {
+                if (input.style.display === "none") return;
+                const v = input.value.trim();
+                if (v) {
+                    text.textContent = v;
+                    text.style.display = "";
+                    input.style.display = "none";
+                } else {
+                    chip.remove();
+                }
+            }, 100);
         });
 
-        // Enter edit mode immediately if requested
-        if (edit) {
-            this._enterEditMode(itemDiv, itemSpan, itemInput);
-        }
-    }
-
-    /** Renders all items in the _items array to the DOM. */
-    renderItems() {
-        this._stringListDiv.innerHTML = ""; // Clear list
-        const fragment = document.createDocumentFragment();
-        const range = document.createRange();
-
-        this._items.forEach(item => {
-            // Use _addItem's logic but without adding new items to the array
-            const html = `
-                <div id="_${getUuidByString(item)}" class="string-item-wrapper">
-                    <span class="items">${item}</span>
-                    <paper-input no-label-float style="display: none;"></paper-input>
-                    <iron-icon id="remove-btn" icon="icons:close"></iron-icon>
-                </div>
-            `;
-            const itemDiv = range.createContextualFragment(html).firstElementChild;
-            fragment.appendChild(itemDiv);
-
-            // Re-attach event listeners after adding to fragment
-            const itemSpan = itemDiv.querySelector('.items');
-            const itemInput = itemDiv.querySelector('paper-input');
-            const removeBtn = itemDiv.querySelector('#remove-btn');
-
-            itemSpan.addEventListener('click', (evt) => {
-                evt.stopPropagation();
-                this._enterEditMode(itemDiv, itemSpan, itemInput);
-            });
-            removeBtn.addEventListener('click', (evt) => {
-                evt.stopPropagation();
-                itemDiv.remove();
-            });
-            itemInput.addEventListener('keyup', (evt) => {
-                evt.stopPropagation();
-                if (evt.key === 'Escape') this._exitEditMode(itemDiv, itemSpan, itemInput, item);
-                if (evt.key === 'Enter') this._exitEditMode(itemDiv, itemSpan, itemInput, itemInput.value);
-            });
-            itemInput.addEventListener('blur', () => this._exitEditMode(itemDiv, itemSpan, itemInput, itemInput.value));
+        // Remove chip
+        remove.addEventListener("click", (e) => {
+            e.stopPropagation();
+            chip.remove();
         });
 
-        this._stringListDiv.appendChild(fragment);
-    }
-
-    /** Puts a list item into edit mode (shows input, hides span). */
-    _enterEditMode(itemDiv, itemSpan, itemInput) {
-        this.blur(); // Blur other inputs first
-        itemInput.style.display = "block";
-        itemInput.value = itemSpan.innerHTML;
-        itemSpan.style.display = "none";
-        // Use requestAnimationFrame for focus after display change
-        requestAnimationFrame(() => {
-            itemInput.focus();
-            itemInput.inputElement.inputElement.select(); // Select text in paper-input's internal input
-        });
-        fireResize();
-    }
-
-    /** Exits edit mode (hides input, shows span), and updates value if needed. */
-    _exitEditMode(itemDiv, itemSpan, itemInput, newValue) {
-        if (!newValue || newValue.trim() === "") {
-            itemDiv.remove(); // Remove item if value is empty
-            return;
+        // Auto-edit for new chips
+        if (editImmediately) {
+            text.style.display = "none";
+            input.style.display = "inline-block";
+            requestAnimationFrame(() => {
+                input.focus();
+            });
         }
-        
-        // Check for duplicates before saving
-        const newUuid = `_${getUuidByString(newValue)}`;
-        const existingDiv = this.shadowRoot.getElementById(newUuid);
-        if (existingDiv && existingDiv !== itemDiv) {
-            itemDiv.remove(); // Remove current item if a duplicate exists
-            this._enterEditMode(existingDiv, existingDiv.querySelector('.items'), existingDiv.querySelector('paper-input'));
-            return;
-        }
-
-        itemDiv.id = newUuid; // Update the ID
-        itemSpan.innerHTML = newValue;
-        itemInput.style.display = "none";
-        itemSpan.style.display = "block";
     }
 }
 
-customElements.define('globular-editable-string-list', EditableStringList);
-
-
-/**
- * `globular-searchable-list` Web Component.
- * Displays a filterable list of strings with add and delete actions.
- */
+customElements.define("globular-editable-string-list", EditableStringList);
 export class SearchableList extends HTMLElement {
     // --- Internal Properties ---
     _list = [];

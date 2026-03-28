@@ -96,16 +96,9 @@ export class SharedResources extends HTMLElement {
   _render() {
     this.shadowRoot.innerHTML = `
       <style>
-        ::-webkit-scrollbar {
-          width: 10px;
-        }
-        ::-webkit-scrollbar-track {
-          background: var(--scroll-track, var(--surface-color));
-        }
-        ::-webkit-scrollbar-thumb {
-          background: var(--scroll-thumb, var(--palette-divider));
-          border-radius: 6px;
-        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--scroll-track, var(--surface-color)); }
+        ::-webkit-scrollbar-thumb { background: var(--scroll-thumb, var(--palette-divider)); border-radius: 4px; }
 
         #container {
           display: flex; flex-direction: column;
@@ -115,44 +108,49 @@ export class SharedResources extends HTMLElement {
           flex-grow: 1; position: relative; overflow: hidden; display: flex; flex-direction: column;
         }
         #scroll-container {
-          position: absolute; overflow-y: auto; top:0; left:0; right:0; bottom:0; padding:10px;
+          position: absolute; overflow-y: auto; top: 0; left: 0; right: 0; bottom: 0;
+          padding: 16px;
         }
         #share-with-you-list, #you-share-with-list {
-          display:none; flex-wrap:wrap; margin-top:10px; gap:15px; justify-content:flex-start;
+          display: none;
+          flex-wrap: wrap;
+          gap: 12px;
+          justify-content: flex-start;
+          align-items: flex-start;
         }
-        #you-share-with-list { display:flex; }
+        #you-share-with-list { display: flex; }
 
-        globular-link { margin-left: 15px; }
+        .empty-state {
+          font-size: .85rem;
+          color: var(--secondary-text-color);
+          padding: 24px 0;
+          text-align: center;
+          width: 100%;
+        }
 
         paper-tabs {
           --paper-tabs-selection-bar-color: var(--accent-color);
           color: var(--primary-text-color);
           --paper-tab-ink: var(--palette-action-disabled);
           width: 100%;
-          background: var(--palette-background-paper);
-          border-bottom: 1px solid var(--palette-divider);
-          box-shadow: 0 1px 2px rgba(0,0,0,.35);
+          background: color-mix(in srgb, var(--on-surface-color) 3%, var(--surface-color));
+          border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
           flex-shrink: 0;
         }
         paper-tab {
           padding-right: 25px;
+          font-size: .85rem;
           color: var(--secondary-text-color);
         }
         paper-tab.iron-selected {
           color: var(--primary-text-color);
           font-weight: 600;
         }
-        paper-tab paper-badge {
-          --paper-badge-background: var(--palette-warning-main);
-          --paper-badge-width: 16px;
-          --paper-badge-height: 16px;
-          --paper-badge-margin-left: 10px;
-        }
 
         @media(max-width: 500px){
           #container { width: calc(100vw - 10px); margin: 0; }
           .resource-share-panel { width: calc(100vw - 10px); }
-          #scroll-container { padding: 5px; }
+          #scroll-container { padding: 8px; }
           #share-with-you-list, #you-share-with-list { justify-content: center; }
         }
       </style>
@@ -215,15 +213,28 @@ export class SharedResources extends HTMLElement {
       }
 
       const subjectType = inferSubjectType(this._subject)
+      const meId = getId(me)
       const meFqid = fqid(me)
+      const subjId = getId(this._subject)
       const subjFqid = fqid(this._subject)
 
       // You share with (owner = me, shared with subject)
-      const youShareWith = await getSharedResources(meFqid, subjFqid, subjectType)
+      // Try plain ID first (server may store owner without domain), fall back to fqid
+      let youShareWith = await getSharedResources(meId, subjFqid, subjectType)
+      if ((!youShareWith || youShareWith.length === 0) && meId !== meFqid) {
+        youShareWith = await getSharedResources(meFqid, subjFqid, subjectType)
+      }
       this._renderList(this._youShareWithDiv, youShareWith, this._subject, true)
 
       // Shared with you (owner = subject, shared with me)
-      const sharedWithYou = await getSharedResources(subjFqid, meFqid, SubjectType.ACCOUNT)
+      let sharedWithYou = await getSharedResources(subjId, meFqid, SubjectType.ACCOUNT)
+      if ((!sharedWithYou || sharedWithYou.length === 0) && subjId !== subjFqid) {
+        sharedWithYou = await getSharedResources(subjFqid, meFqid, SubjectType.ACCOUNT)
+      }
+      // Also try with plain meId
+      if ((!sharedWithYou || sharedWithYou.length === 0)) {
+        sharedWithYou = await getSharedResources(subjId, meId, SubjectType.ACCOUNT)
+      }
       this._renderList(this._shareWithYouDiv, sharedWithYou, me, false)
 
     } catch (e) {
@@ -241,7 +252,7 @@ export class SharedResources extends HTMLElement {
   async _renderList(containerDiv, resources, subjectContext, isDeletableByYou) {
     if (!containerDiv) return
     if (!resources || resources.length === 0) {
-      containerDiv.innerHTML = '<p style="padding: 10px; color: var(--secondary-text-color);">No shared resources found.</p>'
+      containerDiv.innerHTML = '<div class="empty-state">No shared resources found.</div>'
       return
     }
 
@@ -258,12 +269,14 @@ export class SharedResources extends HTMLElement {
 
         let showDelete = false
         if (isDeletableByYou) {
-          const accounts = r.getAccountsList?.() ?? r.accounts ?? []
-          const groups = r.getGroupsList?.() ?? r.groups ?? []
+          const accounts = (r.getAccountsList?.() ?? r.accounts ?? []).map(a => String(a).toLowerCase())
+          const groups = (r.getGroupsList?.() ?? r.groups ?? []).map(g => String(g).toLowerCase())
+          const subjId = getId(subjectContext).toLowerCase()
+          const subjFq = subjectFqid.toLowerCase()
           if (subjectType === SubjectType.ACCOUNT) {
-            showDelete = accounts.includes(subjectFqid)
+            showDelete = accounts.includes(subjFq) || accounts.includes(subjId)
           } else if (subjectType === SubjectType.GROUP) {
-            showDelete = groups.includes(subjectFqid)
+            showDelete = groups.includes(subjFq) || groups.includes(subjId)
           }
         }
 

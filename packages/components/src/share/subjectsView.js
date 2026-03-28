@@ -105,9 +105,7 @@ export class GlobularSubjectsView extends HTMLElement {
           min-height:0;
           gap:10px;
           padding:10px;
-          border-radius:10px;
           background: var(--surface-color);
-          box-shadow: inset 0 0 0 1px var(--palette-divider);
         }
 
         .vertical-tab {
@@ -116,8 +114,7 @@ export class GlobularSubjectsView extends HTMLElement {
           flex:0 0 auto;
           min-height:0;
           border-radius:8px;
-          border:1px solid var(--palette-divider);
-          background: var(--palette-background-paper);
+          background: var(--surface-color);
           overflow:hidden;
         }
 
@@ -126,7 +123,6 @@ export class GlobularSubjectsView extends HTMLElement {
           flex-direction:column;
           gap:4px;
           padding:4px 6px 10px;
-          border-bottom:1px solid var(--palette-divider);
         }
 
         .selector {
@@ -170,7 +166,10 @@ export class GlobularSubjectsView extends HTMLElement {
           transition: background .2s ease, box-shadow .2s ease;
         }
         .infos:hover { box-shadow: var(--shadow-elevation-4dp); background: var(--palette-action-hover); }
-        .infos.active { border:1px solid var(--primary-color); box-shadow: var(--shadow-elevation-6dp); }
+        .infos.active {
+          background: color-mix(in srgb, var(--on-surface-color) 6%, transparent);
+          box-shadow: inset 3px 0 0 var(--accent-color, var(--primary-color));
+        }
 
         .infos img { width:44px; height:44px; border-radius:50%; object-fit:cover; }
         .infos iron-icon { width:44px; height:44px; --iron-icon-fill-color: var(--palette-action-disabled); }
@@ -361,10 +360,12 @@ export class GlobularSubjectsView extends HTMLElement {
       }
       this._accountsCounter.textContent = `(${count})`
       this._accountsSelector.style.display = count ? "" : "none"
+      if (this._accountsTab) this._accountsTab.style.display = count ? "" : "none"
     } catch (e) {
       displayError(`Failed to load accounts: ${msg(e)}`, 3000)
       this._accountsCounter.textContent = "(Error)"
       this._accountsSelector.style.display = "none"
+      if (this._accountsTab) this._accountsTab.style.display = "none"
     }
 
     // GROUPS
@@ -374,10 +375,12 @@ export class GlobularSubjectsView extends HTMLElement {
       for (const g of groups || []) this._appendSubjectInfo(this._groupsDiv, g, "group")
       this._groupsCounter.textContent = `(${len})`
       this._groupsSelector.style.display = len ? "" : "none"
+      if (this._groupsTab) this._groupsTab.style.display = len ? "" : "none"
     } catch (e) {
       displayError(`Failed to load groups: ${msg(e)}`, 3000)
       this._groupsCounter.textContent = "(Error)"
       this._groupsSelector.style.display = "none"
+      if (this._groupsTab) this._groupsTab.style.display = "none"
     }
 
     // ORGANIZATIONS
@@ -387,10 +390,12 @@ export class GlobularSubjectsView extends HTMLElement {
       for (const o of orgs || []) this._appendSubjectInfo(this._organizationsDiv, o, "organization")
       this._organizationsCounter.textContent = `(${len})`
       this._organizationsSelector.style.display = len ? "" : "none"
+      if (this._organizationsTab) this._organizationsTab.style.display = len ? "" : "none"
     } catch (e) {
       displayError(`Failed to load organizations: ${msg(e)}`, 3000)
       this._organizationsCounter.textContent = "(Error)"
       this._organizationsSelector.style.display = "none"
+      if (this._organizationsTab) this._organizationsTab.style.display = "none"
     }
 
     // APPLICATIONS (optional)
@@ -401,13 +406,16 @@ export class GlobularSubjectsView extends HTMLElement {
         for (const a of apps || []) this._appendSubjectInfo(this._applicationsDiv, a, "application")
         this._applicationsCounter.textContent = `(${len})`
         this._applicationsSelector.style.display = len ? "" : "none"
+        if (this._applicationsTab) this._applicationsTab.style.display = len ? "" : "none"
       } catch (e) {
         // Non-fatal; hide the tab if failing
         this._applicationsCounter.textContent = "(Error)"
         this._applicationsSelector.style.display = "none"
+        if (this._applicationsTab) this._applicationsTab.style.display = "none"
       }
     } else {
       this._applicationsSelector.style.display = "none"
+      if (this._applicationsTab) this._applicationsTab.style.display = "none"
     }
 
     // Helper to open panel if it has items
@@ -468,6 +476,22 @@ export class GlobularSubjectsView extends HTMLElement {
     else if (type === "group" && this.on_group_click) this.on_group_click(div, subject)
     else if (type === "organization" && this.on_organization_click) this.on_organization_click(div, subject)
     else if (type === "application" && this.on_application_click) this.on_application_click(div, subject)
+  }
+
+  /** Programmatically select the first subject in the given type and apply the active style. */
+  selectFirst(type = "account") {
+    const containerMap = {
+      account: this._accountsDiv,
+      group: this._groupsDiv,
+      organization: this._organizationsDiv,
+      application: this._applicationsDiv,
+    }
+    const container = containerMap[type]
+    if (!container?.children?.length) return
+    const first = container.children[0]
+    if (first) {
+      this._handleSubjectClick(first, first.subject, type)
+    }
   }
 
   _notifySubjectsReady() {

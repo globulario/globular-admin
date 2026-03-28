@@ -38,12 +38,7 @@ export class SearchPersonInput extends HTMLElement {
     if (this._searchInput) {
       setTimeout(() => {
         this._searchInput.focus();
-        if (
-          this._searchInput.inputElement &&
-          this._searchInput.inputElement._inputElement
-        ) {
-          this._searchInput.inputElement._inputElement.select();
-        }
+        this._searchInput.select?.();
       }, 100);
     }
   }
@@ -68,102 +63,121 @@ export class SearchPersonInput extends HTMLElement {
         .search-input-row {
           display: flex;
           align-items: center;
-          min-width: 240px;
-          padding: 5px;
-          border-bottom: 1px solid var(--palette-divider);
+          padding: 4px;
+          border: 1px solid color-mix(in srgb, var(--palette-divider) 60%, transparent);
+          border-radius: 22px;
+          background: color-mix(in srgb, var(--on-surface-color) 5%, transparent);
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .search-input-row:focus-within {
+          border-color: var(--accent-color);
+          box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 20%, transparent);
         }
 
-        paper-input {
+        .search-input-row iron-icon {
+          opacity: .4;
+          flex-shrink: 0;
+          padding-left: 10px;
+          width: 18px;
+          height: 18px;
+        }
+
+        .search-input-row input {
           flex-grow: 1;
-          margin-left: 5px;
-          --paper-input-container-color: var(--primary-text-color);
-          --paper-input-container-focus-color: var(--accent-color);
-          --paper-input-container-label-floating-color: var(--accent-color);
-          --paper-input-container-input-color: var(--primary-text-color);
-          --paper-input-container-underline: { height: 1px; };
-          --paper-input-container-underline-focus: { height: 2px; };
+          border: none;
+          padding: 8px 12px;
+          font-size: .85rem;
+          font-family: inherit;
+          background: transparent;
+          color: var(--on-surface-color);
+          outline: none;
         }
-
-        ::-webkit-scrollbar {
-          width: 10px;
-        }
-        ::-webkit-scrollbar-track {
-          background: var(--scroll-track, var(--surface-color));
-        }
-        ::-webkit-scrollbar-thumb {
-          background: var(--scroll-thumb, var(--palette-divider));
-          border-radius: 6px;
+        .search-input-row input::placeholder {
+          color: var(--secondary-text-color);
+          opacity: .6;
         }
 
         .search-results {
           background-color: var(--surface-color);
-          color: var(--primary-text-color);
-          max-height: 300px;
-          padding: 10px;
+          color: var(--on-surface-color);
+          max-height: 50vh;
+          padding: 4px;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
-          align-items: center;
-          justify-content: center;
+          gap: 2px;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+            var(--scroll-track, var(--surface-color));
         }
 
         .search-results-item {
           display: flex;
-          min-width: 240px;
           align-items: center;
-          border-bottom: 1px solid var(--palette-divider);
-          padding-bottom: 10px;
-          margin-bottom: 10px;
+          padding: 8px 10px;
           width: 100%;
           box-sizing: border-box;
+          border-radius: 8px;
+          transition: background .1s ease;
+          gap: 12px;
         }
-        .search-results-item:last-child {
-          border-bottom: none;
+        .search-results-item:hover {
+          background: color-mix(in srgb, var(--on-surface-color) 6%, transparent);
         }
 
         .search-results-item img {
-          height: 55px;
-          width: 55px;
+          height: 36px;
+          width: 36px;
           border-radius: 50%;
           object-fit: cover;
-          margin-right: 10px;
           flex-shrink: 0;
+          background: color-mix(in srgb, var(--on-surface-color) 8%, transparent);
         }
 
         .person-info {
           display: flex;
           flex-direction: column;
           flex-grow: 1;
+          min-width: 0;
         }
 
         .person-name {
-          font-size: 1.2rem;
-          margin-bottom: 5px;
+          font-size: .85rem;
           font-weight: 500;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .person-actions {
           display: flex;
-          justify-content: flex-end;
-          gap: 5px;
+          gap: 6px;
+          flex-shrink: 0;
+          align-items: center;
         }
 
-        iron-icon {
-          height: 18px;
-          width: 18px;
-          color: var(--primary-text-color);
+        .person-actions iron-icon {
+          height: 20px;
+          width: 20px;
+          padding: 4px;
+          border-radius: 50%;
+          color: var(--secondary-text-color);
+          opacity: .5;
+          transition: opacity .15s, color .15s, background .15s;
         }
 
-        iron-icon:hover {
+        .person-actions iron-icon:hover {
           cursor: pointer;
           color: var(--accent-color);
+          opacity: 1;
+          background: color-mix(in srgb, var(--accent-color) 12%, transparent);
         }
       </style>
 
       <div id="container">
         <div class="search-input-row">
           <iron-icon icon="icons:search"></iron-icon>
-          <paper-input id="search-input" placeholder="Search Person" no-label-float></paper-input>
+          <input id="search-input" type="text" placeholder="Search person by name..." />
         </div>
         <div class="search-results"></div>
       </div>

@@ -11,7 +11,8 @@ import { SearchPersonInput } from "./searchPersonInput";
 import { ImageSelector } from "@globular/components/image.js";
 
 // Use protobuf model classes for in-memory objects
-import { titlePb } from "@globular/sdk";
+import { titlePb as _titlePb } from "@globular/sdk";
+const titlePb = _titlePb.default || _titlePb;
 const { Person, Poster } = titlePb;
 
 // ✅ Central backend helpers from your title.ts (adjust path if needed)
@@ -120,7 +121,6 @@ export class TitleInfoEditor extends HTMLElement {
         #container {
           display: flex;
           flex-direction: column;
-          padding: 0 12px;
           box-sizing: border-box;
           height: 100%;
           min-height: 0;
@@ -129,6 +129,7 @@ export class TitleInfoEditor extends HTMLElement {
           flex: 1 1 auto;
           overflow: auto;
           min-height: 0;
+          padding: 0 12px;
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, var(--palette-divider))
             var(--scroll-track, var(--surface-color));
@@ -160,8 +161,8 @@ export class TitleInfoEditor extends HTMLElement {
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: .04em;
-          padding: 4px 8px;
-          margin: 12px 0 8px;
+          padding: 6px 10px;
+          margin: 16px 0 12px;
           border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
           border-radius: 4px 4px 0 0;
           background: color-mix(in srgb, var(--on-surface-color) 5%, var(--surface-color));
@@ -177,12 +178,12 @@ export class TitleInfoEditor extends HTMLElement {
         .info-table {
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 4px;
         }
         .info-row {
           display: flex;
           align-items: center;
-          padding: 6px 8px;
+          padding: 8px 10px;
           border-radius: 6px;
           transition: background .1s ease;
         }
@@ -287,8 +288,8 @@ export class TitleInfoEditor extends HTMLElement {
           display: flex;
           align-items: center;
           gap: .5rem;
-          margin-top: 4px;
-          padding: 4px 8px;
+          margin-top: 6px;
+          padding: 6px 10px;
           border-radius: 6px;
           cursor: pointer;
           transition: background .1s ease;
@@ -331,17 +332,19 @@ export class TitleInfoEditor extends HTMLElement {
           display: flex;
           width: 100%;
           flex-direction: column;
-          padding: 6px 0 6px 12px;
-          margin-bottom: 6px;
+          padding: 8px 0 8px 14px;
+          margin-bottom: 8px;
           border-left: 2px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
         }
         .person-section-header .value-display { flex: 1; }
         .person-section-header .button-cell {
           display: flex;
-          gap: 2px;
+          gap: 4px;
           align-items: center;
           width: auto;
           flex-shrink: 0;
+          padding-right: 20px;
+          position: relative;
         }
         .person-section-header .button-cell paper-icon-button {
           height: 28px;
@@ -363,7 +366,7 @@ export class TitleInfoEditor extends HTMLElement {
           margin-left: .5rem;
         }
 
-        #header { display: flex; align-items: center; gap: .5rem; margin-bottom: 6px; }
+        #header { display: flex; align-items: center; gap: .5rem; margin-bottom: 6px; padding: 0 12px; }
         #header-text { font-size: 1.1rem; font-weight: 600; }
 
         @media (max-width: 600px) {
@@ -402,11 +405,13 @@ export class TitleInfoEditor extends HTMLElement {
               <div class="button-cell"><paper-icon-button id="edit-title-name-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
-            <div class="info-row">
-              <div class="label" style="vertical-align:top;">Synopsis:</div>
-              <div class="value-display" id="title-description-div" style="padding-bottom:10px;"></div>
-              <div class="input-field hidden"><iron-autogrow-textarea id="title-description-input" no-label-float></iron-autogrow-textarea></div>
-              <div class="button-cell"><paper-icon-button id="edit-title-description-btn" icon="editor:mode-edit" style="vertical-align:top;"></paper-icon-button></div>
+            <div class="info-row" style="align-items:flex-start;">
+              <div class="label" style="padding-top:6px;">Synopsis:</div>
+              <div class="value-display" id="title-description-div" style="max-height:8em;overflow-y:auto;white-space:pre-wrap;word-break:break-word;scrollbar-width:thin;"></div>
+              <div class="input-field hidden">
+                <textarea id="title-description-input" rows="8" style="width:100%;border:1px solid var(--palette-divider);border-radius:6px;padding:6px;font-size:.85rem;line-height:1.4;font-family:inherit;resize:vertical;background:var(--surface-color);color:var(--on-surface-color);box-sizing:border-box;"></textarea>
+              </div>
+              <div class="button-cell" style="padding-top:4px;"><paper-icon-button id="edit-title-description-btn" icon="editor:mode-edit"></paper-icon-button></div>
             </div>
 
             <div class="info-row" id="title-year-row">
@@ -452,9 +457,7 @@ export class TitleInfoEditor extends HTMLElement {
 
             <div class="info-row">
               <div class="label">Genres:</div>
-              <div class="value-display" id="title-genres-div"></div>
-              <div class="input-field hidden"></div>
-              <div class="button-cell"></div>
+              <div class="value-display" id="title-genres-div" style="overflow:visible;"></div>
             </div>
           </div>
             </div>
@@ -666,10 +669,24 @@ export class TitleInfoEditor extends HTMLElement {
     this._setupEditableField(this._titleEpisodeDiv, this._titleEpisodeInput, this._editTitleEpisodeBtn, "setEpisode", "number");
 
     if (this._editTitleTypeBtn && this._titleTypeSelect && this._titleTypeDiv) {
+      let typeEditing = false;
       this._editTitleTypeBtn.addEventListener("click", () => {
-        this._titleTypeInputContainer?.classList?.remove("hidden");
-        this._titleTypeSelect.style.display = "table-cell";
-        this._titleTypeDiv.style.display = "none";
+        if (typeEditing) {
+          // Save and exit
+          this._titleTypeDiv.textContent = this._titleTypeSelect.value;
+          this._titleTypeInputContainer?.classList?.add("hidden");
+          this._titleTypeDiv.style.display = "";
+          this._editTitleTypeBtn.icon = "editor:mode-edit";
+          typeEditing = false;
+          this._handleTypeChange();
+        } else {
+          // Enter edit
+          this._titleTypeInputContainer?.classList?.remove("hidden");
+          this._titleTypeSelect.style.display = "";
+          this._titleTypeDiv.style.display = "none";
+          this._editTitleTypeBtn.icon = "icons:check";
+          typeEditing = true;
+        }
       });
       this._titleTypeSelect.addEventListener("change", this._handleTypeChange.bind(this));
     }
@@ -788,25 +805,32 @@ export class TitleInfoEditor extends HTMLElement {
     const hideInput = () => inputContainer?.classList?.add("hidden");
     hideInput();
 
-    editBtn.addEventListener("click", () => {
-      displayEl.style.display = "none";
-      showInput();
-      setTimeout(() => {
-        const focusEl = inputEl?.textarea ?? inputEl?.inputElement?._inputElement ?? null;
-        if (focusEl && focusEl.focus) {
-          focusEl.focus();
-          focusEl.select && focusEl.select();
-        }
-      }, 0);
-    });
+    let editing = false;
 
-    const saveAndDisplay = () => {
+    const enterEdit = () => {
+      inputEl.value = displayEl.textContent || '';
+      if (inputType === 'textarea') {
+        const h = displayEl.offsetHeight;
+        if (h > 40) inputEl.style.height = h + 'px';
+      }
+      displayEl.style.display = 'none';
+      showInput();
+      editing = true;
+      editBtn.icon = 'icons:check';
+      setTimeout(() => {
+        const focusEl = (inputType === 'textarea') ? inputEl : (inputEl?.inputElement?._inputElement ?? inputEl);
+        if (focusEl) focusEl.focus();
+      }, 50);
+    };
+
+    const saveAndExit = () => {
+      if (!editing) return;
       const newValue = inputEl.value;
       let valueToSet = newValue;
 
       if (inputType === "number") valueToSet = parseInt(newValue) || 0;
       else if (inputType === "stringList") {
-        valueToSet = newValue.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+        valueToSet = newValue.split(",").map((s) => s.trim()).filter(Boolean);
         displayEl.textContent = valueToSet.join(", ");
       } else {
         displayEl.textContent = newValue;
@@ -817,25 +841,35 @@ export class TitleInfoEditor extends HTMLElement {
       }
 
       hideInput();
-      displayEl.style.display = "table-cell";
-      onSave && onSave(newValue);
+      displayEl.style.display = '';
+      editing = false;
+      editBtn.icon = 'editor:mode-edit';
+      if (onSave) onSave(newValue);
     };
 
-    inputEl.addEventListener("blur", saveAndDisplay);
+    const cancelAndExit = () => {
+      if (!editing) return;
+      inputEl.value = displayEl.textContent || '';
+      hideInput();
+      displayEl.style.display = '';
+      editing = false;
+      editBtn.icon = 'editor:mode-edit';
+    };
+
+    editBtn.addEventListener("click", () => {
+      if (editing) saveAndExit();
+      else enterEdit();
+    });
+
     inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && inputType !== "textarea") { e.preventDefault(); saveAndDisplay(); }
-      else if (e.key === "Escape") {
-        e.preventDefault();
-        inputEl.value = displayEl.textContent;
-        hideInput();
-        displayEl.style.display = "table-cell";
-      }
+      if (e.key === "Enter" && inputType !== "textarea") { e.preventDefault(); saveAndExit(); }
+      else if (e.key === "Escape") { e.preventDefault(); cancelAndExit(); }
     });
   }
 
   _resetEditableFieldState(displayEl, inputEl) {
     if (!displayEl || !inputEl) return;
-    displayEl.style.display = "table-cell";
+    displayEl.style.display = '';
     const inputContainer = inputEl.parentNode ?? inputEl;
     inputContainer?.classList?.add("hidden");
   }
@@ -1037,34 +1071,53 @@ export class TitleInfoEditor extends HTMLElement {
 
   async _handleAddPersonClick(roleSlotName, evt) {
     evt.stopPropagation();
-    const buttonCell = evt.target.closest(".button-cell");
-    if (!buttonCell) return;
 
     const panelId = "add-casting-panel";
-    let addCastingPanel = buttonCell.querySelector(`#${panelId}`);
-    if (addCastingPanel) return;
+    // Remove any existing panel first
+    const existing = document.body.querySelector(`#${panelId}`);
+    if (existing) { existing.remove(); return; }
 
     const personIndexPath = this._getPersonIndexPath();
     const html = `
       <style>
         #${panelId}{
-          z-index:101;background-color:var(--surface-color);color:var(--primary-text-color);
-          position:absolute;top:100%;right:0;width:300px;box-shadow:var(--shadow-elevation-4dp);
-          border-radius:8px;overflow:hidden;padding:10px;display:flex;flex-direction:column;gap:10px;
+          z-index:1100;
+          background-color:var(--surface-color);
+          color:var(--on-surface-color);
+          position:fixed;
+          top:50%;left:50%;transform:translate(-50%,-50%);
+          width:380px;max-height:80vh;
+          box-shadow:0 8px 32px rgba(0,0,0,.3);
+          border-radius:10px;
+          overflow:hidden;
+          padding:12px;
+          display:flex;flex-direction:column;gap:10px;
+          border:1px solid var(--palette-divider);
         }
-        #${panelId} .panel-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:10px;border-top:1px solid var(--palette-divider);}
+        #${panelId} .panel-title{font-size:.85rem;font-weight:600;padding-bottom:8px;border-bottom:1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);}
+        #${panelId} .panel-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:10px;border-top:1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);}
+        #${panelId} .panel-actions button{
+          font-size:.8rem;padding:8px 20px;border-radius:8px;text-transform:none;font-weight:500;
+          cursor:pointer;transition:filter .15s ease, background .15s ease;
+          border:none;outline:none;font-family:inherit;
+        }
+        #${panelId} #new-person-btn{background:var(--accent-color);color:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2);}
+        #${panelId} #new-person-btn:hover{filter:brightness(1.15);box-shadow:0 4px 8px rgba(0,0,0,.25);}
+        #${panelId} #cancel-btn{background:transparent;color:var(--on-surface-color);}
+        #${panelId} #cancel-btn:hover{background:color-mix(in srgb, var(--on-surface-color) 8%, transparent);}
       </style>
-      <paper-card id="${panelId}">
+      <div id="${panelId}">
+        <div class="panel-title">Add ${roleSlotName.replace(/s$/, '')} to cast</div>
         <globular-search-person-input indexpath="${personIndexPath}"></globular-search-person-input>
         <div class="panel-actions">
-          <paper-button id="new-person-btn" title="Create a new person">New</paper-button>
-          <paper-button id="cancel-btn">Cancel</paper-button>
+          <button id="cancel-btn">Cancel</button>
+          <button id="new-person-btn" title="Create a new person">New Person</button>
         </div>
-      </paper-card>
+      </div>
     `;
 
-    buttonCell.appendChild(document.createRange().createContextualFragment(html));
-    addCastingPanel = buttonCell.querySelector(`#${panelId}`);
+    document.body.appendChild(document.createRange().createContextualFragment(html));
+    const addCastingPanel = document.body.querySelector(`#${panelId}`);
 
     const searchPersonInput = addCastingPanel.querySelector("globular-search-person-input");
     const newPersonBtn = addCastingPanel.querySelector("#new-person-btn");
@@ -1084,7 +1137,7 @@ export class TitleInfoEditor extends HTMLElement {
         const dialogHtml = `
           <style>
             #${dialogId}{
-              z-index:1000;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+              z-index:1100;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
               background-color:var(--surface-color);border:1px solid var(--palette-divider);
               box-shadow:var(--shadow-elevation-6dp);border-radius:8px;overflow:hidden;display:flex;
             }

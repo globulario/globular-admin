@@ -99,7 +99,8 @@ export class PermissionsManager extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         :host {
-          display: block;
+          display: flex;
+          flex-direction: column;
           width: 100%;
           height: 100%;
           overflow-y: auto;
@@ -110,77 +111,109 @@ export class PermissionsManager extends HTMLElement {
                           var(--scroll-track, var(--surface-color));
         }
 
-        /* Chrome/WebKit scrollbars */
-        :host::-webkit-scrollbar {
-          width: 10px;
-        }
-        :host::-webkit-scrollbar-track {
-          background: var(--scroll-track, var(--surface-color));
-        }
-        :host::-webkit-scrollbar-thumb {
-          background: var(--scroll-thumb, var(--palette-divider));
-          border-radius: 6px;
-        }
+        :host::-webkit-scrollbar { width: 8px; }
+        :host::-webkit-scrollbar-track { background: var(--scroll-track, var(--surface-color)); }
+        :host::-webkit-scrollbar-thumb { background: var(--scroll-thumb, var(--palette-divider)); border-radius: 4px; }
 
         #container {
-          display: flex; flex-direction: column; padding: 8px;
-          background-color: var(--surface-color); color: var(--primary-text-color);
+          display: flex;
+          flex-direction: column;
+          padding: 16px 20px;
+          gap: 14px;
+          background-color: var(--surface-color);
+          color: var(--primary-text-color);
           user-select: none;
         }
+
         #header {
-          display:flex; align-items:center; padding-bottom:10px;
-          border-bottom:2px solid var(--palette-divider); margin-bottom:10px;
+          display: flex;
+          align-items: center;
+          padding-bottom: 12px;
+          border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
         }
-        .title { display:flex; align-items:center; flex-grow:1; font-weight:500; color:var(--primary-text-color); line-height:20px; }
-        .title iron-icon { margin-right:8px; --iron-icon-fill-color: var(--primary-text-color); }
+
+        #path {
+          flex: 1;
+          min-width: 0;
+          font-size: .85rem;
+          font-weight: 500;
+          color: var(--secondary-text-color);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          direction: rtl;
+          text-align: left;
+        }
+
+        .title {
+          display: flex;
+          align-items: center;
+          flex-grow: 1;
+          font-weight: 600;
+          font-size: .85rem;
+          color: var(--primary-text-color);
+          line-height: 20px;
+        }
+        .title iron-icon { margin-right: 8px; fill: var(--primary-text-color); }
 
         .permissions-section {
-          padding-right: 24px;
-          margin-bottom: 18px;
-          border: 1px solid var(--palette-divider);
-          border-radius: 10px;
-          background: var(--surface-raised-color, rgba(255,255,255,0.02));
+          margin-bottom: 4px;
+          border: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+          border-radius: 8px;
+          background: color-mix(in srgb, var(--on-surface-color) 3%, var(--surface-color));
+          overflow: hidden;
         }
         .permissions-section .title {
           margin-top: 0;
-          gap: 8px;
-          padding: 10px 14px;
-          border-bottom: 1px solid var(--palette-divider);
-          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          background: color-mix(in srgb, var(--on-surface-color) 5%, var(--surface-color));
+          border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 30%, transparent);
+          font-size: .8rem;
+          text-transform: uppercase;
+          letter-spacing: .03em;
         }
         .section-summary {
-          font-size: 0.9rem;
+          font-size: .75rem;
+          font-weight: 400;
           color: var(--secondary-text-color);
           white-space: nowrap;
+          text-transform: none;
+          letter-spacing: normal;
         }
         .permissions-section iron-collapse {
-          padding-left: 20px;
-          border-left: 2px solid var(--palette-divider);
-          margin: 0 14px 14px;
+          padding: 8px 14px;
           border-bottom: none;
         }
 
         iron-collapse {
-          padding: 10px;
-          border-bottom: 1px solid var(--palette-action-disabled);
+          padding: 8px;
         }
-        iron-collapse:last-of-type { border-bottom: none; }
 
-        paper-icon-button { color: var(--primary-text-color); }
-        paper-icon-button:hover { cursor: pointer; color: var(--accent-color); }
+        paper-icon-button {
+          color: var(--secondary-text-color);
+          opacity: .7;
+          transition: opacity .2s, color .2s;
+        }
+        paper-icon-button:hover {
+          cursor: pointer;
+          color: var(--accent-color);
+          opacity: 1;
+        }
 
         #add-permission-panel {
           position: absolute; right: 20px; top: 50px; z-index: 100;
           background-color: var(--surface-color); color: var(--primary-text-color);
           box-shadow: var(--shadow-elevation-4dp); border-radius: 8px; overflow: hidden;
-          padding: 10px; display: flex; flex-direction: column; min-width: 200px;
+          padding: 12px; display: flex; flex-direction: column; min-width: 200px;
         }
         #add-permission-panel .panel-header {
-          display:flex; align-items:center; padding-bottom:5px; border-bottom:1px solid var(--palette-divider); margin-bottom:10px;
+          display: flex; align-items: center; padding-bottom: 8px;
+          border-bottom: 1px solid var(--palette-divider); margin-bottom: 8px;
         }
-        #add-permission-panel .panel-header > div { flex-grow: 1; font-weight: 500; }
+        #add-permission-panel .panel-header > div { flex-grow: 1; font-weight: 600; font-size: .85rem; }
         #add-permission-panel paper-radio-group {
-          display:flex; flex-direction:column; gap:8px; padding:5px 0;
+          display: flex; flex-direction: column; gap: 8px; padding: 4px 0;
         }
         #add-permission-panel paper-radio-button {
           --paper-radio-button-checked-color: var(--accent-color);
@@ -195,39 +228,42 @@ export class PermissionsManager extends HTMLElement {
         </div>
         <slot name="permission-viewer"></slot>
 
-        <div class="permissions-section">
-          <div class="title">
-            <paper-icon-button id="owner-collapse-btn" icon="unfold-more"></paper-icon-button>
-            <span style="flex:1;">Owner(s)</span>
-            <span class="section-summary" id="owner-summary"></span>
+        <!-- Advanced sections (hidden by default — viewer handles add/remove) -->
+        <div id="advanced-sections" style="display:none;">
+          <div class="permissions-section">
+            <div class="title">
+              <paper-icon-button id="owner-collapse-btn" icon="unfold-more"></paper-icon-button>
+              <span style="flex:1;">Owner(s)</span>
+              <span class="section-summary" id="owner-summary"></span>
+            </div>
+            <iron-collapse id="owner">
+              <slot name="owner"></slot>
+            </iron-collapse>
           </div>
-          <iron-collapse id="owner">
-            <slot name="owner"></slot>
-          </iron-collapse>
-        </div>
 
-        <div class="permissions-section">
-          <div class="title">
-            <paper-icon-button id="allowed-collapse-btn" icon="unfold-more"></paper-icon-button>
-            <span style="flex:1;">Allowed(s)</span>
-            <span class="section-summary" id="allowed-summary"></span>
-            <paper-icon-button id="add-allowed-btn" icon="icons:add"></paper-icon-button>
+          <div class="permissions-section">
+            <div class="title">
+              <paper-icon-button id="allowed-collapse-btn" icon="unfold-more"></paper-icon-button>
+              <span style="flex:1;">Allowed(s)</span>
+              <span class="section-summary" id="allowed-summary"></span>
+              <paper-icon-button id="add-allowed-btn" icon="icons:add"></paper-icon-button>
+            </div>
+            <iron-collapse id="allowed">
+              <slot name="allowed"></slot>
+            </iron-collapse>
           </div>
-          <iron-collapse id="allowed">
-            <slot name="allowed"></slot>
-          </iron-collapse>
-        </div>
 
-        <div class="permissions-section">
-          <div class="title">
-            <paper-icon-button id="denied-collapse-btn" icon="unfold-more"></paper-icon-button>
-            <span style="flex:1;">Denied(s)</span>
-            <span class="section-summary" id="denied-summary"></span>
-            <paper-icon-button id="add-denied-btn" icon="icons:add"></paper-icon-button>
+          <div class="permissions-section">
+            <div class="title">
+              <paper-icon-button id="denied-collapse-btn" icon="unfold-more"></paper-icon-button>
+              <span style="flex:1;">Denied(s)</span>
+              <span class="section-summary" id="denied-summary"></span>
+              <paper-icon-button id="add-denied-btn" icon="icons:add"></paper-icon-button>
+            </div>
+            <iron-collapse id="denied">
+              <slot name="denied"></slot>
+            </iron-collapse>
           </div>
-          <iron-collapse id="denied">
-            <slot name="denied"></slot>
-          </iron-collapse>
         </div>
       </div>
     `

@@ -67,89 +67,124 @@ export class Link extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        #container{}
-        .shortcut-icon {
-          position: absolute;
-          bottom: -5px;
-          left: 0px;
+        :host {
+          display: inline-flex;
         }
-        .shortcut-icon iron-icon{
-          background: white;
-          fill: black;
-          height: 16px;
-          width: 16px;
-        }
-        #content{
-          position: relative;
-          transition: background 0.2s ease,padding 0.8s linear;
-          background-color: var(--palette-background-paper);
+        .link-card {
           display: flex;
           flex-direction: column;
-          justify-content: center;
-          border: 1px solid var(--palette-divider);
+          position: relative;
+          width: 100px;
+          height: 120px;
+          margin: 5px;
           padding: 5px;
-          border-radius: 2.5px;
+          border-radius: 4px;
+          border: 1px solid var(--divider-color, var(--palette-divider));
+          background-color: var(--surface-color);
+          color: var(--on-surface-color);
+          align-items: center;
+          justify-content: flex-end;
+          user-select: none;
+          transition: background .15s, box-shadow .15s, transform .1s;
+          overflow: hidden;
         }
-        #content:hover{
+        .link-card:hover {
           cursor: pointer;
-          -webkit-filter: invert(10%);
-          filter: invert(10%);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,.25);
+          border-color: color-mix(in srgb, var(--on-surface-color) 20%, transparent);
+        }
+        .thumb-area {
+          position: relative;
+          display: flex;
+          width: 100%;
+          flex: 1;
+          min-height: 0;
+          justify-content: center;
+          align-items: center;
         }
         img {
-          max-height: 64px;
-          object-fit: cover;
-          max-width: 96px;
-        }
-        span{
-          font-size: .85rem;
-          padding: 2px;
           display: block;
-          word-break: break-all;
-          max-width: 128px;
+          max-height: 100%;
+          max-width: 100%;
+          object-fit: contain;
+        }
+        .shortcut-icon {
+          display: none;
+        }
+        #link-name {
+          display: -webkit-box;
+          max-width: 100%;
+          margin: 4px auto 0 auto;
+          text-align: center;
+          font-size: .7rem;
+          line-height: 1.15em;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          color: var(--on-surface-color);
+          max-height: calc(1.15em * 2);
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          flex-shrink: 0;
+        }
+        .action-buttons {
+          position: absolute;
+          top: 2px;
+          right: 2px;
+          display: none;
+          gap: 2px;
+          z-index: 10;
+        }
+        .link-card:hover .action-buttons {
+          display: flex;
+        }
+        .btn-div {
+          display: flex;
+          width: 18px;
+          height: 18px;
+          justify-content: center;
+          align-items: center;
+          background: var(--surface-color);
+          border-radius: 50%;
+          box-shadow: 0 1px 3px rgba(0,0,0,.3);
+          cursor: pointer;
+        }
+        .btn-div:hover {
+          background: var(--palette-error-main, #f44336);
+        }
+        .btn-div:hover iron-icon {
+          --iron-icon-fill-color: white;
         }
         #delete-lnk-btn,
         #edit-lnk-btn {
-          height: 16px;
-          width: 16px;
-          flex-grow: 1;
-          --iron-icon-fill-color:var(--palette-text-primary);
+          height: 12px;
+          width: 12px;
+          --iron-icon-fill-color: var(--secondary-text-color);
         }
-        .action-buttons {
-          display:flex;
-          gap:6px;
+        .badge {
+          display: none;
         }
-        .btn-div{
-          position: relative;
-          display: flex;
-          width: 24px;
-          height: 24px;
-          justify-content: center;
-          align-items: center;
-          margin-bottom: 4px;
-        }
-        .btn-div:hover { cursor: pointer; }
       </style>
 
-      <div id="${this.uuid}-link-div" style="margin: ${deleteable ? "25px" : "5px"} 10px 5px 10px; display: flex; flex-direction: column; align-items: center; width: fit-content; height: fit-content; position: relative;">
-        <div style="position: absolute; top: -25px; left: -10px;">
-          <div class="action-buttons">
-          <div class="btn-div delete-btn-div" style="visibility: hidden;">
-            <iron-icon  id="delete-lnk-btn"  icon="close"></iron-icon>
-            <paper-ripple class="circle"></paper-ripple>
+      <div class="link-card" id="${this.uuid}-link-div">
+        <div class="action-buttons">
+          <div class="btn-div delete-btn-div" style="display: none;">
+            <iron-icon id="delete-lnk-btn" icon="close"></iron-icon>
           </div>
-          <div class="btn-div edit-btn-div" style="visibility: hidden;">
+          <div class="btn-div edit-btn-div" style="display: none;">
             <iron-icon id="edit-lnk-btn" icon="icons:create"></iron-icon>
-            <paper-ripple class="circle"></paper-ripple>
-          </div>
           </div>
         </div>
-        <div id="content">
+        <div class="thumb-area" id="content">
           <div class="badge" id="${this.uuid}-badge"></div>
           <img src="${thumbnail}">
           <div class="shortcut-icon">
             <iron-icon icon="icons:reply"></iron-icon>
           </div>
-          <paper-ripple></paper-ripple>
+          <paper-ripple recenters></paper-ripple>
         </div>
         <span id="link-name">${alias.length > 0 ? alias : name}</span>
       </div>
@@ -342,15 +377,13 @@ export class Link extends HTMLElement {
   }
 
   setDeleteable() {
-    this.shadowRoot.querySelector(`#${this.uuid}-link-div`).style.marginTop = "30px"
-    if (this._deleteBtnDiv) this._deleteBtnDiv.style.visibility = "visible"
-    if (this._editBtnDiv) this._editBtnDiv.style.visibility = "visible"
+    if (this._deleteBtnDiv) this._deleteBtnDiv.style.display = "flex"
+    if (this._editBtnDiv) this._editBtnDiv.style.display = "flex"
   }
 
   resetDeleteable() {
-    this.shadowRoot.querySelector(`#${this.uuid}-link-div`).style.marginTop = "5px"
-    if (this._deleteBtnDiv) this._deleteBtnDiv.style.visibility = "hidden"
-    if (this._editBtnDiv) this._editBtnDiv.style.visibility = "hidden"
+    if (this._deleteBtnDiv) this._deleteBtnDiv.style.display = "none"
+    if (this._editBtnDiv) this._editBtnDiv.style.display = "none"
   }
 
   /** Try to name the link using title/video/audio metadata (first match wins). */

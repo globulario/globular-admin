@@ -145,14 +145,50 @@ export class ShareResourceWizard extends HTMLElement {
         globular-subjects-selected { flex:2; min-width:280px; }
 
         /* Summary page */
-        .summary-page { display:flex; gap:16px; flex-wrap:wrap; }
-        .summary-icon { width:64px; height:64px; flex-shrink:0; }
-        .summary-col { flex:1; display:flex; flex-direction:column; gap:10px; }
-        .pill-list { display:flex; flex-wrap:wrap; gap:8px; }
-        .pill { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
-          background:var(--surface-color); box-shadow:var(--shadow-elevation-2dp); }
-        .pill img { width:40px; height:40px; border-radius:50%; object-fit:cover; }
-        .pill .name { font-size:.9rem; }
+        .summary-page { display:flex; flex-direction:column; gap:20px; padding:8px 0; }
+        .summary-banner {
+          display:flex; align-items:center; gap:14px;
+          padding:14px 18px; border-radius:8px;
+          font-size:.9rem; font-weight:500;
+        }
+        .summary-banner.success {
+          background: color-mix(in srgb, var(--palette-success-main, #4caf50) 12%, transparent);
+          color: var(--palette-success-main, #4caf50);
+        }
+        .summary-banner.warning {
+          background: color-mix(in srgb, var(--palette-warning-main, #ff9800) 12%, transparent);
+          color: var(--palette-warning-main, #ff9800);
+        }
+        .summary-banner.error {
+          background: color-mix(in srgb, var(--palette-error-main, #f44336) 12%, transparent);
+          color: var(--palette-error-main, #f44336);
+        }
+        .summary-banner iron-icon { width:28px; height:28px; flex-shrink:0; }
+        .summary-section-title {
+          font-size:.75rem; font-weight:600; text-transform:uppercase;
+          letter-spacing:.04em; color:var(--secondary-text-color);
+          padding-bottom:6px;
+          border-bottom:1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+        }
+        .pill-list { display:flex; flex-wrap:wrap; gap:8px; padding-top:8px; }
+        .pill {
+          display:flex; align-items:center; gap:8px; padding:6px 12px; border-radius:20px;
+          background: color-mix(in srgb, var(--on-surface-color) 6%, var(--surface-color));
+          border:1px solid color-mix(in srgb, var(--palette-divider) 30%, transparent);
+          font-size:.82rem;
+        }
+        .pill img { width:28px; height:28px; border-radius:50%; object-fit:cover; }
+        .pill .name { font-weight:500; }
+        .error-list { display:flex; flex-direction:column; gap:6px; padding-top:8px; }
+        .error-item {
+          display:flex; align-items:flex-start; gap:8px;
+          padding:8px 12px; border-radius:6px; font-size:.8rem;
+          background: color-mix(in srgb, var(--palette-error-main, #f44336) 8%, transparent);
+          color: var(--palette-error-main, #f44336);
+          border:1px solid color-mix(in srgb, var(--palette-error-main, #f44336) 20%, transparent);
+        }
+        .error-item iron-icon { width:16px; height:16px; flex-shrink:0; margin-top:1px; }
+        .error-item .error-text { flex:1; word-break:break-word; }
       </style>
 
       <div id="container">
@@ -394,14 +430,10 @@ export class ShareResourceWizard extends HTMLElement {
     const failed = Object.keys(errors).length;
     const ok = total - failed;
 
+    const bannerClass =
+      failed === 0 ? "success" : failed === total ? "error" : "warning";
     const statusIcon =
       failed === 0 ? "icons:check-circle" : failed === total ? "icons:error" : "icons:warning";
-    const statusColor =
-      failed === 0
-        ? "var(--palette-success-main)"
-        : failed === total
-        ? "var(--palette-error-main)"
-        : "var(--palette-warning-main)";
     const msg =
       failed === 0
         ? `Permissions successfully set for all ${total} file(s).`
@@ -410,21 +442,29 @@ export class ShareResourceWizard extends HTMLElement {
         : `Permissions set for ${ok} of ${total} file(s); ${failed} failed.`;
 
     host.innerHTML = `
-      <iron-icon class="summary-icon" icon="${statusIcon}" style="fill:${statusColor}"></iron-icon>
-      <div class="summary-col">
-        <div>${msg}</div>
-        <div><strong>Shared resources</strong></div>
-        <div class="pill-list" id="res-list"></div>
-        ${failed ? `<div><strong>Errors</strong></div><div id="err-list"></div>` : ``}
+      <div class="summary-banner ${bannerClass}">
+        <iron-icon icon="${statusIcon}"></iron-icon>
+        <span>${msg}</span>
       </div>
+      <div>
+        <div class="summary-section-title">Shared resources</div>
+        <div class="pill-list" id="res-list"></div>
+      </div>
+      ${failed ? `<div>
+        <div class="summary-section-title">Errors</div>
+        <div class="error-list" id="err-list"></div>
+      </div>` : ``}
     `;
 
     const resList = host.querySelector("#res-list");
     for (const f of files) {
-      const name = this._aliasForFile(f);
+      const path = f?.getPath?.() ?? f?.path ?? "";
+      const name = this._aliasForFile(f) || path.split("/").pop() || "(unknown)";
       const thumb = f?.getThumbnail?.() ?? f?.thumbnail ?? "";
+      const isError = errors[path];
       const pill = document.createElement("div");
       pill.className = "pill";
+      if (isError) pill.style.opacity = "0.5";
       pill.innerHTML = `${thumb ? `<img src="${thumb}" alt="">` : ""}<div class="name">${name}</div>`;
       resList.appendChild(pill);
     }
@@ -432,8 +472,11 @@ export class ShareResourceWizard extends HTMLElement {
     if (failed) {
       const errList = host.querySelector("#err-list");
       for (const [p, err] of Object.entries(errors)) {
+        const fileName = p ? p.split("/").pop() : "(unknown file)";
+        const errMsg = err?.message ?? String(err);
         const div = document.createElement("div");
-        div.textContent = `${p}: ${err?.message ?? err}`;
+        div.className = "error-item";
+        div.innerHTML = `<iron-icon icon="icons:error-outline"></iron-icon><div class="error-text"><strong>${fileName}</strong> — ${errMsg}</div>`;
         errList.appendChild(div);
       }
     }

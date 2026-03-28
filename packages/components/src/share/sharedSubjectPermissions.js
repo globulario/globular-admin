@@ -68,25 +68,45 @@ export class SharedSubjectsPermissions extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         #container { display:flex; flex-direction:column; width:100%; box-sizing:border-box; color: var(--primary-text-color); }
-        .title { font-size:1.2rem; font-weight:500; color:var(--primary-text-color);
-          padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--palette-divider); }
-        #permissions { display:table; width:100%; border-collapse:collapse; }
-        #permissions-header { display:table-row; font-size:1rem; font-weight:500; color:var(--secondary-text-color);
-          border-bottom:2px solid var(--palette-divider); background:var(--palette-background-dark); }
-        #permissions-header div { display:table-cell; padding:8px 5px; text-align:center; vertical-align:middle; }
+        .title {
+          font-size:.85rem; font-weight:600; color:var(--secondary-text-color);
+          padding-bottom:12px; margin-bottom:14px;
+          border-bottom:1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
+        }
+        #permissions { display:table; width:100%; border-collapse:collapse; font-size:.85rem; }
+        #permissions-header {
+          display:table-row;
+          font-size:.75rem; font-weight:600;
+          text-transform:uppercase; letter-spacing:.04em;
+          color:var(--secondary-text-color);
+          border-bottom:1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
+          background: color-mix(in srgb, var(--on-surface-color) 5%, var(--surface-color));
+        }
+        #permissions-header div { display:table-cell; padding:10px 8px; text-align:center; vertical-align:middle; }
         #permissions-header .subject-header-cell { text-align:left; }
-        .subject-permissions-row { display:table-row; border-bottom:1px solid var(--palette-divider-light); }
+        .subject-permissions-row {
+          display:table-row;
+          border-bottom:1px solid color-mix(in srgb, var(--palette-divider) 30%, transparent);
+          transition: background .15s;
+        }
         .subject-permissions-row:last-child { border-bottom:none; }
-        .cell { display:table-cell; vertical-align:middle; padding:8px 5px; }
-        .cell iron-icon { width:24px; height:24px; color:var(--secondary-text-color); }
-        .cell iron-icon:hover { cursor:pointer; color:var(--accent-color); }
-        .cell iron-icon[icon="icons:check"] { color: var(--palette-success-main); }
-        .cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main); }
-        .infos { display:flex; align-items:center; padding:4px; border-radius:4px; background:var(--surface-color); color:var(--primary-text-color); transition:background .2s; }
-        .infos:hover { background: var(--palette-action-hover); }
-        .infos img { width:32px; height:32px; border-radius:50%; object-fit:cover; margin-right:8px; }
-        .infos iron-icon { width:32px; height:32px; margin-right:8px; --iron-icon-fill-color: var(--palette-action-disabled); }
-        .infos span { font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+        .subject-permissions-row:hover { background: color-mix(in srgb, var(--on-surface-color) 4%, transparent); }
+        .cell { display:table-cell; vertical-align:middle; padding:6px 8px; text-align:center; }
+        .cell iron-icon {
+          width:20px; height:20px; color:var(--secondary-text-color);
+          opacity:.5; transition: opacity .2s, color .2s;
+        }
+        .cell iron-icon:hover { cursor:pointer; opacity:1; color:var(--accent-color); }
+        .cell iron-icon[icon="icons:check"] { color: var(--palette-success-main, #4caf50); opacity:1; }
+        .cell iron-icon[icon="av:not-interested"] { color: var(--palette-error-main, #f44336); opacity:.8; }
+        .cell iron-icon[icon="icons:remove"] { color: var(--secondary-text-color); opacity:.35; }
+        .infos {
+          display:flex; align-items:center; gap:8px; padding:4px 2px;
+          border-radius:4px; color:var(--primary-text-color); transition:background .2s;
+        }
+        .infos img { width:28px; height:28px; border-radius:50%; object-fit:cover; flex-shrink:0; }
+        .infos iron-icon { width:28px; height:28px; flex-shrink:0; fill: var(--palette-action-disabled); --iron-icon-fill-color: var(--palette-action-disabled); }
+        .infos span { font-size:.82rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
       </style>
       <div id="container">
         <div class="title">Set subject's permissions...</div>

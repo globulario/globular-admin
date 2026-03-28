@@ -254,6 +254,9 @@ export class VideoPreview extends HTMLElement {
   _getPrimaryThumbnail() {
     if (!this._file) return "";
     if (typeof this._file.getThumbnail === "function") return this._file.getThumbnail();
+    if (typeof this._file.thumbnail === "string" && this._file.thumbnail) {
+      return this._file.thumbnail;
+    }
     if (Array.isArray(this._file.thumbnail) && this._file.thumbnail.length > 0) {
       return this._file.thumbnail[0];
     }
