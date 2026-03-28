@@ -136,6 +136,7 @@ const routes: Record<string, RouteHandler> = {
   '#/repository/install-policy':     lazy(() => import('./pages/repo_install_policy'), 'page-repo-install-policy'),
   '#/repository/audit':              lazy(() => import('./pages/repo_audit'), 'page-repo-audit'),
   '#/repository/installed':          lazy(() => import('./pages/repo_installed'), 'page-repo-installed'),
+  '#/repository/applications':       lazy(() => import('./pages/repo_applications'), 'page-repo-applications'),
 
   // Admin Tools
   '#/admin/diagnostics': lazy(() => import('./pages/admin_diagnostics'), 'page-admin-diagnostics'),
