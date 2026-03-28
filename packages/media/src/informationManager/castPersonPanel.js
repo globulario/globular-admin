@@ -76,12 +76,13 @@ export class CastPersonPanel extends HTMLElement {
           align-items: center;
           border-bottom: 1px solid var(--palette-divider);
         }
-        iron-image {
+        .person-photo {
           width: 88px;
           height: 88px;
           border-radius: 12px;
-          background: var(--surface-color);
+          background: color-mix(in srgb, var(--on-surface-color) 8%, transparent);
           object-fit: cover;
+          flex-shrink: 0;
         }
         .header-text {
           flex: 1;
@@ -163,7 +164,7 @@ export class CastPersonPanel extends HTMLElement {
       <div id="backdrop">
         <paper-card elevation="1">
           <div class="panel-header">
-            <iron-image id="person-picture" sizing="cover" preload fade></iron-image>
+            <img id="person-picture" class="person-photo" />
             <div class="header-text">
               <div class="name" id="person-name"></div>
               <div class="role" id="person-role"></div>

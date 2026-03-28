@@ -103,48 +103,137 @@ export class PersonEditor extends HTMLElement {
           min-height: 0;
         }
         #container {
-          display:flex;
-          flex-grow:1;
-          flex-direction:column;
-          color:var(--primary-text-color);
-          padding:15px;
-          border:1px solid var(--palette-divider);
-          border-radius:8px;
-          margin:0 0 15px 0;
-          width:100%;
-          box-sizing:border-box;
+          display: flex;
+          flex-grow: 1;
+          flex-direction: column;
+          color: var(--on-surface-color);
+          padding: 10px;
+          border: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+          border-radius: 8px;
+          margin: 0 0 8px 0;
+          width: 100%;
+          box-sizing: border-box;
         }
-        .header-row { display:flex; align-items:center; border-bottom:1px solid var(--palette-divider); padding-bottom:10px; margin-bottom:10px; }
-        .header-text { flex-grow:1; font-size:1.2rem; font-weight:bold; margin-left:8px; }
-        .content-area { display:flex; flex-wrap:wrap; min-width:0; gap:20px; }
-        .image-column { display:flex; flex-direction:column; justify-content:flex-start; margin-right:20px; flex-shrink:0; align-items:center; min-width:150px; }
-        .info-table { display:table; width:100%; border-collapse:collapse; flex-grow:1; min-width:0; }
-        .info-row { display:table-row; border-bottom:1px solid var(--palette-divider); }
-        .info-row:last-child { border-bottom:none; }
-        .label { display:table-cell; font-weight:500; padding-right:15px; min-width:120px; vertical-align:middle; padding:8px 0; white-space:nowrap; }
-        .value-display { display:table-cell; width:100%; padding:8px 0; vertical-align:middle; }
+        .header-row {
+          display: flex;
+          align-items: center;
+          padding-bottom: 8px;
+          margin-bottom: 8px;
+          border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+        }
+        .header-text { flex-grow: 1; font-size: 1rem; font-weight: 600; margin-left: 6px; }
+        .content-area { display: flex; gap: 10px; min-width: 0; overflow: hidden; }
+        .image-column {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          flex-shrink: 0;
+          padding-top: 12px;
+          padding-left: 10px;
+          --image-selector-max-width: 110px;
+          --image-selector-min-width: 110px;
+        }
+        .info-table {
+          display: flex;
+          flex-direction: column;
+          flex-grow: 1;
+          min-width: 0;
+          gap: 1px;
+        }
+        .info-row {
+          display: flex;
+          align-items: center;
+          padding: 4px 6px;
+          border-radius: 4px;
+          transition: background .1s ease;
+        }
+        .info-row:hover {
+          background: color-mix(in srgb, var(--on-surface-color) 4%, transparent);
+        }
+        .label {
+          font-size: .72rem;
+          font-weight: 500;
+          color: var(--secondary-text-color);
+          min-width: 75px;
+          flex-shrink: 0;
+          white-space: nowrap;
+        }
+        .value-display {
+          flex: 1;
+          font-size: .78rem;
+          color: var(--on-surface-color);
+          min-width: 0;
+          line-height: 1.4;
+          white-space: pre-wrap;
+          word-break: break-word;
+          max-height: 8em;
+          overflow-y: auto;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+            var(--scroll-track, var(--surface-color));
+        }
+        .value-display a { color: var(--on-surface-color); }
+        .value-display a:hover { text-decoration: underline; color: var(--accent-color); }
         .input-field {
-          display:table-cell;
-          width:100%;
-          padding:8px 0;
-          vertical-align:middle;
+          flex: 1;
+          min-width: 0;
         }
-        .input-field.hidden { display:none; }
-        .value-display a { color:var(--primary-text-color); }
-        .value-display a:hover { text-decoration:underline; }
+        .input-field.hidden { display: none; }
         .input-field paper-input, .input-field iron-autogrow-textarea {
-          width:100%;
-          --paper-input-container-color: var(--primary-text-color);
+          width: 100%;
+          --paper-input-container-color: var(--on-surface-color);
           --paper-input-container-focus-color: var(--accent-color);
-          --paper-input-container-label-floating-color: var(--accent-color);
-          --paper-input-container-input-color: var(--primary-text-color);
+          --paper-input-container-input-color: var(--on-surface-color);
         }
-        .button-cell { display:table-cell; width:48px; vertical-align:middle; }
-        .button-cell iron-icon { color:var(--primary-text-color); }
-        .button-cell iron-icon:hover { color:var(--accent-color); cursor:pointer; }
-        .action-buttons-bottom { display:flex; justify-content:flex-end; gap:10px; padding-top:15px; }
-        paper-button { background-color:var(--primary-color); color:var(--on-primary-color); padding:8px 16px; border-radius:4px; }
-        paper-button:hover { background-color:var(--primary-dark-color); }
+        .button-cell {
+          flex-shrink: 0;
+          width: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .button-cell paper-icon-button {
+          width: 24px;
+          height: 24px;
+          padding: 2px;
+          color: var(--secondary-text-color);
+          opacity: .4;
+          transition: opacity .15s, color .15s;
+        }
+        .info-row:hover .button-cell paper-icon-button { opacity: 1; }
+        .button-cell paper-icon-button:hover { color: var(--accent-color); opacity: 1; }
+        .action-buttons-bottom {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          padding-top: 10px;
+          border-top: 1px solid color-mix(in srgb, var(--palette-divider) 30%, transparent);
+          margin-top: 8px;
+        }
+        paper-button {
+          font-size: .8rem;
+          padding: 5px 14px;
+          border-radius: 6px;
+          font-weight: 500;
+          text-transform: none;
+        }
+        .action-buttons-bottom paper-button:first-child {
+          background: var(--accent-color, var(--primary-color));
+          color: #fff;
+        }
+        .action-buttons-bottom paper-button:first-child:hover { filter: brightness(1.1); }
+        .action-buttons-bottom paper-button:last-child {
+          background: color-mix(in srgb, var(--on-surface-color) 10%, transparent);
+          color: var(--on-surface-color);
+        }
+        .action-buttons-bottom paper-button:last-child:hover {
+          background: color-mix(in srgb, #f44336 15%, transparent);
+          color: #f44336;
+        }
+        @media (max-width: 600px) {
+          .content-area { flex-direction: column; align-items: center; }
+          .image-column { max-width: 100%; }
+        }
       </style>
 
       <div id="container">
@@ -201,13 +290,13 @@ export class PersonEditor extends HTMLElement {
                 <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-birthplace-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
 
-              <div class="info-row">
-                <div class="label" style="vertical-align: top;">Biography:</div>
+              <div class="info-row" style="align-items:flex-start;">
+                <div class="label" style="padding-top:6px;">Biography:</div>
                 <div class="value-display" id="${this._uuid}-person-biography-div"></div>
                 <div class="input-field hidden">
-                  <iron-autogrow-textarea id="${this._uuid}-person-biography-input" style="border:none; width:100%;"></iron-autogrow-textarea>
+                  <textarea id="${this._uuid}-person-biography-input" style="width:100%;border:1px solid var(--palette-divider);border-radius:6px;padding:6px;font-size:.78rem;line-height:1.4;font-family:inherit;resize:vertical;background:var(--surface-color);color:var(--on-surface-color);box-sizing:border-box;"></textarea>
                 </div>
-                <div class="button-cell"><paper-icon-button id="edit-${this._uuid}-person-biography-btn" icon="editor:mode-edit" style="vertical-align: top;"></paper-icon-button></div>
+                <div class="button-cell" style="padding-top:4px;"><paper-icon-button id="edit-${this._uuid}-person-biography-btn" icon="editor:mode-edit"></paper-icon-button></div>
               </div>
             </div>
           </div>
@@ -330,17 +419,31 @@ export class PersonEditor extends HTMLElement {
     const hideInput = () => inputContainer?.classList?.add("hidden");
     hideInput();
 
-    editBtn.addEventListener('click', () => {
+    const getInputValue = () => {
+      return inputEl?.value ?? '';
+    };
+
+    let editing = false;
+
+    const enterEdit = () => {
+      inputEl.value = displayEl.textContent || '';
+      if (inputType === 'textarea') {
+        const h = displayEl.offsetHeight;
+        if (h > 40) inputEl.style.height = h + 'px';
+      }
       displayEl.style.display = 'none';
       showInput();
+      editing = true;
+      editBtn.icon = 'icons:check';
       setTimeout(() => {
-        const focusEl = inputEl?.textarea ?? inputEl?.inputElement?._inputElement ?? null;
-        if (focusEl) { focusEl.focus(); focusEl.select && focusEl.select(); }
-      }, 100);
-    });
+        const focusEl = (inputType === 'textarea') ? inputEl : (inputEl?.inputElement?._inputElement ?? inputEl);
+        if (focusEl) focusEl.focus();
+      }, 50);
+    };
 
-    const saveAndDisplay = () => {
-      const newValue = inputEl.value;
+    const saveAndExit = () => {
+      if (!editing) return;
+      const newValue = getInputValue();
       let valueToSet = newValue;
 
       if (inputType === 'stringList') {
@@ -356,27 +459,36 @@ export class PersonEditor extends HTMLElement {
       if (this._person && typeof this._person[setter] === 'function') {
         this._person[setter](valueToSet);
       }
-
-      hideInput();
-      displayEl.style.display = 'table-cell';
       if (onSaveCb) onSaveCb(newValue);
+      hideInput();
+      displayEl.style.display = '';
+      editing = false;
+      editBtn.icon = 'editor:mode-edit';
     };
 
-    inputEl.addEventListener('blur', saveAndDisplay);
+    const cancelAndExit = () => {
+      if (!editing) return;
+      inputEl.value = displayEl.textContent || '';
+      hideInput();
+      displayEl.style.display = '';
+      editing = false;
+      editBtn.icon = 'editor:mode-edit';
+    };
+
+    editBtn.addEventListener('click', () => {
+      if (editing) saveAndExit();
+      else enterEdit();
+    });
+
     inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && inputType !== 'textarea') { e.preventDefault(); saveAndDisplay(); }
-      else if (e.key === 'Escape') {
-        e.preventDefault();
-        inputEl.value = displayEl.textContent;
-        hideInput();
-        displayEl.style.display = 'table-cell';
-      }
+      if (e.key === 'Enter' && inputType !== 'textarea') { e.preventDefault(); saveAndExit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancelAndExit(); }
     });
   }
 
   _resetEditableFieldState(displayEl, inputEl, inputType = 'text') {
     if (!displayEl || !inputEl) return;
-    displayEl.style.display = 'table-cell';
+    displayEl.style.display = '';
     const inputContainer = (inputType === 'textarea' ? inputEl.parentNode : inputEl.parentNode ?? inputEl);
     inputContainer?.classList?.add("hidden");
   }

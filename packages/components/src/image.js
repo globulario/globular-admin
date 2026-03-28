@@ -1267,7 +1267,7 @@ export class ImageSelector extends HTMLElement {
         }
 
         .image-selector{
-          max-width:200px;
+          max-width: var(--image-selector-max-width, 200px);
           position:relative;
           border-radius:8px;
           box-shadow: 0 2px 6px rgba(0,0,0,0.12);
@@ -1295,7 +1295,7 @@ export class ImageSelector extends HTMLElement {
         }
 
         #drop-zone{
-          min-width:180px;
+          min-width: var(--image-selector-min-width, 180px);
           transition: background .15s ease, padding .15s linear, filter .15s ease;
           background-color: var(--surface-color);
           position:relative;
