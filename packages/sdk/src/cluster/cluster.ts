@@ -650,3 +650,102 @@ export async function getNodePlan(nodeId: string): Promise<NodeServicePlan | nul
     return null
   }
 }
+
+// ── Application Release Management (REST via admin API) ─────────────────────
+
+import { getBaseUrl } from '../core/endpoints'
+import { getStoredTokenSync } from '../core/auth'
+
+export interface ApplicationReleaseSpec {
+  publisher_id: string
+  app_name: string
+  version: string
+  build_number?: number
+  platform?: string
+  route?: string
+  index_file?: string
+}
+
+export interface NodeReleaseStatusVM {
+  node_id: string
+  phase: string
+  installed_version?: string
+  error_message?: string
+}
+
+export interface ApplicationReleaseStatus {
+  phase: string
+  resolved_version?: string
+  resolved_build_number?: number
+  desired_hash?: string
+  message?: string
+  workflow_kind?: string
+  nodes?: NodeReleaseStatusVM[]
+}
+
+export interface ApplicationRelease {
+  meta?: { name: string; generation?: number }
+  spec: ApplicationReleaseSpec
+  status?: ApplicationReleaseStatus
+}
+
+/**
+ * List all ApplicationRelease objects (deployed applications).
+ */
+export async function listApplicationReleases(base?: string): Promise<ApplicationRelease[]> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const resp = await fetch(`${base}/admin/applications`, {
+    headers: token ? { token } : {},
+  })
+  if (!resp.ok) throw new Error(`admin/applications: HTTP ${resp.status}`)
+  const data = await resp.json()
+  return data.items ?? data.releases ?? data ?? []
+}
+
+/**
+ * Get a single ApplicationRelease by name (publisher/appname).
+ */
+export async function getApplicationRelease(name: string, base?: string): Promise<ApplicationRelease | null> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const resp = await fetch(`${base}/admin/applications?name=${encodeURIComponent(name)}`, {
+    headers: token ? { token } : {},
+  })
+  if (!resp.ok) return null
+  return resp.json()
+}
+
+/**
+ * Deploy an application (create or update ApplicationRelease).
+ */
+export async function deployApplication(spec: ApplicationReleaseSpec, base?: string): Promise<ApplicationRelease> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const resp = await fetch(`${base}/admin/applications`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { token } : {}) },
+    body: JSON.stringify(spec),
+  })
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => resp.statusText)
+    throw new Error(msg || `deploy failed: ${resp.status}`)
+  }
+  return resp.json()
+}
+
+/**
+ * Undeploy an application (delete ApplicationRelease).
+ */
+export async function undeployApplication(name: string, base?: string): Promise<void> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const resp = await fetch(`${base}/admin/applications?name=${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: token ? { token } : {},
+  })
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => resp.statusText)
+    throw new Error(msg || `undeploy failed: ${resp.status}`)
+  }
+}

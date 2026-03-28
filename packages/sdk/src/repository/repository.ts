@@ -327,3 +327,85 @@ export async function fetchInstalledPackages(
   }
   return pkgs
 }
+
+// ── REST: Namespace management ──────────────────────────────────────────────
+
+export interface NamespaceInfo {
+  name: string
+  claimed: boolean
+  owners: string[]
+  collaborators: { subject: string; role: string }[]
+  artifactCount?: number
+}
+
+/**
+ * List all known namespaces (claimed from RBAC + inferred from artifacts).
+ * Uses the admin REST endpoint.
+ */
+export async function listNamespaces(base?: string): Promise<NamespaceInfo[]> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const resp = await fetch(`${base}/admin/namespaces`, {
+    headers: token ? { token } : {},
+  })
+  if (!resp.ok) throw new Error(`admin/namespaces: HTTP ${resp.status}`)
+  const data = await resp.json()
+  return data.namespaces ?? data ?? []
+}
+
+/**
+ * Claim a publisher namespace. The caller becomes the owner.
+ */
+export async function claimNamespace(name: string, org?: string, base?: string): Promise<void> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const body: Record<string, string> = { name }
+  if (org) body.org = org
+  const resp = await fetch(`${base}/admin/namespaces/claim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { token } : {}) },
+    body: JSON.stringify(body),
+  })
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => resp.statusText)
+    throw new Error(msg || `claim namespace failed: ${resp.status}`)
+  }
+}
+
+/**
+ * Grant a role on a namespace to a user.
+ */
+export async function grantNamespaceAccess(
+  ns: string, user: string, role: string, base?: string,
+): Promise<void> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const resp = await fetch(`${base}/admin/namespaces/grant`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { token } : {}) },
+    body: JSON.stringify({ namespace: ns, user, role }),
+  })
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => resp.statusText)
+    throw new Error(msg || `grant failed: ${resp.status}`)
+  }
+}
+
+/**
+ * Revoke a user's access to a namespace.
+ */
+export async function revokeNamespaceAccess(
+  ns: string, user: string, base?: string,
+): Promise<void> {
+  if (base == null) base = getBaseUrl() || ''
+  const token = getStoredTokenSync() ?? ''
+  const resp = await fetch(`${base}/admin/namespaces/revoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { token } : {}) },
+    body: JSON.stringify({ namespace: ns, user }),
+  })
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => resp.statusText)
+    throw new Error(msg || `revoke failed: ${resp.status}`)
+  }
+}
