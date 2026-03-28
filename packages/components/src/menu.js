@@ -167,7 +167,9 @@ export class DropdownMenuItem extends HTMLElement {
 
         .separator {
           display:none;
-          margin-top:1px;
+          height: 1px;
+          margin: 4px 8px;
+          background-color: var(--divider-color, var(--palette-divider, rgba(255,255,255,.12)));
         }
       </style>
 
@@ -427,9 +429,10 @@ export class DropdownMenu extends HTMLElement {
           user-select:none; margin-right:10px;
         }
         .card-content { display:flex; flex-direction:column; padding:0; }
+        paper-card.menu-items { border-radius: 8px; overflow: visible; }
 
         /* Default (top-level) dropdown: beneath the trigger */
-        .menu-items { position:absolute; top:25px; left:0; display:none; z-index:100000; overflow: visible; box-shadow: var(--elevation-8); border: 1px solid var(--divider-color); background-color: var(--palette-divider); }
+        .menu-items { position:absolute; top:25px; left:0; display:none; z-index:100000; overflow: visible; box-shadow: var(--elevation-8); border: 1px solid var(--divider-color); background-color: var(--surface-color); border-radius: 8px; }
 
         /* Submenu flyout: to the right of the parent item.
            Make the HOST zero-sized so it never overlays lower items.
