@@ -480,7 +480,11 @@ export class FilesListView extends FilesView {
 
     if (isDir) {
       const items = filesOf(file);
-      sizeDisplay = Array.isArray(items) ? `${items.length} items` : "";
+      const count = Array.isArray(items) ? items.filter(f => {
+        const n = nameOf(f) || "";
+        return !n.startsWith(".") || n === "audio.m3u" || n === "video.m3u";
+      }).length : 0;
+      sizeDisplay = count > 0 ? `${count} items` : "—";
       if (isPlaylist) {
         mimeDisplay = "VIDEO";
         icon = "av:movie";
