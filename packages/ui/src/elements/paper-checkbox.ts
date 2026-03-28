@@ -14,6 +14,7 @@ class PaperCheckbox extends HTMLElement {
 
   get checked(): boolean { return this.hasAttribute('checked') }
   set checked(v: boolean) {
+    if (v === this.checked) return
     v ? this.setAttribute('checked', '') : this.removeAttribute('checked')
     const inp = this.shadowRoot?.querySelector('input') as HTMLInputElement
     if (inp) inp.checked = v
@@ -22,11 +23,16 @@ class PaperCheckbox extends HTMLElement {
   private _render() {
     this.shadowRoot!.innerHTML = `
       <style>
-        :host { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+        :host {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          cursor: pointer;
+        }
         :host([disabled]) { opacity: .38; pointer-events: none; }
         input[type=checkbox] {
           width: 18px; height: 18px; margin: 0; cursor: pointer;
-          accent-color: var(--accent-color, #3b82f6);
+          accent-color: var(--paper-checkbox-checked-color, var(--accent-color, #3b82f6));
         }
       </style>
       <input type="checkbox" ${this.checked ? 'checked' : ''} ${this.hasAttribute('disabled') ? 'disabled' : ''} />
@@ -43,11 +49,25 @@ class PaperCheckbox extends HTMLElement {
   }
 
   private _bind() {
-    this.shadowRoot?.querySelector('input')?.addEventListener('change', (e) => {
-      const checked = (e.target as HTMLInputElement).checked
-      checked ? this.setAttribute('checked', '') : this.removeAttribute('checked')
-      this.dispatchEvent(new CustomEvent('checked-changed', { detail: { value: checked }, bubbles: true }))
-      this.dispatchEvent(new CustomEvent('change', { bubbles: true }))
+    const inp = this.shadowRoot?.querySelector('input') as HTMLInputElement
+    if (!inp) return
+
+    // Listen on the inner input's change event (fires after checked state updates).
+    inp.addEventListener('change', () => {
+      const isChecked = inp.checked
+      isChecked ? this.setAttribute('checked', '') : this.removeAttribute('checked')
+      this.dispatchEvent(new CustomEvent('checked-changed', { detail: { value: isChecked }, bubbles: true, composed: true }))
+      this.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+    })
+
+    // Also handle clicks on the host element itself (not just the input).
+    // This ensures clicking anywhere on the paper-checkbox toggles it.
+    this.addEventListener('click', (e) => {
+      // If the click was on the inner input, it already toggled — don't double-toggle.
+      if (e.composedPath()[0] === inp) return
+      e.preventDefault()
+      inp.checked = !inp.checked
+      inp.dispatchEvent(new Event('change', { bubbles: true }))
     })
   }
 }

@@ -337,10 +337,15 @@ export class FileIconView extends HTMLElement {
       this._handleOpen();
     });
 
-    // checkbox
-    this._dom.checkbox.addEventListener("click", (e) => {
+    // checkbox — listen on 'change' (fires after checked state updates)
+    // instead of 'click' (fires before the inner input toggles).
+    this._dom.checkbox.addEventListener("change", (e) => {
       e.stopPropagation();
       this._applySelection(this._dom.checkbox.checked);
+    });
+    // Prevent click from propagating to the host (which opens the file).
+    this._dom.checkbox.addEventListener("click", (e) => {
+      e.stopPropagation();
     });
 
     // thumbtack (disabled)
@@ -647,14 +652,13 @@ export class FileIconView extends HTMLElement {
   _applySelection(checked) {
     if (checked) {
       this.classList.add("selected");
-      this._dom.checkbox.style.display = "block";
       this._viewContext._selected[pathOf(this._file)] = this._file;
     } else {
       this.classList.remove("selected");
-      if (!this._dom.checkbox.checked) this._dom.checkbox.style.display = "none";
       delete this._viewContext._selected[pathOf(this._file)];
     }
-
+    // Don't use inline style.display — let CSS :host(.selected) handle visibility.
+    // The .selected class drives both the checkbox visibility and the border highlight.
     this._viewContext?._selectionChanged?.();
   }
 
