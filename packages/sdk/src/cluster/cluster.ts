@@ -9,7 +9,7 @@ import { metadata } from '../core/auth'
 import { normalizeError } from '../core/errors'
 import * as clusterGrpc    from 'globular-web-client/cluster_controller/cluster_controller_grpc_web_pb'
 import * as cc             from 'globular-web-client/cluster_controller/cluster_controller_pb'
-import * as planPb         from 'globular-web-client/cluster_controller/plan_pb'
+import type * as planPb    from 'globular-web-client/cluster_controller/plan_pb'
 
 function ccClient(): clusterGrpc.ClusterControllerServiceClient {
   const addr = grpcWebHostUrl()
@@ -352,7 +352,7 @@ function toDesiredEntry(s: cc.DesiredService): DesiredEntry {
 /** Read the current desired-state plan from the controller. */
 export async function getDesiredState(): Promise<DesiredEntry[]> {
   const md  = metadata()
-  const rq  = new (await import('google-protobuf/google/protobuf/empty_pb.js') as any).Empty()
+  const rq  = { serializeBinary: (): Uint8Array => new Uint8Array(0) } as any
   const rsp = await unary<any, cc.DesiredState>(genClient, 'getDesiredState', rq, undefined, md)
   return (rsp.getServicesList?.() ?? []).map(toDesiredEntry)
 }

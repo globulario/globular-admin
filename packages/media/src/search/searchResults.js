@@ -77,33 +77,44 @@ export class SearchResults extends HTMLElement {
                     display: flex;
                     width: 100%;
                     align-items: center;
-                    background: color-mix(in srgb, var(--palette-primary-accent) 75%, transparent);
+                    background: var(--surface-color);
                     color: var(--primary-text-color);
-                    padding: 5px 0; /* Vertical padding */
+                    padding: 4px 0;
                 }
 
                 paper-tabs {
                     flex-grow: 1;
-                    --paper-tabs-selection-bar-color: var(--accent-color);
-                    color: var(--on-primary-color); /* Text color on accent background */
-                    --paper-tab-ink: var(--palette-action-disabled);
+                    --paper-tabs-selection-bar-color: var(--accent-color, #2196F3);
+                    color: var(--primary-text-color);
+                    --paper-tab-ink: color-mix(in srgb, var(--accent-color, #2196F3) 20%, transparent);
                 }
 
                 #close-all-btn {
-                    width: 30px;
-                    height: 30px;
-                    padding: 3px;
-                    color: var(--on-primary-color);
-                    --iron-icon-fill-color: var(--on-primary-color);
-                }
-
-                paper-tab paper-icon-button {
                     width: 24px;
                     height: 24px;
                     padding: 2px;
-                    color: var(--on-primary-color);
-                    --iron-icon-fill-color: var(--on-primary-color);
+                    color: var(--secondary-text-color);
+                    --iron-icon-fill-color: var(--secondary-text-color);
+                    --iron-icon-width: 16px;
+                    --iron-icon-height: 16px;
+                    opacity: .5;
+                    transition: opacity .2s;
                 }
+                #close-all-btn:hover { opacity: 1; }
+
+                paper-tab paper-icon-button {
+                    width: 14px;
+                    height: 14px;
+                    padding: 1px;
+                    margin-left: 6px;
+                    color: var(--secondary-text-color);
+                    --iron-icon-fill-color: var(--secondary-text-color);
+                    --iron-icon-width: 10px;
+                    --iron-icon-height: 10px;
+                    opacity: .4;
+                    transition: opacity .2s;
+                }
+                paper-tab paper-icon-button:hover { opacity: 1; }
 
                 paper-card {
                     background-color: var(--surface-color);
@@ -111,15 +122,17 @@ export class SearchResults extends HTMLElement {
                 }
 
                 paper-tab {
-                    display: inline-flex; /* Use inline-flex for better control */
+                    display: inline-flex;
                     align-items: center;
                     justify-content: center;
+                    padding: 0 12px;
+                    gap: 4px;
                 }
 
                 paper-tab span {
-                    font-size: 1.1rem;
+                    font-size: 1.2rem;
                     flex-grow: 1;
-                    white-space: nowrap; /* Prevent tab text wrapping */
+                    white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
                 }
@@ -278,7 +291,7 @@ export class SearchResults extends HTMLElement {
             // Create new tab if it doesn't exist
             const tabHtml = `
                 <paper-tab id="${queryId}-tab">
-                    <span>${displayQuery} (<span id="${queryId}-total-span" style="font-size: 1rem;"></span>)</span>
+                    <span>${displayQuery} (<span id="${queryId}-total-span"></span>)</span>
                     <paper-icon-button id="${queryId}-close-tab-btn" icon="icons:close" title="Close this search"></paper-icon-button>
                 </paper-tab>
             `;

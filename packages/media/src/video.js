@@ -330,7 +330,7 @@ export function playVideos(videos, name) {
       const files = await getTitleFiles(v.getId(), '/search/videos')
       if (files.length > 0) {
         let filePath = files[0]
-        if (!/\.(mp4|m3u8|mkv)$/i.test(filePath)) filePath += '/playlist.m3u8'
+        if (!/\.(mp4|m3u8|mkv|webm|avi|mov|m4v|mpg|mpeg|flv|wmv|m2ts|ts)$/i.test(filePath)) filePath += '/playlist.m3u8'
         const hls = /\.m3u8$/i.test(filePath)
         const url = hls ? buildFileUrl(filePath, { includeToken: false }) : buildFileUrl(filePath)
         m3u += `#EXTINF:${v.getDuration()}, ${v.getTitle()}, tvg-id="${v.getId()}"\n`
@@ -832,21 +832,18 @@ export class VideoPlayer extends HTMLElement {
   // final position 150 ms after the last seek event.
   // ---------------------------------------------------------------------------
   _initHlsSeekHandling() {
+    let seekStallTimer = null
+
     const onSeeking = () => {
       if (!this.hls) return
-
-      // If we have a direct MP4 URL (opportunistic HLS), switch to it
-      // immediately on first seek — HLS live transcoding would need to
-      // restart ffmpeg, which freezes for seconds.  Direct MP4 byte-range
-      // seeks are near-instant.
-      if (this._directMp4Url) {
-        this._switchToDirectMp4(this.videoElement.currentTime)
-        return
-      }
 
       if (this._hlsSeekTimer) {
         clearTimeout(this._hlsSeekTimer)
         this._hlsSeekTimer = null
+      }
+      if (seekStallTimer) {
+        clearTimeout(seekStallTimer)
+        seekStallTimer = null
       }
       this.hls.stopLoad()
     }
@@ -858,7 +855,18 @@ export class VideoPlayer extends HTMLElement {
         this._hlsSeekTimer = null
         if (!this.hls || !this.videoElement) return
         this.hls.startLoad(this.videoElement.currentTime)
-      }, 150)
+
+        // If HLS seek stalls for too long, fall back to direct MP4
+        if (this._directMp4Url) {
+          if (seekStallTimer) clearTimeout(seekStallTimer)
+          seekStallTimer = setTimeout(() => {
+            seekStallTimer = null
+            if (this.videoElement && this.videoElement.readyState < 3 && this._directMp4Url) {
+              this._switchToDirectMp4(this.videoElement.currentTime)
+            }
+          }, HLS_SEEK_STALL_MS)
+        }
+      }, 100)
     }
 
     this.videoElement.addEventListener('seeking', onSeeking)
@@ -1006,9 +1014,10 @@ export class VideoPlayer extends HTMLElement {
   _handleDeferredTokenSwap = () => {
     if (!this._pendingTokenSwap || !this._mp4FreshTokenUrl) return
     if (this.hls) return   // HLS handles tokens per-segment
+    // Don't swap src during seek — it causes a full reload and kills performance.
+    // Just save the fresh URL for error-recovery; the current token is still valid
+    // for the duration of playback (tokens last much longer than a viewing session).
     this._pendingTokenSwap = false
-    this._doSrcSwap(this._mp4FreshTokenUrl)
-    this._mp4FreshTokenUrl = null
   }
 
   _handleVideoTimeUpdate = () => {
@@ -1504,7 +1513,7 @@ export class VideoPlayer extends HTMLElement {
           const titleFile = await getTitleFiles(video.getId(), '/search/videos')
           if (Array.isArray(titleFile) && titleFile.length > 0) {
             let filePath = titleFile[0]
-            if (!/\.(mp4|m3u8|mkv)$/i.test(filePath)) filePath += '/playlist.m3u8'
+            if (!/\.(mp4|m3u8|mkv|webm|avi|mov|m4v|mpg|mpeg|flv|wmv|m2ts|ts)$/i.test(filePath)) filePath += '/playlist.m3u8'
             const hls = /\.m3u8$/i.test(filePath)
             const url = hls ? buildFileUrl(filePath, { includeToken: false }) : buildFileUrl(filePath)
             m3u += `${url}\n\n`
@@ -1789,42 +1798,6 @@ export class VideoPlayer extends HTMLElement {
       this._networkRetryNonce = 0  // consumed
     }
 
-    // For raw video files (.mp4, .mkv, etc.), try HLS first for fast startup
-    // (no moov-atom dependency), but keep the direct MP4 URL for seek fallback.
-    // When the user seeks and HLS stalls (ffmpeg restart), we automatically
-    // switch to direct MP4 byte-range serving for near-instant seeks.
-    //
-    // Optimization: HEAD-check the playlist URL first.  If the HLS directory
-    // doesn't exist the server returns 404 in ~100 ms — far cheaper than the
-    // 2 s HLS_PROBE_TIMEOUT that fires when hls.js tries to fetch a missing
-    // manifest.  When the HEAD succeeds we commit to HLS immediately.
-    this._fallbackMp4Url = null
-    this._directMp4Url = null
-    const recentHlsDestroy = (Date.now() - _lastHlsDestroyAt) < 5_000
-    if (!isHlsSource && !isDirectoryPath && !recentHlsDestroy) {
-      const tryPlaylistUrl = getPlaylistUrl()
-      if (tryPlaylistUrl) {
-        // Quick HEAD probe — avoid the 2 s HLS timeout when no playlist exists.
-        // Start MP4 playback immediately; upgrade to HLS only if HEAD succeeds.
-        this._directMp4Url = urlToPlay
-        this._startMp4TokenMaintenance(path, httpSource)
-
-        const headUrl = withToken(tryPlaylistUrl)
-        fetch(headUrl, { method: 'HEAD', mode: 'cors' })
-          .then(resp => {
-            if (resp.ok && this._directMp4Url === urlToPlay && !this.hls) {
-              // Playlist exists — switch to HLS for adaptive streaming
-              this._fallbackMp4Url = urlToPlay
-              this._forceHlsSource = true
-              this._stopMp4TokenMaintenance()
-              this._destroyHls()
-              this.playContent(path, token, tryPlaylistUrl)
-            }
-          })
-          .catch(() => { /* playlist doesn't exist, keep direct MP4 */ })
-      }
-    }
-
     // Same-path resume behavior preserved — but skip when we're retrying with a nonce
     // so the URL is rebuilt with the cache-bust param before playContent is called.
     if (this.path === path && this._networkRetryNonce === 0) {
@@ -1839,6 +1812,15 @@ export class VideoPlayer extends HTMLElement {
     this._loadingName = this._getFileNameFromPath(path)
     this._showLoadingOverlay()
     this._onPlayFired = false
+
+    // Play raw video files directly via byte-range serving.
+    // Direct MP4 gives instant seeks without ffmpeg restart overhead.
+    // HLS is only used when the source is already .m3u8 or a directory.
+    this._fallbackMp4Url = null
+    this._directMp4Url = null
+    if (!isHlsSource && !isDirectoryPath) {
+      this._startMp4TokenMaintenance(path, httpSource)
+    }
 
     this.playContent(path, token, urlToPlay)
   }

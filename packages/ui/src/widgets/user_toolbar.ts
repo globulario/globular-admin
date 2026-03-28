@@ -51,22 +51,21 @@ class UserToolbar extends HTMLElement {
         }
         .btn:hover { background: rgba(255,255,255,.12); }
         .btn.icon {
-          width: 34px; height: 34px; padding: 0;
+          width: 28px; height: 28px; padding: 0;
           display: inline-flex; align-items: center; justify-content: center;
-          border-radius: 50%;
+          border: none;
+          border-radius: 4px;
+          opacity: .7;
+          transition: opacity .2s;
         }
+        .btn.icon:hover { opacity: 1; background: rgba(255,255,255,.08); }
         .btn.icon svg {
-          width: 20px; height: 20px;
+          width: 18px; height: 18px;
           fill: currentColor;
           pointer-events: none;
         }
       </style>
       <div class="user">
-        <button class="btn icon" id="fileExplorerBtn" title="Open File Explorer">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
-          </svg>
-        </button>
         <div class="avatar">${(u||'?').slice(0,1).toUpperCase()}</div>
         <span class="name">${u ?? ''}</span>
         <button class="btn" id="logoutBtn" title="Sign out">Logout</button>
@@ -85,9 +84,6 @@ class UserToolbar extends HTMLElement {
         window.location.hash = redirect.replace(/^#/, '')
       }
     }
-
-    const explorerBtn = this.shadow.getElementById('fileExplorerBtn') as HTMLButtonElement
-    explorerBtn.onclick = () => this.openFileExplorer()
 
     this._onAuth = () => this.refresh()
     window.addEventListener('auth:changed', this._onAuth)

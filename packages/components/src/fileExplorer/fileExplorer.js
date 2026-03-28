@@ -442,9 +442,15 @@ export class FileExplorer extends HTMLElement {
       #active-directory {
         display: none;
         padding: 0 8px;
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         color: var(--palette-text-secondary, var(--on-surface-color));
-        opacity: 0.8;
+        opacity: 0.7;
+        max-width: 50%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        direction: rtl;
+        text-align: left;
       }
 
       .card-actions.footer {

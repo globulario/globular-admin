@@ -46,32 +46,27 @@ export class FacetSearchFilter extends HTMLElement {
         this.shadowRoot.innerHTML = `
             <style>
                 #container {
-                    font-size: 1.17rem;
-                    padding: 10px;
-                    padding-right: 30px;
-                    max-width: 235px;
+                    font-size: .82rem;
+                    padding: 8px 12px;
+                    max-width: 220px;
                     background-color: var(--surface-color);
                     color: var(--primary-text-color);
                     box-sizing: border-box;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
                 }
 
-                ::-webkit-scrollbar {
-                    width: 10px;
-                }
-                ::-webkit-scrollbar-track {
-                    background: var(--scroll-track, var(--surface-color));
-                }
-                ::-webkit-scrollbar-thumb {
-                    background: var(--scroll-thumb, var(--palette-divider));
-                    border-radius: 6px;
-                }
+                ::-webkit-scrollbar { width: 6px; }
+                ::-webkit-scrollbar-track { background: var(--scroll-track, var(--surface-color)); }
+                ::-webkit-scrollbar-thumb { background: var(--scroll-thumb, var(--palette-divider)); border-radius: 3px; }
 
                 @media (max-width: 600px) {
                     #container {
-                        position: initial; /* Unset fixed/absolute if needed */
-                        height: 180px; /* Fixed height for mobile */
-                        max-width: 100%; /* Take full width */
-                        padding-right: 10px; /* Adjust padding */
+                        position: initial;
+                        height: 180px;
+                        max-width: 100%;
+                        padding-right: 8px;
                     }
                 }
             </style>
@@ -268,95 +263,130 @@ export class SearchFacetPanel extends HTMLElement {
     _renderInitialStructure() {
         this.shadowRoot.innerHTML = `
             <style>
+                :host {
+                    display: block;
+                    margin-bottom: 2px;
+                }
+
                 .facet-list {
-                    font-size: 1rem;
+                    font-size: .78rem;
                     display: flex;
-                    flex-direction: column; /* Stack terms vertically */
+                    flex-direction: column;
                     overflow: hidden;
-                    max-height: 2000px; /* large enough for any list */
-                    transition: max-height 0.25s ease, padding-bottom 0.25s ease;
+                    max-height: 2000px;
+                    transition: max-height 0.25s ease;
+                    padding-left: 6px;
+                    border-left: 1px solid color-mix(in srgb, var(--palette-divider) 30%, transparent);
+                    margin-left: 10px;
+                    margin-bottom: 4px;
                 }
                 .facet-list.collapsed {
                     max-height: 0;
                     padding-bottom: 0;
+                    border-left-color: transparent;
                 }
 
                 #collapse-btn {
                     margin-left: auto;
                     flex-shrink: 0;
                     --iron-icon-fill-color: var(--secondary-text-color);
-                    width: 28px;
-                    height: 28px;
-                    padding: 2px;
-                    transition: transform 0.2s ease;
+                    width: 22px;
+                    height: 22px;
+                    padding: 1px;
+                    opacity: .6;
+                    transition: transform 0.2s ease, opacity 0.2s ease;
                 }
+                #collapse-btn:hover { opacity: 1; }
                 #collapse-btn.collapsed {
                     transform: rotate(-90deg);
                 }
 
-                .facet-label-main { /* Style for the main facet checkbox label */
+                .facet-label-main {
                     display: flex;
                     align-items: center;
-                    font-size: 1.1rem; /* Slightly larger font for main label */
-                    font-weight: 500;
-                    margin-bottom: 10px; /* Space below main label */
+                    font-size: .82rem;
+                    font-weight: 600;
+                    padding: 3px 0;
                     cursor: pointer;
                     user-select: none;
+                    text-transform: capitalize;
                 }
                 .facet-label-main paper-checkbox {
-                    margin-top: 0; /* Align with play button */
-                    margin-bottom: 0;
-                    --paper-checkbox-checked-color: var(--accent-color);
-                    --paper-checkbox-checkmark-color: var(--on-primary-color);
+                    margin: 0;
+                    --paper-checkbox-checked-color: var(--accent-color, #2196F3);
+                    --paper-checkbox-checked-ink-color: transparent;
+                    --paper-checkbox-unchecked-color: color-mix(in srgb, var(--secondary-text-color) 50%, transparent);
+                    --paper-checkbox-unchecked-ink-color: transparent;
+                    --paper-checkbox-checkmark-color: #fff;
                     --paper-checkbox-label-color: var(--primary-text-color);
+                    --paper-checkbox-size: 14px;
                 }
 
-                .facet-label-main span { /* Specific span within main label */
-                    margin-left: 10px;
+                .facet-label-main span {
+                    margin-left: 6px;
                 }
 
                 #play_facet_btn {
                     --iron-icon-fill-color: var(--accent-color);
-                    display: none; /* Hidden by default */
-                    margin-right: 5px; /* Space from checkbox */
+                    display: none;
+                    width: 22px;
+                    height: 22px;
+                    padding: 1px;
+                    opacity: .5;
+                    transition: opacity .2s;
                 }
-                #play_facet_btn:hover { cursor: pointer; }
-
+                #play_facet_btn:hover { cursor: pointer; opacity: 1; }
 
                 .term-item {
                     display: flex;
                     align-items: center;
-                    margin-left: 25px; /* Indent terms */
-                    margin-top: 8px; /* Space between terms */
-                    font-size: 0.95rem; /* Smaller font for terms */
+                    margin-left: 4px;
+                    padding: 2px 0;
+                    font-size: .78rem;
                 }
                 .term-item.zero-count {
-                    opacity: 0.65;
+                    opacity: 0.5;
                 }
                 .term-item paper-checkbox {
-                    --paper-checkbox-checked-color: var(--accent-color);
-                    --paper-checkbox-checkmark-color: var(--on-primary-color);
+                    --paper-checkbox-checked-color: var(--accent-color, #2196F3);
+                    --paper-checkbox-checked-ink-color: transparent;
+                    --paper-checkbox-unchecked-color: color-mix(in srgb, var(--secondary-text-color) 40%, transparent);
+                    --paper-checkbox-unchecked-ink-color: transparent;
+                    --paper-checkbox-checkmark-color: #fff;
                     --paper-checkbox-label-color: var(--primary-text-color);
+                    --paper-checkbox-size: 12px;
                 }
                 .term-item paper-icon-button {
                     --iron-icon-fill-color: var(--accent-color);
                     color: var(--accent-color);
+                    width: 20px;
+                    height: 20px;
+                    padding: 1px;
+                    margin-left: auto;
+                    opacity: .5;
+                    transition: opacity .2s;
                 }
+                .term-item paper-icon-button:hover { opacity: 1; }
                 .term-count-span {
-                    margin-left: 8px;
-                    font-style: italic;
+                    margin-left: 4px;
+                    font-size: .72rem;
                     color: var(--secondary-text-color);
+                    opacity: .7;
                 }
-
+                .facet-label {
+                    display: flex;
+                    align-items: center;
+                    gap: 3px;
+                }
             </style>
 
             <div style="display: flex; flex-direction: column;">
                 <div class="facet-label-main">
-                    <paper-icon-button id="play_facet_btn" icon="av:play-arrow"></paper-icon-button>
                     <paper-checkbox id="main-checkbox" checked>
                         <span id='field_span'></span>
                         <span id='total_span'></span>
                     </paper-checkbox>
+                    <paper-icon-button id="play_facet_btn" icon="av:play-arrow"></paper-icon-button>
                     <paper-icon-button id="collapse-btn" icon="hardware:keyboard-arrow-down" title="Collapse/expand"></paper-icon-button>
                 </div>
                 <div class="facet-list">
@@ -484,10 +514,10 @@ export class SearchFacetPanel extends HTMLElement {
             itemElement.id = `${uuid}_div`;
             itemElement.classList.add('term-item');
             itemElement.innerHTML = `
-                <paper-icon-button id="${uuid}_play_btn" icon="av:play-arrow" style="display: none;"></paper-icon-button>
                 <paper-checkbox id="${uuid}" class="${className}" checked>
                     <div class="facet-label">${termText} <span id="${uuid}_total" class="term-count-span">(${count})</span></div>
                 </paper-checkbox>
+                <paper-icon-button id="${uuid}_play_btn" icon="av:play-arrow" style="display: none;"></paper-icon-button>
             `;
 
             if (count === 0) itemElement.style.display = 'none';

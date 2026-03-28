@@ -87,35 +87,28 @@ export class InformationsManager extends HTMLElement {
           height: 100%;
           min-height: 0;
           overflow: hidden;
-          background: var(--surface-color);
+          background: transparent;
           color: var(--primary-text-color);
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, var(--palette-divider))
                           var(--scroll-track, var(--surface-color));
         }
 
-        /* Chrome/WebKit */
-        :host::-webkit-scrollbar {
-          width: 10px;
-        }
-        :host::-webkit-scrollbar-track {
-          background: var(--scroll-track, var(--surface-color));
-        }
-        :host::-webkit-scrollbar-thumb {
-          background: var(--scroll-thumb, var(--palette-divider));
-          border-radius: 6px;
-        }
+        :host::-webkit-scrollbar { width: 8px; }
+        :host::-webkit-scrollbar-track { background: var(--scroll-track, var(--surface-color)); }
+        :host::-webkit-scrollbar-thumb { background: var(--scroll-thumb, var(--palette-divider)); border-radius: 4px; }
 
         #container {
           display: flex;
           flex-direction: column;
-          padding: 8px;
+          padding: 16px 20px;
           z-index: 100;
           flex: 1 1 auto;
           min-height: 0;
-          background: var(--surface-elevated-color, var(--surface-color));
+          background: transparent;
           color: var(--primary-text-color);
-          font-size: 1rem; user-select: none;
+          font-size: .9rem;
+          user-select: none;
         }
         #container > slot {
           flex: 1 1 auto;
@@ -130,24 +123,32 @@ export class InformationsManager extends HTMLElement {
           flex-direction: column;
         }
         #header {
-          display: flex; align-items: center;
-          line-height: 20px; padding-bottom: 10px;
-          border-bottom: 2px solid var(--divider-color, var(--palette-divider));
-          margin-bottom: 10px;
+          display: flex;
+          align-items: center;
+          padding-bottom: 12px;
+          border-bottom: 1px solid color-mix(in srgb, var(--divider-color, var(--palette-divider)) 50%, transparent);
+          margin-bottom: 14px;
         }
         #header paper-icon-button {
-          min-width: 40px; color: var(--secondary-text-color, var(--primary-text-color));
+          min-width: 36px;
+          color: var(--secondary-text-color, var(--primary-text-color));
+          opacity: .7;
+          transition: opacity .2s, color .2s;
         }
-        #header paper-icon-button:hover { color: var(--accent-color); }
+        #header paper-icon-button:hover { color: var(--accent-color); opacity: 1; }
 
         .title-div {
-          display: flex; flex-direction: row; gap: 10px; align-items: center;
+          display: flex;
+          flex-direction: row;
+          gap: 10px;
+          align-items: center;
           justify-content: space-between;
-          flex-grow: 1; color: var(--primary-text-color);
+          flex-grow: 1;
+          color: var(--primary-text-color);
         }
-        .title-wrap { display:flex; flex-direction:column; flex:1; min-width:0; }
-        .title-main-text { font-size: 1.55rem; font-weight: 700; margin: 0; }
-        .title-sub-text { font-size: 1.1rem; color: var(--secondary-text-color); margin-top: 5px; }
+        .title-wrap { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+        .title-main-text { font-size: 1.2rem; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+        .title-sub-text { font-size: .82rem; color: var(--secondary-text-color); margin-top: 3px; opacity: .85; }
       </style>
       <div id="container">
         <div id="header">

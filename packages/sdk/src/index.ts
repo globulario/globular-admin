@@ -25,6 +25,7 @@ export * from "./metrics/adminMetrics";
 export * from "./repository";
 export * from "./dns/dns";
 export * from "./backup/backup_client";
+export * from "./cluster/cluster";
 
 // Proto type re-exports — components/media import from here, not globular-web-client
 export { rbacPb, resourcePb, titlePb, authPb } from "./proto";

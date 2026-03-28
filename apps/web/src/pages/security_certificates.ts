@@ -6,6 +6,7 @@ import {
   type HealthState,
 } from '../utils/infra_health'
 import { confirmDialog } from '../utils/confirm_dialog'
+import { getBaseUrl } from '@globular/sdk'
 
 const POLL = 60_000
 
@@ -197,23 +198,27 @@ interface ClusterCertOverview {
 // ─── Backend client ──────────────────────────────────────────────────────────
 
 async function fetchCertificates(): Promise<CertData> {
-  const resp = await fetch('/admin/certificates')
+  const base = getBaseUrl() || ''
+  const resp = await fetch(`${base}/admin/certificates`)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   return resp.json()
 }
 
 async function renewPublicCert(): Promise<CertActionResponse> {
-  const resp = await fetch('/admin/certificates/renew-public', { method: 'POST' })
+  const base = getBaseUrl() || ''
+  const resp = await fetch(`${base}/admin/certificates/renew-public`, { method: 'POST' })
   return resp.json()
 }
 
 async function regenerateInternalCerts(): Promise<CertActionResponse> {
-  const resp = await fetch('/admin/certificates/regenerate-internal', { method: 'POST' })
+  const base = getBaseUrl() || ''
+  const resp = await fetch(`${base}/admin/certificates/regenerate-internal`, { method: 'POST' })
   return resp.json()
 }
 
 async function fetchClusterCertificates(): Promise<ClusterCertOverview> {
-  const resp = await fetch('/admin/certificates/cluster')
+  const base = getBaseUrl() || ''
+  const resp = await fetch(`${base}/admin/certificates/cluster`)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   return resp.json()
 }

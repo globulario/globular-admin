@@ -28,11 +28,11 @@
 
   /* ── MD3 Surface-Container hierarchy (light) ──────────────────────────── */
   /* Lowest → page background; Low → cards/panels; → …High → dialogs       */
-  --md-surface-container-lowest:  #fafbfc;
-  --md-surface-container-low:     #ffffff;
-  --md-surface-container:         #f3f4f7;
-  --md-surface-container-high:    #eceef2;
-  --md-surface-container-highest: #e5e8ed;
+  --md-surface-container-lowest:  #f0f1f4;
+  --md-surface-container-low:     #e8eaef;
+  --md-surface-container:         #e2e4e9;
+  --md-surface-container-high:    #dcdee4;
+  --md-surface-container-highest: #d5d8de;
 
   /* ── MD3 On-surface variant (muted body text) ─────────────────────────── */
   --md-color-on-surface-variant: color-mix(in srgb, var(--on-surface-color) 65%, transparent);
@@ -68,11 +68,11 @@
   --md-typescale-label-small:     500 10px/1.60 inherit;
 
   /* ── Core colour roles ────────────────────────────────────────────────── */
-  --background-color:       #f6f7f9;
+  --background-color:       #e4e6ec;
   --surface-color:          var(--md-surface-container-low);
   --surface-elevated-color: var(--md-surface-container-high);
   --on-surface-color:       #1d2025;
-  --primary-color:          #3b82f6;
+  --primary-color:          #2c3e50;
   --accent-color:           #3b82f6;
   --primary-text-color:     #1d2025;
   --secondary-text-color:   color-mix(in srgb, var(--on-surface-color) 70%, transparent);
@@ -81,8 +81,8 @@
   --text-primary-color:     var(--primary-text-color);
 
   /* ── Border helpers ───────────────────────────────────────────────────── */
-  --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 10%, transparent);
-  --border-strong-color: color-mix(in srgb, var(--on-surface-color) 22%, transparent);
+  --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 22%, transparent);
+  --border-strong-color: color-mix(in srgb, var(--on-surface-color) 35%, transparent);
   --divider-color:       var(--border-subtle-color);
 
   /* ── Semantic colours ─────────────────────────────────────────────────── */
@@ -121,9 +121,9 @@
 
 /* ─── Light-only overrides ────────────────────────────────────────────────── */
 :root:not([data-theme="dark"]) {
-  --surface-elevated-color: #ffffff;
-  --dialog-border-color:    rgba(0, 0, 0, 0.12);
-  --dockbar-shadow:         0 6px 18px rgba(0, 0, 0, 0.12);
+  --surface-elevated-color: #eceef2;
+  --dialog-border-color:    rgba(0, 0, 0, 0.10);
+  --dockbar-shadow:         0 6px 18px rgba(0, 0, 0, 0.08);
 }
 
 

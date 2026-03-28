@@ -159,14 +159,14 @@ export class FileNavigator extends HTMLElement {
         margin-top: 4px;
         margin-bottom: 2px;
         text-transform: uppercase;
-        font-size: 0.85rem;
+        font-size: 0.75rem;
         letter-spacing: 0.04em;
       }
 
       .directory-item {
         display: flex;
         align-items: center;
-        padding: 5px 0;
+        padding: 3px 0;
         position: relative;
         cursor: pointer;
       }
@@ -182,8 +182,8 @@ export class FileNavigator extends HTMLElement {
       }
 
       .directory-item iron-icon {
-        height: 24px;
-        width: 24px;
+        height: 18px;
+        width: 18px;
         --iron-icon-fill-color: var(--on-surface-color, var(--primary-text-color));
         flex-shrink: 0;
       }
@@ -194,6 +194,7 @@ export class FileNavigator extends HTMLElement {
         overflow: hidden;
         text-overflow: ellipsis;
         flex-grow: 1;
+        font-size: 0.8rem;
         color: var(--on-surface-color, var(--primary-text-color));
       }
 
@@ -203,9 +204,10 @@ export class FileNavigator extends HTMLElement {
       }
 
       .folder-icon {
-        margin-right: 5px;
-        width: 20px;
-        height: 20px;
+        margin-right: 4px;
+        width: 16px;
+        height: 16px;
+        --iron-icon-fill-color: #e2a652;
       }
 
       .directory-lnk {

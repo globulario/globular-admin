@@ -87,6 +87,10 @@ export class SearchVideoCard extends HTMLElement {
     if (this._domInitialized) return;
     this.shadowRoot.innerHTML = `
       <style>
+        :host {
+          --card-radius: 10px;
+        }
+
         .video-card {
           width: 200px;
           container-type: inline-size;
@@ -96,41 +100,47 @@ export class SearchVideoCard extends HTMLElement {
           color: var(--primary-text-color);
           position: relative;
           height: calc(100% - 2px);
-          border-radius: 8px;
-          border: 1px solid var(--palette-divider);
+          border-radius: var(--card-radius);
+          border: 1px solid color-mix(in srgb, var(--palette-divider, #444) 60%, transparent);
           overflow: hidden;
           display: flex;
           flex-direction: column;
-          justify-content: center;
           user-select: none;
-          box-shadow: var(--shadow-elevation-2dp);
-          transition: box-shadow 0.3s ease-in-out;
+          box-shadow: 0 1px 3px rgba(0,0,0,.25);
+          transition: box-shadow 0.25s ease, transform 0.25s ease;
         }
-        .video-card:hover { box-shadow: var(--shadow-elevation-6dp); }
+        .video-card:hover {
+          box-shadow: 0 4px 16px rgba(0,0,0,.4);
+          transform: translateY(-2px);
+        }
 
         .video-card video, .video-card img {
           width: 100%;
-          max-height: 180px;
-          object-fit: cover;
-          border-top-left-radius: 8px;
-          border-top-right-radius: 8px;
+          aspect-ratio: 16 / 9;
+          object-fit: contain;
+          border-radius: var(--card-radius) var(--card-radius) 0 0;
           display: block;
+          background: #000;
+          cursor: pointer;
         }
-        .video-card video:hover, .video-card img:hover { cursor: pointer; }
 
         .video-card p {
-          font-size: 1.1rem;
-          margin: 5px 10px;
+          font-size: .85rem;
+          font-weight: 500;
+          line-height: 1.3;
+          margin: 8px 10px 4px;
           overflow: hidden;
           white-space: nowrap;
           text-overflow: ellipsis;
+          color: var(--primary-text-color);
         }
 
         .rating-star {
           --iron-icon-fill-color: rgb(245, 197, 24);
-          padding: 10px;
-          height: 20px;
-          width: 20px;
+          padding: 0;
+          height: 16px;
+          width: 16px;
+          margin-right: 4px;
         }
 
         .title-rating-div {
@@ -138,24 +148,25 @@ export class SearchVideoCard extends HTMLElement {
           flex-grow: 1;
           align-items: center;
           color: var(--secondary-text-color);
-          font-size: 1rem;
+          font-size: .78rem;
+          gap: 2px;
         }
 
         #close-btn {
           z-index: 100;
           position: absolute;
-          top: 0px;
-          left: 0px;
-          background-color: rgba(0, 0, 0, 0.6);
+          top: 0;
+          left: 0;
+          background-color: rgba(0, 0, 0, 0.55);
           --paper-icon-button-ink-color: white;
           --iron-icon-fill-color: white;
-          border-bottom-right-radius: 8px;
-          border-top-left-radius: 8px;
+          border-bottom-right-radius: var(--card-radius);
+          border-top-left-radius: var(--card-radius);
           padding: 4px;
-          width: 30px;
-          height: 30px;
-          --iron-icon-width: 24px;
-          --iron-icon-height: 24px;
+          width: 28px;
+          height: 28px;
+          --iron-icon-width: 20px;
+          --iron-icon-height: 20px;
           transition: opacity 0.2s ease;
           opacity: 0;
         }
@@ -165,29 +176,34 @@ export class SearchVideoCard extends HTMLElement {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 5px 10px;
+          padding: 4px 10px 6px;
+          margin-top: auto;
         }
         .bottom-actions paper-icon-button {
           color: var(--video-card-action-color, var(--accent-color));
           --iron-icon-fill-color: var(--video-card-action-color, var(--accent-color));
+          padding: 4px;
+          width: 28px;
+          height: 28px;
         }
 
         @container videocard (max-width: 225px) {
-          .title-rating-div { font-size: .85rem; }
-          .video-card p { font-size: .95rem; }
-          .video-card img, .video-card video { max-height: 110px; }
+          .title-rating-div { font-size: .72rem; }
+          .video-card p { font-size: .8rem; }
+          .rating-star { height: 14px; width: 14px; }
           #close-btn {
-            padding: 3px; width: 25px; height: 25px;
-            --iron-icon-width: 20px; --iron-icon-height: 20px;
+            padding: 3px; width: 24px; height: 24px;
+            --iron-icon-width: 18px; --iron-icon-height: 18px;
           }
         }
         @container videocard (max-width: 150px) {
-          .title-rating-div { font-size: .75rem; }
-          .video-card p { font-size: .85rem; }
-          .video-card img, .video-card video { max-height: 60px; }
+          .title-rating-div { font-size: .65rem; }
+          .video-card p { font-size: .72rem; margin: 4px 6px 2px; }
+          .rating-star { height: 12px; width: 12px; }
+          .bottom-actions { padding: 2px 6px 4px; }
           #close-btn {
             padding: 2px; width: 20px; height: 20px;
-            --iron-icon-width: 16px; --iron-icon-height: 16px;
+            --iron-icon-width: 14px; --iron-icon-height: 14px;
           }
         }
       </style>

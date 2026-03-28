@@ -54,35 +54,39 @@ class MediaSettings extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         :host {
-          display: block;
+          display: flex;
+          flex-direction: column;
           color: var(--on-surface-color);
           font-size: 0.85rem;
+          flex: 1;
+          min-height: 0;
         }
 
         .card {
-          background:  var(--surface-elevated-color, var(--surface-color));
+          background: color-mix(in srgb, var(--surface-color) 92%, transparent);
           color: var(--on-surface-color);
-          border: 1px solid var(--palette-divider);
-          border-radius: 8px;
-          box-shadow: var(--globular-elevation-1, 0 1px 2px rgba(0,0,0,0.16));
+          border: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+          border-radius: 10px;
+          box-shadow: none;
           box-sizing: border-box;
-         
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
         }
 
         #header-row {
-
         }
 
         .card-header {
-
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 10px;
-          border-bottom: 1px solid var(--border-subtle-color);
-          background-color: var(--surface-color);
-          border-top-left-radius: 8px;
-          border-top-right-radius: 8px;
+          padding: 10px 12px;
+          border-bottom: 1px solid color-mix(in srgb, var(--border-subtle-color) 40%, transparent);
+          background: transparent;
+          border-top-left-radius: 10px;
+          border-top-right-radius: 10px;
         }
 
 
@@ -129,10 +133,10 @@ class MediaSettings extends HTMLElement {
         }
 
         .section {
-          border: 1px solid var(--palette-divider);
-          border-radius: 6px;
-          padding: 6px 8px;
-          margin: 6px 10px 6px 10px;
+          border: 1px solid color-mix(in srgb, var(--palette-divider) 30%, transparent);
+          border-radius: 8px;
+          padding: 8px 10px;
+          margin: 6px 10px;
         }
 
         .section-title {
@@ -180,16 +184,17 @@ class MediaSettings extends HTMLElement {
         input[type="text"],
         input[type="time"] {
           padding: 5px 8px;
-          border-radius: 4px;
-          border: 1px solid var(--palette-divider);
-          background: var(--surface-color);
+          border-radius: 6px;
+          border: 1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
+          background: transparent;
           color: var(--on-surface-color);
           font-size: 0.82rem;
           min-width: 180px;
         }
 
         input:focus {
-          outline: 1px solid var(--palette-primary-main);
+          outline: 1px solid var(--accent-color, #2196F3);
+          border-color: var(--accent-color, #2196F3);
         }
 
         input[type="checkbox"] {
@@ -251,9 +256,9 @@ class MediaSettings extends HTMLElement {
         .logs-list, .errors-list {
           max-height: 360px;
           overflow: auto;
-          border-radius: 4px;
-          border: 1px solid var(--palette-divider);
-          padding: 4px 5px;
+          border-radius: 0;
+          border: none;
+          padding: 4px 0;
           font-size: 0.74rem;
         }
 
@@ -262,12 +267,13 @@ class MediaSettings extends HTMLElement {
           grid-template-columns: minmax(70px, 100px) minmax(180px, 3fr) minmax(120px, 2fr) minmax(60px, 80px) minmax(120px, 2fr);
           gap: 4px;
           align-items: center;
-          padding: 2px 0;
-          border-bottom: 1px solid rgba(255,255,255,0.03);
+          padding: 3px 0;
+          border-bottom: none;
         }
 
-        .log-row:last-child, .error-row:last-child {
-          border-bottom: none;
+        .log-row:nth-child(odd), .error-row:nth-child(odd) {
+          background: color-mix(in srgb, var(--on-surface-color) 4%, transparent);
+          border-radius: 4px;
         }
 
         .log-path, .error-path, .log-msg, .error-msg {

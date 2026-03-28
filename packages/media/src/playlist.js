@@ -285,26 +285,26 @@ export class PlayList extends HTMLElement {
         overflow-y:auto;
         overflow-x:hidden;
         background-color:black;
-        width:fit-content;
-        height:100%;          /* ← important */
+        width:100%;
+        max-width:350px;
+        height:100%;
         scrollbar-width: thin;
         scrollbar-color: var(--scroll-thumb, rgba(120,120,120,0.7))
                          var(--scroll-track, rgba(0,0,0,0.05));
       }
 
       #items {
-        display:table;
-        border-collapse:separate;
+        display:flex;
+        flex-direction:column;
         flex-grow:1;
         padding-bottom:50px;
-        max-width:100vw;
+        width:100%;
+        min-width:0;
       }
 
       ::slotted(.playing) {
-        box-shadow: inset 5px 5px 15px 5px rgba(8, 16, 32, 0.95);
-        background: linear-gradient(90deg, rgba(255,255,255,0.1), rgba(255,255,255,0));
-        border-top: 1px solid rgba(255,255,255,0.28);
-        border-bottom: 1px solid rgba(255,255,255,0.08);
+        background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0)) !important;
+        border-left: 2px solid var(--accent-color, #2196F3) !important;
       }
 
       /* ... rest unchanged ... */
@@ -414,27 +414,97 @@ export class PlayListItem extends HTMLElement {
   _renderHTML() {
     this.shadowRoot.innerHTML = `
       <style>
-        #container img { height: 48px; }
-        .title { font-size: 1rem; color: white; max-width: 400px; }
-        :host-context(globular-playlist) { display: table; width: 100%; }
-        .cell { display: table-cell; vertical-align: middle; padding: 10px 5px; color: white; }
-        .cell img { border: 1px solid var(--palette-divider, #424242);  height: 48px; }
-        iron-icon:hover { cursor: pointer; }
+        :host {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          min-width: 0;
+          padding: 6px 8px;
+          box-sizing: border-box;
+          gap: 10px;
+          color: #ccc;
+          cursor: default;
+          border-bottom: 1px solid rgba(255,255,255,.06);
+          transition: background .15s;
+          overflow: hidden;
+        }
+        :host(:hover) { background: rgba(255,255,255,.06); }
+
+        .controls {
+          flex-shrink: 0;
+          width: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .controls iron-icon {
+          width: 20px;
+          height: 20px;
+          color: #fff;
+          cursor: pointer;
+        }
         #play-arrow, #pause { visibility: hidden; }
         :host(:hover) #play-arrow, :host(:hover) #pause { visibility: visible; }
+
+        .thumb {
+          flex-shrink: 0;
+          width: 48px;
+          height: 36px;
+          border-radius: 3px;
+          overflow: hidden;
+          background: #111;
+        }
+        .thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .info {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .title {
+          font-size: .82rem;
+          font-weight: 500;
+          color: #eee;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .meta {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: .72rem;
+          color: #888;
+        }
+        .artist {
+          flex: 1;
+          min-width: 0;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .duration {
+          flex-shrink: 0;
+          font-variant-numeric: tabular-nums;
+        }
       </style>
-      <div class="cell">
+      <div class="controls">
         <iron-icon id="play-arrow" title="Play" icon="av:play-arrow"></iron-icon>
         <iron-icon id="pause" title="Pause" style="display:none" icon="av:pause"></iron-icon>
       </div>
-      <div class="cell"><img id="title-image" /></div>
-      <div class="cell">
-        <div style="display:flex; flex-direction:column; padding:0 10px;">
-          <div id="title-div" class="title"></div>
-          <div style="font-size:.85rem; display:flex;">
-            <span id="title-artist-span" style="flex-grow:1; max-width:400px; min-width:160px;" class="author"></span>
-            <span id="title-duration-span"></span>
-          </div>
+      <div class="thumb"><img id="title-image" /></div>
+      <div class="info">
+        <div id="title-div" class="title"></div>
+        <div class="meta">
+          <span id="title-artist-span" class="artist"></span>
+          <span id="title-duration-span" class="duration"></span>
         </div>
       </div>
     `;

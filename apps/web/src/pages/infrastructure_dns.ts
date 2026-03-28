@@ -735,10 +735,11 @@ class PageInfrastructureDns extends HTMLElement {
         <div class="ext-form-grid">
           <label>Type
             <select id="extPType" class="dns-select">
+              <option value="local" ${!p || p?.type === 'local' ? 'selected' : ''}>Local (built-in DNS)</option>
               <option value="cloudflare" ${p?.type === 'cloudflare' ? 'selected' : ''}>Cloudflare</option>
               <option value="godaddy" ${p?.type === 'godaddy' ? 'selected' : ''}>GoDaddy</option>
               <option value="route53" ${p?.type === 'route53' ? 'selected' : ''}>Route53</option>
-              <option value="manual" ${p?.type === 'manual' ? 'selected' : ''}>Manual</option>
+              <option value="manual" ${p?.type === 'manual' ? 'selected' : ''}>Manual (print instructions)</option>
             </select>
           </label>
           <label>Zone <input id="extPZone" class="dns-input" value="${esc(p?.zone ?? '')}" placeholder="example.com"></label>
@@ -798,9 +799,20 @@ class PageInfrastructureDns extends HTMLElement {
   private renderDomainForm(container: HTMLElement) {
     if (!container || !this._showDomainForm) return
     const d = this._editingDomain
+    const hasProviders = this._providers.length > 0
     const providerOptions = this._providers.map(p => {
       return `<option value="${esc(p.name ?? '')}" ${d?.provider_ref === p.name ? 'selected' : ''}>${esc(p.name ?? '')} (${esc(p.zone)})</option>`
     }).join('')
+
+    // When no providers exist, default to local (built-in DNS)
+    const providerField = hasProviders
+      ? `<label>Provider
+          <select id="extDProv" class="dns-select">${providerOptions}</select>
+        </label>`
+      : `<label>Provider
+          <span class="dns-input" style="display:inline-block;background:var(--surface-container);color:var(--secondary-text-color);cursor:default">local (built-in DNS)</span>
+          <input type="hidden" id="extDProv" value="local">
+        </label>`
 
     container.innerHTML = `
       <div class="ext-form">
@@ -810,9 +822,7 @@ class PageInfrastructureDns extends HTMLElement {
           <label>Zone <input id="extDZone" class="dns-input" value="${esc(d?.zone ?? '')}" placeholder="example.com"></label>
           <label>Node ID <input id="extDNode" class="dns-input" value="${esc(d?.node_id ?? '')}" placeholder="node-0"></label>
           <label>Target IP <input id="extDIP" class="dns-input" value="${esc(d?.target_ip ?? 'auto')}" placeholder="auto or IP"></label>
-          <label>Provider
-            <select id="extDProv" class="dns-select">${providerOptions}</select>
-          </label>
+          ${providerField}
           <label>TTL <input id="extDTTL" type="number" class="dns-input" value="${d?.ttl ?? 600}" placeholder="600"></label>
         </div>
         <div class="ext-form-row">
@@ -851,7 +861,7 @@ class PageInfrastructureDns extends HTMLElement {
         zone: (container.querySelector('#extDZone') as HTMLInputElement).value.trim(),
         node_id: (container.querySelector('#extDNode') as HTMLInputElement).value.trim(),
         target_ip: (container.querySelector('#extDIP') as HTMLInputElement).value.trim() || 'auto',
-        provider_ref: (container.querySelector('#extDProv') as HTMLSelectElement).value,
+        provider_ref: (container.querySelector('#extDProv') as HTMLSelectElement | HTMLInputElement).value,
         publish_external: (container.querySelector('#extDPub') as HTMLInputElement).checked,
         use_wildcard_cert: (container.querySelector('#extDWild') as HTMLInputElement).checked,
         ttl: parseInt((container.querySelector('#extDTTL') as HTMLInputElement).value, 10) || 600,
@@ -861,9 +871,36 @@ class PageInfrastructureDns extends HTMLElement {
           ca_url: '',
           challenge_type: (container.querySelector('#extDAcmeChal') as HTMLSelectElement).value,
         },
-        ingress: d?.ingress ?? { gateway_port_http: 80, gateway_port_https: 443 },
+        ingress: d?.ingress ?? { enabled: true, service: 'gateway', port: 443, gateway_port_http: 80, gateway_port_https: 443 },
       }
       try {
+        // Ensure a local provider exists and provider_ref uses the server-derived name.
+        // Server names providers as "{type}-{zone with dots as hyphens}".
+        const derivedLocalName = 'local-' + spec.zone.replace(/\./g, '-')
+        if (spec.provider_ref === 'local' || spec.provider_ref === derivedLocalName) {
+          if (!this._providers.some(p => p.name === derivedLocalName)) {
+            await saveProvider({
+              type: 'local',
+              zone: spec.zone,
+              credentials: {},
+              default_ttl: spec.ttl || 600,
+            })
+          }
+          spec.provider_ref = derivedLocalName
+        }
+        // Also handle legacy "manual" provider_ref from earlier saves
+        const derivedManualName = 'manual-' + spec.zone.replace(/\./g, '-')
+        if (spec.provider_ref === 'manual' || spec.provider_ref === derivedManualName) {
+          if (!this._providers.some(p => p.name === derivedLocalName)) {
+            await saveProvider({
+              type: 'local',
+              zone: spec.zone,
+              credentials: {},
+              default_ttl: spec.ttl || 600,
+            })
+          }
+          spec.provider_ref = derivedLocalName
+        }
         await saveDomainSpec(spec)
         this._showDomainForm = false
         this._editingDomain = null
@@ -904,6 +941,7 @@ function providerColor(type: string): string {
     case 'cloudflare': return '#f38020'
     case 'godaddy':    return '#1bdbdb'
     case 'route53':    return '#ff9900'
+    case 'local':      return '#3b82f6'
     case 'manual':     return '#64748b'
     default:           return 'var(--secondary-text-color)'
   }
@@ -922,6 +960,9 @@ function providerCredFields(type: string): Array<{ key: string; label: string; p
       { key: 'aws_access_key_id', label: 'AWS Access Key ID', placeholder: 'AKIA...', secret: false },
       { key: 'aws_secret_access_key', label: 'AWS Secret Access Key', placeholder: 'Secret', secret: true },
       { key: 'aws_region', label: 'AWS Region', placeholder: 'us-east-1', secret: false },
+    ]
+    case 'local': return [
+      { key: 'address', label: 'DNS Service Address', placeholder: 'localhost:10006 (default)', secret: false },
     ]
     case 'manual': return []
     default: return []

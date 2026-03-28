@@ -222,18 +222,22 @@ export class SearchResultsPageContextsSelector extends HTMLElement {
         // Innitialisation of the layout.
         this.shadowRoot.innerHTML = `
                 <style>
-                   
-                    #container{
+                    #container {
                         display: flex;
                         margin: 5px;
                         margin-left: 10px;
+                        gap: 16px;
                     }
 
-                    #container div{
-                        margin-right: 15px;
+                    #container div {
+                        display: flex;
                         align-items: center;
+                        gap: 6px;
                     }
 
+                    #container div span {
+                        font-size: .85rem;
+                    }
                 </style>
                 <div id="container">
                 </div>
@@ -260,8 +264,8 @@ export class SearchResultsPageContextsSelector extends HTMLElement {
             let html = `
                 <div id="${context}_div" style="display: none;">
                     <paper-checkbox checked id="${context}_checkbox"></paper-checkbox>
-                    <span >${context}</span>
-                    <span id="${context}_total" style="font-size: 1rem;margin-left: 5px;"></span>
+                    <span>${context}</span>
+                    <span id="${context}_total"></span>
                 </div>
             `
             let range = document.createRange()
@@ -388,16 +392,43 @@ export class SearchResultsPage extends HTMLElement {
                 }
 
                 #facets {
-                    margin-right: 15px;
-                    min-width: 225px;
-                    max-width: 250px;
-                    flex-shrink: 0;
-                    position: sticky;
+                    position: fixed;
                     top: 0;
-                    align-self: flex-start;
-                    max-height: 100vh;
+                    left: 0;
+                    bottom: 0;
+                    width: 260px;
+                    max-width: 80vw;
+                    background: var(--surface-color);
+                    z-index: 9000;
                     overflow-y: auto;
+                    padding: 12px 8px;
+                    box-sizing: border-box;
+                    transform: translateX(-100%);
+                    transition: transform .25s ease, box-shadow .25s ease;
+                    scrollbar-width: thin;
+                    scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+                                     var(--scroll-track, var(--surface-color));
                 }
+                #facets.open {
+                    transform: translateX(0);
+                    box-shadow: 4px 0 24px rgba(0,0,0,.5);
+                }
+                #facets-backdrop {
+                    display: none;
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(0,0,0,.4);
+                    z-index: 8999;
+                }
+                #facets-backdrop.open {
+                    display: block;
+                }
+                #filter-toggle-btn {
+                    --iron-icon-fill-color: var(--secondary-text-color);
+                    opacity: .7;
+                    transition: opacity .2s;
+                }
+                #filter-toggle-btn:hover { opacity: 1; }
 
                 #content {
                     display: flex;
@@ -439,44 +470,52 @@ export class SearchResultsPage extends HTMLElement {
                 #mosaic-view {
                     display: flex;
                     flex-direction: column;
-                    gap: 25px;
-                    padding: 10px;
+                    gap: 30px;
+                    padding: 12px 14px;
                 }
                 .mosaic-section {
-                    display: none; /* Hidden until content exists */
-                    padding: 10px 0 5px;
+                    display: none;
+                    padding: 0;
                 }
                 .mosaic-section-header {
-                    font-size: 1.05rem;
+                    font-size: .78rem;
                     font-weight: 600;
-                    padding-bottom: 6px;
-                    margin-bottom: 12px;
-                    border-bottom: 1px solid var(--palette-divider);
-                    color: var(--primary-text-color);
+                    text-transform: uppercase;
+                    letter-spacing: .08em;
+                    padding-bottom: 8px;
+                    margin-bottom: 14px;
+                    border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+                    color: var(--secondary-text-color);
                     display: flex;
                     align-items: center;
-                    justify-content: space-between;
-                    gap: 8px;
+                    justify-content: flex-start;
+                    gap: 4px;
                 }
                 .mosaic-section-header paper-icon-button {
-                    --iron-icon-fill-color: var(--on-surface-color);
-                    color: var(--on-surface-color);
-                    width: 36px;
-                    height: 36px;
-                    padding: 4px;
+                    --iron-icon-fill-color: var(--secondary-text-color);
+                    color: var(--secondary-text-color);
+                    width: 22px;
+                    height: 22px;
+                    padding: 2px;
+                    opacity: .5;
+                    transition: opacity .2s;
+                }
+                .mosaic-section-header paper-icon-button:hover {
+                    opacity: 1;
+                    --iron-icon-fill-color: var(--accent-color, #2196F3);
+                    color: var(--accent-color, #2196F3);
                 }
                 .mosaic-section-content {
                     display: flex;
                     flex-wrap: wrap;
-                    gap: 15px;
+                    gap: 16px;
                     justify-content: flex-start;
                 }
                 #list-view {
                     display: flex;
-                    flex-direction: column; /* Stack list items vertically */
-                    align-items: center; /* Center list items */
-                    gap: 15px;
-                    padding: 10px;
+                    flex-direction: column;
+                    gap: 8px;
+                    padding: 8px 0;
                 }
 
                 #webpage-search-results {
@@ -562,14 +601,14 @@ export class SearchResultsPage extends HTMLElement {
 
                 @media (max-width: 600px) {
                     #container { flex-direction: column; padding: 5px; }
-                    #facets { margin-right: 0; max-height: 200px; overflow-y: auto; border-bottom: 1px solid var(--palette-divider); }
                     #content { margin-left: 0px; }
                     .header { flex-direction: column; align-items: flex-start; gap: 5px; }
                     .header > div { width: 100%; justify-content: space-between; }
                     #summary-actions { margin-left: 0; width: 100%; justify-content: flex-end; }
-                    #results { padding-bottom: 100px; } /* Space for fixed action bar */
+                    #results { padding-bottom: 100px; }
                 }
             </style>
+            <div id="facets-backdrop"></div>
             <div id="container">
                 <div id="facets">
                     <slot name="facets"></slot>
@@ -577,6 +616,7 @@ export class SearchResultsPage extends HTMLElement {
                 <div id="content">
                     <div class="header">
                         <div style="display: flex; flex-wrap: wrap; flex-grow: 1; align-items: center; gap: 10px;">
+                            <paper-icon-button id="filter-toggle-btn" icon="icons:filter-list" title="Toggle Filters"></paper-icon-button>
                             <globular-search-results-page-contexts-selector></globular-search-results-page-contexts-selector>
                             <globular-search-results-pages-navigator></globular-search-results-pages-navigator>
                         </div>
@@ -665,7 +705,17 @@ export class SearchResultsPage extends HTMLElement {
         this._webpageSearchResultsHeader = this.shadowRoot.querySelector("#webpage-search-results-header");
         this._resultsActionsDiv = this.shadowRoot.querySelector("#results-actions"); // The sticky pagination bar
 
-        this._facetsPanel = this.shadowRoot.querySelector("#facets"); // The container for facets
+        this._facetsPanel = this.shadowRoot.querySelector("#facets");
+        this._facetsBackdrop = this.shadowRoot.querySelector("#facets-backdrop");
+        this._filterToggleBtn = this.shadowRoot.querySelector("#filter-toggle-btn");
+
+        // Filter drawer toggle
+        if (this._filterToggleBtn) {
+            this._filterToggleBtn.addEventListener('click', () => this._toggleFacetsDrawer());
+        }
+        if (this._facetsBackdrop) {
+            this._facetsBackdrop.addEventListener('click', () => this._closeFacetsDrawer());
+        }
 
         this.shadowRoot.querySelectorAll('slot[name^="mosaic_"]').forEach(slot => {
             slot.addEventListener('slotchange', this._mosaicSlotChangeHandler);
@@ -692,6 +742,21 @@ export class SearchResultsPage extends HTMLElement {
 
         // Event listener for webpage search result clicks
         document.addEventListener("webpage-search-result-clicked", this._handleWebpageSearchResultClicked.bind(this));
+    }
+
+    _toggleFacetsDrawer() {
+        const isOpen = this._facetsPanel?.classList.contains('open');
+        if (isOpen) {
+            this._closeFacetsDrawer();
+        } else {
+            this._facetsPanel?.classList.add('open');
+            this._facetsBackdrop?.classList.add('open');
+        }
+    }
+
+    _closeFacetsDrawer() {
+        this._facetsPanel?.classList.remove('open');
+        this._facetsBackdrop?.classList.remove('open');
     }
 
     /**
@@ -1545,36 +1610,68 @@ export class SearchResultsPage extends HTMLElement {
                 .hit-div {
                     display: flex;
                     flex-direction: column;
-                    padding: 10px;
-                    border: 1px solid var(--palette-divider);
-                    border-radius: 8px;
-                    margin-bottom: 15px;
-                    background-color: var(--surface-color);
-                    box-shadow: var(--shadow-elevation-2dp);
-                    width: 100%; /* Take full width of parent list slot */
+                    padding: 10px 14px;
+                    border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+                    width: 100%;
                     box-sizing: border-box;
+                    transition: background .15s;
+                }
+                .hit-div:hover {
+                    background: color-mix(in srgb, var(--on-surface-color) 4%, transparent);
                 }
                 .hit-header-div {
                     display: flex;
                     align-items: center;
-                    font-size: 1.1rem;
-                    font-weight: 500;
-                    border-bottom: 1px solid var(--palette-divider-light);
-                    padding-bottom: 8px;
-                    margin-bottom: 8px;
+                    gap: 8px;
+                    font-size: .88rem;
+                    font-weight: 600;
                 }
-                .hit-index-div { margin-right: 10px; color: var(--secondary-text-color); }
-                .hit-title-name-div { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .hit-score-div { margin-left: 10px; color: var(--secondary-text-color); }
+                .hit-index-div {
+                    color: var(--secondary-text-color);
+                    font-size: .75rem;
+                    font-weight: 500;
+                    min-width: 24px;
+                }
+                .hit-title-name-div {
+                    flex-grow: 1;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .hit-score-div {
+                    color: var(--secondary-text-color);
+                    font-size: .72rem;
+                    opacity: .6;
+                    font-variant-numeric: tabular-nums;
+                }
 
                 .snippets-div {
-                    display: flex; flex-direction: column; padding: 10px 0;
+                    display: flex;
+                    flex-direction: column;
+                    padding: 4px 0 4px 32px;
+                    gap: 4px;
                 }
-                .snippet-field { font-weight: bold; margin-bottom: 5px; color: var(--accent-color); }
-                .snippet-fragments div { padding-bottom: 5px; line-height: 1.4; }
+                .snippet-field {
+                    font-weight: 600;
+                    font-size: .72rem;
+                    text-transform: uppercase;
+                    letter-spacing: .04em;
+                    color: var(--secondary-text-color);
+                    margin-bottom: 2px;
+                }
+                .snippet-fragments div {
+                    font-size: .82rem;
+                    line-height: 1.4;
+                    color: var(--primary-text-color);
+                }
+                .snippet-fragments em {
+                    color: var(--accent-color);
+                    font-style: normal;
+                    font-weight: 600;
+                }
 
                 .title-info-wrapper {
-                    padding-top: 10px; border-top: 1px solid var(--palette-divider-light); margin-top: 10px;
+                    padding: 8px 0 4px 32px;
                 }
             </style>
             <div class="hit-header-div">
@@ -1603,11 +1700,56 @@ export class SearchResultsPage extends HTMLElement {
             snippetDiv.appendChild(snippetBlock);
         });
 
-        // Append InformationsManager
+        // Append InformationsManager in compact/list mode
         const titleInfoWrapper = hitDiv.querySelector(`.title-info-wrapper`);
         if (titleInfoWrapper && infoDisplay) {
-            infoDisplay.hideHeader(); // Hide header if integrated directly
+            infoDisplay.hideHeader();
+            infoDisplay.setAttribute('short', 'true');
+            infoDisplay.setAttribute('hide-genres', 'true');
             titleInfoWrapper.appendChild(infoDisplay);
+
+            // Hide action buttons/files, add play button
+            const patchListItem = () => {
+                const child = infoDisplay.querySelector('globular-video-info, globular-title-info, globular-audio-info');
+                if (!child?.shadowRoot) return false;
+
+                const actionDiv = child.shadowRoot.querySelector('.action-div');
+                if (actionDiv) {
+                    actionDiv.innerHTML = '';
+                    actionDiv.style.borderTop = 'none';
+                    actionDiv.style.padding = '4px 0';
+                    actionDiv.style.justifyContent = 'flex-start';
+
+                    const playBtn = document.createElement('paper-icon-button');
+                    playBtn.setAttribute('icon', 'av:play-circle-outline');
+                    playBtn.setAttribute('title', 'Play');
+                    playBtn.style.cssText = 'color:var(--accent-color,#2196F3);--iron-icon-width:40px;--iron-icon-height:40px;width:48px;height:48px;padding:4px;';
+                    playBtn.addEventListener('click', async () => {
+                        const media = child.video || child._video || child.title || child._title;
+                        if (!media) return;
+                        const id = media.getId?.();
+                        if (!id) return;
+                        try {
+                            const { getTitleFiles } = await import('@globular/sdk');
+                            const { playVideo } = await import('../video.js');
+                            const idx = child.video || child._video ? '/search/videos' : '/search/titles';
+                            const files = await getTitleFiles(id, idx);
+                            if (files?.length > 0) playVideo(files[0], null, null, media);
+                        } catch (err) {
+                            console.warn('List play failed:', err);
+                        }
+                    });
+                    actionDiv.appendChild(playBtn);
+                }
+
+                const filesDiv = child.shadowRoot.querySelector('.title-files-div');
+                if (filesDiv) filesDiv.style.display = 'none';
+
+                return true;
+            };
+            if (!patchListItem()) {
+                requestAnimationFrame(() => { if (!patchListItem()) setTimeout(patchListItem, 150); });
+            }
         }
 
         // Add filterable classes (same logic as _displayMosaicHit)

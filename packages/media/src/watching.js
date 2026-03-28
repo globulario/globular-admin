@@ -201,20 +201,26 @@ export class MediaWatching extends HTMLElement {
                 display: flex;
                 align-items: center;
                 gap: 8px;
-                padding: 4px 0;
+                padding: 4px 0 8px;
             }
 
             #header-row h1 {
                 flex: 1;
                 margin: 0;
-                font-size: 1.25rem;
+                font-size: 1.1rem;
                 font-weight: 600;
                 color: var(--on-surface-color);
+                letter-spacing: -.01em;
             }
 
             #header-row paper-icon-button {
-                color: var(--on-surface-color);
+                color: var(--secondary-text-color);
+                opacity: .5;
+                transition: opacity .2s;
+                width: 28px;
+                height: 28px;
             }
+            #header-row paper-icon-button:hover { opacity: 1; }
 
             .sections-wrapper {
                 display: flex;
@@ -223,23 +229,23 @@ export class MediaWatching extends HTMLElement {
             }
 
             .section-header {
-                padding: 12px 0 0;
-                border-top: 1px solid color-mix(in srgb, var(--border-subtle-color) 60%, transparent);
+                padding: 8px 0 0;
+                border-top: 1px solid color-mix(in srgb, var(--border-subtle-color) 30%, transparent);
             }
 
             .section-header h2 {
-                margin: 0 0 16px;
-                font-size: 1rem;
+                margin: 0 0 14px;
+                font-size: .75rem;
                 font-weight: 600;
-                color: color-mix(in srgb, var(--on-surface-color) 90%, transparent);
-                letter-spacing: 0.04em;
+                color: var(--secondary-text-color);
+                letter-spacing: 0.06em;
                 text-transform: uppercase;
             }
 
             .media-cards {
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-                gap: 20px;
+                grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+                gap: 16px;
             }
 
             .empty-message {
@@ -903,23 +909,29 @@ export class MediaWatchingCard extends HTMLElement {
             #container {
                 display: flex;
                 flex-direction: column;
-                padding: 12px;
-                border-radius: 16px;
+                padding: 10px;
+                border-radius: 12px;
                 background-color: color-mix(in srgb, var(--surface-color) 95%, transparent);
                 color: var(--on-surface-color);
-                border: 1px solid color-mix(in srgb, var(--border-subtle-color) 40%, transparent);
-                gap: 10px;
+                border: 1px solid color-mix(in srgb, var(--border-subtle-color) 30%, transparent);
+                gap: 8px;
                 height: 100%;
                 box-sizing: border-box;
                 max-width: 300px;
+                transition: box-shadow .25s ease, transform .25s ease;
+            }
+            #container:hover {
+                box-shadow: 0 4px 16px rgba(0,0,0,.3);
+                transform: translateY(-2px);
             }
 
             #header-line {
                 display: flex;
                 align-items: center;
-                gap: 12px;
-                font-size: 0.8rem;
+                gap: 8px;
+                font-size: 0.72rem;
                 color: var(--secondary-text-color, var(--palette-text-secondary));
+                opacity: .7;
             }
 
             #title-date {
@@ -928,19 +940,32 @@ export class MediaWatchingCard extends HTMLElement {
                 user-select: none;
             }
 
+            #close-card-btn {
+                width: 20px;
+                height: 20px;
+                padding: 2px;
+                --iron-icon-width: 14px;
+                --iron-icon-height: 14px;
+                color: var(--secondary-text-color);
+                opacity: 0;
+                transition: opacity .2s;
+            }
+            #container:hover #close-card-btn { opacity: .5; }
+            #close-card-btn:hover { opacity: 1 !important; }
+
             #thumb-wrapper {
                 width: 100%;
                 border-radius: 10px;
                 overflow: hidden;
                 background-color: color-mix(in srgb, var(--on-surface-color) 6%, transparent);
                 position: relative;
-                min-height: 180px;
+                height: 160px;
             }
 
             #thumbnail,
             #preview {
                 width: 100%;
-                height: 180px;
+                height: 100%;
                 object-fit: cover;
                 display: block;
             }
@@ -948,6 +973,10 @@ export class MediaWatchingCard extends HTMLElement {
             #preview {
                 position: absolute;
                 inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                background: #000;
                 opacity: 0;
                 transition: opacity 0.18s ease;
                 pointer-events: none;
@@ -993,7 +1022,7 @@ export class MediaWatchingCard extends HTMLElement {
 
             #title-text {
                 flex: 1;
-                font-size: 0.95rem;
+                font-size: 0.84rem;
                 font-weight: 600;
                 line-height: 1.3;
                 overflow: hidden;
@@ -1004,20 +1033,21 @@ export class MediaWatchingCard extends HTMLElement {
             #buttons-row {
                 display: flex;
                 align-items: center;
-                gap: 4px;
+                gap: 2px;
                 flex-shrink: 0;
             }
 
             #meta-text {
-                font-size: 0.8rem;
+                font-size: 0.72rem;
                 color: var(--secondary-text-color, var(--palette-text-secondary));
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
+                opacity: .8;
             }
 
             #series-name {
-                font-size: 0.75rem;
+                font-size: 0.7rem;
                 color: var(--secondary-text-color, var(--palette-text-secondary));
                 font-weight: 500;
                 overflow: hidden;
@@ -1027,9 +1057,15 @@ export class MediaWatchingCard extends HTMLElement {
 
             #buttons-row paper-icon-button {
                 color: var(--on-surface-color);
-                --iron-icon-width: 20px;
-                --iron-icon-height: 20px;
+                --iron-icon-width: 18px;
+                --iron-icon-height: 18px;
+                width: 28px;
+                height: 28px;
+                padding: 4px;
+                opacity: .6;
+                transition: opacity .2s;
             }
+            #buttons-row paper-icon-button:hover { opacity: 1; }
 
             #play-btn,
             #info-btn {
@@ -1042,19 +1078,21 @@ export class MediaWatchingCard extends HTMLElement {
 
             paper-progress {
                 width: 100%;
-                --paper-progress-active-color: color-mix(in srgb, var(--palette-primary) 70%, var(--palette-secondary));
-                --paper-progress-secondary-color: color-mix(in srgb, var(--palette-primary) 40%, transparent);
-                --paper-progress-container-color: color-mix(in srgb, var(--on-surface-color) 18%, transparent);
-                --paper-progress-height: 4px;
-                margin-top: 6px;
+                --paper-progress-active-color: var(--accent-color, #2196F3);
+                --paper-progress-secondary-color: color-mix(in srgb, var(--accent-color, #2196F3) 30%, transparent);
+                --paper-progress-container-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+                --paper-progress-height: 3px;
+                margin-top: 4px;
+                border-radius: 2px;
             }
 
             #progress-label {
-                font-size: 0.75rem;
-                letter-spacing: 0.08em;
-                color: color-mix(in srgb, var(--secondary-text-color) 90%, transparent);
+                font-size: 0.68rem;
+                letter-spacing: 0.06em;
+                color: var(--secondary-text-color);
+                opacity: .7;
                 text-transform: uppercase;
-                margin-top: 4px;
+                margin-top: 2px;
             }
         </style>
 
@@ -1165,17 +1203,13 @@ export class MediaWatchingCard extends HTMLElement {
   _handlePlayClick = async () => {
     if (!this._mediaObject && !this.titleData) return;
 
-    const id =
-      (this._mediaObject && this._mediaObject.getId && this._mediaObject.getId()) ||
-      this.titleData._id ||
-      this.titleData.titleId;
-
-    const indexPath = this._indexPath || INDEX_VIDEOS;
+    const entryType = (this.titleData?.entryType || this.titleData?.mediaType || "video").toLowerCase();
 
     try {
-      const filePaths = await getTitleFiles(id, indexPath);
+      const filePaths = await this._getFilePaths(entryType);
       if (Array.isArray(filePaths) && filePaths.length > 0) {
         const mainVideoPath = filePaths[0];
+        const indexPath = this._indexPath || INDEX_VIDEOS;
         await playVideo(
           mainVideoPath,
           (playerInstance) => playTitleListener(playerInstance, this._mediaObject || this.titleData, indexPath),
@@ -1183,7 +1217,7 @@ export class MediaWatchingCard extends HTMLElement {
           this._mediaObject || this.titleData
         );
       } else {
-        displayMessage(`No main video file found for "${this.titleTextEl?.textContent || id}".`, 3000);
+        displayMessage(`No main video file found for "${this.titleTextEl?.textContent || "video"}".`, 3000);
       }
     } catch (err) {
       displayError(`Failed to get main video file: ${err?.message || err}`, 3000);

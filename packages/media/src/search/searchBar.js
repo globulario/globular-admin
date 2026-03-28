@@ -52,17 +52,17 @@ export class SearchBar extends HTMLElement {
           border: none;
           margin-right: 11px;
           background: transparent;
-          color: var(--on-surface-color, var(--primary-text-color));
-          -webkit-text-fill-color: var(--on-surface-color, var(--primary-text-color));
-          caret-color: var(--on-surface-color, var(--primary-text-color));
+          color: #fff;
+          -webkit-text-fill-color: #fff;
+          caret-color: #fff;
           box-sizing: border-box;
           font-size: 1.2rem;
         }
-        ::placeholder { color: color-mix(in srgb, var(--primary-text-color) 60%, transparent); opacity: 1; }
+        ::placeholder { color: rgba(255,255,255,.6); opacity: 1; }
         iron-icon {
           padding-left: 11px;
           padding-right: 11px;
-          --iron-icon-fill-color: var(--palette-text-accent);
+          --iron-icon-fill-color: rgba(255,255,255,.7);
         }
         input:focus { outline: none; }
 
@@ -80,13 +80,10 @@ export class SearchBar extends HTMLElement {
         #context-search-selector {
           display: none;
           flex-direction: column;
-          position: absolute;
-          top: 55px;
-          right: 0px;
-          left: 0px;
+          position: fixed;
           border-radius: 8px;
           background-color: var(--surface-color);
-          z-index: 1000;
+          z-index: 10000;
           color: var(--on-surface-color);
           min-width: 340px;
           box-shadow: var(--shadow-elevation-8dp);
@@ -102,9 +99,9 @@ export class SearchBar extends HTMLElement {
           box-sizing: border-box;
           font-size: 16px;
           height: var(--searchbox-height);
-          background: transparent;
-          color: var(--palette-text-accent);
-          border: 1px solid var(--palette-divider);
+          background: rgba(0,0,0,.25);
+          color: #fff;
+          border: 1px solid rgba(255,255,255,.15);
           position: relative;
           transition: box-shadow 0.2s ease, background-color 0.2s ease;
         }
@@ -125,10 +122,9 @@ export class SearchBar extends HTMLElement {
 
         @media (max-width: 500px) {
           #context-search-selector {
-            position: fixed;
-            left: 5px;
-            top: 75px;
-            right: 5px;
+            left: 5px !important;
+            right: 5px !important;
+            min-width: unset;
           }
         }
 
@@ -261,6 +257,8 @@ export class SearchBar extends HTMLElement {
     if (this._contextSearchSelector?.style.display !== "flex") {
       this._resetVisualStyles();
     }
+    // Notify the app that search lost focus (for route switching)
+    this.dispatchEvent(new CustomEvent('search-blur', { bubbles: true, composed: true }));
   }
 
   _handleSearchInputKeydown(evt) {
@@ -277,6 +275,9 @@ export class SearchBar extends HTMLElement {
     if (this._contextSearchSelector) this._contextSearchSelector.style.display = "none";
 
     Backend.eventHub.publish("_display_search_results_", { id: this.id }, true);
+
+    // Notify the app that search is active (for route switching)
+    this.dispatchEvent(new CustomEvent('search-focus', { bubbles: true, composed: true }));
 
     document.querySelectorAll(".highlighted").forEach((el) => {
       if (typeof el.lowlight === "function") el.lowlight();
@@ -318,6 +319,11 @@ export class SearchBar extends HTMLElement {
   _handleChangeSearchContextClick() {
     if (!this._contextSearchSelector) return;
     if (this._contextSearchSelector.style.display !== "flex") {
+      // Position below the search bar
+      const rect = this._searchBarDiv.getBoundingClientRect();
+      this._contextSearchSelector.style.top = `${rect.bottom + 4}px`;
+      this._contextSearchSelector.style.right = `${window.innerWidth - rect.right}px`;
+      this._contextSearchSelector.style.left = 'auto';
       this._contextSearchSelector.style.display = "flex";
     } else {
       this._contextSearchSelector.style.display = "none";

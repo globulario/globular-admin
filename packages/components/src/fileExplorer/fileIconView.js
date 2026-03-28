@@ -168,8 +168,8 @@ export class FileIconView extends HTMLElement {
         color: var(--on-surface-color);
 
         /* width is fixed; height adapts to icon + name */
-        width: var(--file-icon-width, 110px);
-        min-width: var(--file-icon-width, 110px);
+        width: var(--file-icon-width, 125px);
+        min-width: var(--file-icon-width, 125px);
         height: auto;
 
         justify-content: flex-start;
@@ -198,6 +198,11 @@ export class FileIconView extends HTMLElement {
       .icon-display iron-icon {
         height: var(--file-icon-thumb-size, 48px);
         width: var(--file-icon-thumb-size, 48px);
+      }
+      /* Warm amber tint for folder icons */
+      :host([data-kind="directory"]) .icon-display iron-icon {
+        fill: #e2a652;
+        --iron-icon-fill-color: #e2a652;
       }
       .icon-display img {
         display: block;
@@ -410,6 +415,8 @@ export class FileIconView extends HTMLElement {
     this._setShortcutBadge(isShortcut);
 
     const isDir = isDirVM(displayFile);
+    if (isDir) this.setAttribute("data-kind", "directory");
+    else this.removeAttribute("data-kind");
     const playlistPath = playlistPathFor(displayFile);
     const isHlsDir = isDir && playlistPath && hasPlaylistManifest(displayFile);
 

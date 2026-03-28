@@ -201,15 +201,23 @@ export class Dialog extends HTMLElement {
         }
 
         .dialog_title {
-          width: 100%;
+          flex: 1;
+          min-width: 0;
           height: 40px;
-          padding: 1px;
-          text-align: center;
-          flex-grow: 1;
+          padding: 0 8px;
           display: flex;
           align-items: center;
           justify-content: center;
           overflow: hidden;
+        }
+        .dialog_title ::slotted(*) {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          font-size: .88rem;
+          flex: 1;
+          min-width: 0;
+          text-align: center;
         }
 
         .unselectable{ -webkit-touch-callout:none; -webkit-user-select:none; -khtml-user-select:none;
@@ -233,8 +241,8 @@ export class Dialog extends HTMLElement {
 
         .dialog_buttons { display: flex; flex-direction: row; justify-content: flex-end; width: 100%; }
 
-        .dialog_icon { display: flex; justify-content: center; align-items: center; padding-left: 8px; width: 40px; height: 40px; z-index: 10; }
-        .dialog_icon img { width: 32px; height: 32px; }
+        .dialog_icon { display: flex; justify-content: center; align-items: center; padding-left: 8px; width: 28px; height: 28px; z-index: 10; }
+        .dialog_icon img, .dialog_icon ::slotted(img) { width: 20px; height: 20px; object-fit: contain; }
 
         .dialog_header {
             background-color: var(--primary-light-color);
@@ -247,7 +255,7 @@ export class Dialog extends HTMLElement {
             box-shadow: 0 1px 0 rgba(0,0,0,0.12);
         }
 
-        .dialog_header_buttons { display: flex; flex-direction: row; justify-content: flex-end; align-items: center; flex-grow: 1; }
+        .dialog_header_buttons { display: flex; flex-direction: row; justify-content: flex-end; align-items: center; flex-shrink: 0; }
 
         /* Default: maximize within parent container (e.g., #app which is position:relative) */
         .dialog.maximized {

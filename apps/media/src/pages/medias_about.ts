@@ -15,11 +15,11 @@ class PageMediaAbout extends HTMLElement {
 
         .about-card {
           width: 100%;
-          background: var(--surface-elevated-color, var(--surface-color));
-          border: 1px solid var(--border-subtle-color);
-          border-radius: 16px;
-          box-shadow: 0 6px 24px color-mix(in srgb, var(--on-surface-color) 10%, transparent);
-          padding: 2.5rem 2rem;
+          background: color-mix(in srgb, var(--surface-color) 92%, transparent);
+          border: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+          border-radius: 12px;
+          box-shadow: 0 2px 8px rgba(0,0,0,.08);
+          padding: 2rem 1.5rem;
           box-sizing: border-box;
           display: flex;
           flex-direction: column;
@@ -29,42 +29,43 @@ class PageMediaAbout extends HTMLElement {
         }
 
         .logo {
-          width: 120px;
-          height: 120px;
+          width: 100px;
+          height: 100px;
           object-fit: contain;
           border-radius: 50%;
-          background: var(--surface-color);
-          box-shadow: 0 4px 16px color-mix(in srgb, var(--on-surface-color) 15%, transparent);
-          padding: 8px;
+          background: transparent;
+          box-shadow: none;
+          padding: 0;
         }
 
         .app-name {
-          font-size: 2rem;
-          font-weight: 700;
+          font-size: 1.4rem;
+          font-weight: 600;
           color: var(--on-surface-color);
           margin: 0;
           line-height: 1.2;
         }
 
         .app-version {
-          font-size: 0.85rem;
+          font-size: 0.75rem;
           color: var(--secondary-text-color, var(--palette-text-secondary));
           font-weight: 500;
-          letter-spacing: 0.05em;
+          letter-spacing: 0.06em;
           text-transform: uppercase;
+          margin-top: 4px;
         }
 
         .app-description {
-          font-size: 1rem;
+          font-size: .88rem;
           color: var(--secondary-text-color, var(--palette-text-secondary));
-          line-height: 1.7;
+          line-height: 1.6;
           max-width: 480px;
         }
 
         .divider {
           width: 100%;
           height: 1px;
-          background: var(--divider-color, var(--palette-divider));
+          background: color-mix(in srgb, var(--divider-color, var(--palette-divider)) 40%, transparent);
         }
 
         .meta-grid {
@@ -99,13 +100,13 @@ class PageMediaAbout extends HTMLElement {
           display: inline-flex;
           align-items: center;
           gap: 0.5rem;
-          background: color-mix(in srgb, var(--primary-color) 12%, transparent);
-          color: var(--primary-color);
-          border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+          background: color-mix(in srgb, var(--accent-color, #2196F3) 8%, transparent);
+          color: var(--secondary-text-color);
+          border: 1px solid color-mix(in srgb, var(--accent-color, #2196F3) 20%, transparent);
           border-radius: 999px;
-          padding: 6px 16px;
-          font-size: 0.85rem;
-          font-weight: 600;
+          padding: 5px 14px;
+          font-size: 0.78rem;
+          font-weight: 500;
         }
 
         .platform-badge svg {

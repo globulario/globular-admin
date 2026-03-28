@@ -9,7 +9,7 @@ function hasToken(): boolean {
 // Which routes can be seen without being authenticated
 const PUBLIC_ROUTES = new Set<string>(['#/login'])
 
-const DEFAULT_ROUTE = '#/media/search'
+const DEFAULT_ROUTE = '#/media/watching'
 const LOGIN_ROUTE = '#/login'
 
 // --- Lazy loader ---
@@ -91,6 +91,7 @@ export async function mountRoute(route?: string) {
       pageCache.set(resolved, page)
     }
     page.style.display = 'block'
+    page.style.height = '100%'
   } else {
     clearPageCache()
     target.innerHTML = ''
