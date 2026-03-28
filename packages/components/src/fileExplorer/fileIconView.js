@@ -749,18 +749,30 @@ export class FileIconView extends HTMLElement {
 
   _mouseenter(evt) {
     evt.stopPropagation();
-    this._dom.checkbox.style.display = "block";
-    this._dom.menuBtn.style.display = "block";
-    this._dom.thumbtack.style.display = "none";
     this.classList.add("active");
+    // Tell the video preview to start cycling frames (if present).
+    const vp = this.shadowRoot?.querySelector("globular-video-preview");
+    if (vp && typeof vp.startPreview === "function") {
+      // Ensure timeline is loaded, then start.
+      if (vp._frameUrls?.length > 1) {
+        vp.startPreview();
+      } else if (typeof vp._ensureTimelineLoaded === "function") {
+        vp._ensureTimelineLoaded().then(() => {
+          // Only start if still hovered.
+          if (this.classList.contains("active")) vp.startPreview();
+        }).catch(() => {});
+      }
+    }
   }
 
   _mouseleave(evt) {
     evt.stopPropagation();
-    if (!this._dom.checkbox.checked) this._dom.checkbox.style.display = "none";
-    this._dom.menuBtn.style.display = "none";
-    this._dom.thumbtack.style.display = "none";
     this.classList.remove("active");
+    // Stop the video preview animation immediately.
+    const vp = this.shadowRoot?.querySelector("globular-video-preview");
+    if (vp && typeof vp.stopPreview === "function") {
+      vp.stopPreview();
+    }
   }
 
   /* ---------- Private: Small utilities (DRY) ---------- */

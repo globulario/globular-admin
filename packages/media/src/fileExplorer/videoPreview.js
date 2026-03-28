@@ -107,11 +107,10 @@ export class VideoPreview extends HTMLElement {
     this._container = this.shadowRoot.querySelector("#container");
     this._previewImg = this.shadowRoot.querySelector("#preview");
 
-    if (this._container) {
-      //this._container.addEventListener("click", this._boundClick);
-      this._container.addEventListener("mouseenter", this._boundEnter);
-      this._container.addEventListener("mouseleave", this._boundLeave);
-    }
+    // Mouse events are handled by the parent fileIconView which calls
+    // startPreview()/stopPreview() directly. This prevents animation
+    // from running when the mouse is over a different part of the icon
+    // or when hovering between adjacent icons.
 
     if (typeof ResizeObserver !== "undefined") {
       this._resizeObserver = new ResizeObserver(() => this._updateWidthAndNotify());
@@ -129,8 +128,6 @@ export class VideoPreview extends HTMLElement {
 
     if (this._container) {
       this._container.removeEventListener("click", this._boundClick);
-      this._container.removeEventListener("mouseenter", this._boundEnter);
-      this._container.removeEventListener("mouseleave", this._boundLeave);
     }
 
     if (this._resizeObserver) {
