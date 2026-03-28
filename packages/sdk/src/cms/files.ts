@@ -580,11 +580,7 @@ export function readDirFresh(
     const md = metadata();
     const rq: any = newRq(["ReadDirRequest"]);
     const encodedPath = encodeURI(requestedPath);
-    try {
-      console.debug("[file-worker] gatewayBaseUrl=", getBaseUrl?.());
-      console.debug("[file-worker] grpcWebHostUrl(file)", grpcWebHostUrl());
-      console.debug("[file-worker] calling ReadDir path=", requestedPath, "recursive=", recursive, "hasToken=", !!md.token);
-    } catch { /* debug only */ }
+    // Debug logging removed — was polluting the browser console on every ReadDir call.
 
     if (typeof rq.setPath === "function") rq.setPath(encodedPath);
     if (typeof rq.setRecursive === "function") rq.setRecursive(recursive);
@@ -628,7 +624,9 @@ export function readDirFresh(
       // the rejection to avoid an unhandled-promise-rejection browser warning.
       guardedWorkerPromise.catch(() => {});
       if (cancelled) {
-        throw workerError;
+        // Cancellation is expected (e.g., navigating away) — don't pollute
+        // the console with an uncaught promise rejection.
+        return;
       }
       throw workerError;
     }
