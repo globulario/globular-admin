@@ -21,6 +21,7 @@
     "@globular/media": "workspace:*",
     "@globular/sdk": "workspace:*",
     "dom-to-image": "^2.6.0",
+    "file-icon-vectors": "^1.0.0",
     "highlight.js": "^11.11.1",
     "jmespath": "^0.16.0",
     "lodash": "^4.17.21",

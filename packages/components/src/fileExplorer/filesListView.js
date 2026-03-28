@@ -27,6 +27,7 @@ import {
 
 // Bounded LRU cache for per-file media metadata (replaces direct file mutation)
 import { mergeMediaInfo } from "./fileMediaCache.js";
+import { fileTypeIconForName } from "./fileTypeIcons.js";
 
 /** Human-readable size formatter (no floating bugs) */
 function getFileSizeString(bytes) {
@@ -44,11 +45,11 @@ function getCurrentExplorerPath(explorer) {
 
 /** Map a (lowercased) MIME string to an iron-icon name */
 function iconForMime(m) {
-  if (!m) return "icons:folder";
+  if (!m) return "editor:insert-drive-file";
   if (m.startsWith("video/")) return "av:movie";
   if (m.startsWith("audio/")) return "av:music-note";
-  if (m.startsWith("text/")) return "editor:folder";
-  return "icons:folder";
+  if (m.startsWith("image/")) return "image:image";
+  return "editor:insert-drive-file";
 }
 
 export class FilesListView extends FilesView {
@@ -498,9 +499,14 @@ export class FilesListView extends FilesView {
       mimeDisplay = (effectiveRoot || "").toUpperCase();
       icon = isPlaylist ? "av:movie" : iconForMime(mime);
 
-      // Use thumb if given, regardless of type; otherwise we'll show icon
+      // Use thumb if given, otherwise try file-type SVG icon
       const t = thumbOf(file);
-      if (t) thumbnailSrc = t;
+      if (t) {
+        thumbnailSrc = t;
+      } else {
+        const typeIcon = fileTypeIconForName(name);
+        if (typeIcon) thumbnailSrc = typeIcon;
+      }
     }
 
     let displayName = name;

@@ -18,6 +18,7 @@ import {
   playlistPathFor,
   hasPlaylistManifest,
 } from "./filevm-helpers";
+import { fileTypeIconForName } from "./fileTypeIcons.js";
 
 // Bounded LRU cache for media metadata populated by list/icon view loaders
 import { getMediaInfo, mergeMediaInfo } from "./fileMediaCache.js";
@@ -34,9 +35,18 @@ const FOLDER_OPEN_ICON = "icons:folder-open";
 const ICON_FOR_KIND = {
   video: "av:movie",
   audio: "av:music-note",
-  text: "editor:folder",
-  default: "icons:folder",
+  image: "image:image",
+  text: "editor:insert-drive-file",
+  application: "editor:insert-drive-file",
+  default: "editor:insert-drive-file",
 };
+
+/** Refine icon based on full MIME string (e.g. application/pdf) */
+function iconForFullMime(mime) {
+  if (!mime) return ICON_FOR_KIND.default;
+  const root = mime.toLowerCase().split("/")[0];
+  return ICON_FOR_KIND[root] || ICON_FOR_KIND.default;
+}
 
 const IMDB_TITLE_URL_PATTERN = /^https:\/\/www\.imdb\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?title\/tt\d+/i;
 
@@ -438,8 +448,13 @@ export class FileIconView extends HTMLElement {
     }
 
     const t = thumbOf(displayFile);
-    if (t) this._appendImg(t);
-    else this._appendIcon(ICON_FOR_KIND[kind] || ICON_FOR_KIND.default);
+    if (t) {
+      this._appendImg(t);
+    } else {
+      const typeIconUrl = fileTypeIconForName(nameOf(displayFile));
+      if (typeIconUrl) this._appendImg(typeIconUrl);
+      else this._appendIcon(iconForFullMime(mimeOf(displayFile)));
+    }
 
     if (isShortcut && displayFile && displayFile !== baseFile) {
       const targetType = sectionNameForFile(displayFile);
