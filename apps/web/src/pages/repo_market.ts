@@ -129,6 +129,57 @@ function trustBadges(a: ArtifactManifest): string {
   return badges.join(' ')
 }
 
+// ── Grouping ────────────────────────────────────────────────────────────────
+
+interface PackageGroup {
+  key: string            // publisher/name
+  publisher: string
+  name: string
+  latest: ArtifactManifest
+  versions: ArtifactManifest[]  // all versions, sorted newest first
+}
+
+function semverCompare(a: string, b: string): number {
+  const pa = (a || '0.0.0').split('.').map(Number)
+  const pb = (b || '0.0.0').split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const diff = (pb[i] || 0) - (pa[i] || 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function groupArtifacts(artifacts: ArtifactManifest[]): PackageGroup[] {
+  const map = new Map<string, ArtifactManifest[]>()
+  for (const a of artifacts) {
+    const pub = a.ref?.publisherId || ''
+    const name = a.ref?.name || ''
+    const key = `${pub}/${name}`
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(a)
+  }
+
+  const groups: PackageGroup[] = []
+  for (const [key, versions] of map.entries()) {
+    // Sort: newest version first, then by build number DESC, then by publishedUnix DESC
+    versions.sort((a, b) => {
+      const vc = semverCompare(a.ref?.version || '', b.ref?.version || '')
+      if (vc !== 0) return vc
+      const ba = (ext(a).buildNumber || 0) as number
+      const bb = (ext(b).buildNumber || 0) as number
+      if (bb !== ba) return bb - ba
+      const ta = (ext(a).publishedUnix || a.modifiedUnix || 0) as number
+      const tb = (ext(b).publishedUnix || b.modifiedUnix || 0) as number
+      return tb - ta
+    })
+    const pub = versions[0].ref?.publisherId || ''
+    const name = versions[0].ref?.name || ''
+    groups.push({ key, publisher: pub, name, latest: versions[0], versions })
+  }
+
+  return groups.sort((a, b) => a.key.localeCompare(b.key))
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 class PageRepository extends HTMLElement {
@@ -141,6 +192,7 @@ class PageRepository extends HTMLElement {
   private _publisherFilter = ''   // '' = all
   private _stateFilter: number = -1 // -1 = all
   private _trustFilter = ''         // '' = all
+  private _expanded: Set<string> = new Set()  // expanded package keys
 
   connectedCallback() {
     this.style.display = 'block'
@@ -241,11 +293,12 @@ class PageRepository extends HTMLElement {
   private render() {
     const filtered = this.filteredArtifacts
     const publishers = this.distinctPublishers
-    const total = this._artifacts.length
-    const svcCount = this.countByKind(KIND_SERVICE)
-    const appCount = this.countByKind(KIND_APPLICATION)
-    const infraCount = this.countByKind(KIND_INFRASTRUCTURE)
-    const cmdCount = this.countByKind(KIND_COMMAND)
+    const allGroups = groupArtifacts(this._artifacts)
+    const total = allGroups.length
+    const svcCount = allGroups.filter(g => g.latest.ref?.kind === KIND_SERVICE).length
+    const appCount = allGroups.filter(g => g.latest.ref?.kind === KIND_APPLICATION).length
+    const infraCount = allGroups.filter(g => g.latest.ref?.kind === KIND_INFRASTRUCTURE).length
+    const cmdCount = allGroups.filter(g => g.latest.ref?.kind === KIND_COMMAND).length
     const verifiedCount = this.countVerified()
     const ciCount = this.countTrustedCI()
     const deprecatedCount = this.countByState(PS_DEPRECATED)
@@ -427,64 +480,8 @@ class PageRepository extends HTMLElement {
           </select>
         </div>
 
-        <!-- Package Table -->
-        ${filtered.length > 0 ? `
-        <div class="md-panel" style="margin-bottom:0">
-          <table class="md-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Version</th>
-                <th>Build</th>
-                <th>Publisher</th>
-                <th>Trust</th>
-                <th>Platform</th>
-                <th>State</th>
-                <th>Integrity</th>
-                <th>Published</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody class="md-interactive">
-              ${filtered.map(a => {
-                const e = ext(a)
-                const ref = a.ref
-                const name = ref?.name || '\u2014'
-                const publisher = ref?.publisherId || '\u2014'
-                const version = ref?.version || '\u2014'
-                const platform = ref?.platform || '\u2014'
-                const kind = ref?.kind ?? 0
-                const alias: string = e.alias || ''
-                const ts: number = e.publishedUnix || a.modifiedUnix || 0
-                const buildNum: number = e.buildNumber || 0
-                const state: number = e.publishState ?? 0
-                return `
-              <tr class="pkg-row" data-publisher="${(publisher).replace(/"/g, '&quot;')}" data-name="${(name).replace(/"/g, '&quot;')}">
-                <td>
-                  <div class="pkg-name">${name}</div>
-                  ${alias ? `<div class="pkg-alias">${alias}</div>` : ''}
-                </td>
-                <td>${kindBadge(kind)}</td>
-                <td>${version}</td>
-                <td>${buildNum > 0 ? 'build ' + buildNum : 'build 0'}</td>
-                <td>${publisher}</td>
-                <td>${trustBadges(a)}</td>
-                <td>${platform}</td>
-                <td>${stateChip(state)}</td>
-                <td>${integrityChip(a.checksum)}</td>
-                <td style="color:var(--secondary-text-color); white-space:nowrap">${relativeTime(ts)}</td>
-                <td>
-                  <button class="md-btn md-btn-text md-btn-sm btn-view"
-                    data-publisher="${(publisher).replace(/"/g, '&quot;')}"
-                    data-name="${(name).replace(/"/g, '&quot;')}">View</button>
-                </td>
-              </tr>`
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-        ` : `
+        <!-- Package Table (grouped by package, latest version shown) -->
+        ${filtered.length > 0 ? this.renderPackageTable(filtered) : `
         <div class="empty-state">
           <h3>No packages found in the repository.</h3>
           <p>Publish a service, application, or infrastructure package to make it available.</p>
@@ -575,6 +572,17 @@ class PageRepository extends HTMLElement {
       })
     })
 
+    // Expand/collapse version groups
+    this.querySelectorAll('.btn-expand').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const key = (btn as HTMLElement).dataset.key || ''
+        if (this._expanded.has(key)) this._expanded.delete(key)
+        else this._expanded.add(key)
+        this.render()
+      })
+    })
+
     // Row clicks
     this.querySelectorAll('.pkg-row').forEach(row => {
       row.addEventListener('click', (e) => {
@@ -594,6 +602,78 @@ class PageRepository extends HTMLElement {
         window.location.hash = `#/repository/package/${encodeURIComponent(publisher)}/${encodeURIComponent(name)}`
       })
     })
+  }
+
+  private renderPackageTable(artifacts: ArtifactManifest[]): string {
+    const groups = groupArtifacts(artifacts)
+    const rows = groups.map(g => {
+      const a = g.latest
+      const e = ext(a)
+      const ref = a.ref
+      const name = ref?.name || '\u2014'
+      const publisher = ref?.publisherId || '\u2014'
+      const version = ref?.version || '\u2014'
+      const platform = ref?.platform || '\u2014'
+      const kind = ref?.kind ?? 0
+      const alias: string = e.alias || ''
+      const ts: number = e.publishedUnix || a.modifiedUnix || 0
+      const state: number = e.publishState ?? 0
+      const hasMultiple = g.versions.length > 1
+      const isExpanded = this._expanded.has(g.key)
+      const q = (s: string) => s.replace(/"/g, '&quot;')
+
+      const expandBtn = hasMultiple
+        ? `<button class="btn-expand" data-key="${q(g.key)}" title="${isExpanded ? 'Collapse' : g.versions.length + ' versions'}" style="background:none;border:none;cursor:pointer;font-size:.85rem;padding:2px 6px;border-radius:4px;color:var(--secondary-text-color)">${isExpanded ? '&#9660;' : '&#9654;'} <span style="font-size:.7rem">${g.versions.length}</span></button>`
+        : ''
+
+      let html = `<tr class="pkg-row" data-publisher="${q(publisher)}" data-name="${q(name)}">
+        <td style="width:40px;text-align:center">${expandBtn}</td>
+        <td><div class="pkg-name">${name}</div>${alias ? `<div class="pkg-alias">${alias}</div>` : ''}</td>
+        <td>${kindBadge(kind)}</td>
+        <td>${version}</td>
+        <td>${publisher}</td>
+        <td>${trustBadges(a)}</td>
+        <td>${platform}</td>
+        <td>${stateChip(state)}</td>
+        <td style="color:var(--secondary-text-color);white-space:nowrap">${relativeTime(ts)}</td>
+        <td><button class="md-btn md-btn-text md-btn-sm btn-view" data-publisher="${q(publisher)}" data-name="${q(name)}">View</button></td>
+      </tr>`
+
+      if (isExpanded && hasMultiple) {
+        for (let i = 1; i < g.versions.length; i++) {
+          const ov = g.versions[i]
+          const oe = ext(ov)
+          const oVersion = ov.ref?.version || '\u2014'
+          const oPlatform = ov.ref?.platform || '\u2014'
+          const oTs: number = oe.publishedUnix || ov.modifiedUnix || 0
+          const oState: number = oe.publishState ?? 0
+          const oBuild: number = oe.buildNumber || 0
+          html += `<tr class="pkg-row pkg-version-row" data-publisher="${q(publisher)}" data-name="${q(name)}" style="background:var(--md-surface-container-low)">
+            <td></td>
+            <td style="padding-left:24px;font-size:.82rem;color:var(--secondary-text-color)">${oBuild > 0 ? 'build ' + oBuild : ''}</td>
+            <td></td>
+            <td style="font-size:.82rem">${oVersion}</td>
+            <td></td>
+            <td>${trustBadges(ov)}</td>
+            <td style="font-size:.82rem">${oPlatform}</td>
+            <td>${stateChip(oState)}</td>
+            <td style="color:var(--secondary-text-color);white-space:nowrap;font-size:.82rem">${relativeTime(oTs)}</td>
+            <td></td>
+          </tr>`
+        }
+      }
+      return html
+    }).join('')
+
+    return `<div class="md-panel" style="margin-bottom:0">
+      <table class="md-table">
+        <thead><tr>
+          <th></th><th>Name</th><th>Type</th><th>Version</th><th>Publisher</th>
+          <th>Trust</th><th>Platform</th><th>State</th><th>Published</th><th>Actions</th>
+        </tr></thead>
+        <tbody class="md-interactive">${rows}</tbody>
+      </table>
+    </div>`
   }
 }
 
