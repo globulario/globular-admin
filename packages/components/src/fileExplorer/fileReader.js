@@ -147,7 +147,7 @@ _initializeLayout() {
       #title {
         flex: 1;
         text-align: center;
-        font-size: 1.2rem;
+        font-size: .8rem;
         font-weight: 500;
         white-space: nowrap;
         overflow: hidden;
