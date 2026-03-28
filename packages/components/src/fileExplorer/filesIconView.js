@@ -304,16 +304,41 @@ export class FilesIconView extends FilesView {
     //
     // rootMargin '400px 0px' pre-loads one screen-height ahead so the user
     // never sees blank placeholders while scrolling at a normal speed.
+    //
+    // Concurrency limit: at most 6 icons load in parallel to avoid flooding
+    // the server with thumbnail/metadata requests (which triggers HTTP 429).
     const self = this;
+    const MAX_CONCURRENT = 6;
+    let _loadingCount = 0;
+    const _loadQueue = [];
+
+    const loadIcon = (icon) => {
+      if (_loadingCount >= MAX_CONCURRENT) {
+        _loadQueue.push(icon);
+        return;
+      }
+      _loadingCount++;
+      const file = icon._pendingFile;
+      icon._pendingFile = null;
+      const done = () => {
+        _loadingCount--;
+        if (_loadQueue.length > 0) {
+          const next = _loadQueue.shift();
+          if (next._pendingFile) loadIcon(next);
+          else done(); // skip already-loaded, try next
+        }
+      };
+      // setFile is async — chain the concurrency release to its completion.
+      Promise.resolve(icon.setFile(file, self)).then(done, done);
+    };
+
     this._iconObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
         const icon = entry.target;
         self._iconObserver?.unobserve(icon);
         if (icon._pendingFile) {
-          const file = icon._pendingFile;
-          icon._pendingFile = null;
-          icon.setFile(file, self);
+          loadIcon(icon);
         }
       });
     }, {
