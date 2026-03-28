@@ -25,17 +25,71 @@ function clientFactory(): titleGrpc.TitleServiceClient {
 }
 
 /* =====================================================================================
- * Small in-memory caches
+ * Bounded LRU cache — prevents unbounded memory growth when browsing many files.
+ *
+ * Previously, all caches were plain Map<string, T> that never evicted entries.
+ * Browsing 1000+ files would accumulate all metadata in memory forever.
+ * Now all caches use LruMap with a fixed capacity — oldest entries are evicted
+ * when the limit is reached.
  * ===================================================================================== */
 
-const videosCache = new Map<string, titlepb.Video>();
-const audiosCache = new Map<string, titlepb.Audio>();
-const titlesCache = new Map<string, titlepb.Title>();
+class LruMap<K, V> {
+  private _max: number;
+  private _map = new Map<K, V>();
 
-// Per-file caches (lists)
-const fileVideosCache = new Map<string, titlepb.Video[]>();
-const fileAudiosCache = new Map<string, titlepb.Audio[]>();
-const fileTitlesCache = new Map<string, titlepb.Title[]>();
+  constructor(max: number) { this._max = max; }
+
+  get(key: K): V | undefined {
+    const val = this._map.get(key);
+    if (val !== undefined) {
+      // Refresh to most-recently-used by re-inserting.
+      this._map.delete(key);
+      this._map.set(key, val);
+    }
+    return val;
+  }
+
+  has(key: K): boolean  { return this._map.has(key); }
+  delete(key: K): boolean { return this._map.delete(key); }
+  clear(): void         { this._map.clear(); }
+  get size(): number    { return this._map.size; }
+  keys(): IterableIterator<K> { return this._map.keys(); }
+  values(): IterableIterator<V> { return this._map.values(); }
+  entries(): IterableIterator<[K, V]> { return this._map.entries(); }
+  forEach(fn: (value: V, key: K) => void): void { this._map.forEach(fn); }
+
+  set(key: K, value: V): this {
+    if (this._map.has(key)) this._map.delete(key);
+    this._map.set(key, value);
+    if (this._map.size > this._max) {
+      this._map.delete(this._map.keys().next().value!);
+    }
+    return this;
+  }
+}
+
+// Entity caches (by ID) — bounded at 500 entries each.
+const videosCache = new LruMap<string, titlepb.Video>(500);
+const audiosCache = new LruMap<string, titlepb.Audio>(500);
+const titlesCache = new LruMap<string, titlepb.Title>(500);
+
+// Per-file list caches (by path) — bounded at 300 paths each.
+const fileVideosCache = new LruMap<string, titlepb.Video[]>(300);
+const fileAudiosCache = new LruMap<string, titlepb.Audio[]>(300);
+const fileTitlesCache = new LruMap<string, titlepb.Title[]>(300);
+
+// In-flight request dedup: if a fetch for path X is already in progress,
+// return the same promise instead of starting a duplicate gRPC call.
+// Entries are removed when the promise settles.
+const _inflight = new Map<string, Promise<any>>();
+
+function dedup<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = _inflight.get(key);
+  if (existing) return existing as Promise<T>;
+  const p = fn().finally(() => _inflight.delete(key));
+  _inflight.set(key, p);
+  return p;
+}
 
 // IMDb request-coalescing cache: id -> Promise<any>
 const imdbPending = new Map<string, Promise<any>>();
@@ -346,24 +400,23 @@ export async function getFileTitlesInfo(
   const normalizedPath = normalizeMediaPath(filePath);
   if (fileTitlesCache.has(normalizedPath)) return fileTitlesCache.get(normalizedPath)!;
 
-  const md = metadata();
-  const rq = new titlepb.GetFileTitlesRequest();
-  rq.setFilepath(normalizedPath);
-  rq.setIndexpath(indexPath);
+  return dedup(`titles:${normalizedPath}`, async () => {
+    const md = metadata();
+    const rq = new titlepb.GetFileTitlesRequest();
+    rq.setFilepath(normalizedPath);
+    rq.setIndexpath(indexPath);
 
-  const rsp = await unary(clientFactory, "getFileTitles", rq, undefined, md) as titlepb.GetFileTitlesResponse;
-  // Expect: rsp.getTitles()?.getTitlesList()
-  const titlesContainer = rsp?.getTitles?.();
-  const list: titlepb.Title[] = titlesContainer?.getTitlesList?.() ?? [];
+    const rsp = await unary(clientFactory, "getFileTitles", rq, undefined, md) as titlepb.GetFileTitlesResponse;
+    const titlesContainer = rsp?.getTitles?.();
+    const list: titlepb.Title[] = titlesContainer?.getTitlesList?.() ?? [];
 
-  // cache each by id and by file
-  list.forEach((t) => titlesCache.set(t.getId(), t));
-  fileTitlesCache.set(normalizedPath, list);
+    list.forEach((t) => titlesCache.set(t.getId(), t));
+    fileTitlesCache.set(normalizedPath, list);
 
-  // Pre-fetch parent series titles in the background for any TVEpisodes.
-  prefetchSeriesTitles(list, indexPath);
+    prefetchSeriesTitles(list, indexPath);
 
-  return list;
+    return list;
+  });
 }
 
 // title.ts (or wherever getFileVideosInfo lives)
@@ -371,11 +424,9 @@ export async function getFileVideosInfo(
   filePath: string,
   indexPath = DEFAULT_INDEXES.videos
 ): Promise<titlepb.Video[]> {
-  // normalize + validate ASAP
   const normalize = (v: unknown, name: string): string => {
     if (v == null) throw new Error(`${name} is ${v}`);
     if (typeof v === "string") return v;
-    // common “gotchas”: URL, Path-like objects, Buffers/Uint8Array, numbers
     if (v instanceof URL) return v.pathname || `${v}`;
     if (v instanceof Uint8Array) return new TextDecoder().decode(v);
     return String(v);
@@ -384,36 +435,35 @@ export async function getFileVideosInfo(
   const safeFilePath = normalizeMediaPath(normalize(filePath, "filePath"));
   const safeIndexPath = normalize(indexPath, "indexPath");
 
-  //  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
+  if (fileVideosCache.has(safeFilePath)) return fileVideosCache.get(safeFilePath)!;
 
-  const md = metadata();
+  return dedup(`videos:${safeFilePath}`, async () => {
+    const md = metadata();
+    const rq = new titlepb.GetFileVideosRequest();
+    rq.setFilepath(safeFilePath);
+    rq.setIndexpath(safeIndexPath);
 
-  const rq = new titlepb.GetFileVideosRequest();
-  rq.setFilepath(safeFilePath);
-  rq.setIndexpath(safeIndexPath);
-
-  let list: titlepb.Video[] = [];
-  try {
-    const rsp = await unary(clientFactory, "getFileVideos", rq, undefined, md) as titlepb.GetFileVideosResponse;
-    // generated API: rsp.getVideos() -> Videos message -> getVideosList()
-    const videosContainer = rsp.getVideos?.();
-    list = videosContainer?.getVideosList?.() ?? [];
-  } catch (err) {
-    if (!isRpcNotFoundError(err)) {
-      throw err;
+    let list: titlepb.Video[] = [];
+    try {
+      const rsp = await unary(clientFactory, "getFileVideos", rq, undefined, md) as titlepb.GetFileVideosResponse;
+      const videosContainer = rsp.getVideos?.();
+      list = videosContainer?.getVideosList?.() ?? [];
+    } catch (err) {
+      if (!isRpcNotFoundError(err)) {
+        throw err;
+      }
     }
-  }
 
-  list.forEach(v => videosCache.set(v.getId(), v));
-  fileVideosCache.set(safeFilePath, list);
-  return list;
+    list.forEach(v => videosCache.set(v.getId(), v));
+    fileVideosCache.set(safeFilePath, list);
+    return list;
+  });
 }
 
 export async function getFileAudiosInfo(
   filePath: string,
   indexPath = DEFAULT_INDEXES.audios
 ): Promise<titlepb.Audio[]> {
-  // normalize + validate (same helper logic as videos)
   const normalize = (v: unknown, name: string): string => {
     if (v == null) throw new Error(`${name} is ${v}`);
     if (typeof v === "string") return v;
@@ -427,48 +477,43 @@ export async function getFileAudiosInfo(
 
   if (fileAudiosCache.has(safeFilePath)) return fileAudiosCache.get(safeFilePath)!;
 
-  const md = metadata();
+  return dedup(`audios:${safeFilePath}`, async () => {
+    const md = metadata();
+    const rq = new titlepb.GetFileAudiosRequest();
+    rq.setFilepath(safeFilePath);
+    rq.setIndexpath(safeIndexPath);
 
-  const rq = new titlepb.GetFileAudiosRequest();
-  rq.setFilepath(safeFilePath);
-  rq.setIndexpath(safeIndexPath);
-
-  let list: titlepb.Audio[] = [];
-  try {
-    const rsp = await unary(
-      clientFactory,
-      "getFileAudios",
-      rq,
-      undefined,
-      md
-    ) as titlepb.GetFileAudiosResponse;
-
-    // rsp.getAudios() -> Audios message -> getAudiosList()
-    const audiosContainer = rsp.getAudios?.();
-    list = audiosContainer?.getAudiosList?.() ?? [];
-  } catch (err) {
-    if (!isRpcNotFoundError(err)) {
-      throw err;
-    }
-  }
-
-  console.log("Fetched audios for file:", safeIndexPath, safeFilePath, "Count:", list.length);
-  list.forEach(a => audiosCache.set(a.getId(), a));
-  fileAudiosCache.set(safeFilePath, list);
-
-  if (!list.length && !safeFilePath.includes("/.hidden/")) {
-    const lastSlash = safeFilePath.lastIndexOf("/");
-    if (lastSlash > -1) {
-      const hiddenPath = `${safeFilePath.substring(0, lastSlash)}/.hidden${safeFilePath.substring(lastSlash)}`;
-      const hiddenList = await getFileAudiosInfo(hiddenPath, safeIndexPath).catch(() => []);
-      if (hiddenList.length) {
-        fileAudiosCache.set(safeFilePath, hiddenList);
-        return hiddenList;
+    let list: titlepb.Audio[] = [];
+    try {
+      const rsp = await unary(
+        clientFactory, "getFileAudios", rq, undefined, md,
+      ) as titlepb.GetFileAudiosResponse;
+      const audiosContainer = rsp.getAudios?.();
+      list = audiosContainer?.getAudiosList?.() ?? [];
+    } catch (err) {
+      if (!isRpcNotFoundError(err)) {
+        throw err;
       }
     }
-  }
 
-  return list;
+    list.forEach(a => audiosCache.set(a.getId(), a));
+    fileAudiosCache.set(safeFilePath, list);
+
+    // Fallback: try .hidden/ path for audios stored in the hidden directory.
+    if (!list.length && !safeFilePath.includes("/.hidden/")) {
+      const lastSlash = safeFilePath.lastIndexOf("/");
+      if (lastSlash > -1) {
+        const hiddenPath = `${safeFilePath.substring(0, lastSlash)}/.hidden${safeFilePath.substring(lastSlash)}`;
+        const hiddenList = await getFileAudiosInfo(hiddenPath, safeIndexPath).catch(() => []);
+        if (hiddenList.length) {
+          fileAudiosCache.set(safeFilePath, hiddenList);
+          return hiddenList;
+        }
+      }
+    }
+
+    return list;
+  });
 }
 
 /* =====================================================================================
