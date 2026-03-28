@@ -71,6 +71,7 @@ function getAuthToken() {
   return sessionStorage.getItem('__globular_token__')
 }
 
+
 function stripQuery(p) {
   if (!p) return ''
   return String(p).split('?')[0]
@@ -529,6 +530,12 @@ export class VideoPlayer extends HTMLElement {
     this.videoElement.autoplay = true
     this.videoElement.controls = true
     this.videoElement.playsInline = true
+    this.videoElement.preload = 'metadata'
+    // Force Chrome to use a separate HTTP/2 connection for video requests.
+    // Without this, the video stream shares a multiplexed connection with
+    // all other page requests (thumbnails, gRPC, etc.) and Cloudflare's
+    // proxy drops the large streaming response.
+    this.videoElement.crossOrigin = 'anonymous'
     this.appendChild(this.videoElement)
 
     this.container.style.height = 'auto'
@@ -1109,9 +1116,25 @@ export class VideoPlayer extends HTMLElement {
   }
 
   _retryPlaybackAfterFailure() {
-    if (this._retryingPlayback || !this.path) return
+    if (!this.path) return
+
+    // Allow up to 3 rapid retries before giving up for 10s.
+    if (!this._networkRetryCount) this._networkRetryCount = 0
+    if (this._networkRetryCount >= 3) {
+      // Too many retries — wait 10s then reset the counter.
+      if (!this._retryBackoffTimer) {
+        this._retryBackoffTimer = setTimeout(() => {
+          this._networkRetryCount = 0
+          this._retryBackoffTimer = null
+          this._retryingPlayback = false
+        }, 10_000)
+      }
+      return
+    }
+    if (this._retryingPlayback) return
 
     this._retryingPlayback = true
+    this._networkRetryCount++
     const resumeTime = this.videoElement?.currentTime || 0
     const titleInfo = this.titleInfo || null
 
@@ -1125,6 +1148,8 @@ export class VideoPlayer extends HTMLElement {
 
     const handleLoaded = () => {
       this.videoElement.removeEventListener('loadeddata', handleLoaded)
+      // Reset retry count on successful recovery.
+      this._networkRetryCount = 0
       cleanup()
     }
 
@@ -1134,18 +1159,32 @@ export class VideoPlayer extends HTMLElement {
       cleanup()
     }, 10_000)
 
-    // Refresh token before retry so stale auth doesn't cause a loop.
     // Increment the nonce so play() rebuilds the URL with ?_nc=N, forcing the browser
     // to open a fresh connection (Chrome falls back from QUIC to TCP after a stream error).
-    forceRefresh().catch(() => {}).finally(() => {
-      this._networkRetryNonce++
+    this._networkRetryNonce++
+
+    const doRetry = () => {
+      // Fast path: just reload the source and seek back (avoids full player reinit).
+      if (this.videoElement && this.videoElement.src && !this.hls) {
+        const src = this.videoElement.src
+        this.videoElement.load()
+        this.videoElement.currentTime = resumeTime
+        this.videoElement.play().catch(() => {})
+        return
+      }
       const currentItem = this.playlist?._items?.[this.playlist._index]
       if (currentItem && typeof this.playlist.setPlaying === 'function') {
         this.playlist.setPlaying(currentItem, true, true)
       } else {
         this.play(this.path, titleInfo)
       }
-    })
+    }
+
+    // Retry immediately — don't wait for token refresh.  The token is almost
+    // certainly still valid; the failure was a transport error (QUIC/network).
+    // Kick off a background refresh in case the token is close to expiry.
+    forceRefresh().catch(() => {})
+    doRetry()
   }
 
   _handleAudioTrackChange = (evt) => {
@@ -1684,6 +1723,7 @@ export class VideoPlayer extends HTMLElement {
     // sessionStorage is already valid from login / background refresh.
     getFreshToken(60_000).catch(() => {})
 
+
     this._forceHlsSource = false
 
     let urlToPlay = path
@@ -1753,18 +1793,35 @@ export class VideoPlayer extends HTMLElement {
     // (no moov-atom dependency), but keep the direct MP4 URL for seek fallback.
     // When the user seeks and HLS stalls (ffmpeg restart), we automatically
     // switch to direct MP4 byte-range serving for near-instant seeks.
+    //
+    // Optimization: HEAD-check the playlist URL first.  If the HLS directory
+    // doesn't exist the server returns 404 in ~100 ms — far cheaper than the
+    // 2 s HLS_PROBE_TIMEOUT that fires when hls.js tries to fetch a missing
+    // manifest.  When the HEAD succeeds we commit to HLS immediately.
     this._fallbackMp4Url = null
     this._directMp4Url = null
     const recentHlsDestroy = (Date.now() - _lastHlsDestroyAt) < 5_000
     if (!isHlsSource && !isDirectoryPath && !recentHlsDestroy) {
       const tryPlaylistUrl = getPlaylistUrl()
       if (tryPlaylistUrl) {
-        this._fallbackMp4Url = urlToPlay   // for HLS load error fallback
-        this._directMp4Url = urlToPlay     // for seek stall → instant MP4 fallback
-        this._forceHlsSource = true
-        urlToPlay = tryPlaylistUrl
-        isHlsSource = true
-        this._stopMp4TokenMaintenance()
+        // Quick HEAD probe — avoid the 2 s HLS timeout when no playlist exists.
+        // Start MP4 playback immediately; upgrade to HLS only if HEAD succeeds.
+        this._directMp4Url = urlToPlay
+        this._startMp4TokenMaintenance(path, httpSource)
+
+        const headUrl = withToken(tryPlaylistUrl)
+        fetch(headUrl, { method: 'HEAD', mode: 'cors' })
+          .then(resp => {
+            if (resp.ok && this._directMp4Url === urlToPlay && !this.hls) {
+              // Playlist exists — switch to HLS for adaptive streaming
+              this._fallbackMp4Url = urlToPlay
+              this._forceHlsSource = true
+              this._stopMp4TokenMaintenance()
+              this._destroyHls()
+              this.playContent(path, token, tryPlaylistUrl)
+            }
+          })
+          .catch(() => { /* playlist doesn't exist, keep direct MP4 */ })
       }
     }
 
