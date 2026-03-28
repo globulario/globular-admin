@@ -1729,7 +1729,11 @@ export class FileExplorer extends HTMLElement {
     if (type === 'upward') {
       const path = this._path || "";
       const pathParts = path.split("/");
-      if (pathParts.length > 2) {
+      // Determine minimum depth to prevent going above logical root
+      let minParts = 2;
+      if (path.startsWith("/users/")) minParts = 3;
+      else if (/^\/mnt\/[A-Fa-f0-9]+\//.test(path)) minParts = 4;
+      if (pathParts.length > minParts) {
         const targetPath = path.substring(0, path.lastIndexOf("/"));
         // upward is a *new* navigation, not history → let setDir manage history
         this.publishSetDirEvent(targetPath);
@@ -2070,8 +2074,15 @@ export class FileExplorer extends HTMLElement {
       idx < total - 1 ? enableButton(this._fowardNavigationBtn) : disableButton(this._fowardNavigationBtn);
     }
     if (this._upwardNavigationBtn) {
-      const pathParts = (this._path || "").split("/");
-      pathParts.length > 2 ? enableButton(this._upwardNavigationBtn) : disableButton(this._upwardNavigationBtn);
+      const path = this._path || "";
+      const pathParts = path.split("/");
+      // Determine minimum depth: prevent navigating above the user's logical root
+      // /users/sa → min 3 (can't go above sa)
+      // /mnt/<uuid>/data → min 4 (can't go above data)
+      let minParts = 2;
+      if (path.startsWith("/users/")) minParts = 3;
+      else if (/^\/mnt\/[A-Fa-f0-9]+\//.test(path)) minParts = 4;
+      pathParts.length > minParts ? enableButton(this._upwardNavigationBtn) : disableButton(this._upwardNavigationBtn);
     }
   }
 

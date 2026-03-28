@@ -189,7 +189,22 @@ export class PathNavigator extends HTMLElement {
       .trim();
     if (dirPath.length > 1 && dirPath.endsWith("/")) dirPath = dirPath.slice(0, -1);
 
+    // ------- Strip internal path prefixes -------
+    // Try the file explorer's alias map first
+    if (this._fileExplorer?._syntheticPathForRealPath) {
+      const alias = this._fileExplorer._syntheticPathForRealPath(dirPath);
+      if (alias) dirPath = alias;
+    }
+    // Strip /users/ prefix — users only see their own folder
+    dirPath = dirPath.replace(/^\/users\//, "/");
+    // Strip /mnt/<uuid>/ prefix for public dirs
+    dirPath = dirPath.replace(/^\/mnt\/[A-Fa-f0-9]+\//, "/");
+    // Clean up leading double-slashes
+    dirPath = dirPath.replace(/^\/\/+/, "/");
+    if (dirPath.length > 1 && dirPath.endsWith("/")) dirPath = dirPath.slice(0, -1);
+
     this.currentPath = dirPath;
+    this._displayPath = dirPath; // store for up-button logic
     this.pathContainer.innerHTML = "";
 
     // Build parts; include root clickable segment
