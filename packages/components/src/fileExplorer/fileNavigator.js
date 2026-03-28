@@ -590,7 +590,7 @@ export class FileNavigator extends HTMLElement {
           }
           this._selectRow(path);
           if (this._fileExplorer?._informationManager?.parentNode) {
-            this._fileExplorer._informationsManager.style.display = "none";
+            this._fileExplorer._informationManager.style.display = "none";
           }
           return;
         }
@@ -598,8 +598,8 @@ export class FileNavigator extends HTMLElement {
         // Real directories: navigate normally
         this._fileExplorer?.publishSetDirEvent?.(path);
         this._selectRow(path);
-        if (this._fileExplorer?._informationsManager?.parentNode) {
-          this._fileExplorer._informationsManager.style.display = "none";
+        if (this._fileExplorer?._informationManager?.parentNode) {
+          this._fileExplorer._informationManager.style.display = "none";
         }
       });
     }
@@ -803,6 +803,9 @@ export class FileNavigator extends HTMLElement {
         .replace(/\s+/g, "")
         .toLowerCase();
     const normalizedSubject = normalizeId(subject);
+    // Also extract just the user ID without @domain for path-based comparisons.
+    // Paths use bare IDs (/users/sa) but subject is fully qualified (sa@globular.internal).
+    const normalizedSubjectBare = normalizedSubject.split("@")[0];
 
     const topic = `${subject}_change_permission_event`;
     subscribeOnce.call(this, this._listeners, topic, topic, async () => {
@@ -965,14 +968,27 @@ export class FileNavigator extends HTMLElement {
           return null;
         };
 
+        // Track paths we've already added to prevent duplicates.
+        // getSharedResources can return multiple permission records for the
+        // same path (e.g., 22 entries all pointing to /users/sa).
+        const addedPaths = new Set();
+
         for (const sr of items) {
           const realPath =
             sr?.path || (typeof sr?.getPath === "function" ? sr.getPath() : "") || "";
           if (!realPath) continue;
 
+          // Dedup: skip if we've already processed this exact path.
+          if (addedPaths.has(realPath)) continue;
+
           const ownerFromPath = extractOwnerFromPath(realPath);
-          if (ownerFromPath && normalizeId(ownerFromPath) === normalizedSubject) {
-            continue;
+          if (ownerFromPath) {
+            const normalizedOwner = normalizeId(ownerFromPath);
+            // Skip resources owned by the current user — paths use bare IDs
+            // (e.g., /users/sa) while subject is fully qualified (sa@globular.internal).
+            if (normalizedOwner === normalizedSubject || normalizedOwner === normalizedSubjectBare) {
+              continue;
+            }
           }
 
           let candidate = null;
@@ -981,7 +997,8 @@ export class FileNavigator extends HTMLElement {
           } else {
             candidate = pickOwnerCandidate(sr);
           }
-          if (!candidate?.id || normalizeId(candidate.id) === normalizedSubject) {
+          const normalizedCandidate = normalizeId(candidate?.id);
+          if (!candidate?.id || normalizedCandidate === normalizedSubject || normalizedCandidate === normalizedSubjectBare) {
             continue;
           }
 
@@ -1000,12 +1017,17 @@ export class FileNavigator extends HTMLElement {
           const node = await loadSharedNode(realPath);
           if (!node) continue;
 
+          // Dedup by the resolved node path — readDir may return the same
+          // parent directory for multiple shared files within it.
+          const nodePath = (typeof node.getPath === "function" ? node.getPath() : node.path) || realPath;
+          if (addedPaths.has(nodePath)) continue;
+
           const syntheticPath = buildSyntheticPath(ownerEntry, realPath, node?.name);
           node.__syntheticPublicPath = syntheticPath;
 
-          if (!ownerEntry.files.find((f) => f.path === realPath)) {
-            ownerEntry.files.push(node);
-          }
+          addedPaths.add(realPath);
+          addedPaths.add(nodePath);
+          ownerEntry.files.push(node);
         }
 
         const ownerList = Object.values(perOwner).sort((a, b) =>
