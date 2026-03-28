@@ -1,7 +1,7 @@
 // src/components/video/videoPreview.js
 
 import { Backend } from "@globular/sdk"; // still used for eventHub
-import { displayError } from "@globular/sdk";
+// displayError removed — preview failures are non-fatal, no toast needed.
 
 // Use specific helpers instead of wildcard import
 // Expectation: these are thin wrappers over readDir + image loading in your new files.ts
@@ -166,13 +166,11 @@ export class VideoPreview extends HTMLElement {
     this.setHeight(height);
     this.stopPreview();
 
-    // First, use primary thumbnail (if any)
+    // Show primary thumbnail immediately (if any).
+    // Timeline frames (preview_00001.jpg, ...) are loaded lazily on
+    // mouseenter — NOT here — to avoid flooding the server with hundreds
+    // of requests when a directory with many video files is opened.
     this._loadInitialThumbnail();
-
-    // Then fire-and-forget timeline loading
-    this._ensureTimelineLoaded().catch(() => {
-      // errors are handled inside
-    });
   }
 
   setHeight(height) {
@@ -388,9 +386,9 @@ export class VideoPreview extends HTMLElement {
       this._syncPreviewImage();
 
       return hasTimeline;
-    } catch (err) {
-      console.error("Error loading preview images:", err);
-      displayError("Failed to load video previews.", 3000);
+    } catch {
+      // Timeline load failure is non-fatal — the thumbnail still shows.
+      // Don't pollute the console or show a toast for missing previews.
       this._emitTimelineLoaded(false);
       return false;
     }
