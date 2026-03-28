@@ -8,6 +8,7 @@ import { BlogPostInfo } from "./blogPostInfo.js";
 import { FileInfo } from "./fileInfo.js";
 
 import { Backend } from "@globular/sdk";
+import { fileTypeIconForName } from "@globular/components/fileExplorer/fileTypeIcons.js";
 
 
 /**
@@ -430,11 +431,26 @@ export class InformationsManager extends HTMLElement {
     if (!file) return;
 
     const name = (file.getName && file.getName()) || "File";
+    // Determine icon from MIME type
+    const mime = ((file.getMime && file.getMime()) || (file.getMimeType && file.getMimeType()) || "").toLowerCase();
+    let icon = "editor:insert-drive-file";
+    if (file.getIsDir && file.getIsDir()) icon = "icons:folder";
+    else if (mime.startsWith("video/")) icon = "av:movie";
+    else if (mime.startsWith("audio/")) icon = "av:music-note";
+    else if (mime.startsWith("image/")) icon = "image:image";
+
+    // Use file-type SVG icon if available
+    const ext = name.lastIndexOf(".") >= 0 ? name.substring(name.lastIndexOf(".") + 1).toLowerCase() : "";
+    const typeIconUrl = ext ? fileTypeIconForName(name) : null;
+
     // Custom header for file properties
     const wrapper = this._titleDiv?.querySelector(".title-wrap");
     if (wrapper) {
+      const iconHtml = typeIconUrl
+        ? `<img src="${typeIconUrl}" style="width:20px;height:20px;margin-right:8px;object-fit:contain;" />`
+        : `<iron-icon icon="${icon}" style="margin-right: 8px;"></iron-icon>`;
       wrapper.innerHTML = `
-        <iron-icon icon="icons:info" style="margin-right: 10px;"></iron-icon>
+        ${iconHtml}
         <span class="title-main-text">${name}</span>
         <span class="title-sub-text" style="color: var(--secondary-text-color);">Properties</span>
       `;

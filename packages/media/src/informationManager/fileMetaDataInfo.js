@@ -44,10 +44,12 @@ export class FileMetaDataInfo extends HTMLElement {
           cursor: pointer;
           --iron-icon-fill-color: var(--accent-color);
         }
-        iron-collapse {
+        .collapse-panel {
           width: 100%;
-          display: flex;
-          flex-direction: column;
+          overflow: hidden;
+        }
+        .collapse-panel.closed {
+          display: none;
         }
         .row {
           display: table-row;
@@ -83,9 +85,9 @@ export class FileMetaDataInfo extends HTMLElement {
           <paper-icon-button id="collapse-btn" icon="unfold-less" title="Collapse/Expand"></paper-icon-button>
           <div id="header-text" class="header-text"></div>
         </div>
-        <iron-collapse id="collapse-panel" opened>
+        <div id="collapse-panel" class="collapse-panel">
           <div id="metadata-list-container"></div>
-        </iron-collapse>
+        </div>
       </div>
     `;
     this._getDomReferences();
@@ -112,9 +114,8 @@ export class FileMetaDataInfo extends HTMLElement {
 
   _toggleCollapse() {
     if (!this._collapsePanel) return;
-    this._collapsePanel.toggle();
-    // iron-collapse updates `opened` synchronously
-    this._collapseButton.icon = this._collapsePanel.opened ? 'unfold-less' : 'unfold-more';
+    const isClosed = this._collapsePanel.classList.toggle('closed');
+    this._collapseButton.icon = isClosed ? 'unfold-more' : 'unfold-less';
   }
 
   /**
