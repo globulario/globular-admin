@@ -241,6 +241,8 @@ export class Dialog extends HTMLElement {
 
         .dialog_buttons { display: flex; flex-direction: row; justify-content: flex-end; width: 100%; }
 
+        .dialog_search { display: flex; align-items: center; min-width: 0; }
+
         .dialog_icon { display: flex; justify-content: center; align-items: center; padding-left: 8px; width: 28px; height: 28px; z-index: 10; }
         .dialog_icon img, .dialog_icon ::slotted(img) { width: 20px; height: 20px; object-fit: contain; }
 

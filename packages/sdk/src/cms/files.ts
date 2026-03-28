@@ -444,6 +444,8 @@ const SERVICE_METHODS = {
   removePublicDir: { method: ['removePublicDir'], rq: ['RemovePublicDirRequest'] },
   writeExcel: { method: ['writeExcelFile'], rq: ['WriteExcelFileRequest'] },
   htmlToPdf: { method: ['htmlToPdf'], rq: ['HtmlToPdfRqst'] },
+  indexFile: { method: ['indexFile'], rq: ['IndexFileRequest'] },
+  findIndexes: { method: ['findIndexes'], rq: ['FindIndexesRequest'] },
   stop: { method: ['stop'], rq: ['StopRequest'] },
 } as const;
 
@@ -758,6 +760,80 @@ export async function createDir(parentPath: string, name: string): Promise<void>
   const method = pickMethod(clientFactory(), SERVICE_METHODS.createDir.method);
   await unary(clientFactory, method, rq, undefined, md);
   if (CACHE_ENABLED && _cache) _cache.invalidate(parentPath);
+}
+
+/* ------------------------------------------------------------------
+ * Index / Re-index files for full-text search
+ * ------------------------------------------------------------------ */
+
+export interface IndexFileProgress {
+  path: string;
+  status: "indexed" | "skipped" | "error";
+  message: string;
+  indexed: number;
+  total: number;
+}
+
+/**
+ * Index or re-index a file or directory for full-text search.
+ * Streams progress updates for each file processed.
+ */
+export async function indexFile(
+  path: string,
+  options: { recursive?: boolean; force?: boolean } = {},
+  onProgress?: (p: IndexFileProgress) => void
+): Promise<void> {
+  const rq: any = newRq(SERVICE_METHODS.indexFile.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path);
+  else rq.path = path;
+  if (options.recursive) {
+    if (typeof rq.setRecursive === 'function') rq.setRecursive(true);
+    else rq.recursive = true;
+  }
+  if (options.force) {
+    if (typeof rq.setForce === 'function') rq.setForce(true);
+    else rq.force = true;
+  }
+
+  const client = clientFactory();
+  const method = pickMethod(client, SERVICE_METHODS.indexFile.method);
+  await stream(
+    () => client,
+    method,
+    rq,
+    (msg: any) => {
+      if (onProgress) {
+        onProgress({
+          path: (typeof msg.getPath === 'function' ? msg.getPath() : msg.path) || '',
+          status: (typeof msg.getStatus === 'function' ? msg.getStatus() : msg.status) || 'skipped',
+          message: (typeof msg.getMessage === 'function' ? msg.getMessage() : msg.message) || '',
+          indexed: Number(typeof msg.getIndexed === 'function' ? msg.getIndexed() : msg.indexed) || 0,
+          total: Number(typeof msg.getTotal === 'function' ? msg.getTotal() : msg.total) || 0,
+        });
+      }
+    },
+    'file.FileService'
+  );
+}
+
+/**
+ * Find all __index_db__ search index paths under a directory.
+ * Single server-side call — replaces many client-side readDir round-trips.
+ */
+export async function findIndexes(path: string, recursive = false): Promise<string[]> {
+  const md = metadata();
+  const rq: any = newRq(SERVICE_METHODS.findIndexes.rq);
+  if (typeof rq.setPath === 'function') rq.setPath(path);
+  else rq.path = path;
+  if (recursive) {
+    if (typeof rq.setRecursive === 'function') rq.setRecursive(true);
+    else rq.recursive = true;
+  }
+
+  const method = pickMethod(clientFactory(), SERVICE_METHODS.findIndexes.method);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
+  const paths = rsp?.getPathsList?.() ?? rsp?.paths ?? [];
+  return Array.isArray(paths) ? paths : [];
 }
 
 /** Add a public directory (FileService domain-wide) */

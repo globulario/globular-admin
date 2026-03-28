@@ -1,7 +1,7 @@
 // src/components/fileIconViewSection.js
 
 import { Backend } from "@globular/sdk";
-import { displayMessage, displayError } from "@globular/sdk";
+import { displayMessage, displayError, indexFile } from "@globular/sdk";
 import { copyToClipboard } from "../utility.js";
 
 // ✅ Use the shared FileVM helpers (DRY)
@@ -30,6 +30,7 @@ const ICON_FOR_SECTION = {
   image: "image:collections",
   text: "editor:insert-drive-file",
   pdf: "image:picture-as-pdf",
+  document: "editor:insert-drive-file",
   default: "icons:folder",
 };
 
@@ -245,13 +246,23 @@ export class FileIconViewSection extends HTMLElement {
       ICON_FOR_SECTION[type] || ICON_FOR_SECTION.default;
   }
 
-  /** ---------- playlist actions ---------- */
+  /** ---------- playlist / section actions ---------- */
   _setupPlaylistActions() {
     const isAudio = this._fileType === "audio";
     const isVideo = this._fileType === "video";
+    const isIndexable = this._fileType === "text" || this._fileType === "pdf" || this._fileType === "document";
 
-    if (!isAudio && !isVideo) {
+    if (!isAudio && !isVideo && !isIndexable) {
       this._dom.playlistActionsDiv.innerHTML = "";
+      return;
+    }
+
+    if (isIndexable) {
+      this._dom.playlistActionsDiv.innerHTML = `
+        <iron-icon id="reindex-btn" icon="icons:refresh" title="Index ${this._fileType} files for search"></iron-icon>
+      `;
+      const reindexBtn = this.shadowRoot.querySelector("#reindex-btn");
+      reindexBtn?.addEventListener("click", () => this._handleReindexFiles());
       return;
     }
 
@@ -292,6 +303,31 @@ export class FileIconViewSection extends HTMLElement {
     } catch (e) {
       // missing file is fine
       return null;
+    }
+  }
+
+  async _handleReindexFiles() {
+    const dirPath = pathOf(this._dir);
+    if (!dirPath) {
+      displayMessage("No directory path available for indexing.", 3000);
+      return;
+    }
+
+    const reindexBtn = this.shadowRoot.querySelector("#reindex-btn");
+    if (reindexBtn) reindexBtn.style.pointerEvents = "none";
+
+    displayMessage(`Indexing ${this._fileType} files in ${dirPath}...`, 3000);
+
+    try {
+      let lastMsg = "";
+      await indexFile(dirPath, { recursive: false, force: true }, (p) => {
+        lastMsg = `${p.indexed}/${p.total}: ${p.path.split("/").pop()} (${p.status})`;
+      });
+      displayMessage(`Indexing complete! ${lastMsg}`, 3000);
+    } catch (err) {
+      displayError(`Indexing failed: ${err?.message || err}`, 5000);
+    } finally {
+      if (reindexBtn) reindexBtn.style.pointerEvents = "";
     }
   }
 

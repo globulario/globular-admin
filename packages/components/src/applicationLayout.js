@@ -130,7 +130,6 @@ export class AppLayout extends HTMLElement {
           ::slotted([slot="app-content"]) {
             display: block;
             box-sizing: border-box;
-            padding: 16px;
             height: calc(100vh - 64px);
             overflow-y: auto;
             background-color: var(--background-color);
@@ -169,9 +168,6 @@ export class AppLayout extends HTMLElement {
 
           /* ── Tablet (≤ 960px) ── */
           @media (max-width: 960px) {
-            ::slotted([slot="app-content"]) {
-              padding: 12px;
-            }
             #toolbar {
               padding: 0 0.5rem;
             }
@@ -183,7 +179,6 @@ export class AppLayout extends HTMLElement {
               min-height: 56px;
             }
             ::slotted([slot="app-content"]) {
-              padding: 8px;
               height: calc(100vh - 56px);
             }
             #toolbar {

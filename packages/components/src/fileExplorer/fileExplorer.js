@@ -124,6 +124,8 @@ export class FileExplorer extends HTMLElement {
 
   _id = null;
   _path = undefined;
+
+  getCurrentPath() { return this._path; }
   _root = undefined;
   _navigations = [];
   _onerror = (err) => displayError(err, 3000);
@@ -395,16 +397,23 @@ export class FileExplorer extends HTMLElement {
         padding: 4px;
       }
 
-      #show-share-panel-btn,
       #navigation-cloud-upload-btn,
       #navigation-create-dir-btn,
       #navigation-refresh-btn {
         width: 32px;
         height: 32px;
         padding: 4px;
+        color: var(--secondary-text-color);
+        opacity: .6;
+        transition: opacity .2s, color .2s;
+      }
+      #navigation-cloud-upload-btn:hover,
+      #navigation-create-dir-btn:hover,
+      #navigation-refresh-btn:hover {
+        color: var(--accent-color);
+        opacity: 1;
       }
 
-      #show-share-panel-btn iron-icon,
       #navigation-cloud-upload-btn iron-icon,
       #navigation-create-dir-btn iron-icon,
       #navigation-refresh-btn iron-icon {
@@ -517,20 +526,19 @@ export class FileExplorer extends HTMLElement {
       <span id="title-span" slot="title">File Explorer</span>
       <img slot="icon" src="${fileExplorerIcon}"/>
 
-      <paper-icon-button slot="header" id="show-share-panel-btn" icon="social:share"></paper-icon-button>
-      <paper-icon-button slot="header" id="navigation-cloud-upload-btn" icon="icons:cloud-upload"></paper-icon-button>
-      <paper-icon-button slot="header" id="navigation-create-dir-btn" icon="icons:create-new-folder"></paper-icon-button>
-      <paper-icon-button slot="header" id="navigation-refresh-btn" icon="icons:refresh"></paper-icon-button>
 
       <div id="file-explorer-content" class="card-content no-select">
         <div id="file-navigation-header">
           <div id="btn-group-0" style="display: flex;">
-            <paper-icon-button id="navigation-back-btn" icon="icons:arrow-back"></paper-icon-button>
-            <paper-icon-button id="navigation-forward-btn" icon="icons:arrow-forward"></paper-icon-button>
-            <paper-icon-button id="navigation-upward-btn" icon="icons:arrow-upward"></paper-icon-button>
+            <paper-icon-button id="navigation-back-btn" icon="icons:arrow-back" disabled style="--iron-icon-fill-color: var(--palette-action-disabled);"></paper-icon-button>
+            <paper-icon-button id="navigation-forward-btn" icon="icons:arrow-forward" disabled style="--iron-icon-fill-color: var(--palette-action-disabled);"></paper-icon-button>
+            <paper-icon-button id="navigation-upward-btn" icon="icons:arrow-upward" disabled style="--iron-icon-fill-color: var(--palette-action-disabled);"></paper-icon-button>
             <paper-icon-button id="navigation-lst-btn" icon="icons:list" style="display: none;"></paper-icon-button>
           </div>
           <globular-path-navigator style="flex-grow: 1;"></globular-path-navigator>
+          <paper-icon-button id="navigation-cloud-upload-btn" icon="icons:cloud-upload" title="Upload files"></paper-icon-button>
+          <paper-icon-button id="navigation-create-dir-btn" icon="icons:create-new-folder" title="Create folder"></paper-icon-button>
+          <paper-icon-button id="navigation-refresh-btn" icon="icons:refresh" title="Refresh"></paper-icon-button>
         </div>
 
         <globular-split-view id="file-explorer-layout">
@@ -690,7 +698,13 @@ export class FileExplorer extends HTMLElement {
     this._permissionManager.onclose = () => {
       this._permissionManager.style.display = "none";
       this._permissionManager.path = null;
-      this._displayView(this._currentDir);
+      // Return to previous view (share panel if that's where we came from)
+      if (this._viewBeforePermissions) {
+        this._hideAllViewsExcept(this._viewBeforePermissions);
+        this._viewBeforePermissions = null;
+      } else {
+        this._displayView(this._currentDir);
+      }
       return false;
     };
     // ensure closing the info manager restores the file view
@@ -734,9 +748,8 @@ export class FileExplorer extends HTMLElement {
     this._sharePanelBtn = this.shadowRoot.querySelector("#show-share-panel-btn");
 
     this._refreshBtn.addEventListener('click', this._handleRefreshClick.bind(this));
-    this._createDirectoryBtn.addEventListener('click', this._handleCreateDirectoryClick.bind(this));
-    this._uploadBtn.addEventListener('click', this._handleUploadClick.bind(this));
-    this._sharePanelBtn.addEventListener('click', this._handleSharePanelClick.bind(this));
+    this._createDirectoryBtn?.addEventListener('click', this._handleCreateDirectoryClick.bind(this));
+    this._uploadBtn?.addEventListener('click', this._handleUploadClick.bind(this));
 
     this._filesListBtn.addEventListener('click', this._handleViewToggleClick.bind(this, 'list'));
     this._fileIconBtn.addEventListener('click', this._handleViewToggleClick.bind(this, 'icon'));
@@ -790,7 +803,6 @@ export class FileExplorer extends HTMLElement {
           const file = await getFileInfo(evt.path);
           if (!file) throw new Error("File not found.");
           const f = adaptFileVM(file);
-          this._closeSharePanel();
 
           const mime = f.getMime();
           const p = f.getPath();
@@ -851,6 +863,9 @@ export class FileExplorer extends HTMLElement {
     Backend.eventHub.subscribe(`display_permission_manager_${explorerId}_event`,
       (uuid) => { this._listeners[`display_permission_manager_${explorerId}_event`] = uuid; },
       (file) => {
+        // Remember which view we came from so we can return to it on close
+        this._viewBeforePermissions = this._sharePanel?.style.display !== "none" ? this._sharePanel : null;
+
         if (!this._permissionManager.parentElement) {
           this._fileSelectionPanel.appendChild(this._permissionManager);
         }
@@ -1964,6 +1979,7 @@ export class FileExplorer extends HTMLElement {
   setDir(dir, callback, preserveHistory) {
     this._currentDir = dir;
     this._path = extractPath(dir);
+    this._updatePathActionTitles();
 
     if (!this._path) {
       // no path, nothing useful to track
@@ -2106,12 +2122,27 @@ export class FileExplorer extends HTMLElement {
       files: children,
     };
   }
+  _updatePathActionTitles() {
+    const folder = this._path ? this._path.split("/").filter(Boolean).pop() || "/" : "";
+    if (this._uploadBtn) this._uploadBtn.title = folder ? `Upload files to ${folder}` : "Upload files";
+    if (this._createDirectoryBtn) this._createDirectoryBtn.title = folder ? `Create folder in ${folder}` : "Create folder";
+    if (this._refreshBtn) this._refreshBtn.title = folder ? `Refresh ${folder}` : "Refresh";
+  }
+
   _updateNavigationButtonStates() {
     const idx = this._navigationIndex;
     const total = this._navigations.length;
 
-    const enableButton = (btn) => btn && btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
-    const disableButton = (btn) => btn && btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
+    const enableButton = (btn) => {
+      if (!btn) return;
+      btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-active)");
+      btn.removeAttribute("disabled");
+    };
+    const disableButton = (btn) => {
+      if (!btn) return;
+      btn.style.setProperty("--iron-icon-fill-color", "var(--palette-action-disabled)");
+      btn.setAttribute("disabled", "true");
+    };
 
     if (!total || idx < 0) {
       disableButton(this._backNavigationBtn);
@@ -2452,14 +2483,14 @@ export class FileExplorer extends HTMLElement {
   }
 
   setSearchResults(results) {
-    this.shadowRoot.querySelectorAll("globular-document-search-results").forEach(el => el.parentNode.removeChild(el));
+    this._fileExplorerContent.querySelectorAll("globular-document-search-results").forEach(el => el.parentNode.removeChild(el));
     results.style.position = "absolute";
     results.style.zIndex = 1000;
     results.style.top = "0px"; results.style.left = "0px"; results.style.right = "0px"; results.style.bottom = "0px";
     results.style.backgroundColor = "var(--surface-color)";
     results.style.color = "var(--on-surface-color)";
     results.style.overflow = "auto";
-    this.appendChild(results);
+    this._fileExplorerContent.appendChild(results);
   }
 
   async createLink(file, dest) {

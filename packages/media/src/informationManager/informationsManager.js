@@ -147,9 +147,9 @@ export class InformationsManager extends HTMLElement {
           flex-grow: 1;
           color: var(--primary-text-color);
         }
-        .title-wrap { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+        .title-wrap { display: flex; flex-direction: row; align-items: center; flex: 1; min-width: 0; }
         .title-main-text { font-size: 1.2rem; font-weight: 600; margin: 0; letter-spacing: -.01em; }
-        .title-sub-text { font-size: .82rem; color: var(--secondary-text-color); margin-top: 3px; opacity: .85; }
+        .title-sub-text { font-size: .82rem; color: var(--secondary-text-color); padding-left: 5px; opacity: .85; }
       </style>
       <div id="container">
         <div id="header">

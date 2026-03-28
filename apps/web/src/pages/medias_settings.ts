@@ -5,25 +5,19 @@ class PageMediaSettings extends HTMLElement {
       <style>
         :host {
           display: block;
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb, var(--palette-divider))
+                          var(--scroll-track, var(--surface-color));
         }
         section.wrap {
           display: flex;
           flex-direction: column;
-          gap: 1rem;
-        }
-        .settings-shell {
-          flex: 1;
-          min-height: 600px;
-          border: 1px solid var(--border-subtle-color);
-          border-radius: 12px;
-          background: var(--surface-elevated-color, var(--surface-color));
-          box-shadow: 0 6px 18px color-mix(in srgb, var(--on-surface-color) 12%, transparent);
-          padding: 16px;
           box-sizing: border-box;
+          padding: 8px;
         }
       </style>
       <section class="wrap">
-        <globular-media-settings style="display:block;height:100%;"></globular-media-settings>
+        <globular-media-settings style="display:flex;"></globular-media-settings>
       </section>
     `;
   }

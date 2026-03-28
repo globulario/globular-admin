@@ -85,6 +85,8 @@ export class FileIconView extends HTMLElement {
     const w = parseInt(this.getAttribute("width") || "80", 10);
     this.style.setProperty("--file-icon-height", `${h}px`);
     this.style.setProperty("--file-icon-width", `${w}px`);
+    // Scale the thumbnail/icon to ~60% of the card width (default 48px for 80px card)
+    this.style.setProperty("--file-icon-thumb-size", `${Math.round(w * 0.6)}px`);
 
     // Clear IntersectionObserver placeholder sizes — the component now has its
     // own CSS-var-driven sizing so these inline min-* styles are no longer needed
@@ -831,6 +833,12 @@ export class FileIconView extends HTMLElement {
 
 function hasLinkFlag(v) { return isLinkFile(v); }
 
+const DOCUMENT_EXTENSIONS = new Set([
+  ".docx", ".xlsx", ".odt", ".ods", ".odp",
+  ".epub", ".rtf", ".csv", ".tsv",
+  ".md", ".markdown", ".html", ".htm", ".xhtml",
+]);
+
 function sectionNameForFile(file) {
   if (!file) return "other";
   if (hasPlaylistManifest(file)) return "video";
@@ -843,6 +851,10 @@ function sectionNameForFile(file) {
   const mime = (mimeOf(file) || "").toLowerCase();
   const [, sub = ""] = mime.split("/");
   if (sub === "pdf") return "pdf";
+  // Document formats indexable for full-text search
+  const name = (nameOf(file) || "").toLowerCase();
+  const dot = name.lastIndexOf(".");
+  if (dot >= 0 && DOCUMENT_EXTENSIONS.has(name.substring(dot))) return "document";
   return "other";
 }
 

@@ -368,12 +368,21 @@ const TITLE_INFO_GLOBAL_STYLE = `
 }
 
 .title-genre-span {
-  border: 1px solid color-mix(in srgb, var(--palette-divider) 60%, transparent);
-  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--on-surface-color) 25%, transparent);
+  padding: 3px 12px;
   user-select: none;
-  border-radius: 12px;
-  font-size: .78rem;
-  background-color: color-mix(in srgb, var(--surface-color-dark, var(--surface-elevated-color)) 80%, transparent);
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 500;
+  letter-spacing: .03em;
+  background: color-mix(in srgb, var(--on-surface-color) 8%, transparent);
+  color: var(--on-surface-color);
+  transition: background .15s ease, border-color .15s ease;
+}
+.title-genre-span:hover {
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 50%, transparent);
+  color: var(--accent-color);
 }
 
 .rating-star {
@@ -497,13 +506,20 @@ const TITLE_INFO_GLOBAL_STYLE = `
   gap: 8px;
 }
 .title-credit-lst a {
-  color: var(--palette-action-active);
-  font-size: .85rem;
+  color: var(--primary-text-color);
+  font-size: .8rem;
   text-decoration: none;
   white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--on-surface-color) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
 .title-credit-lst a:hover {
-  text-decoration: underline;
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 40%, transparent);
+  color: var(--accent-color);
   cursor: pointer;
 }
 
@@ -555,10 +571,16 @@ const TITLE_INFO_GLOBAL_STYLE = `
   min-width: 125px;
   border-radius: 8px;
   overflow: hidden;
+  border: 1px solid transparent;
   box-shadow: var(--shadow-elevation-2dp);
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
 }
-.episode-small-div:hover { box-shadow: var(--shadow-elevation-4dp); cursor: pointer; }
+.episode-small-div:hover {
+  box-shadow: 0 4px 16px rgba(0, 179, 255, .25);
+  border-color: color-mix(in srgb, var(--accent-color) 50%, transparent);
+  transform: scale(1.04);
+  cursor: pointer;
+}
 .episode-small-div img {
   width: 100%;
   height: 150px;
@@ -567,8 +589,8 @@ const TITLE_INFO_GLOBAL_STYLE = `
 }
 .episode-number-badge {
   position: absolute; top: 8px; right: 8px;
-  background-color: color-mix(in srgb, var(--surface-color-dark, #000) 90%, transparent);
-  color: var(--on-primary-color);
+  background-color: rgba(0, 0, 0, 0.85);
+  color: #fff;
   font-weight: 600; font-size: 1.1rem; padding: 4px 8px; border-radius: 4px;
 }
 .play-episode-button {
@@ -578,28 +600,32 @@ const TITLE_INFO_GLOBAL_STYLE = `
 }
 .episode-small-div:hover .play-episode-button { opacity: 1; }
 .slide-on-panel {
-  color: var(--on-primary-color); position: absolute; bottom: 0; left: 0; right: 0;
-  background: color-mix(in srgb, var(--surface-color-dark, #000) 85%, transparent); padding: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--surface-color-dark, #000) 70%, transparent);
+  color: #fff; position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(0, 0, 0, 0.8); padding: 5px 8px;
   display: flex; align-items: center; transform: translateY(100%); transition: transform 0.3s ease;
 }
 .episode-small-div:hover .slide-on-panel { transform: translateY(0); }
 .slide-on-panel-title-name {
-  flex-grow: 1; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex-grow: 1; font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .info-episode-button {
-  color: var(--on-surface-color);
-  margin-left: 8px;
-  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.7);
   border-radius: 50%;
   padding: 4px;
-  /* set the size of the icon button */
-  height:30px;
-  width:30px;
-  --iron-icon-width:20px;
-  --iron-icon-height:20px;
-  --paper-icon-button-ink-color: var(--on-surface-color);
+  height: 26px;
+  width: 26px;
+  --iron-icon-width: 16px;
+  --iron-icon-height: 16px;
+  --paper-icon-button-ink-color: var(--on-primary-color);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2;
 }
+.episode-small-div:hover .info-episode-button { opacity: 1; }
 `;
 
 export class TitleInfo extends HTMLElement {
@@ -772,8 +798,9 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
         }
         .title-synopsis-div {
           font-size: 0.82rem;
-          line-height: 1.35;
-          color: var(--primary-text-color);
+          line-height: 1.45;
+          color: var(--on-surface-color);
+          opacity: .7;
           scrollbar-width: thin;
           scrollbar-color: var(--scroll-thumb, var(--palette-divider))
           var(--scroll-track, var(--surface-color));
@@ -1426,6 +1453,9 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
         page.style.display = "flex";
       });
 
+      // Collect pending poster resolves for parallel loading
+      const pendingPosters = [];
+
       seasonEpisodes.forEach(episode => {
         const poster = episode.getPoster?.();
         const contentUrl = poster?.getContenturl?.() || "";
@@ -1437,11 +1467,11 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
         const episodeHtml = `
           <div class="episode-small-div">
             <div class="episode-number-badge">${episode.getEpisode()}</div>
+            <iron-icon id="infos-btn-${episodeId}" class="info-episode-button" icon="icons:info-outline"></iron-icon>
             <iron-icon id="play-btn-${episodeId}" class="play-episode-button" icon="av:play-circle-filled"></iron-icon>
             <img id="poster-img-${episodeId}" src="${initialPosterUrl}" alt="Episode Poster">
             <div class="slide-on-panel">
               <div class="slide-on-panel-title-name">${episode.getName()}</div>
-              <iron-icon id="infos-btn-${episodeId}" class="info-episode-button" icon="icons:info-outline"></iron-icon>
             </div>
           </div>
         `;
@@ -1450,9 +1480,7 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
         if (!initialPosterUrl) {
           const posterImg = page.querySelector(`#poster-img-${episodeId}`);
           if (posterImg) {
-            this._resolveEpisodePosterUrl(episode).then(url => {
-              if (url) posterImg.src = url;
-            }).catch(() => {});
+            pendingPosters.push({ posterImg, episode });
           }
         }
 
@@ -1469,13 +1497,65 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
         });
       });
 
+      // Resolve posters in parallel (batch of 6 at a time)
+      if (pendingPosters.length > 0) {
+        const CONCURRENCY = 6;
+        const resolveBatch = async (batch) => {
+          await Promise.allSettled(batch.map(async ({ posterImg, episode }) => {
+            try {
+              const url = await this._resolveEpisodePosterUrl(episode);
+              if (url) posterImg.src = url;
+            } catch { /* ignore */ }
+          }));
+        };
+        // Fire and forget — don't block tab rendering
+        (async () => {
+          for (let i = 0; i < pendingPosters.length; i += CONCURRENCY) {
+            await resolveBatch(pendingPosters.slice(i, i + CONCURRENCY));
+          }
+        })();
+      }
+
       tabIndex++;
     }
+
+    // Ensure first tab is visually selected
+    if (tabsContainer) {
+      tabsContainer.selected = 0;
+    }
   }
+
+  // Poster URL caches — shared across episodes to avoid redundant gRPC calls.
+  // _posterCache: episodeId → resolved URL
+  // _dirPosterCache: baseDir → resolved poster URL (shared by episodes in same folder)
+  // _posterInflight: episodeId → Promise (dedup concurrent resolves for same episode)
+  _posterCache = new Map();
+  _dirPosterCache = new Map();
+  _posterInflight = new Map();
 
   async _resolveEpisodePosterUrl(episode) {
     const id = episode?.getId?.() || "";
     if (!id) return "";
+
+    // Return cached result
+    if (this._posterCache.has(id)) return this._posterCache.get(id);
+
+    // Dedup: if another call is already resolving this episode, wait for it
+    if (this._posterInflight.has(id)) return this._posterInflight.get(id);
+
+    const promise = this._doResolveEpisodePosterUrl(episode);
+    this._posterInflight.set(id, promise);
+    try {
+      const url = await promise;
+      this._posterCache.set(id, url);
+      return url;
+    } finally {
+      this._posterInflight.delete(id);
+    }
+  }
+
+  async _doResolveEpisodePosterUrl(episode) {
+    const id = episode?.getId?.() || "";
 
     const asImgSrc = (path) => {
       if (!path) return "";
@@ -1525,7 +1605,10 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
         }
       }
 
-      // 2) Poster-like images in the media directory
+      // 2) Poster-like images in the media directory — cache by baseDir
+      if (this._dirPosterCache.has(baseDir)) {
+        return this._dirPosterCache.get(baseDir);
+      }
       const dirEntries = await listDirSafe(baseDir);
       for (const item of dirEntries) {
         const name = item?.name || item?.getName?.();
@@ -1537,7 +1620,10 @@ static get observedAttributes() { return ['short', 'show-synopsis', 'hide-genres
           (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp"));
         if (looksLikePoster) {
           const url = asImgSrc(path);
-          if (url) return url;
+          if (url) {
+            this._dirPosterCache.set(baseDir, url);
+            return url;
+          }
         }
       }
     }

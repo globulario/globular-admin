@@ -276,17 +276,16 @@ _initializeLayout() {
         fileUrl += `#page=${Number(page)}`;
       }
 
-      // 3) For PDFs, wrap with <embed> HTML; otherwise use the file blob directly
+      // 3) For PDFs, load blob URL directly in iframe (the browser's built-in
+      //    PDF viewer honours #page= on blob: URLs). No <embed> wrapper needed.
+      //    For other files, use the blob URL directly.
       let frameUrl = fileUrl;
       if (isPdf) {
-        const wrapperUrl = makePdfWrapperObjectUrl(fileUrl);
-        frameUrl = wrapperUrl;
-
-        // Revoke previous wrapper if any, then track the new one
+        // Revoke previous wrapper if any
         if (currentWrapperObjectUrl) {
           try { URL.revokeObjectURL(currentWrapperObjectUrl); } catch {}
         }
-        currentWrapperObjectUrl = wrapperUrl;
+        currentWrapperObjectUrl = null;
       }
 
       // 4) set sandbox appropriately (no sandbox for PDFs)

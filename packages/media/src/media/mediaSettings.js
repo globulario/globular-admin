@@ -58,8 +58,6 @@ class MediaSettings extends HTMLElement {
           flex-direction: column;
           color: var(--on-surface-color);
           font-size: 0.85rem;
-          flex: 1;
-          min-height: 0;
         }
 
         .card {
@@ -69,10 +67,8 @@ class MediaSettings extends HTMLElement {
           border-radius: 10px;
           box-shadow: none;
           box-sizing: border-box;
-          flex: 1;
           display: flex;
           flex-direction: column;
-          min-height: 0;
         }
 
         #header-row {

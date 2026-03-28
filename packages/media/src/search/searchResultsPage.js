@@ -478,18 +478,27 @@ export class SearchResultsPage extends HTMLElement {
                     padding: 0;
                 }
                 .mosaic-section-header {
-                    font-size: .78rem;
+                    font-size: .75rem;
                     font-weight: 600;
                     text-transform: uppercase;
-                    letter-spacing: .08em;
-                    padding-bottom: 8px;
+                    letter-spacing: .04em;
+                    padding: 4px 8px;
                     margin-bottom: 14px;
-                    border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
-                    color: var(--secondary-text-color);
+                    border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 50%, transparent);
+                    border-radius: 4px 4px 0 0;
+                    background: color-mix(in srgb, var(--on-surface-color) 5%, var(--surface-color));
+                    color: var(--secondary-text-color, var(--palette-text-secondary));
                     display: flex;
                     align-items: center;
                     justify-content: flex-start;
-                    gap: 4px;
+                    gap: 6px;
+                    user-select: none;
+                }
+                .mosaic-section-header iron-icon {
+                    fill: var(--secondary-text-color);
+                }
+                .mosaic-section-header span {
+                    flex-grow: 1;
                 }
                 .mosaic-section-header paper-icon-button {
                     --iron-icon-fill-color: var(--secondary-text-color);
@@ -630,6 +639,7 @@ export class SearchResultsPage extends HTMLElement {
                         <div id="mosaic-view">
                             <div class="mosaic-section" data-section="blogPosts">
                                 <div class="mosaic-section-header">
+                                    <iron-icon icon="editor:insert-drive-file" style="width:18px;height:18px;opacity:.7;"></iron-icon>
                                     <span>Blog Posts</span>
                                 </div>
                                 <div class="mosaic-section-content">
@@ -638,6 +648,7 @@ export class SearchResultsPage extends HTMLElement {
                             </div>
                             <div class="mosaic-section" data-section="videos">
                                 <div class="mosaic-section-header">
+                                    <iron-icon icon="av:movie" style="width:18px;height:18px;opacity:.7;"></iron-icon>
                                     <span>Videos</span>
                                     <paper-icon-button class="mosaic-play-btn" data-section="videos" icon="av:play-arrow" title="Play All Videos"></paper-icon-button>
                                 </div>
@@ -647,6 +658,7 @@ export class SearchResultsPage extends HTMLElement {
                             </div>
                             <div class="mosaic-section" data-section="titles">
                                 <div class="mosaic-section-header">
+                                    <iron-icon icon="av:movie" style="width:18px;height:18px;opacity:.7;"></iron-icon>
                                     <span>Titles</span>
                                 </div>
                                 <div class="mosaic-section-content">
@@ -655,6 +667,7 @@ export class SearchResultsPage extends HTMLElement {
                             </div>
                             <div class="mosaic-section" data-section="audios">
                                 <div class="mosaic-section-header">
+                                    <iron-icon icon="image:music-note" style="width:18px;height:18px;opacity:.7;"></iron-icon>
                                     <span>Audios</span>
                                     <paper-icon-button class="mosaic-play-btn" data-section="audios" icon="av:play-arrow" title="Play All Audios"></paper-icon-button>
                                 </div>
