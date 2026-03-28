@@ -107,6 +107,7 @@ export class FilesListView extends FilesView {
 
       table {
         width: 100%;
+        table-layout: fixed;
         border-collapse: collapse;
         background: var(--surface-color);
         color: var(--on-surface-color);
@@ -120,10 +121,13 @@ export class FilesListView extends FilesView {
       }
 
       th {
-        padding: 4px 8px;
+        padding: 3px 8px;
         text-align: left;
-        font-weight: 500;
-        font-size: .9rem;
+        font-weight: 600;
+        font-size: .75rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--secondary-text-color, var(--on-surface-color));
         cursor: pointer;
       }
 
@@ -132,9 +136,19 @@ export class FilesListView extends FilesView {
                         var(--row-hover-bg, rgba(0,0,0,0.04)));
       }
 
+      /* Column widths */
+      th:nth-child(1), td:nth-child(1) { width: 50%; }
+      th:nth-child(2), td:nth-child(2) { width: 22%; }
+      th:nth-child(3), td:nth-child(3) { width: 14%; }
+      th:nth-child(4), td:nth-child(4) { width: 14%; text-align: right; }
+
       tbody tr {
-        border-bottom: 1px solid var(--palette-divider);
-        transition: background .2s ease;
+        border-bottom: 1px solid color-mix(in srgb, var(--palette-divider) 40%, transparent);
+        transition: background .15s ease;
+      }
+
+      tbody tr:nth-child(even) {
+        background: color-mix(in srgb, var(--on-surface-color) 3%, transparent);
       }
 
       tbody tr:last-child {
@@ -143,25 +157,24 @@ export class FilesListView extends FilesView {
 
       tbody tr:hover {
         background: var(--row-hover-bg,
-                        rgba(0,0,0,0.04));
+                        color-mix(in srgb, var(--on-surface-color) 6%, transparent));
       }
 
       tbody tr.active {
-        filter: brightness(1.05);
+        background: color-mix(in srgb, var(--on-surface-color) 6%, transparent);
       }
 
       tbody tr.selected {
         background: var(--row-selected-bg,
-                        rgba(25,118,210,0.12)); /* safe default for both themes */
+                        rgba(25,118,210,0.12));
       }
 
       td {
-        padding: 8px 12px;
-        font-size: .85rem;
+        padding: 4px 8px;
+        font-size: .8rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 200px;
       }
 
       .first-cell {
@@ -173,11 +186,12 @@ export class FilesListView extends FilesView {
 
       .first-cell span {
         flex-grow: 1;
-        padding-left: 8px;
+        padding-left: 4px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         cursor: pointer;
+        font-size: .8rem;
         color: var(--on-surface-color);
       }
 
@@ -194,23 +208,32 @@ export class FilesListView extends FilesView {
       }
 
       .first-cell paper-icon-button {
-        min-width: 40px;
+        min-width: 28px;
+        width: 28px;
+        height: 28px;
         visibility: hidden;
         --iron-icon-fill-color: var(--palette-action-disabled, #9e9e9e);
       }
 
       .file-icon {
-        height: 24px;
-        width: 24px;
-        margin-right: 8px;
+        height: 20px;
+        width: 20px;
+        margin-right: 6px;
+        flex-shrink: 0;
         --iron-icon-fill-color: var(--on-surface-color);
       }
 
+      .file-icon[icon="icons:folder"] {
+        --iron-icon-fill-color: #e2a652;
+      }
+
       .file-thumbnail {
-        height: 32px;
-        width: 32px;
+        height: 24px;
+        width: 24px;
         object-fit: contain;
-        margin-right: 8px;
+        margin-right: 6px;
+        flex-shrink: 0;
+        border-radius: 2px;
         display: none;
       }
 
