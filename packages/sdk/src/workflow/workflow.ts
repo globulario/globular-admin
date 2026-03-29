@@ -170,6 +170,26 @@ export function failureClassLabel(f: number): string {
   return labels[f] ?? 'UNKNOWN'
 }
 
+export function triggerReasonLabel(t: number): string {
+  const labels: Record<number, string> = {
+    0: 'UNKNOWN', 1: 'DESIRED_DRIFT', 2: 'BOOTSTRAP', 3: 'RETRY',
+    4: 'MANUAL', 5: 'DEPENDENCY_UNBLOCKED', 6: 'UPGRADE', 7: 'REPAIR',
+  }
+  return labels[t] ?? 'UNKNOWN'
+}
+
+export function triggerReasonColor(t: number): string {
+  switch (t) {
+    case 2: return '#8b5cf6'   // BOOTSTRAP — purple
+    case 7: return '#f59e0b'   // REPAIR — amber
+    case 1: return '#3b82f6'   // DESIRED_DRIFT — blue
+    case 6: return '#10b981'   // UPGRADE — green
+    case 3: return '#f97316'   // RETRY — orange
+    case 4: return 'var(--secondary-text-color)' // MANUAL
+    default: return 'var(--secondary-text-color)'
+  }
+}
+
 // ─── API functions ──────────────────────────────────────────────────────────
 
 function pbToContext(ctx: any): WorkflowContext | null {

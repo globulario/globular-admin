@@ -14,6 +14,8 @@ import {
   actorLabel,
   stepStatusColor,
   failureClassLabel,
+  triggerReasonLabel,
+  triggerReasonColor,
   type WorkflowRun,
   type WorkflowStep,
   type WorkflowArtifact,
@@ -372,6 +374,7 @@ export class WorkflowDetailPanel extends HTMLElement {
         </div>
         <div class="wf-meta">
           <span>Node: <strong>${ctx?.nodeHostname || ctx?.nodeId || this._nodeHostname || '—'}</strong></span>
+          ${run.triggerReason ? `<span>Trigger: <strong style="color:${triggerReasonColor(run.triggerReason)}">${triggerReasonLabel(run.triggerReason)}</strong></span>` : ''}
           ${isFailed ? `<span>Failure: <strong style="color:#ef4444">${failureClassLabel(run.failureClass)}</strong></span>` : ''}
           <span>Retries: <strong>${run.retryCount}</strong></span>
           <span>Plan: <code>${ctx?.planId?.slice(0, 8) || '—'}</code> gen=${ctx?.planGeneration ?? '?'}</span>
