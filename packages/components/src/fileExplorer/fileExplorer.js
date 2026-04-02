@@ -1513,88 +1513,128 @@ export class FileExplorer extends HTMLElement {
 
   _handleCreateDirectoryClick() {
     const isPublicContext = this._path === "/public";
-    const inputLabel = isPublicContext ? "Directory path to make public" : "New folder name";
+    const inputLabel = isPublicContext ? "Directory path" : "New folder name";
     const defaultValue = isPublicContext ? "" : "Untitled Folder";
 
     const dialogId = "new-dir-dialog";
     let dialog = this._fileExplorerContent.querySelector(`#${dialogId}`);
 
-    if (!dialog) {
-      const html = `
-        <style>
-          #${dialogId} {
-            display: flex;
-            position: absolute;
-            flex-direction: column;
-            right: 60px;
-            top: 50px;
-            z-index: 100;
-            background-color: var(--surface-color);
-            color: var(--on-surface-color);
-            box-shadow: var(--shadow-elevation-2dp);
-            border-radius: 8px;
-            overflow: hidden;
-            border: 1px solid var(--palette-divider);
-          }
-          .new-dir-dialog-actions {
-            font-size: .85rem;
-            align-items: center;
-            justify-content: flex-end;
-            display: flex;
-            background-color: var(--surface-color);
-            color: var(--on-surface-color);
-            padding: 8px;
-            border-top: 1px solid var(--palette-divider);
-          }
-          .card-content { padding: 16px; }
-          .helper-text {
-            font-size: 0.8rem;
-            color: var(--palette-text-secondary);
-            margin-top: 8px;
-          }
-          paper-input {
-            --paper-input-container-color: var(--on-surface-color);
-            --paper-input-container-focus-color: var(--on-surface-color);
-            --paper-input-container-label-floating-color: var(--on-surface-color);
-            --paper-input-container-input-color: var(--on-surface-color);
-          }
-        </style>
-        <paper-card id="${dialogId}">
-          <div class="card-content">
-            <paper-input id="new-dir-input" label="${inputLabel}" value="${defaultValue}"></paper-input>
-            <div class="helper-text" data-public-helper style="display:${isPublicContext ? "block" : "none"};">
-              Enter an existing directory path (e.g., /users/john@domain/media).
-            </div>
+    // Always rebuild the dialog to ensure correct context.
+    if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog);
+
+    const html = `
+      <style>
+        #${dialogId} {
+          display: flex;
+          position: absolute;
+          flex-direction: column;
+          right: 60px;
+          top: 50px;
+          z-index: 100;
+          background-color: var(--surface-color);
+          color: var(--on-surface-color);
+          box-shadow: var(--shadow-elevation-2dp);
+          border-radius: 8px;
+          overflow: hidden;
+          border: 1px solid var(--palette-divider);
+          min-width: 320px;
+        }
+        .new-dir-dialog-actions {
+          font-size: .85rem;
+          align-items: center;
+          justify-content: flex-end;
+          display: flex;
+          background-color: var(--surface-color);
+          color: var(--on-surface-color);
+          padding: 8px;
+          border-top: 1px solid var(--palette-divider);
+        }
+        .card-content { padding: 16px; }
+        .helper-text {
+          font-size: 0.8rem;
+          color: var(--palette-text-secondary);
+          margin-top: 8px;
+        }
+        paper-input, select {
+          --paper-input-container-color: var(--on-surface-color);
+          --paper-input-container-focus-color: var(--on-surface-color);
+          --paper-input-container-label-floating-color: var(--on-surface-color);
+          --paper-input-container-input-color: var(--on-surface-color);
+        }
+        .public-dir-type-select {
+          width: 100%;
+          padding: 8px;
+          margin-bottom: 12px;
+          border: 1px solid var(--palette-divider);
+          border-radius: 4px;
+          background: var(--surface-color);
+          color: var(--on-surface-color);
+          font-size: 0.9rem;
+        }
+        .type-label {
+          font-size: 0.8rem;
+          color: var(--palette-text-secondary);
+          margin-bottom: 4px;
+        }
+      </style>
+      <paper-card id="${dialogId}">
+        <div class="card-content">
+          ${isPublicContext ? `
+            <div class="type-label">Type</div>
+            <select id="public-dir-type-select" class="public-dir-type-select">
+              <option value="0">Local directory (this node's filesystem)</option>
+              <option value="1">MinIO (shared object storage)</option>
+              <option value="2">External mount (NTFS / Samba / NFS)</option>
+            </select>
+          ` : ""}
+          <paper-input id="new-dir-input" label="${inputLabel}" value="${defaultValue}"></paper-input>
+          <div class="helper-text" data-public-helper style="display:${isPublicContext ? "block" : "none"};">
+            <span data-helper-local>Filesystem path on the node (e.g. /var/lib/globular/data/shared/photos)</span>
+            <span data-helper-minio style="display:none">Virtual path under /public/ in MinIO (e.g. /public/datasets)</span>
+            <span data-helper-external style="display:none">Mount point path (e.g. /mnt/syno/videos)</span>
           </div>
-          <div class="new-dir-dialog-actions">
-            <paper-button id="new-dir-cancel-btn">Cancel</paper-button>
-            <paper-button id="new-dir-create-btn">Create</paper-button>
-          </div>
-        </paper-card>
-      `;
-      const range = document.createRange();
-      this._fileExplorerContent.appendChild(range.createContextualFragment(html));
-      dialog = this._fileExplorerContent.querySelector(`#${dialogId}`);
+        </div>
+        <div class="new-dir-dialog-actions">
+          <paper-button id="new-dir-cancel-btn">Cancel</paper-button>
+          <paper-button id="new-dir-create-btn">${isPublicContext ? "Add" : "Create"}</paper-button>
+        </div>
+      </paper-card>
+    `;
+    const range = document.createRange();
+    this._fileExplorerContent.appendChild(range.createContextualFragment(html));
+    dialog = this._fileExplorerContent.querySelector(`#${dialogId}`);
+
+    // paper-card may have shadow DOM, so query from the content root instead.
+    const input = this._fileExplorerContent.querySelector("#new-dir-input");
+    const typeSelect = this._fileExplorerContent.querySelector("#public-dir-type-select");
+
+    // Update helper text when type changes.
+    if (typeSelect) {
+      const helperLocal = this._fileExplorerContent.querySelector("[data-helper-local]");
+      const helperMinio = this._fileExplorerContent.querySelector("[data-helper-minio]");
+      const helperExternal = this._fileExplorerContent.querySelector("[data-helper-external]");
+      typeSelect.onchange = () => {
+        const v = typeSelect.value;
+        if (helperLocal) helperLocal.style.display = v === "0" ? "inline" : "none";
+        if (helperMinio) helperMinio.style.display = v === "1" ? "inline" : "none";
+        if (helperExternal) helperExternal.style.display = v === "2" ? "inline" : "none";
+        // Update input label based on type.
+        if (input) {
+          if (v === "1") input.label = "MinIO path (e.g. /public/datasets)";
+          else input.label = "Directory path";
+        }
+      };
     }
 
-    const input = dialog.querySelector("#new-dir-input");
-    const helper = dialog.querySelector("[data-public-helper]");
-    if (input) {
-      input.label = inputLabel;
-      input.value = defaultValue;
-    }
-    if (helper) {
-      helper.style.display = isPublicContext ? "block" : "none";
-    }
     setTimeout(() => {
-      input.focus();
-      if (!isPublicContext) {
+      input?.focus();
+      if (!isPublicContext && input?.inputElement?._inputElement) {
         input.inputElement._inputElement.select();
       }
     }, 50);
 
-    const cancelBtn = dialog.querySelector("#new-dir-cancel-btn");
-    const createBtn = dialog.querySelector("#new-dir-create-btn");
+    const cancelBtn = this._fileExplorerContent.querySelector("#new-dir-cancel-btn");
+    const createBtn = this._fileExplorerContent.querySelector("#new-dir-create-btn");
 
     const removeDialog = () => { if (dialog && dialog.parentNode) dialog.parentNode.removeChild(dialog); };
 
@@ -1618,14 +1658,14 @@ export class FileExplorer extends HTMLElement {
       try {
         if (isPublicContext) {
           let publicPath = rawValue;
-          // If the user typed a relative name (no leading /), resolve against
-          // the current browsing directory so the server receives a full path.
           if (!publicPath.startsWith("/") && this._path) {
             publicPath = `${this._path.replace(/\/+$/, "")}/${publicPath}`;
           }
           if (!publicPath.startsWith("/")) publicPath = `/${publicPath}`;
-          await addPublicDir(publicPath);
-          displayMessage(`Directory "${publicPath}" added to public list.`, 3000);
+          const dirType = typeSelect ? parseInt(typeSelect.value, 10) : undefined;
+          await addPublicDir(publicPath, dirType);
+          const typeLabel = dirType === 1 ? "MinIO" : dirType === 2 ? "external" : "local";
+          displayMessage(`${typeLabel} directory "${publicPath}" added to public list.`, 3000);
           Backend.eventHub.publish("public_change_permission_event", null, false);
           this.publishSetDirEvent("/public");
         } else {
@@ -1875,7 +1915,8 @@ export class FileExplorer extends HTMLElement {
       const fetchPath = this._resolveRealPath(path) || path;
       const displayPath = path;
 
-      if (fetchPath === "/public" || fetchPath?.startsWith("/public/")) {
+      if (fetchPath === "/public") {
+        // Synthetic public root: show the list of registered public dirs.
         const dirVM = await this._buildPublicDirVM();
         const adapted = adaptDirVM(dirVM);
         this._currentDirVM = dirVM;

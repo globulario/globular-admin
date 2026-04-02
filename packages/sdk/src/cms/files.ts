@@ -836,15 +836,52 @@ export async function findIndexes(path: string, recursive = false): Promise<stri
   return Array.isArray(paths) ? paths : [];
 }
 
-/** Add a public directory (FileService domain-wide) */
-export async function addPublicDir(path: string): Promise<void> {
+/**
+ * Public dir type constants matching proto PublicDirType enum.
+ *   LOCAL    = 0  — node-local filesystem path
+ *   MINIO    = 1  — MinIO /public/ prefix (cluster-wide)
+ *   EXTERNAL = 2  — external mount (NTFS, Samba, NFS)
+ */
+export const PublicDirType = { LOCAL: 0, MINIO: 1, EXTERNAL: 2 } as const;
+export type PublicDirTypeValue = (typeof PublicDirType)[keyof typeof PublicDirType];
+
+/** Structured public dir info returned by the backend. */
+export interface PublicDirInfoObj {
+  path: string;
+  type: PublicDirTypeValue;
+  nodeId: string;
+  nodeAddress: string;
+  localPath: string;
+}
+
+/** Add a public directory with optional type (auto-detected if omitted). */
+export async function addPublicDir(
+  path: string,
+  type?: PublicDirTypeValue,
+): Promise<PublicDirInfoObj | void> {
   const md = metadata();
   const rq = newRq(SERVICE_METHODS.addPublicDir.rq);
   if (typeof rq.setPath === 'function') rq.setPath(path);
   else rq.path = path;
+  if (type != null) {
+    if (typeof rq.setType === 'function') rq.setType(type);
+    else rq.type = type;
+  }
   const method = pickMethod(clientFactory(), SERVICE_METHODS.addPublicDir.method);
-  await unary(clientFactory, method, rq, undefined, md);
+  const rsp: any = await unary(clientFactory, method, rq, undefined, md);
   if (CACHE_ENABLED && _cache) _cache.invalidate(path);
+
+  // Extract structured info from response if available.
+  const info = rsp?.getInfo?.() ?? rsp?.info;
+  if (info) {
+    return {
+      path: (info.getPath?.() ?? info.path ?? path),
+      type: (info.getType?.() ?? info.type ?? 0),
+      nodeId: (info.getNodeId?.() ?? info.nodeId ?? ""),
+      nodeAddress: (info.getNodeAddress?.() ?? info.nodeAddress ?? ""),
+      localPath: (info.getLocalPath?.() ?? info.localPath ?? path),
+    };
+  }
 }
 
 function extractPathFromTarget(target: any): string | undefined {
@@ -1184,33 +1221,58 @@ export function markAsShare(node: any): void {
   try { (node as any).__isShared = true; } catch { }
 }
 
-export async function listPublicDirs(): Promise<string[]> {
+/**
+ * List public directories.  Returns the structured list when the backend
+ * supports it, otherwise falls back to the legacy string list.
+ */
+export async function listPublicDirsStructured(): Promise<PublicDirInfoObj[]> {
   const md = metadata();
   const rq = newRq(SERVICE_METHODS.getPublicDirs.rq);
   const method = pickMethod(clientFactory(), SERVICE_METHODS.getPublicDirs.method);
   const rsp: any = await unary(clientFactory, method, rq, undefined, md);
-  const list =
-    (rsp?.getDirsList && rsp.getDirsList()) ??
-    rsp?.dirsList ??
-    rsp?.dirs ??
-    [];
-  if (!Array.isArray(list)) return [];
 
+  // Try structured list first (new proto field public_dirs).
+  const structured: any[] =
+    rsp?.getPublicDirsList?.() ?? rsp?.publicDirsList ?? rsp?.publicDirs ?? [];
+  if (Array.isArray(structured) && structured.length > 0) {
+    return structured.map((info: any) => ({
+      path: normalizeDirPath(info.getPath?.() ?? info.path ?? ""),
+      type: (info.getType?.() ?? info.type ?? 0) as PublicDirTypeValue,
+      nodeId: (info.getNodeId?.() ?? info.nodeId ?? ""),
+      nodeAddress: (info.getNodeAddress?.() ?? info.nodeAddress ?? ""),
+      localPath: (info.getLocalPath?.() ?? info.localPath ?? ""),
+    }));
+  }
+
+  // Fallback: legacy string list.
+  const list: any[] =
+    rsp?.getDirsList?.() ?? rsp?.dirsList ?? rsp?.dirs ?? [];
+  if (!Array.isArray(list)) return [];
   const seen = new Set<string>();
-  const normalized: string[] = [];
+  const result: PublicDirInfoObj[] = [];
   for (const entry of list) {
     if (typeof entry !== "string") continue;
-    let path = entry.trim();
-    if (!path) continue;
-    if (!path.startsWith("/")) path = "/" + path;
-    path = path.replace(/\/+/g, "/");
-    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-    if (!seen.has(path)) {
-      seen.add(path);
-      normalized.push(path);
-    }
+    const path = normalizeDirPath(entry);
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    result.push({ path, type: PublicDirType.LOCAL, nodeId: "", nodeAddress: "", localPath: path });
   }
-  return normalized;
+  return result;
+}
+
+function normalizeDirPath(raw: string): string {
+  let path = (raw || "").trim();
+  if (!path) return "";
+  if (!path.startsWith("/")) path = "/" + path;
+  path = path.replace(/\/+/g, "/");
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  return path;
+}
+
+/** Backward-compatible: returns just the path strings. */
+export async function listPublicDirs(): Promise<string[]> {
+  const dirs = await listPublicDirsStructured();
+  return dirs.map(d => d.path);
 }
 
 /** Backward-compatible alias (older code imported getPublicDirs) */

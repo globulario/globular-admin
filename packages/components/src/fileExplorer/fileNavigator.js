@@ -7,11 +7,13 @@ import { displayError, displayMessage } from "@globular/sdk";
 
 // FS wrappers
 import {
-  readDir,            // (path, { refresh }?) => Promise<DirVM>
-  getFile,            // (path, thumbW?, thumbH?) => Promise<FileVM>
-  markAsPublic,       // (vm) => void
-  markAsShare,        // (vm) => void
-  listPublicDirs,     // () => Promise<string[]>
+  readDir,                  // (path, { refresh }?) => Promise<DirVM>
+  getFile,                  // (path, thumbW?, thumbH?) => Promise<FileVM>
+  markAsPublic,             // (vm) => void
+  markAsShare,              // (vm) => void
+  listPublicDirs,           // () => Promise<string[]>
+  listPublicDirsStructured, // () => Promise<PublicDirInfoObj[]>
+  PublicDirType,            // { LOCAL: 0, MINIO: 1, EXTERNAL: 2 }
 } from "@globular/sdk";
 
 // RBAC wrappers
@@ -765,33 +767,31 @@ export class FileNavigator extends HTMLElement {
       this._fileExplorer?.resetPublicAliasMap?.();
 
       try {
-        const paths = await listPublicDirs();
-        const children = await Promise.all(
-          paths.map(async (p) => {
-            try {
-              const dir = await readDir(p);
-              markAsPublic(dir);
-              dir.name = nameOf(dir) || (p.split("/").pop() || p);
-              const aliasBase = `/public/${dir.name}`.replace(/\/{2,}/g, "/").replace(/\/$/, "");
-              dir.__syntheticPublicPath = aliasBase;
-              this._fileExplorer?.registerPublicAlias?.(p, aliasBase);
-              return dir;
-            } catch (err) {
-              const fallback = {
-                name: p.split("/").pop() || p,
-                path: p,
-                isDir: true,
-                mime: "inode/directory",
-                files: [],
-              };
-              markAsPublic(fallback);
-              const aliasBase = `/public/${fallback.name}`.replace(/\/{2,}/g, "/").replace(/\/$/, "");
-              fallback.__syntheticPublicPath = aliasBase;
-              this._fileExplorer?.registerPublicAlias?.(p, aliasBase);
-              return fallback;
-            }
-          })
-        );
+        const dirInfos = await listPublicDirsStructured();
+        const children = dirInfos.map((info) => {
+          const p = info.path;
+          const dirName = p.split("/").pop() || p;
+          const typeTag =
+            info.type === PublicDirType.MINIO ? " [MinIO]" :
+            info.type === PublicDirType.EXTERNAL ? " [Mount]" : "";
+          const aliasBase = `/public/${dirName}`.replace(/\/{2,}/g, "/").replace(/\/$/, "");
+
+          const dir = {
+            name: dirName,
+            path: p,
+            isDir: true,
+            mime: "inode/directory",
+            files: [],
+            __publicDirType: info.type,
+            __publicNodeId: info.nodeId,
+            __publicNodeAddress: info.nodeAddress,
+            __syntheticPublicPath: aliasBase,
+            __typeTag: typeTag,
+          };
+          markAsPublic(dir);
+          this._fileExplorer?.registerPublicAlias?.(p, aliasBase);
+          return dir;
+        });
 
         const publicRoot = {
           name: "Public",
