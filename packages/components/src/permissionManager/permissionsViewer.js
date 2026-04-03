@@ -5,8 +5,6 @@ import { listAccounts } from "@globular/sdk"
 import { listGroups } from "@globular/sdk"
 import { listOrganizations } from "@globular/sdk"
 import { listApplications } from "@globular/sdk"; // NEW apps accessor (ApplicationVM[])
-import { listPeers } from "@globular/sdk"
-
 // VM persistence utilities
 import { setResourcePermissions } from "@globular/sdk"
 import { permissionsProtoToVM, permissionsVMToProto } from "./permissionsUtils.js"
@@ -42,21 +40,18 @@ function parseFQID(thing) {
   if (at > 0) return { id: s.slice(0, at), domain: s.slice(at + 1) }
   return { id: s, domain: "" }
 }
-function parsePeerKey(thing) { return parseFQID(thing) }
-
 // -------------------- light data caches to avoid repeated list calls ------
 const caches = {
-  accounts: new Map(), groups: new Map(), orgs: new Map(), apps: new Map(), peers: new Map(),
+  accounts: new Map(), groups: new Map(), orgs: new Map(), apps: new Map(),
 }
-let _accountsLoaded = false, _groupsLoaded = false, _orgsLoaded = false, _appsLoaded = false, _peersLoaded = false
+let _accountsLoaded = false, _groupsLoaded = false, _orgsLoaded = false, _appsLoaded = false
 const keyId  = (id, domain) => domain ? `${id}@${domain}` : String(id || "")
-const keyMac = (mac, domain) => domain ? `${mac}@${domain}` : String(mac || "")
 
 const cloneVM = (vm) => JSON.parse(JSON.stringify(vm || {}))
 const emptyVM = () => ({
   path: "",
   resourceType: "",
-  owners: { accounts: [], groups: [], applications: [], organizations: [], peers: [] },
+  owners: { accounts: [], groups: [], applications: [], organizations: [] },
   allowed: [],
   denied: [],
 })
@@ -103,23 +98,10 @@ async function ensureApps() {
   })
   _appsLoaded = true
 }
-async function ensurePeers() {
-  if (_peersLoaded) return
-  const arr = await (listPeers() || [])
-  const items = Array.isArray(arr) ? arr : (arr.items || [])
-  items.forEach(p => {
-    const mac = getMac(p), dom = getDomain(p)
-    caches.peers.set(keyMac(mac, dom), p)
-    caches.peers.set(keyMac(mac, ""), p)
-  })
-  _peersLoaded = true
-}
-
 async function resolveAccount(idOrFqid) { await ensureAccounts(); const { id, domain } = parseFQID(idOrFqid); return caches.accounts.get(keyId(id, domain)) || caches.accounts.get(keyId(id, "")) }
 async function resolveGroup(idOrFqid)   { await ensureGroups();  const { id, domain } = parseFQID(idOrFqid); return caches.groups.get(keyId(id, domain))   || caches.groups.get(keyId(id, "")) }
 async function resolveOrg(idOrFqid)     { await ensureOrgs();    const { id, domain } = parseFQID(idOrFqid); return caches.orgs.get(keyId(id, domain))     || caches.orgs.get(keyId(id, "")) }
 async function resolveApp(idOrFqid)     { await ensureApps();    const { id, domain } = parseFQID(idOrFqid); return caches.apps.get(keyId(id, domain))     || caches.apps.get(keyId(id, "")) }
-async function resolvePeer(macOrFqid)   { await ensurePeers();   const { id: mac, domain } = parsePeerKey(macOrFqid); return caches.peers.get(keyMac(mac, domain)) || caches.peers.get(keyMac(mac, "")) }
 
 // ==========================================================================
 
@@ -604,7 +586,6 @@ export class PermissionsViewer extends HTMLElement {
     owners.groups.forEach(id => addSubject(id, "group", "owner", "allowed"))
     owners.applications.forEach(id => addSubject(id, "application", "owner", "allowed"))
     owners.organizations.forEach(id => addSubject(id, "organization", "owner", "allowed"))
-    owners.peers.forEach(id => addSubject(id, "peer", "owner", "allowed"))
 
     const allowed = Array.isArray(this._permissions?.allowed) ? this._permissions.allowed : []
     const denied  = Array.isArray(this._permissions?.denied)  ? this._permissions.denied  : []

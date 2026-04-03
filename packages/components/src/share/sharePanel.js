@@ -154,7 +154,6 @@ export class SharePanel extends HTMLElement {
     // Hook more subject types here if your subjectsView supports them:
     // this._subjectsView.on_application_click = (_d, app) => this.displaySharedResources(app)
     // this._subjectsView.on_organization_click = (_d, org) => this.displaySharedResources(org)
-    // this._subjectsView.on_peer_click = (_d, peer) => this.displaySharedResources(peer)
   }
 
   // --------------------------- handlers ---------------------------

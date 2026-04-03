@@ -90,7 +90,6 @@ export type PermissionSubjectLists = {
   groups: string[]
   applications: string[]
   organizations: string[]
-  peers: string[]
 }
 
 export type PermissionEntryVM = {
@@ -112,7 +111,6 @@ export function toPermissionsVM(p: any): PermissionsVM {
     groups: getArr(perm, ['getGroupsList', 'groups']),
     applications: getArr(perm, ['getApplicationsList', 'applications']),
     organizations: getArr(perm, ['getOrganizationsList', 'organizations']),
-    peers: getArr(perm, ['getPeersList', 'peers']),
   })
 
   const mapEntry = (perm: any): PermissionEntryVM => ({
@@ -123,7 +121,7 @@ export function toPermissionsVM(p: any): PermissionsVM {
   return {
     path: getStr(p, ['getPath', 'path'], ''),
     resourceType: getStr(p, ['getResourceType', 'resourceType'], ''),
-    owners: owners ? mapSubjects(owners) : { accounts: [], groups: [], applications: [], organizations: [], peers: [] },
+    owners: owners ? mapSubjects(owners) : { accounts: [], groups: [], applications: [], organizations: [] },
     allowed: (p?.getAllowedList?.() ?? p?.allowed ?? []).map(mapEntry),
     denied: (p?.getDeniedList?.() ?? p?.denied ?? []).map(mapEntry),
   }
@@ -296,5 +294,4 @@ export const setPermissionSubjects = (perm: rbac.Permission, lists: Partial<Perm
   if (lists.groups) perm.setGroupsList?.(lists.groups)
   if (lists.applications) perm.setApplicationsList?.(lists.applications)
   if (lists.organizations) perm.setOrganizationsList?.(lists.organizations)
-  if (lists.peers) (perm as any).setPeersList?.(lists.peers)
 }

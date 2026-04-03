@@ -222,6 +222,14 @@ function makeTokenLoader() {
 }
 
 /**
+ * Known video file extensions that the HLS transcoder uses as input.
+ * Only these should be stripped when computing the playlist path;
+ * dot-separated directory names (e.g. "Movie.Name.2024.x264.YIFY")
+ * must be kept intact.
+ */
+const VIDEO_EXTENSIONS_RE = /\.(mp4|mkv|avi|webm|mov|m4v|flv|wmv|mpg|mpeg|m2ts|ts)$/i
+
+/**
  * Compute a playlist source path when the user passes:
  * - a directory path
  * - a file path
@@ -244,11 +252,9 @@ function computePlaylistSourcePath(path) {
       const parsed = new URL(raw)
       if (!/\/playlist\.m3u8($|\?)/i.test(parsed.pathname)) {
         let pathname = parsed.pathname.replace(/\/$/, '')
-        // Strip file extension so the HLS dir matches server structure:
-        // /mnt/.../video.mp4 → /mnt/.../video/playlist.m3u8
-        const lastDot = pathname.lastIndexOf('.')
-        const lastSlash = pathname.lastIndexOf('/')
-        if (lastDot > lastSlash) pathname = pathname.substring(0, lastDot)
+        // Only strip known video extensions; directory names with dots
+        // (e.g. "Movie.Name.2024.x264.YIFY") must stay intact.
+        pathname = pathname.replace(VIDEO_EXTENSIONS_RE, '')
         parsed.pathname = pathname + '/playlist.m3u8'
       }
       return parsed.toString()
@@ -257,11 +263,9 @@ function computePlaylistSourcePath(path) {
     }
   }
 
-  // local path: strip file extension so the HLS dir matches server structure.
-  // The server creates HLS at [stem]/playlist.m3u8, not [stem.ext]/playlist.m3u8.
-  const lastDot = n.lastIndexOf('.')
-  const lastSlash = n.lastIndexOf('/')
-  const stem = lastDot > lastSlash ? n.substring(0, lastDot) : n
+  // local path: only strip known video extensions so the HLS dir matches
+  // server structure.  Directory names with dots are kept as-is.
+  const stem = n.replace(VIDEO_EXTENSIONS_RE, '')
   return `${stem}/playlist.m3u8`
 }
 
@@ -1989,6 +1993,9 @@ export class VideoPlayer extends HTMLElement {
         loader: makeTokenLoader(),
         autoStartLoad: false, // we will manually start loading after wiring resume position
         startPosition: initialHlsStart ?? -1, // -1 lets hls.js choose start; otherwise resume point
+        // Skip segments with malformed data (truncated SEI, etc.) instead of
+        // treating every append failure as fatal.
+        appendErrorMaxRetry: 5,
         // Always read the latest token from sessionStorage — never capture a
         // closure reference that becomes stale after a background refresh.
         xhrSetup: (xhr) => {
@@ -2031,6 +2038,7 @@ export class VideoPlayer extends HTMLElement {
 
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         clearManifestTimer()
+        this._hlsRecoveryAttempt = 0
         this._playVideoElement()
       })
 
@@ -2043,6 +2051,24 @@ export class VideoPlayer extends HTMLElement {
         }
 
         if (data?.fatal) {
+          // Try to recover from buffer/media errors before giving up.
+          // Some segments have truncated SEI data that the MediaSource API
+          // rejects but can be skipped without losing playback.
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            if (!this._hlsRecoveryAttempt) {
+              this._hlsRecoveryAttempt = 1
+              console.warn('HLS media error, attempting recovery...', data.details)
+              this.hls.recoverMediaError()
+              return
+            } else if (this._hlsRecoveryAttempt === 1) {
+              this._hlsRecoveryAttempt = 2
+              console.warn('HLS media error persists, swapping audio codec...', data.details)
+              this.hls.swapAudioCodec()
+              this.hls.recoverMediaError()
+              return
+            }
+          }
+
           clearManifestTimer()
 
           // Opportunistic HLS fallback: the playlist didn't exist (404) or failed

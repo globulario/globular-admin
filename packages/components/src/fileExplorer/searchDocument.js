@@ -49,6 +49,7 @@ export class SearchDocumentBar extends HTMLElement {
         }
 
         #search-bar {
+          margin:3px;
           min-width: 280px;
           width: 100%;
           display: flex;
@@ -127,7 +128,6 @@ export class SearchDocumentBar extends HTMLElement {
       <div id="search-bar">
         <iron-icon id="search_icon" icon="search"></iron-icon>
         <input id="search_input" placeholder="Search" />
-        <iron-icon id="recursive_toggle" icon="icons:folder" title="Include subfolders in search"></iron-icon>
         <span id="recursive_toggle_label">Subfolders</span>
         <span id="search_status">Searching…</span>
       </div>
@@ -171,7 +171,7 @@ export class SearchDocumentBar extends HTMLElement {
       this._recursiveLabel.textContent = "Subfolders";
       this.searchInput.placeholder = this._recursive ? "Search (all subfolders)" : "Search";
     };
-    this._recursiveToggle.addEventListener("click", toggleRecursive);
+    //this._recursiveToggle.addEventListener("click", toggleRecursive);
     this._recursiveLabel.addEventListener("click", toggleRecursive);
   }
 

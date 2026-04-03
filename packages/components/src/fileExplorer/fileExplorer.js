@@ -171,7 +171,6 @@ export class FileExplorer extends HTMLElement {
   _currentDirVM = undefined;
   _publicAliasMap = new Map();
   _aliasToRealMap = new Map();
-  _publicAliasMap = new Map();
   _account = null;
   _restoredState = null;
 
@@ -910,7 +909,6 @@ export class FileExplorer extends HTMLElement {
       (uuid) => { this._listeners[`reload_dir_event`] = uuid; },
       async (path) => {
         if (this._path && path && path === this._path) {
-          this.displayWaitMessage(`Loading ${path}...`);
           this._filesIconView.setSelected({});
           this._filesListView.setSelected({});
           try {
@@ -945,8 +943,6 @@ export class FileExplorer extends HTMLElement {
             }
           } catch (err) {
             displayError(`Failed to reload directory ${path}: ${err.message}`, 3000);
-          } finally {
-            this.resume();
           }
         } else if (!path) {
           this.resume();
@@ -1036,6 +1032,7 @@ export class FileExplorer extends HTMLElement {
         try {
           await uploadVideoByUrl(path, url, format === "mp3" ? "mp3" : "mp4", () => { });
           displayMessage("Channel download request submitted.", 3000);
+          Backend.eventHub.publish("reload_dir_event", path, true);
         } catch (err) {
           displayError(`Failed to download media from channel: ${err?.message || err}`, 3000);
           console.error(err);

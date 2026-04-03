@@ -1,6 +1,16 @@
 // src/pages/services_instances.ts
-import { getConfig, saveServiceConfig, type ServiceDesc } from '@globular/sdk'
-import { alertDialog } from '../utils/confirm_dialog'
+//
+// Cluster-wide service instances view. Groups services by name with per-node
+// instance rows showing hostname, IP, installed version, and unit state.
+import {
+  getConfig,
+  listClusterNodes,
+  getClusterHealthV1Full,
+  type ServiceDesc,
+  type ClusterNode,
+  type ClusterHealthV1Result,
+  type NodeHealthV1,
+} from '@globular/sdk'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -10,43 +20,70 @@ function badge(label: string, color: string): string {
 
 function stateBadge(state: string): string {
   const s = (state || '').toLowerCase()
-  if (s === 'running' || s === 'active')
+  if (s === 'running' || s === 'active' || s === 'ok')
     return badge(state, 'var(--success-color)')
-  if (s === 'failed' || s === 'error')
+  if (s === 'failed' || s === 'error' || s === 'unhealthy')
     return badge(state, 'var(--error-color)')
-  if (s === 'starting' || s === 'stopping')
+  if (s === 'starting' || s === 'stopping' || s === 'converging')
     return badge(state, '#f59e0b')
-  if (s === 'stopped')
+  if (s === 'stopped' || s === 'missing')
     return badge(state, 'var(--secondary-text-color)')
   if (state)
     return badge(state, 'var(--secondary-text-color)')
   return `<span style="color:var(--secondary-text-color)">—</span>`
 }
 
-function boolIcon(v: any): string {
-  return v ? '✓' : '—'
+function shortHostname(h: string): string {
+  // "globule-ryzen.globular.internal" → "globule-ryzen"
+  const dot = h.indexOf('.')
+  return dot > 0 ? h.substring(0, dot) : h
 }
 
-// IDs used by cluster control plane — these run as systemd services outside
-// the Globule service manager and are correct to have address=localhost.
-const CONTROL_PLANE_IDS = new Set([
-  'node_agent.NodeAgentService',
-  'cluster_controller.ClusterControllerService',
-  'cluster_doctor.ClusterDoctorService',
+function ago(epochSec: number): string {
+  if (!epochSec) return '—'
+  const d = Math.floor((Date.now() / 1000) - epochSec)
+  if (d < 60) return `${d}s ago`
+  if (d < 3600) return `${Math.floor(d / 60)}m ago`
+  if (d < 86400) return `${Math.floor(d / 3600)}h ago`
+  return `${Math.floor(d / 86400)}d ago`
+}
+
+// ─── Data model ──────────────────────────────────────────────────────────────
+
+interface NodeInstance {
+  nodeId:    string
+  hostname:  string
+  ip:        string
+  profiles:  string[]
+  version:   string   // installed version from heartbeat
+  state:     string   // node operational state (ready/unhealthy/converging)
+  lastSeen:  number   // epoch seconds
+}
+
+interface ServiceGroup {
+  name:       string      // canonical service name (e.g. "authentication")
+  port:       number
+  tls:        boolean
+  version:    string      // desired version
+  kind:       string      // SERVICE / INFRASTRUCTURE / COMMAND
+  instances:  NodeInstance[]
+  running:    number      // count of nodes with this service installed
+  total:      number      // total eligible nodes
+}
+
+// IDs used by cluster control plane — systemd-managed, not service-managed.
+const CONTROL_PLANE = new Set([
+  'cluster-controller', 'node-agent', 'cluster-doctor',
 ])
-
-function isControlPlane(s: ServiceDesc): boolean {
-  return CONTROL_PLANE_IDS.has(s.Id ?? '') || CONTROL_PLANE_IDS.has(s.Name ?? '')
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageServicesInstances extends HTMLElement {
-  private _services:      ServiceDesc[] = []
+  private _groups:        ServiceGroup[] = []
+  private _cpGroups:      ServiceGroup[] = []
   private _loadError    = ''
   private _loading      = true
-  private _expandedId   = ''
-  private _saving       = false
+  private _expandedSvc  = ''
   private _refreshTimer: number | null = null
 
   connectedCallback() {
@@ -62,43 +99,119 @@ class PageServicesInstances extends HTMLElement {
 
   private async load() {
     try {
-      const cfg = await getConfig()
-      const svcs = cfg?.Services ?? {}
-      this._services = Object.values(svcs).sort((a, b) =>
-        (a.Name ?? '').localeCompare(b.Name ?? ''),
-      )
+      // Fetch cluster-wide data in parallel.
+      const [nodes, healthResult, cfg] = await Promise.all([
+        listClusterNodes(),
+        getClusterHealthV1Full(),
+        getConfig().catch(() => null),
+      ])
+
+      this.buildGroups(nodes, healthResult, cfg)
       this._loadError = ''
     } catch (e: any) {
-      this._loadError = e?.message || 'Could not reach gateway /config'
+      this._loadError = e?.message || 'Could not load cluster data'
     }
     this._loading = false
     this.render()
   }
 
-  private async patchService(patch: Partial<ServiceDesc> & { Id: string }) {
-    if (this._saving) return
-    this._saving = true
-    try {
-      await saveServiceConfig(patch)
-      await this.load()   // reload to show updated state
-    } catch (e: any) {
-      alertDialog({
-        title: 'Save Failed',
-        message: `Failed to save service config: ${e?.message ?? e}`,
-        variant: 'danger',
-      })
-    } finally {
-      this._saving = false
+  private buildGroups(
+    nodes: ClusterNode[],
+    healthResult: ClusterHealthV1Result | null,
+    cfg: any | null,
+  ) {
+    // Build node lookup
+    const nodeMap = new Map<string, ClusterNode>()
+    for (const n of nodes) nodeMap.set(n.nodeId, n)
+
+    // Build per-node installed versions from healthV1
+    const nodeHealthMap = new Map<string, NodeHealthV1>()
+    if (healthResult) {
+      for (const nh of healthResult.nodeHealths) {
+        nodeHealthMap.set(nh.nodeId, nh)
+      }
     }
+
+    // Build service metadata from gateway config (port, TLS, etc.)
+    const svcMeta = new Map<string, ServiceDesc>()
+    if (cfg?.Services) {
+      for (const s of Object.values(cfg.Services) as ServiceDesc[]) {
+        const name = canonicalName(s.Name ?? s.Id ?? '')
+        if (name) svcMeta.set(name, s)
+      }
+    }
+
+    // Collect all service names from the cluster health summary + installed
+    const allServices = new Map<string, { desired: string; kind: string }>()
+    if (healthResult) {
+      for (const svc of healthResult.services) {
+        allServices.set(svc.serviceName, {
+          desired: svc.desiredVersion,
+          kind: svc.kind,
+        })
+      }
+    }
+    // Also include services from per-node installed versions
+    for (const nh of nodeHealthMap.values()) {
+      for (const svcName of Object.keys(nh.installedVersions ?? {})) {
+        if (!allServices.has(svcName)) {
+          allServices.set(svcName, { desired: '', kind: 'SERVICE' })
+        }
+      }
+    }
+
+    // Build grouped view
+    const groups: ServiceGroup[] = []
+    const cpGroups: ServiceGroup[] = []
+
+    for (const [svcName, info] of allServices) {
+      const meta = svcMeta.get(svcName)
+      const instances: NodeInstance[] = []
+
+      for (const node of nodes) {
+        const nh = nodeHealthMap.get(node.nodeId)
+        const installed = nh?.installedVersions?.[svcName]
+        if (!installed) continue
+
+        instances.push({
+          nodeId:   node.nodeId,
+          hostname: node.hostname,
+          ip:       node.ips?.[0] ?? '',
+          profiles: node.profiles,
+          version:  installed,
+          state:    node.status,
+          lastSeen: node.lastSeen,
+        })
+      }
+
+      const group: ServiceGroup = {
+        name:      svcName,
+        port:      meta?.Port ?? 0,
+        tls:       meta?.TLS ?? true,
+        version:   info.desired || instances[0]?.version || '',
+        kind:      info.kind,
+        instances,
+        running:   instances.length,
+        total:     nodes.length,
+      }
+
+      if (CONTROL_PLANE.has(svcName)) {
+        cpGroups.push(group)
+      } else {
+        groups.push(group)
+      }
+    }
+
+    groups.sort((a, b) => a.name.localeCompare(b.name))
+    cpGroups.sort((a, b) => a.name.localeCompare(b.name))
+
+    this._groups = groups
+    this._cpGroups = cpGroups
   }
 
   private render() {
-    const appSvcs = this._services.filter(s => !isControlPlane(s))
-    const cpSvcs  = this._services.filter(s =>  isControlPlane(s))
-
-    const running = appSvcs.filter(
-      s => (s.State ?? '').toLowerCase() === 'running',
-    ).length
+    const totalRunning = this._groups.reduce((n, g) => n + g.running, 0)
+    const totalInstances = this._groups.reduce((n, g) => n + g.instances.length, 0)
 
     this.innerHTML = `
       <style>
@@ -106,47 +219,74 @@ class PageServicesInstances extends HTMLElement {
         .si-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
         .si-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
         .si-subtitle { margin: .25rem 0 1rem; opacity: .85; font: var(--md-typescale-body-medium); }
-        .si-section-title {
-          font: var(--md-typescale-title-small);
-          margin: 1.5rem 0 .5rem;
-          color: var(--on-surface-color);
-        }
+        .si-mono { font-family: monospace; font-size: .8em; color: var(--secondary-text-color); }
         .si-name { font-weight: 600; }
-        .si-mono { font-family: monospace; color: var(--secondary-text-color); }
-        .si-detail td {
-          padding:       0 12px 0 28px;
-          border-bottom: 1px solid var(--border-subtle-color);
-          background:    var(--md-surface-container-lowest);
-        }
-        .si-detail-inner {
-          padding: 10px 0;
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-          gap: 6px 24px;
-          font-size: .72rem;
-        }
-        .si-kv { display: flex; gap: 6px; }
-        .si-kv-key { color: var(--secondary-text-color); white-space: nowrap; }
-        .si-kv-val { font-family: monospace; word-break: break-all; }
-        .si-actions { padding: 8px 0 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .si-chevron { font-size: .9rem; color: var(--secondary-text-color); transition: transform .15s; cursor: pointer; }
+        .si-chevron.open { transform: rotate(90deg); }
         .si-empty { padding: 14px 16px; font-style: italic; color: var(--secondary-text-color); font-size: .82rem; }
         .si-btn {
-          border:        1px solid var(--border-subtle-color);
-          background:    transparent;
-          color:         var(--on-surface-color);
+          border: 1px solid var(--border-subtle-color);
+          background: transparent;
+          color: var(--on-surface-color);
           border-radius: var(--md-shape-sm);
-          padding:       3px 10px;
-          cursor:        pointer;
-          font-size:     .72rem;
+          padding: 3px 10px;
+          cursor: pointer;
+          font-size: .72rem;
         }
         .si-btn:hover { background: var(--md-state-hover); }
-        .si-btn-warn {
-          border-color:  #f59e0b;
-          color:         #b45309;
+        .si-kind {
+          display: inline-block;
+          font-size: .6rem;
+          padding: 1px 5px;
+          border-radius: 3px;
+          margin-left: 6px;
+          vertical-align: middle;
+          font-weight: 500;
+          color: var(--secondary-text-color);
+          border: 1px solid var(--border-subtle-color);
         }
-        .si-btn-warn:hover { background: #fef3c7; }
-        .si-chevron { font-size: .9rem; color: var(--secondary-text-color); transition: transform .15s; }
-        .si-chevron.open { transform: rotate(90deg); }
+        .si-instance-row td {
+          padding: 4px 12px;
+          font-size: .8rem;
+          background: var(--md-surface-container-lowest);
+          border-bottom: 1px solid var(--border-subtle-color);
+        }
+        .si-instance-row td:first-child { padding-left: 36px; }
+        .si-node-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-weight: 500;
+        }
+        .si-node-dot {
+          width: 8px; height: 8px; border-radius: 50%;
+          display: inline-block;
+        }
+        .si-node-dot.ready { background: var(--success-color); }
+        .si-node-dot.unhealthy { background: var(--error-color); }
+        .si-node-dot.converging { background: #f59e0b; }
+        .si-node-dot.unknown { background: var(--secondary-text-color); }
+        .si-count {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: .8rem;
+          font-family: monospace;
+        }
+        .si-count-bar {
+          display: inline-flex; height: 6px; border-radius: 3px; overflow: hidden; width: 40px;
+        }
+        .si-count-fill { height: 100%; }
+        .si-profiles {
+          display: inline-flex; gap: 3px; flex-wrap: wrap;
+        }
+        .si-profile-chip {
+          font-size: .6rem;
+          padding: 0 4px;
+          border-radius: 3px;
+          background: var(--md-surface-container);
+          color: var(--secondary-text-color);
+        }
         .si-cp-note {
           padding: 10px 14px;
           font-size: .72rem;
@@ -163,14 +303,13 @@ class PageServicesInstances extends HTMLElement {
           <div style="flex:1"></div>
           <button class="si-btn" id="btnRefresh">↻ Refresh</button>
         </div>
-        <p class="si-subtitle">Live service configurations from the gateway node.</p>
+        <p class="si-subtitle">Cluster-wide service instances across all nodes.</p>
 
         ${this._loading ? `<p style="padding:14px;font-style:italic;color:var(--secondary-text-color)">Loading…</p>` : ''}
 
         ${this._loadError ? `
         <div class="md-banner-warn">
-          ⚠ Could not load services — ${this._loadError}
-          <br><span style="font-size:.8em;opacity:.8">Ensure the gateway is reachable and <code>/config</code> is accessible.</span>
+          ⚠ ${this._loadError}
         </div>` : ''}
 
         ${!this._loading && !this._loadError ? `
@@ -178,26 +317,24 @@ class PageServicesInstances extends HTMLElement {
         <!-- ── Application services ────────────────────────── -->
         <div class="md-panel">
           <div class="md-panel-header">
-            <span>Application Services (${appSvcs.length})</span>
-            <span>${running} running</span>
+            <span>Application Services (${this._groups.length} services, ${totalInstances} instances)</span>
+            <span>${totalRunning} running across nodes</span>
           </div>
-          ${appSvcs.length === 0
+          ${this._groups.length === 0
             ? `<p class="si-empty">No services registered.</p>`
             : `<table class="md-table">
                 <thead>
                   <tr>
-                    <th></th>
-                    <th>Name</th>
-                    <th>Domain</th>
+                    <th style="width:24px"></th>
+                    <th>Service</th>
                     <th>Port</th>
-                    <th>State</th>
-                    <th>PID</th>
                     <th>Version</th>
-                    <th>Keep alive</th>
+                    <th>Nodes</th>
+                    <th>TLS</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${appSvcs.map(s => this.renderServiceRows(s)).join('')}
+                  ${this._groups.map(g => this.renderGroupRows(g)).join('')}
                 </tbody>
               </table>`
           }
@@ -206,34 +343,29 @@ class PageServicesInstances extends HTMLElement {
         <!-- ── Cluster Control Plane ───────────────────────── -->
         <div class="md-panel">
           <div class="md-panel-header">
-            <span>Cluster Control Plane (${cpSvcs.length})</span>
+            <span>Cluster Control Plane (${this._cpGroups.length})</span>
             <span>systemd-managed</span>
           </div>
-          ${cpSvcs.length === 0
+          ${this._cpGroups.length === 0
             ? `<p class="si-empty">No control-plane services detected.</p>`
             : `<table class="md-table">
                 <thead>
                   <tr>
-                    <th></th>
-                    <th>Name</th>
-                    <th>Address</th>
+                    <th style="width:24px"></th>
+                    <th>Service</th>
                     <th>Port</th>
-                    <th>State</th>
+                    <th>Version</th>
+                    <th>Nodes</th>
                     <th>TLS</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${cpSvcs.map(s => this.renderControlPlaneRow(s)).join('')}
+                  ${this._cpGroups.map(g => this.renderGroupRows(g)).join('')}
                 </tbody>
               </table>
               <div class="si-cp-note">
-                These components (NodeAgent, ClusterController, ClusterDoctor) are
-                <strong>local infrastructure</strong> managed by systemd — not by the Globule
-                service manager.  They bind to <code>localhost</code> on fixed ports and do
-                <strong>not</strong> route through Envoy or the cluster service mesh, so
-                <code>domain=localhost</code> and no TLS proxy is correct for them.
-                Their state here reflects etcd metadata, not the actual systemd unit state;
-                use <code>systemctl status</code> to check whether they are running.
+                Control-plane services (NodeAgent, ClusterController, ClusterDoctor) run on
+                every node as systemd units. They are not routed through Envoy.
               </div>`
           }
         </div>
@@ -242,138 +374,101 @@ class PageServicesInstances extends HTMLElement {
       </div>
     `
 
+    // Event listeners
     this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
 
-    this.querySelectorAll<HTMLElement>('tr.md-row[data-svc-id]').forEach(el => {
+    this.querySelectorAll<HTMLElement>('tr.si-group-row[data-svc]').forEach(el => {
       el.addEventListener('click', () => {
-        const id = el.dataset.svcId ?? ''
-        this._expandedId = this._expandedId === id ? '' : id
+        const svc = el.dataset.svc ?? ''
+        this._expandedSvc = this._expandedSvc === svc ? '' : svc
         this.render()
       })
     })
-
-    // Fix-domain buttons
-    this.querySelectorAll<HTMLElement>('[data-fix-domain]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation()
-        const id = btn.dataset.fixDomain!
-        this.patchService({ Id: id, Domain: 'globular.internal' })
-      })
-    })
-
-    // Fix-state buttons
-    this.querySelectorAll<HTMLElement>('[data-fix-state]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation()
-        const id = btn.dataset.fixState!
-        this.patchService({ Id: id, State: 'running' })
-      })
-    })
   }
 
-  private renderServiceRows(s: ServiceDesc): string {
-    const id       = s.Id   ?? s.Name ?? ''
-    const expanded = id === this._expandedId
-    const pid      = s.Pid  ?? s.Process?.Pid ?? s.Process ?? 0
-    const domain   = s.Domain ?? ''
-    const state    = (s.State ?? '').toLowerCase()
+  private renderGroupRows(g: ServiceGroup): string {
+    const expanded = g.name === this._expandedSvc
+    const allOk = g.instances.every(i => i.state === 'ready')
+    const countColor = g.instances.length === 0
+      ? 'var(--error-color)'
+      : allOk ? 'var(--success-color)' : '#f59e0b'
+    const fillPct = g.total > 0 ? (g.running / g.total) * 100 : 0
 
-    // Warn badges for misconfigured fields
-    const domainBadge = domain === 'localhost'
-      ? `<span style="color:#b45309;font-family:monospace">${domain} ⚠</span>`
-      : `<span class="si-mono">${domain || '—'}</span>`
+    const kindLabel = g.kind && g.kind !== 'SERVICE'
+      ? `<span class="si-kind">${g.kind}</span>` : ''
 
-    const stateBadgeHtml = state === 'starting' && (pid > 0)
-      ? stateBadge(s.State ?? '') + ` <span style="color:#b45309;font-size:.65rem">has PID ⚠</span>`
-      : stateBadge(s.State ?? '')
-
-    const row = `
-      <tr class="md-row${expanded ? ' expanded' : ''}" data-svc-id="${id}">
+    const headerRow = `
+      <tr class="md-row si-group-row${expanded ? ' expanded' : ''}" data-svc="${g.name}">
         <td><span class="si-chevron${expanded ? ' open' : ''}">›</span></td>
-        <td class="si-name">${s.Name || '—'}</td>
-        <td>${domainBadge}</td>
-        <td class="si-mono">${s.Port   || '—'}</td>
-        <td>${stateBadgeHtml}</td>
-        <td class="si-mono">${pid || '—'}</td>
-        <td class="si-mono">${s.Version || '—'}</td>
-        <td style="text-align:center">${boolIcon(s.KeepAlive)}</td>
-      </tr>`
-
-    if (!expanded) return row
-
-    const kv = (k: string, v: any) =>
-      v != null && v !== ''
-        ? `<div class="si-kv"><span class="si-kv-key">${k}:</span><span class="si-kv-val">${v}</span></div>`
-        : ''
-
-    // Inline fix actions
-    const fixDomain = domain === 'localhost'
-      ? `<button class="si-btn si-btn-warn" data-fix-domain="${id}">⚠ Fix domain → globular.internal</button>`
-      : ''
-    const fixState = state === 'starting' && pid > 0
-      ? `<button class="si-btn si-btn-warn" data-fix-state="${id}">⚠ Mark as running</button>`
-      : ''
-    const actions = (fixDomain || fixState)
-      ? `<div class="si-actions">${fixDomain}${fixState}</div>`
-      : ''
-
-    const detail = `
-      <tr class="si-detail">
-        <td colspan="8">
-          <div class="si-detail-inner">
-            ${kv('ID',              s.Id)}
-            ${kv('Description',     s.Description)}
-            ${kv('Address',         s.Address)}
-            ${kv('TLS',             s.TLS != null ? String(s.TLS) : null)}
-            ${kv('Keep up to date', s.KeepUpToDate != null ? String(s.KeepUpToDate) : null)}
-            ${kv('Publisher',       s.PublisherID && s.PublisherID !== 'localhost' ? s.PublisherID : null)}
-            ${kv('Config path',     s.ConfigPath)}
-          </div>
-          ${actions}
+        <td class="si-name">${g.name}${kindLabel}</td>
+        <td class="si-mono">${g.port || '—'}</td>
+        <td class="si-mono">${g.version || '—'}</td>
+        <td>
+          <span class="si-count">
+            <span class="si-count-bar">
+              <span class="si-count-fill" style="width:${fillPct}%;background:${countColor}"></span>
+              <span class="si-count-fill" style="width:${100 - fillPct}%;background:var(--border-subtle-color)"></span>
+            </span>
+            <span style="color:${countColor}">${g.running}/${g.total}</span>
+          </span>
         </td>
+        <td style="text-align:center">${g.tls ? '✓' : '—'}</td>
       </tr>`
 
-    return row + detail
+    if (!expanded) return headerRow
+
+    if (g.instances.length === 0) {
+      return headerRow + `
+        <tr class="si-instance-row">
+          <td colspan="6" style="font-style:italic;color:var(--secondary-text-color);padding-left:36px">
+            Not installed on any node
+          </td>
+        </tr>`
+    }
+
+    const instanceRows = g.instances.map(inst => {
+      const dotClass = inst.state === 'ready' ? 'ready'
+        : inst.state === 'unhealthy' ? 'unhealthy'
+        : inst.state === 'converging' ? 'converging' : 'unknown'
+
+      const profiles = inst.profiles.map(p =>
+        `<span class="si-profile-chip">${p}</span>`
+      ).join('')
+
+      return `
+        <tr class="si-instance-row">
+          <td></td>
+          <td>
+            <span class="si-node-chip">
+              <span class="si-node-dot ${dotClass}"></span>
+              ${shortHostname(inst.hostname)}
+            </span>
+            <span class="si-profiles">${profiles}</span>
+          </td>
+          <td class="si-mono">${inst.ip}</td>
+          <td class="si-mono">${inst.version}</td>
+          <td>${stateBadge(inst.state)}</td>
+          <td class="si-mono" style="font-size:.7rem">${ago(inst.lastSeen)}</td>
+        </tr>`
+    }).join('')
+
+    return headerRow + instanceRows
   }
+}
 
-  private renderControlPlaneRow(s: ServiceDesc): string {
-    const id       = s.Id ?? s.Name ?? ''
-    const expanded = id === this._expandedId
-    const row = `
-      <tr class="md-row${expanded ? ' expanded' : ''}" data-svc-id="${id}">
-        <td><span class="si-chevron${expanded ? ' open' : ''}">›</span></td>
-        <td class="si-name">${s.Name || '—'}</td>
-        <td class="si-mono">${s.Address || 'localhost'}</td>
-        <td class="si-mono">${s.Port || '—'}</td>
-        <td>${stateBadge(s.State ?? '')}</td>
-        <td style="text-align:center">${boolIcon(s.TLS)}</td>
-      </tr>`
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
-    if (!expanded) return row
-
-    const kv = (k: string, v: any) =>
-      v != null && v !== ''
-        ? `<div class="si-kv"><span class="si-kv-key">${k}:</span><span class="si-kv-val">${v}</span></div>`
-        : ''
-
-    const detail = `
-      <tr class="si-detail">
-        <td colspan="6">
-          <div class="si-detail-inner">
-            ${kv('ID',      s.Id)}
-            ${kv('Address', s.Address)}
-            ${kv('Port',    s.Port)}
-            ${kv('TLS',     s.TLS != null ? String(s.TLS) : null)}
-          </div>
-          <div style="padding:6px 0 8px;font-size:.7rem;color:var(--secondary-text-color)">
-            Managed by systemd. State shown here reflects etcd metadata only —
-            use <code>systemctl status &lt;service&gt;</code> for the real status.
-          </div>
-        </td>
-      </tr>`
-
-    return row + detail
-  }
+/** Normalize a proto service name to its canonical form.
+ *  "authentication.AuthenticationService" → "authentication"
+ *  "ai_executor.AiExecutorService" → "ai-executor"
+ */
+function canonicalName(name: string): string {
+  if (!name) return ''
+  // Take the part before the first dot (proto package name)
+  let canon = name.includes('.') ? name.split('.')[0] : name
+  // Normalize underscores to dashes
+  canon = canon.replace(/_/g, '-')
+  return canon
 }
 
 customElements.define('page-services-instances', PageServicesInstances)

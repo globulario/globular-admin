@@ -495,16 +495,6 @@ export class FilesUploader extends HTMLElement {
       this
     )
 
-    // Legacy peer-start event: just (re)attach torrent streams
-    Backend.eventHub.subscribe(
-      "start_peer_evt_",
-      (_uuid) => { },
-      () => {
-        this.getTorrentLnks()
-        this.getTorrentsInfo()
-      },
-      true
-    )
   }
 
   initializeData() {

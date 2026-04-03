@@ -34,7 +34,8 @@ import {
 } from "@globular/sdk";
 
 import { titlePb } from "@globular/sdk";
-const { Title, Poster, Video } = titlePb;
+const _pb = titlePb?.default ?? titlePb;
+const { Title, Poster, Video } = _pb;
 
 import { getBaseUrl } from "@globular/sdk";
 import { getCoords, copyToClipboard, randomUUID } from "../utility.js";
@@ -1674,6 +1675,8 @@ export class FilesView extends HTMLElement {
             { pid, path: destDir, infos: `Queued ${format} from URL`, done: true, lnk: lnkHtml },
             true
           );
+          // Refresh the directory immediately so the new file appears.
+          Backend.eventHub.publish("reload_dir_event", destDir, true);
           resolve();
         } catch (err) {
           displayError(err?.message || err, 3000);

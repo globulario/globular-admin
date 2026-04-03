@@ -1,4 +1,4 @@
-// searchable_entities.js — updated to the new PeerVM/ApplicationVM accessors
+// searchable_entities.js — searchable list components for permission management
 
 import getUuidByString from "uuid-by-string";
 
@@ -10,8 +10,7 @@ import { listAccounts } from "@globular/sdk";
 import { listGroups }   from "@globular/sdk";
 import { listRoles }    from "@globular/sdk";
 import { listOrganizations } from "@globular/sdk";
-import { listPeers }    from "@globular/sdk";   // NEW peers accessor (PeerVM[])
-import { listApplications } from "@globular/sdk"; // NEW apps accessor (ApplicationVM[])
+import { listApplications } from "@globular/sdk";
 
 // UI deps
 import '../autocomplete.js';
@@ -51,17 +50,7 @@ function getDomain(o) {
 function getIcon(o) {
   return callIf(o, "getIcon") ?? o?.icon ?? "";
 }
-function getHostname(o) {
-  return callIf(o, "getHostname") ?? o?.hostname ?? o?.host ?? "";
-}
-function getMac(o) {
-  return callIf(o, "getMac") ?? o?.mac ?? "";
-}
 
-// For Peers: treat MAC as identity if id is missing
-function getPeerKey(o) {
-  return getId(o) || getMac(o) || "";
-}
 
 /* -----------------------------------------------------------------------------
  * Common “Add Panel” helper (uses new backend fetchers)
@@ -141,7 +130,7 @@ async function _setupAddPanelLogic(
   // Remove items already displayed
   const current = parentComponent.list ?? [];
   allAvailableItems = allAvailableItems.filter(item =>
-    !current.some(existing => (getPeerKey(existing) || getId(existing)) === (getPeerKey(item) || getId(item)))
+    !current.some(existing => getId(existing) === getId(item))
   );
 
   const refreshAutocomplete = () => {
@@ -157,8 +146,8 @@ async function _setupAddPanelLogic(
   addInput.onkeyup = refreshAutocomplete;
 
   const addItemToPanel = (item) => {
-    const key = getPeerKey(item) || getId(item);
-    allAvailableItems = allAvailableItems.filter(a => (getPeerKey(a) || getId(a)) !== key);
+    const key = getId(item);
+    allAvailableItems = allAvailableItems.filter(a => getId(a) !== key);
     addInput.clear?.();
     refreshAutocomplete();
     parentComponent.onadditem?.(item);
@@ -551,71 +540,3 @@ export class SearchableOrganizationList extends SearchableList {
 }
 customElements.define('globular-searchable-organization-list', SearchableOrganizationList);
 
-/* -----------------------------------------------------------------------------
- * Peers (uses new listPeers(): Promise<PeerVM[]>; identity = mac when id missing)
- * -------------------------------------------------------------------------- */
-export class SearchablePeerList extends SearchableList {
-  constructor(title, list, ondeletepeer, onaddpeer) {
-    const onadd = async () => {
-      await _setupAddPanelLogic(
-        this,
-        "add-list-peer-panel",
-        "Add Peer",
-        "Search Peer",
-        async () => {
-          const items = await listPeers(); // ← now returns PeerVM[]
-          return items ?? [];
-        },
-        (all, value) => {
-          const V = value.toUpperCase();
-          return all.filter(p =>
-            (getHostname(p) || "").toUpperCase().includes(V) ||
-            (getMac(p) || "").toUpperCase().includes(V)
-          );
-        },
-        (peer) => this.createPeerDiv(peer),
-        "text"
-      );
-    };
-    super(title, list, ondeletepeer, onaddpeer, onadd);
-  }
-
-  createPeerDiv(peer) {
-    const key = getPeerKey(peer);
-    const uuid = `_${key}`;
-    const host = getHostname(peer);
-    const dom  = getDomain(peer);
-    const mainText = `${host}${dom ? `.${dom}` : ""}`;
-    const subText  = getMac(peer) ? `(${getMac(peer)})` : "";
-    return _createGenericItemDiv(uuid, mainText, subText, "", "hardware:computer");
-  }
-
-  removeItem(p) {
-    const key = getPeerKey(p);
-    this.list = (this.list ?? []).filter(el => (getPeerKey(el)) !== key);
-  }
-
-  displayItem(p) {
-    const div = this.createPeerDiv(p);
-    const del = div.querySelector(".item-delete-btn");
-    if (this.ondeleteitem) {
-      del.addEventListener('click', () => {
-        div.parentNode?.removeChild(div);
-        this.ondeleteitem(p);
-      });
-    } else {
-      del.style.display = "none";
-    }
-    return div;
-  }
-
-  filter(p) {
-    const f = (this.filter_ ?? "").toUpperCase();
-    return (getHostname(p) || "").toUpperCase().includes(f) || (getMac(p) || "").toUpperCase().includes(f);
-  }
-
-  sortItems() {
-    return (this.list ?? []).sort((a, b) => (getHostname(a) || "").localeCompare(getHostname(b) || ""));
-  }
-}
-customElements.define('globular-searchable-peer-list', SearchablePeerList);

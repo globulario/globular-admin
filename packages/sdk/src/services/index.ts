@@ -6,7 +6,6 @@ export * from "../rbac/roles";
 export * from "../rbac/permissions";
 export * from "../rbac/applications";
 export * from "../rbac/diskSpace";
-export * from "../rbac/peers";
 export * from "../notify/notification";
 export * from "../cms/files";
 export * from "../cms/torrent";

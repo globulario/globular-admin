@@ -537,8 +537,7 @@ export class PermissionsManager extends HTMLElement {
       (permission.getAccountsList?.().length || 0) +
       (permission.getGroupsList?.().length || 0) +
       (permission.getApplicationsList?.().length || 0) +
-      (permission.getOrganizationsList?.().length || 0) +
-      (permission.getPeersList?.().length || 0)
+      (permission.getOrganizationsList?.().length || 0)
     return total > 0
   }
 

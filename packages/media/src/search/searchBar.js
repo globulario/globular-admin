@@ -92,6 +92,7 @@ export class SearchBar extends HTMLElement {
 
         #search-bar {
           min-width: 280px;
+          margin: 3px;
           width: 100%;
           display: flex;
           align-items: center;

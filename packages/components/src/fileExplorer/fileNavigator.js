@@ -82,7 +82,6 @@ export class FileNavigator extends HTMLElement {
 
     this._initializeLayout();
     this._cacheDomElements();
-    this._setupPeerSelector(); // hidden if no peers
   }
 
   disconnectedCallback() {
@@ -136,19 +135,6 @@ export class FileNavigator extends HTMLElement {
       #file-navigator-div::-webkit-scrollbar-thumb {
         background: var(--scroll-thumb, var(--palette-divider));
         border-radius: 6px;
-      }
-
-      select {
-        padding: 8px;
-        background: var(--surface-color);
-        color: var(--primary-text-color);
-        font-size: 1.0rem;
-        font-family: var(--font-family);
-        width: 100%;
-        border: none;
-        outline: none;
-        margin-bottom: 10px;
-        border-bottom: 1px solid var(--palette-divider);
       }
 
       .section-header {
@@ -264,7 +250,6 @@ export class FileNavigator extends HTMLElement {
     </style>
 
     <div id="file-navigator-div">
-      <select id="peer-select"></select>
       <div class="section-header">
         <span>My Files</span>
         <div class="section-actions" id="my-files-actions">
@@ -282,7 +267,6 @@ export class FileNavigator extends HTMLElement {
 
   _cacheDomElements() {
     this._domRefs.fileNavigatorDiv = this.shadowRoot.querySelector("#file-navigator-div");
-    this._domRefs.peerSelect = this.shadowRoot.querySelector("#peer-select");
     this._domRefs.userFilesDiv = this.shadowRoot.querySelector("#user-files-div");
     this._domRefs.sharedFilesDiv = this.shadowRoot.querySelector("#shared-files-div");
     this._domRefs.publicFilesDiv = this.shadowRoot.querySelector("#public-files-div");
@@ -292,49 +276,6 @@ export class FileNavigator extends HTMLElement {
       e.stopPropagation();
       this._fileExplorer?._handleSharePanelClick?.(new Event("click"));
     });
-  }
-
-  _setupPeerSelector() {
-    const peers = (Backend.getPeers && Backend.getPeers()) || [];
-
-    this._domRefs.peerSelect.innerHTML = "";
-    if (!peers.length) {
-      this._domRefs.peerSelect.style.display = "none";
-      return;
-    }
-    peers.forEach((p, index) => {
-      const opt = document.createElement("option");
-      opt.value = String(index);
-      opt.textContent = p.address || p.name || `peer-${index + 1}`;
-      opt._peer = p;
-      this._domRefs.peerSelect.appendChild(opt);
-    });
-
-    this._domRefs.peerSelect.addEventListener("change", async (e) => {
-      const idx = parseInt(e.target.value, 10);
-      const selected = peers[idx];
-      if (selected && this._fileExplorer?.setPeer) this._fileExplorer.setPeer(selected);
-
-      // Clear per-peer UI + caches
-      this._dirsCache.clear();
-      this._expanded.clear();
-      this._selectedPath = null;
-
-      // Reset containers
-      this._domRefs.userFilesDiv.innerHTML = "";
-      this._domRefs.userFilesDiv.__vmRoots = [];
-
-      this._domRefs.sharedFilesDiv.innerHTML = "";
-      this._domRefs.sharedFilesDiv.__initialized = false;
-      this._domRefs.sharedFilesDiv.__populated = false;
-
-      this._domRefs.publicFilesDiv.innerHTML = "";
-      this._domRefs.publicFilesDiv.__initialized = false;
-    });
-
-    // default to first
-    this._domRefs.peerSelect.value = "0";
-    this._domRefs.peerSelect.dispatchEvent(new Event("change"));
   }
 
   /* ------------------------ Public entrypoint ------------------------ */
@@ -1026,7 +967,6 @@ export class FileNavigator extends HTMLElement {
             { list: share?.getGroupsList?.(), type: "group" },
             { list: share?.getApplicationsList?.(), type: "application" },
             { list: share?.getOrganizationsList?.(), type: "organization" },
-            { list: share?.getPeersList?.(), type: "peer" },
           ];
           for (const seq of sequences) {
             if (!Array.isArray(seq.list)) continue;

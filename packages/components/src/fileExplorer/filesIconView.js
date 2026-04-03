@@ -185,24 +185,41 @@ export class FilesIconView extends FilesView {
   /* ---------- Rendering ---------- */
 
   setDir(dir) {
-    if (this._linkTypeListener) {
-      this.removeEventListener("link-type-ready", this._linkTypeListener);
-      this._linkTypeListener = null;
-    }
     if (!dir) return;
 
-    // Stop observing icons from the previous directory before clearing the DOM.
-    // disconnectedCallback() on each removed element handles EventHub cleanup.
-    this._iconObserver?.disconnect();
-    this._iconObserver = null;
-
-    this._currentDir = dir;
-    this._path = (typeof dir.getPath === "function" ? dir.getPath() : dir.path) || this._path;
-
-    while (this.firstChild) this.removeChild(this.firstChild);
-
+    const newPath = (typeof dir.getPath === "function" ? dir.getPath() : dir.path) || "";
     const filesList = (typeof dir.getFilesList === "function") ? dir.getFilesList() : (dir.files || []);
     if (!Array.isArray(filesList)) return;
+
+    const sameDir = newPath && newPath === this._path;
+
+    // Skip if nothing changed.
+    if (sameDir && this._lastFileCount === filesList.length) {
+      this._currentDir = dir;
+      return;
+    }
+    this._lastFileCount = filesList.length;
+
+    this._currentDir = dir;
+    this._path = newPath || this._path;
+
+    // Collect existing icon IDs so we can skip already-rendered files.
+    // For a different directory, clear everything first.
+    const renderedIds = new Set();
+    if (sameDir) {
+      this.querySelectorAll("globular-file-icon-view").forEach((icon) => {
+        if (icon.id) renderedIds.add(icon.id);
+      });
+    } else {
+      // New directory — full reset.
+      if (this._linkTypeListener) {
+        this.removeEventListener("link-type-ready", this._linkTypeListener);
+        this._linkTypeListener = null;
+      }
+      this._iconObserver?.disconnect();
+      this._iconObserver = null;
+      while (this.firstChild) this.removeChild(this.firstChild);
+    }
 
     const sorted = [...filesList].sort((a, b) => {
       const aDir = !!isDirOf(a);
@@ -243,6 +260,12 @@ export class FilesIconView extends FilesView {
 
     const order = ["folder", "video", "audio", "image", "text", "pdf", "document", "other"];
     const sectionMap = {};
+    if (sameDir) {
+      this.querySelectorAll("globular-file-icon-view-section").forEach((sec) => {
+        const ft = sec.getAttribute("filetype");
+        if (ft) sectionMap[ft] = sec;
+      });
+    }
     this._sectionsByType = sectionMap;
 
     const insertSectionInOrder = (section, fileType) => {
@@ -275,28 +298,31 @@ export class FilesIconView extends FilesView {
       return section;
     };
 
-    this._linkTypeListener = (evt) => {
-      const detail = evt.detail || {};
-      const iconEl = detail.icon;
-      const targetType = detail.type;
-      if (!iconEl || !targetType) return;
+    // Only set up event listeners and observer for new directory loads.
+    if (!sameDir) {
+      this._linkTypeListener = (evt) => {
+        const detail = evt.detail || {};
+        const iconEl = detail.icon;
+        const targetType = detail.type;
+        if (!iconEl || !targetType) return;
 
-      const destSection = ensureSection(targetType);
-      if (!destSection) return;
+        const destSection = ensureSection(targetType);
+        if (!destSection) return;
 
-      const currentSection = iconEl.closest("globular-file-icon-view-section");
-      if (currentSection === destSection) return;
+        const currentSection = iconEl.closest("globular-file-icon-view-section");
+        if (currentSection === destSection) return;
 
-      if (currentSection?.contains(iconEl)) {
-        currentSection.removeChild(iconEl);
-        currentSection.updateCount?.();
-      }
+        if (currentSection?.contains(iconEl)) {
+          currentSection.removeChild(iconEl);
+          currentSection.updateCount?.();
+        }
 
-      destSection.appendChild(iconEl);
-      destSection.updateCount?.();
-    };
+        destSection.appendChild(iconEl);
+        destSection.updateCount?.();
+      };
 
-    this.addEventListener("link-type-ready", this._linkTypeListener);
+      this.addEventListener("link-type-ready", this._linkTypeListener);
+    }
 
     // Lazy init: call setFile() only when the icon element is close to the
     // visible viewport.  This avoids simultaneously fetching hundreds of
@@ -307,47 +333,46 @@ export class FilesIconView extends FilesView {
     //
     // Concurrency limit: at most 6 icons load in parallel to avoid flooding
     // the server with thumbnail/metadata requests (which triggers HTTP 429).
-    const self = this;
-    const MAX_CONCURRENT = 6;
-    let _loadingCount = 0;
-    const _loadQueue = [];
+    if (!sameDir || !this._iconObserver) {
+      const self = this;
+      const MAX_CONCURRENT = 6;
+      let _loadingCount = 0;
+      const _loadQueue = [];
 
-    const loadIcon = (icon) => {
-      if (_loadingCount >= MAX_CONCURRENT) {
-        _loadQueue.push(icon);
-        return;
-      }
-      _loadingCount++;
-      const file = icon._pendingFile;
-      icon._pendingFile = null;
-      const done = () => {
-        _loadingCount--;
-        if (_loadQueue.length > 0) {
-          const next = _loadQueue.shift();
-          if (next._pendingFile) loadIcon(next);
-          else done(); // skip already-loaded, try next
+      const loadIcon = (icon) => {
+        if (_loadingCount >= MAX_CONCURRENT) {
+          _loadQueue.push(icon);
+          return;
         }
+        _loadingCount++;
+        const file = icon._pendingFile;
+        icon._pendingFile = null;
+        const done = () => {
+          _loadingCount--;
+          if (_loadQueue.length > 0) {
+            const next = _loadQueue.shift();
+            if (next._pendingFile) loadIcon(next);
+            else done(); // skip already-loaded, try next
+          }
+        };
+        // setFile is async — chain the concurrency release to its completion.
+        Promise.resolve(icon.setFile(file, self)).then(done, done);
       };
-      // setFile is async — chain the concurrency release to its completion.
-      Promise.resolve(icon.setFile(file, self)).then(done, done);
-    };
 
-    this._iconObserver = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) return;
-        const icon = entry.target;
-        self._iconObserver?.unobserve(icon);
-        if (icon._pendingFile) {
-          loadIcon(icon);
-        }
+      this._iconObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const icon = entry.target;
+          self._iconObserver?.unobserve(icon);
+          if (icon._pendingFile) {
+            loadIcon(icon);
+          }
+        });
+      }, {
+        root: null,
+        rootMargin: "400px 0px",
       });
-    }, {
-      // root: null → observe relative to the browser viewport.
-      // This is simpler and more reliable than using the scroll container as
-      // root (avoids issues with nested scroll contexts).
-      root: null,
-      rootMargin: "400px 0px",
-    });
+    }
 
     order.forEach((fileType) => {
       const files = byType[fileType];
@@ -356,9 +381,14 @@ export class FilesIconView extends FilesView {
       const section = ensureSection(fileType);
 
       files.forEach((file) => {
-        const icon = document.createElement("globular-file-icon-view");
         const p = pathOf(file) || "";
-        icon.id = `_${getUuidByString(p || Math.random().toString(36).slice(2))}`;
+        const iconId = `_${getUuidByString(p || Math.random().toString(36).slice(2))}`;
+
+        // Skip files already rendered in the DOM.
+        if (renderedIds.has(iconId)) return;
+
+        const icon = document.createElement("globular-file-icon-view");
+        icon.id = iconId;
         icon.setAttribute("height", String(this._imageHeight));
         icon.setAttribute("width", String(this._imageWidth));
 

@@ -7,7 +7,6 @@ const buildSubjects = (src = {}) => ({
   groups: cloneList(src.groups || src.getGroupsList?.() || []),
   applications: cloneList(src.applications || src.getApplicationsList?.() || []),
   organizations: cloneList(src.organizations || src.getOrganizationsList?.() || []),
-  peers: cloneList(src.peers || src.getPeersList?.() || []),
 })
 
 const normalizeEntry = (perm) => ({
@@ -16,12 +15,11 @@ const normalizeEntry = (perm) => ({
   groups: cloneList(perm?.groups || perm?.getGroupsList?.() || []),
   applications: cloneList(perm?.applications || perm?.getApplicationsList?.() || []),
   organizations: cloneList(perm?.organizations || perm?.getOrganizationsList?.() || []),
-  peers: cloneList(perm?.peers || perm?.getPeersList?.() || []),
 })
 
 const ensureOwnerEntry = (vm) => {
-  if (!vm.owners) vm.owners = { accounts: [], groups: [], applications: [], organizations: [], peers: [] }
-  for (const key of ["accounts","groups","applications","organizations","peers"]) {
+  if (!vm.owners) vm.owners = { accounts: [], groups: [], applications: [], organizations: [] }
+  for (const key of ["accounts","groups","applications","organizations"]) {
     vm.owners[key] = cloneList(vm.owners[key])
   }
 }
@@ -31,7 +29,7 @@ export function permissionsProtoToVM(perms) {
     return {
       path: "",
       resourceType: "",
-      owners: { accounts: [], groups: [], applications: [], organizations: [], peers: [] },
+      owners: { accounts: [], groups: [], applications: [], organizations: [] },
       allowed: [],
       denied: [],
     }
@@ -94,7 +92,6 @@ const entryToPermission = (entry) => {
   applyList(p, "Groups", "groups", entry.groups || [])
   applyList(p, "Applications", "applications", entry.applications || [])
   applyList(p, "Organizations", "organizations", entry.organizations || [])
-  applyList(p, "Peers", "peers", entry.peers || [])
   return p
 }
 

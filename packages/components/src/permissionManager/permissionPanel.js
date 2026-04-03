@@ -6,8 +6,7 @@ import { randomUUID } from "../utility.js"
 import { listAccounts } from "@globular/sdk"
 import { listGroups } from "@globular/sdk"
 import { listOrganizations } from "@globular/sdk"
-import { listApplications } from "@globular/sdk"; // NEW apps accessor (ApplicationVM[])
-import { listPeers } from "@globular/sdk"
+import { listApplications } from "@globular/sdk";
 
 import { displayError } from "@globular/sdk"
 
@@ -18,7 +17,6 @@ import {
   SearchableGroupList,
   SearchableAccountList,
   SearchableApplicationList,
-  SearchablePeerList,
   SearchableOrganizationList
 } from "./list.js"
 
@@ -27,21 +25,10 @@ const callIf = (o, m) => (o && typeof o[m] === "function") ? o[m]() : undefined
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k)
 
 function getId(o) {
-  // common: account/group/org/app have getId()/id; peers often don't (use mac)
   return callIf(o, "getId") ?? o?.id ?? ""
 }
 function getDomain(o) {
   return callIf(o, "getDomain") ?? o?.domain ?? ""
-}
-function getMac(o) {
-  return callIf(o, "getMac") ?? o?.mac ?? ""
-}
-
-// For peers, use MAC as the "id" portion
-function getPeerKey(o) {
-  const mac = getMac(o)
-  const dom = getDomain(o)
-  return dom ? `${mac}@${dom}` : mac
 }
 
 // Compose a fully-qualified ID consistently
@@ -204,16 +191,6 @@ export class PermissionPanel extends HTMLElement {
       (item) => getDomain(item)
     )
 
-    this._setEntitiesPermissions(
-      "Peers",
-      this._permission.getPeersList?.() ?? [],
-      this._permission.setPeersList?.bind(this._permission),
-      SearchablePeerList,
-      // Peers: use MAC as id part
-      (item) => getMac(item),
-      (item) => getDomain(item),
-      true // peers flag
-    )
   }
 
   // ----------------------------------------------------------- sections & data plumbing
@@ -253,9 +230,8 @@ export class PermissionPanel extends HTMLElement {
    * @param {Class} SearchableListClass list UI class
    * @param {(item:any)=>string} idGetter returns the "id" part
    * @param {(item:any)=>string} domainGetter returns domain
-   * @param {boolean} isPeers whether the type is peers (uses MAC-based key)
    */
-  async _setEntitiesPermissions(title, entityIdsInPermission, permissionListSetter, SearchableListClass, idGetter, domainGetter, isPeers = false) {
+  async _setEntitiesPermissions(title, entityIdsInPermission, permissionListSetter, SearchableListClass, idGetter, domainGetter) {
     const initialCount = Array.isArray(entityIdsInPermission) ? entityIdsInPermission.length : 0
     const { panel, headerLabel } = this._createCollapsibleSection(title, initialCount)
     const listContainer = document.createElement('div')
@@ -276,9 +252,6 @@ export class PermissionPanel extends HTMLElement {
       } else if (SearchableListClass === SearchableApplicationList) {
         const apps = await (listApplications() || [])
         all = Array.isArray(apps) ? apps : (apps.items || [])
-      } else if (SearchableListClass === SearchablePeerList) {
-        const peers = await (listPeers() || [])
-        all = Array.isArray(peers) ? peers : (peers.items || [])
       } else {
         throw new Error(`Unknown SearchableListClass: ${SearchableListClass?.name || '(anonymous)'}`)
       }
@@ -287,10 +260,6 @@ export class PermissionPanel extends HTMLElement {
       const current = all.filter(entity => {
         const id = idGetter(entity)
         const dom = domainGetter(entity)
-        if (isPeers) {
-          const key = getPeerKey(entity) // mac@domain
-          return entityIdsInPermission.includes(key) || hasId(entityIdsInPermission, id, dom)
-        }
         return hasId(entityIdsInPermission, id, dom)
       })
 
@@ -310,7 +279,7 @@ export class PermissionPanel extends HTMLElement {
         (itemToRemove) => {
           const id = idGetter(itemToRemove)
           const dom = domainGetter(itemToRemove)
-          const fq = isPeers ? getPeerKey(itemToRemove) : fqid(id, dom)
+          const fq = fqid(id, dom)
 
           const next = (entityIdsInPermission || []).filter(x => x !== fq && x !== id)
           if (typeof permissionListSetter === 'function') permissionListSetter(next)
@@ -324,7 +293,7 @@ export class PermissionPanel extends HTMLElement {
         (itemToAdd) => {
           const id = idGetter(itemToAdd)
           const dom = domainGetter(itemToAdd)
-          const fq = isPeers ? getPeerKey(itemToAdd) : fqid(id, dom)
+          const fq = fqid(id, dom)
 
           const next = Array.from(entityIdsInPermission || [])
           if (!next.includes(fq) && !next.includes(id)) next.push(fq)

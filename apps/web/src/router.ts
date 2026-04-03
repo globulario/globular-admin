@@ -98,7 +98,8 @@ const routes: Record<string, RouteHandler> = {
 
   // Cluster
   '#/cluster/nodes':          lazy(() => import('./pages/cluster_nodes'), 'page-cluster-nodes'),
-  '#/cluster/reconciliation': lazy(() => import('./pages/cluster_reconciliation'), 'page-cluster-reconciliation'),
+  '#/cluster/workflows':      lazy(() => import('./pages/cluster_workflows'), 'page-cluster-workflows'),
+  '#/cluster/reconciliation': lazy(() => import('./pages/cluster_workflows'), 'page-cluster-workflows'), // compat redirect
   '#/cluster/join':           lazy(() => import('./pages/cluster_join'), 'page-cluster-join'),
   '#/cluster/topology':       lazy(() => import('./pages/cluster_topology'), 'page-cluster-topology'),
 

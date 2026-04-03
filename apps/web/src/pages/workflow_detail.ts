@@ -22,16 +22,28 @@ import {
   type DiagnoseResult,
 } from '@globular/sdk'
 
-// ─── Lane / layout constants ────────────────────────────────────────────────
+// ─── Lane / layout ──────────────────────────────────────────────────────────
 
 interface Lane { id: number; label: string; color: string }
 
-const LANES: Lane[] = [
-  { id: 1, label: 'controller',  color: '#6366f1' },
-  { id: 3, label: 'node-agent',  color: '#3b82f6' },
-  { id: 4, label: 'installer',   color: '#10b981' },
-  { id: 5, label: 'runtime',     color: '#f59e0b' },
+const ACTOR_CATALOG: Lane[] = [
+  { id: 1, label: 'controller',       color: '#6366f1' },
+  { id: 2, label: 'repository',       color: '#8b5cf6' },
+  { id: 3, label: 'node-agent',       color: '#3b82f6' },
+  { id: 4, label: 'installer',        color: '#10b981' },
+  { id: 5, label: 'runtime',          color: '#f59e0b' },
+  { id: 6, label: 'operator',         color: '#ec4899' },
+  { id: 7, label: 'ai-diagnoser',     color: '#14b8a6' },
+  { id: 8, label: 'ai-executor',      color: '#f97316' },
+  { id: 9, label: 'workflow-service', color: '#a855f7' },
 ]
+
+function lanesFromSteps(steps: WorkflowStep[]): Lane[] {
+  const seen = new Set<number>()
+  for (const s of steps) if (s.actor > 0) seen.add(s.actor)
+  if (seen.size === 0) return [ACTOR_CATALOG[0]]
+  return ACTOR_CATALOG.filter(l => seen.has(l.id))
+}
 
 const BOX_H     = 56
 const BOX_R     = 8
@@ -41,28 +53,30 @@ const HEADER_H  = 40
 const MARGIN_L  = 12
 const LANE_PAD  = 16
 
-// Layout computed from available width
 interface Layout {
+  lanes: Lane[]
   laneW: number; boxW: number; totalW: number
   laneX(actor: number): number
   laneCx(actor: number): number
   boxX(actor: number): number
 }
 
-function laneIdx(actor: number): number {
-  const i = LANES.findIndex(l => l.id === actor)
-  return i >= 0 ? i : 1
-}
-
-function makeLayout(containerW: number): Layout {
-  const laneW = Math.max(160, Math.floor((containerW - MARGIN_L * 2) / LANES.length))
+function makeLayout(containerW: number, lanes: Lane[]): Layout {
+  const count = Math.max(1, lanes.length)
+  const laneW = Math.max(160, Math.floor((containerW - MARGIN_L * 2) / count))
   const boxW = laneW - LANE_PAD * 2
-  const totalW = LANES.length * laneW
+  const totalW = count * laneW
+
+  function idx(actor: number): number {
+    const i = lanes.findIndex(l => l.id === actor)
+    return i >= 0 ? i : 0
+  }
+
   return {
-    laneW, boxW, totalW,
-    laneX:  (a: number) => MARGIN_L + laneIdx(a) * laneW,
-    laneCx: (a: number) => MARGIN_L + laneIdx(a) * laneW + laneW / 2,
-    boxX:   (a: number) => MARGIN_L + laneIdx(a) * laneW + LANE_PAD,
+    lanes, laneW, boxW, totalW,
+    laneX:  (a: number) => MARGIN_L + idx(a) * laneW,
+    laneCx: (a: number) => MARGIN_L + idx(a) * laneW + laneW / 2,
+    boxX:   (a: number) => MARGIN_L + idx(a) * laneW + LANE_PAD,
   }
 }
 
@@ -94,6 +108,7 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number, L: Layout): 
   let curY = HEADER_H + 12
   let lastPhase = -1
   const parts: string[] = []
+  const lanes = L.lanes
 
   // Arrowhead markers
   parts.push(`
@@ -111,17 +126,17 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number, L: Layout): 
   `)
 
   // Lane backgrounds
-  for (let i = 0; i < LANES.length; i++) {
+  for (let i = 0; i < lanes.length; i++) {
     const x = MARGIN_L + i * L.laneW
     parts.push(`<rect x="${x}" y="0" width="${L.laneW}" height="100%" fill="${i % 2 === 0 ? '#ffffff03' : '#ffffff06'}" />`)
   }
 
   // Lane headers
-  for (let i = 0; i < LANES.length; i++) {
+  for (let i = 0; i < lanes.length; i++) {
     const cx = MARGIN_L + i * L.laneW + L.laneW / 2
     parts.push(`
-      <line x1="${MARGIN_L + i * L.laneW}" y1="${HEADER_H}" x2="${MARGIN_L + (i + 1) * L.laneW}" y2="${HEADER_H}" stroke="${LANES[i].color}" stroke-width="2" opacity=".6"/>
-      <text x="${cx}" y="${HEADER_H - 10}" text-anchor="middle" fill="${LANES[i].color}" font-size="11" font-weight="700" font-family="system-ui">${LANES[i].label}</text>
+      <line x1="${MARGIN_L + i * L.laneW}" y1="${HEADER_H}" x2="${MARGIN_L + (i + 1) * L.laneW}" y2="${HEADER_H}" stroke="${lanes[i].color}" stroke-width="2" opacity=".6"/>
+      <text x="${cx}" y="${HEADER_H - 10}" text-anchor="middle" fill="${lanes[i].color}" font-size="11" font-weight="700" font-family="system-ui">${lanes[i].label}</text>
     `)
   }
 
@@ -180,7 +195,7 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number, L: Layout): 
           <div xmlns="http://www.w3.org/1999/xhtml" style="padding:6px 10px;height:100%;display:flex;flex-direction:column;justify-content:center;font-family:system-ui;overflow:hidden">
             <div style="font-size:11px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${step.title || step.stepKey}</div>
             <div style="font-size:9px;color:#888;margin-top:2px;display:flex;gap:6px;align-items:center">
-              <span style="width:6px;height:6px;border-radius:50%;background:${LANES[laneIdx(step.actor)]?.color ?? '#888'};flex-shrink:0"></span>
+              <span style="width:6px;height:6px;border-radius:50%;background:${lanes.find(l => l.id === step.actor)?.color ?? '#888'};flex-shrink:0"></span>
               <span>${actorLabel(step.actor)}</span>
               ${fmtDur(step.durationMs) ? `<span>· ${fmtDur(step.durationMs)}</span>` : ''}
               ${isFailed ? `<span style="color:#ef4444;font-weight:600">✕ ${step.errorCode || 'failed'}</span>` : ''}
@@ -360,7 +375,8 @@ export class WorkflowDetailPanel extends HTMLElement {
     const ctx = run.context
     const isFailed = run.status === 9 || run.status === 11
     const estW = this._fullscreen ? (window.innerWidth - 300 - 32) : Math.min(1200 - 300 - 32, window.innerWidth - 64)
-    const L = makeLayout(Math.max(600, estW))
+    const lanes = lanesFromSteps(this._steps)
+    const L = makeLayout(Math.max(600, estW), lanes)
     const { svg, height } = buildFlowchart(this._steps, this._selectedStep?.seq ?? -1, L)
     const svgW = MARGIN_L + L.totalW + MARGIN_L
 
