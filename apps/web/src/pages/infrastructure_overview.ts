@@ -129,7 +129,9 @@ class PageInfrastructureOverview extends HTMLElement {
   private controlPlaneCard(): { name: string; state: HealthState; metrics: string; route: string } {
     const c = this._cluster
     if (!c) return { name: 'Control Plane', state: 'unknown', metrics: 'Data unavailable', route: '#/infrastructure/control-plane' }
-    const state: HealthState = c.status === 'HEALTHY' ? 'healthy' : c.status === 'DEGRADED' ? 'degraded' : c.unhealthyNodes > 0 ? 'critical' : 'degraded'
+    // Proto emits lowercase ("healthy"/"degraded"/"unhealthy"); accept either case.
+    const s = (c.status || '').toLowerCase()
+    const state: HealthState = s === 'healthy' ? 'healthy' : s === 'degraded' ? 'degraded' : c.unhealthyNodes > 0 ? 'critical' : 'degraded'
     const etcd = this._services?.infra?.['etcd']
     const etcdInfo = etcd?.etcd_is_leader !== undefined ? ` &middot; etcd leader` : ''
     return {

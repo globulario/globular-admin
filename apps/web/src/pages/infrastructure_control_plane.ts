@@ -130,7 +130,10 @@ class PageInfrastructureControlPlane extends HTMLElement {
     const c = this._cluster
     if (!c) { el.innerHTML = `<div class="infra-empty">Control plane data unavailable.</div>`; return }
 
-    const clusterState: HealthState = c.status === 'HEALTHY' ? 'healthy' : c.status === 'DEGRADED' ? 'degraded' : 'critical'
+    // Proto defines status as lowercase ("healthy"/"degraded"/"unhealthy")
+    // but older versions used uppercase — compare case-insensitively.
+    const s = (c.status || '').toLowerCase()
+    const clusterState: HealthState = s === 'healthy' ? 'healthy' : s === 'degraded' ? 'degraded' : 'critical'
     const r = this._report
     const critFindings = r ? r.findings.filter(f => f.severity >= 4).length : 0
     const warnFindings = r ? r.findings.filter(f => f.severity >= 2 && f.severity < 4).length : 0
@@ -183,6 +186,7 @@ class PageInfrastructureControlPlane extends HTMLElement {
         <div class="infra-card" style="border-left:4px solid ${stateColor(etcdSvc?.derived_status === 'healthy' ? 'healthy' : etcdSvc?.derived_status === 'degraded' ? 'degraded' : etcd ? 'healthy' : 'unknown')}">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
             <span style="font-weight:700;font-size:.88rem">etcd</span>
+            ${etcdSvc?.node ? `<span class="infra-card-sub" style="font-weight:400">on ${esc(etcdSvc.node)}</span>` : ''}
             <div style="flex:1"></div>
             ${etcdSvc ? stateBadge(etcdSvc.derived_status as HealthState) : ''}
           </div>
@@ -201,6 +205,7 @@ class PageInfrastructureControlPlane extends HTMLElement {
         <div class="infra-card" style="border-left:4px solid ${stateColor(ccSvc.derived_status as HealthState)}">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
             <span style="font-weight:700;font-size:.88rem">Cluster Controller</span>
+            ${ccSvc.node ? `<span class="infra-card-sub" style="font-weight:400">on ${esc(ccSvc.node)}</span>` : ''}
             <div style="flex:1"></div>
             ${stateBadge(ccSvc.derived_status as HealthState)}
           </div>
@@ -211,7 +216,7 @@ class PageInfrastructureControlPlane extends HTMLElement {
               &middot; Uptime: <strong>${fmtDuration(ccSvc.runtime.uptime_sec)}</strong>
             ` : 'No runtime metrics'}
           </div>
-          <div class="infra-card-sub">v${esc(ccSvc.version)} &middot; port ${ccSvc.port}</div>
+          <div class="infra-card-sub">v${esc(ccSvc.version)} &middot; port ${ccSvc.port} &middot; local instance only</div>
         </div>
       ` : ''}
     `
