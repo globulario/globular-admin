@@ -101,11 +101,15 @@ class PageAdminAiConsole extends HTMLElement {
         }
         .aic-msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; word-wrap: break-word; font-size: 13px; line-height: 1.5; }
         .aic-msg-user { background: var(--primary-color); color: var(--on-primary-color); align-self: flex-end; font-size: 13.5px; }
-        .aic-msg-assistant { background: var(--surface-variant-color, #1a1a1e); color: var(--primary-text-color); align-self: flex-start; border: 1px solid rgba(255,255,255,0.08); }
+        .aic-msg-assistant {
+          background: color-mix(in srgb, var(--on-surface-color, #333) 6%, var(--surface-color, #fff));
+          color: var(--primary-text-color, var(--on-surface-color));
+          align-self: flex-start;
+          border: 1px solid color-mix(in srgb, var(--on-surface-color, #333) 12%, transparent);
+        }
         .aic-msg-assistant globular-markdown {
           --md-font-size: 13px;
-          --md-text-color: var(--primary-text-color, #e0e0e0);
-          --on-surface-color: var(--primary-text-color, #e0e0e0);
+          --on-surface-color: var(--primary-text-color, var(--on-surface-color));
           --surface-color: transparent;
           --divider-color: transparent;
         }
