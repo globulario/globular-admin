@@ -333,6 +333,7 @@ class PageAdminAiConsole extends HTMLElement {
           this._streamingText += chunk
           this.renderMessages()
         },
+        this._user || undefined,
       )
       if (result.conversationId) {
         this._conversationId = result.conversationId

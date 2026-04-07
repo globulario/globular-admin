@@ -66,6 +66,17 @@ class Markdown extends HTMLElement {
         :host([embedded]) .wrap hr { margin: .6em 0; }
         :host([embedded]) .wrap table { font-size: inherit; }
         :host([embedded]) .wrap blockquote { margin: .5em 0; padding: .4em .8em; }
+        :host([embedded]) pre { margin: .5em 0; border-radius: .4rem; }
+        :host([embedded]) pre > code.hljs {
+          font-size: 11.5px;
+          line-height: 1.45;
+          padding: .6rem .8rem;
+        }
+        :host([embedded]) :where(.wrap) code:not(.hljs) {
+          font-size: 11.5px;
+          padding: .1rem .3rem;
+        }
+        :host([embedded]) .copy { width: 26px; height: 26px; top: .35rem; right: .35rem; }
 
         .wrap p { margin: .6em 0; }
         .wrap a { color: var(--accent-color); text-decoration: none; }
