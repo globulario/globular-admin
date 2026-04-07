@@ -24,6 +24,15 @@ class Markdown extends HTMLElement {
       <style>
         :host { display:block; }
 
+        /* Embedded mode: no wrapper chrome (background, border, padding).
+           Activate by setting the 'embedded' attribute on the element. */
+        :host([embedded]) .wrap {
+          background: transparent;
+          border: none;
+          padding: 0;
+          border-radius: 0;
+        }
+
         /* Hide the raw markdown text or light DOM elements passed to slot */
         slot { display: none !important; }
         ::slotted(*) { display: none !important; }
@@ -44,6 +53,19 @@ class Markdown extends HTMLElement {
           margin: 1.2em 0 .6em;
           line-height: 1.25;
         }
+
+        /* Compact heading scale for embedded/chat contexts */
+        :host([embedded]) .wrap h1 { font-size: 1.15em; font-weight: 600; margin: .8em 0 .4em; }
+        :host([embedded]) .wrap h2 { font-size: 1.05em; font-weight: 600; margin: .7em 0 .3em; }
+        :host([embedded]) .wrap h3 { font-size: 1em; font-weight: 600; margin: .6em 0 .25em; }
+        :host([embedded]) .wrap h4,
+        :host([embedded]) .wrap h5,
+        :host([embedded]) .wrap h6 { font-size: .95em; font-weight: 600; margin: .5em 0 .2em; }
+        :host([embedded]) .wrap p { margin: .4em 0; }
+        :host([embedded]) .wrap ul, :host([embedded]) .wrap ol { margin: .3em 0; }
+        :host([embedded]) .wrap hr { margin: .6em 0; }
+        :host([embedded]) .wrap table { font-size: inherit; }
+        :host([embedded]) .wrap blockquote { margin: .5em 0; padding: .4em .8em; }
 
         .wrap p { margin: .6em 0; }
         .wrap a { color: var(--accent-color); text-decoration: none; }
