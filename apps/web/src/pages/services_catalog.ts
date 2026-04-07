@@ -207,6 +207,18 @@ function badge(label: string, color: string): string {
   return `<span class="sc-badge" style="--badge-color:${color}">${label}</span>`
 }
 
+/** Compare two semver-ish version strings. Returns >0 if a > b, <0 if a < b, 0 if equal. */
+function compareVersions(a: string, b: string): number {
+  const pa = (a || '0').split('.').map(Number)
+  const pb = (b || '0').split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const va = pa[i] || 0
+    const vb = pb[i] || 0
+    if (va !== vb) return va - vb
+  }
+  return 0
+}
+
 const STATUS_META: Record<LifecycleState, { label: string; color: string }> = {
   'installed':                  { label: 'Installed',                 color: 'var(--success-color)' },
   'planned':                    { label: 'Planned',                   color: '#f59e0b' },
@@ -663,10 +675,10 @@ class PageServicesCatalog extends HTMLElement {
     const latest = this.repoLatestVersion(row.name)
     if (!latest) return `<span class="sc-muted">—</span>`
     const desired = row.desiredVersion
-    if (!desired || desired === latest) {
+    if (!desired || desired === latest || compareVersions(latest, desired) <= 0) {
       return `<span class="sc-mono" style="font-size:.72rem">${latest}</span>`
     }
-    // Desired exists but is different from latest — update available
+    // Repo has a newer version than desired — update available
     return badge(`↑ ${latest}`, '#f59e0b')
   }
 
@@ -682,7 +694,12 @@ class PageServicesCatalog extends HTMLElement {
     if (installed.installedVersion === version) {
       return badge('Installed ✓', 'var(--success-color)')
     }
-    return badge(`Update available (${installed.installedVersion} → ${version})`, '#f59e0b')
+    // Only show "Update available" if the catalog version is newer than installed.
+    if (compareVersions(version, installed.installedVersion) > 0) {
+      return badge(`Update available (${installed.installedVersion} → ${version})`, '#f59e0b')
+    }
+    // Catalog version is older than installed — just show as installed.
+    return badge('Installed ✓', 'var(--success-color)')
   }
 
   private renderCatalogItemDetail(item: CatalogItem): string {
