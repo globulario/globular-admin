@@ -35,7 +35,7 @@ interface UIMessage {
 // lose context when switching admin pages.
 const consoleState = {
   conversationId: '',
-  targetNode: '',
+  targetNode: '__leader__',
   draft: '',
 }
 
@@ -169,13 +169,11 @@ class PageAdminAiConsole extends HTMLElement {
             <h2>AI Console</h2>
             <div class="spacer"></div>
             <label style="font:var(--md-typescale-label-small);color:var(--secondary-text-color);">Target:</label>
-            <select id="nodeSelect" class="aic-node-select">
-              <option value="">Any node</option>
-            </select>
+            <select id="nodeSelect" class="aic-node-select"></select>
             <span id="convId" class="aic-conv-id"></span>
           </div>
           <p class="aic-subtitle">
-            Chat with the cluster AI. Conversations persist across sessions. Target a specific node to compare answers.
+            Chat with the cluster AI. Conversations persist across sessions. The leader node (\u2605) is selected by default.
           </p>
           <div id="messages" class="aic-messages">
             <div class="aic-empty">Start a new conversation or pick one on the left.</div>
@@ -241,13 +239,32 @@ class PageAdminAiConsole extends HTMLElement {
     }
     const sel = this.querySelector<HTMLSelectElement>('#nodeSelect')
     if (!sel) return
-    for (const n of this._nodes) {
-      if (!n.hostname) continue
+
+    // Sort: control-plane nodes first (leader candidates), then the rest.
+    const sorted = [...this._nodes].filter(n => n.hostname)
+    sorted.sort((a, b) => {
+      const aCP = a.profiles?.includes('control-plane') ? 0 : 1
+      const bCP = b.profiles?.includes('control-plane') ? 0 : 1
+      return aCP - bCP || a.hostname.localeCompare(b.hostname)
+    })
+
+    let leaderSet = false
+    for (const n of sorted) {
+      const isCP = n.profiles?.includes('control-plane')
       const opt = document.createElement('option')
-      opt.value = n.hostname
-      opt.textContent = n.hostname
+      // Only the first control-plane node gets the __leader__ value;
+      // additional control-plane nodes use their hostname directly.
+      if (isCP && !leaderSet) {
+        opt.value = '__leader__'
+        opt.textContent = `${n.hostname} \u2605`
+        leaderSet = true
+      } else {
+        opt.value = n.hostname
+        opt.textContent = n.hostname
+      }
       sel.appendChild(opt)
     }
+
     // Restore persisted target-node selection if it still exists.
     if (this._targetNode) sel.value = this._targetNode
   }
