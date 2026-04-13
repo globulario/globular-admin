@@ -1,10 +1,2 @@
-
-<style>
-.image-selector
-Specificity: (0,1,0)
- {
-    max-width: var(--image-selector-max-width, 170px);
-    position: relative;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-}
+ai_executor_grpc_web_pb.js:20 Uncaught ReferenceError: require is not defined
+    at ai_executor_grpc_web_pb.js:20:1

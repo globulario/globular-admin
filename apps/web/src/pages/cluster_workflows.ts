@@ -22,7 +22,9 @@ function triggerReasonColor(t: number): string {
   switch (t) { case 2: return '#8b5cf6'; case 7: return '#f59e0b'; case 1: return '#3b82f6'; case 6: return '#10b981'; case 3: return '#f97316'; default: return 'var(--secondary-text-color)' }
 }
 
-import { WORKFLOW_DEFS, type WorkflowDef, type StepDef } from './workflow_defs'
+import { type WorkflowDef, type StepDef } from './workflow_defs'
+import { listWorkflowDefinitions, getWorkflowDefinition } from '@globular/sdk'
+import { parseWorkflowYaml } from './workflow_yaml_parser'
 
 // ─── Actor colors ───────────────────────────────────────────────────────────
 
@@ -82,9 +84,33 @@ function flattenDefSteps(def: WorkflowDef): StepDef[] {
  * Build runtime map keyed by definition step ID.
  * Strategy: index by stepKey, title, AND seq-based positional match.
  * The seq match handles legacy runs where stepKey differs from YAML IDs.
+ *
+ * When no runtime steps are returned (e.g. step recording was unavailable),
+ * synthesize step status from the overall run status so the diagram still
+ * shows green/red coloring.
  */
-function buildRtMap(rtSteps: WorkflowStep[], def: WorkflowDef): Map<string, WorkflowStep> {
+function buildRtMap(rtSteps: WorkflowStep[], def: WorkflowDef, runStatus?: number): Map<string, WorkflowStep> {
   const map = new Map<string, WorkflowStep>()
+
+  if (rtSteps.length === 0 && runStatus !== undefined && runStatus >= 8) {
+    // No step data available — infer from run status.
+    // RunStatus: 8=SUCCEEDED, 9=FAILED, 10=CANCELED, 11=ROLLED_BACK
+    const syntheticStepStatus = runStatus === 8 ? 3 : 4 // StepStatus: 3=SUCCEEDED, 4=FAILED
+    const defFlat = flattenDefSteps(def)
+    for (const ds of defFlat) {
+      const synth: WorkflowStep = {
+        runId: '', seq: 0, stepKey: ds.id, title: ds.title,
+        actor: 0, phase: 0, status: syntheticStepStatus, attempt: 1,
+        sourceActor: 0, targetActor: 0, startedAt: '', finishedAt: '',
+        durationMs: 0, message: '', errorCode: '', errorMessage: '',
+        retryable: false, operatorActionRequired: false, actionHint: '', detailsJson: '',
+      }
+      map.set(ds.id, synth)
+      if (ds.title !== ds.id) map.set(ds.title, synth)
+    }
+    return map
+  }
+
   // Primary: key by stepKey and title
   for (const s of rtSteps) {
     map.set(s.stepKey, s)
@@ -93,12 +119,26 @@ function buildRtMap(rtSteps: WorkflowStep[], def: WorkflowDef): Map<string, Work
   // Seq-based positional match: sort runtime by seq, match to flattened def order
   const defFlat = flattenDefSteps(def)
   const rtSorted = [...rtSteps].sort((a, b) => a.seq - b.seq)
-  // Skip the last runtime step if it's an onFailure/onSuccess handler (extra step not in def)
-  const matchCount = Math.min(defFlat.length, rtSorted.length)
+  // StepStatus enum: 1=PENDING, 2=RUNNING, 3=SUCCEEDED, 4=FAILED, 5=SKIPPED
+  // Handler steps use status=5 (SKIPPED)
+  const rtReal = rtSorted.filter(s => s.status !== 5)
+  const rtHandler = rtSorted.find(s => s.status === 5 && (s.errorCode || s.errorMessage))
+  const matchCount = Math.min(defFlat.length, rtReal.length)
+
+  // Propagate handler error details to the last failed step (if not already present)
   for (let i = 0; i < matchCount; i++) {
     const defStep = defFlat[i]
-    const rtStep = rtSorted[i]
-    // Only set if not already mapped by exact key match
+    let rtStep = rtReal[i]
+
+    // If this is a failed step and we have handler error details, propagate them
+    if (rtStep.status === 4 && rtHandler) {
+      rtStep = { ...rtStep }
+      if (!rtStep.errorCode && rtHandler.errorCode) rtStep.errorCode = rtHandler.errorCode
+      if (!rtStep.errorMessage && rtHandler.errorMessage) rtStep.errorMessage = rtHandler.errorMessage
+      if (!rtStep.message && rtHandler.message) rtStep.message = rtHandler.message
+      if (!rtStep.actionHint && rtHandler.actionHint) rtStep.actionHint = rtHandler.actionHint
+    }
+
     if (!map.has(defStep.id)) map.set(defStep.id, rtStep)
     if (!map.has(defStep.title)) map.set(defStep.title, rtStep)
   }
@@ -204,10 +244,11 @@ function buildHorizontalSvg(
   for (let i = 0; i < actors.length; i++) {
     const a = actors[i]
     const py = rowY0.get(a)!; const rh = rowHeight.get(a)!
-    parts.push(`<rect x="0" y="${py}" width="${totalW}" height="${rh}" fill="${i % 2 === 0 ? '#ffffff03' : '#ffffff06'}"/>`)
-    if (i > 0) parts.push(`<line x1="0" y1="${py}" x2="${totalW}" y2="${py}" stroke="#ffffff10" stroke-width="1"/>`)
+    const poolEven = i % 2 === 0
+    parts.push(`<rect x="0" y="${py}" width="${totalW}" height="${rh}" fill="${poolEven ? 'var(--md-surface-container-lowest,#ffffff03)' : 'var(--md-surface-container-low,#ffffff06)'}"/>`)
+    if (i > 0) parts.push(`<line x1="0" y1="${py}" x2="${totalW}" y2="${py}" stroke="var(--border-subtle-color,#ffffff10)" stroke-width="1"/>`)
     const color = actorColor(a)
-    parts.push(`<rect x="${PAD}" y="${py + 6}" width="${POOL_LABEL_W - 20}" height="${rh - 12}" rx="6" fill="${color}15" stroke="${color}" stroke-width="1"/>`)
+    parts.push(`<rect x="${PAD}" y="${py + 6}" width="${POOL_LABEL_W - 20}" height="${rh - 12}" rx="6" fill="${color}20" stroke="${color}" stroke-width="1"/>`)
     parts.push(`<text x="${PAD + (POOL_LABEL_W - 20) / 2}" y="${py + rh / 2 + 4}" text-anchor="middle" fill="${color}" font-size="10" font-weight="700" font-family="system-ui">${a}</text>`)
   }
 
@@ -350,70 +391,59 @@ function buildHorizontalSvg(
     if (srcPositions.length === 0 || tgtPositions.length === 0) continue
 
     if (deps.length > 1) {
-      // BPMN join-fork: two vertical bars connected by one horizontal line
-      // Bar 1 (join): collects all source arrows
-      // Bar 2 (fork): distributes to all targets
+      // T-junction join/fork with thin L-shaped lines (like CI pipeline viz)
       const rightmostSrc = srcPositions.reduce((a, b) => (a.x + a.w > b.x + b.w ? a : b))
-      const joinX = rightmostSrc.x + rightmostSrc.w + 14
-      const srcYs = srcPositions.map(p => p.cy)
-      const joinMinY = Math.min(...srcYs) - 4
-      const joinMaxY = Math.max(...srcYs) + 4
-      const joinCy = (joinMinY + joinMaxY) / 2
-
-      // Join bar
-      parts.push(`<line x1="${joinX}" y1="${joinMinY}" x2="${joinX}" y2="${joinMaxY}" stroke="#555" stroke-width="2.5" stroke-linecap="round"/>`)
-
-      // Arrows from each source → join bar
-      for (const sp of srcPositions) {
-        const depStep = def.steps.find(x => x.id === sp.id)
-        const rtS = depStep ? rtLookup(rtMap, depStep)?.status : undefined
-        const color = rtS === 2 ? '#10b981' : rtS === 3 ? '#ef4444' : '#555'
-        const mid = rtS === 2 ? 'a-ok' : rtS === 3 ? 'a-err' : 'a'
-        parts.push(`<line x1="${sp.x + sp.w}" y1="${sp.cy}" x2="${joinX}" y2="${sp.cy}" stroke="${color}" stroke-width="1.2" marker-end="url(#${mid})"/>`)
-      }
-
-      // Fork bar: placed left of the targets with enough gap
       const leftmostTgt = tgtPositions.reduce((a, b) => a.x < b.x ? a : b)
-      const forkX = leftmostTgt.x - 16
+      const srcYs = srcPositions.map(p => p.cy)
       const tgtYs = tgtPositions.map(p => p.cy)
-      const forkMinY = Math.min(...tgtYs) - 4
-      const forkMaxY = Math.max(...tgtYs) + 4
-      const forkCy = (forkMinY + forkMaxY) / 2
+      const SW = 1.2
 
-      // Fork bar
-      parts.push(`<line x1="${forkX}" y1="${forkMinY}" x2="${forkX}" y2="${forkMaxY}" stroke="#555" stroke-width="2.5" stroke-linecap="round"/>`)
-
-      // Horizontal connector: join bar center → fork bar center
-      parts.push(`<line x1="${joinX}" y1="${joinCy}" x2="${forkX}" y2="${forkCy}" stroke="#555" stroke-width="1.2"/>`)
-
-      // Arrows from fork bar → each target
-      for (const tp of tgtPositions) {
-        parts.push(`<line x1="${forkX}" y1="${tp.cy}" x2="${tp.x}" y2="${tp.cy}" stroke="#555" stroke-width="1.2" marker-end="url(#a)"/>`)
-        for (const d of deps) drawnEdges.add(`${d}→${tp.id}`)
+      // Join: vertical line collecting source outputs
+      const joinX = rightmostSrc.x + rightmostSrc.w + 12
+      parts.push(`<line x1="${joinX}" y1="${Math.min(...srcYs)}" x2="${joinX}" y2="${Math.max(...srcYs)}" stroke="#555" stroke-width="${SW}"/>`)
+      // L-bends from each source to join vertical (no arrowhead on join)
+      for (const sp of srcPositions) {
+        parts.push(`<line x1="${sp.x + sp.w}" y1="${sp.cy}" x2="${joinX}" y2="${sp.cy}" stroke="#555" stroke-width="${SW}"/>`)
       }
+
+      // Fork: vertical line distributing to targets
+      const forkX = leftmostTgt.x - 12
+      parts.push(`<line x1="${forkX}" y1="${Math.min(...tgtYs)}" x2="${forkX}" y2="${Math.max(...tgtYs)}" stroke="#555" stroke-width="${SW}"/>`)
+      // L-bends from fork vertical to each target (arrowhead on target entry)
+      for (const tp of tgtPositions) {
+        parts.push(`<line x1="${forkX}" y1="${tp.cy}" x2="${tp.x}" y2="${tp.cy}" stroke="#555" stroke-width="${SW}" marker-end="url(#a)"/>`)
+      }
+
+      // Connector: join midpoint → fork midpoint (orthogonal L)
+      const joinMidY = (Math.min(...srcYs) + Math.max(...srcYs)) / 2
+      const forkMidY = (Math.min(...tgtYs) + Math.max(...tgtYs)) / 2
+      if (Math.abs(joinMidY - forkMidY) < 3) {
+        parts.push(`<line x1="${joinX}" y1="${joinMidY}" x2="${forkX}" y2="${forkMidY}" stroke="#555" stroke-width="${SW}"/>`)
+      } else {
+        const mx = joinX + (forkX - joinX) / 2
+        parts.push(`<path d="M${joinX},${joinMidY} L${mx},${joinMidY} L${mx},${forkMidY} L${forkX},${forkMidY}" fill="none" stroke="#555" stroke-width="${SW}"/>`)
+      }
+
+      for (const d of deps) for (const t of targets) drawnEdges.add(`${d}→${t}`)
     } else {
       // Single dependency — draw directly, but merge if multiple targets share it
       const sp = srcPositions[0]
       if (tgtPositions.length > 1) {
-        // Fan-out: one source → multiple targets via a split point
-        const splitX = sp.x + sp.w + 14
+        // Fan-out: T-junction from source to multiple targets
         const depStep = def.steps.find(x => x.id === sp.id)
         const rtS = depStep ? rtLookup(rtMap, depStep)?.status : undefined
-        const color = rtS === 2 ? '#10b981' : rtS === 3 ? '#ef4444' : '#555'
-        const mid = rtS === 2 ? 'a-ok' : rtS === 3 ? 'a-err' : 'a'
-
-        // Horizontal from source to split point
-        parts.push(`<line x1="${sp.x + sp.w}" y1="${sp.cy}" x2="${splitX}" y2="${sp.cy}" stroke="${color}" stroke-width="1.2"/>`)
-
-        // Vertical bar at split
+        const color = rtS === 3 ? '#10b981' : rtS === 4 ? '#ef4444' : '#555'
+        const mid = rtS === 3 ? 'a-ok' : rtS === 4 ? 'a-err' : 'a'
         const tys = tgtPositions.map(p => p.cy)
-        const tMinY = Math.min(...tys, sp.cy) - 4
-        const tMaxY = Math.max(...tys, sp.cy) + 4
-        parts.push(`<line x1="${splitX}" y1="${tMinY}" x2="${splitX}" y2="${tMaxY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>`)
+        const forkX2 = sp.x + sp.w + 12
 
-        // L-shaped arrows to each target
+        // Horizontal from source to fork point
+        parts.push(`<line x1="${sp.x + sp.w}" y1="${sp.cy}" x2="${forkX2}" y2="${sp.cy}" stroke="${color}" stroke-width="1.2"/>`)
+        // Vertical connecting all target Y levels
+        parts.push(`<line x1="${forkX2}" y1="${Math.min(...tys, sp.cy)}" x2="${forkX2}" y2="${Math.max(...tys, sp.cy)}" stroke="${color}" stroke-width="1.2"/>`)
+        // Horizontal from fork to each target (with arrowhead)
         for (const tp of tgtPositions) {
-          parts.push(`<path d="M${splitX},${tp.cy} L${tp.x},${tp.cy}" fill="none" stroke="${color}" stroke-width="1.2" marker-end="url(#${mid})"/>`)
+          parts.push(`<line x1="${forkX2}" y1="${tp.cy}" x2="${tp.x}" y2="${tp.cy}" stroke="${color}" stroke-width="1.2" marker-end="url(#${mid})"/>`)
           drawnEdges.add(`${sp.id}→${tp.id}`)
         }
       }
@@ -459,18 +489,18 @@ function placeStep(
   const isSelected = step.id === selectedId
   // Border color: green if succeeded, red if failed, blue if running, default gray
   const borderColor = hasRt
-    ? (rt!.status === 2 ? '#10b981' : rt!.status === 3 ? '#ef4444' : rt!.status === 1 ? '#3b82f6' : '#4b5563')
+    ? (rt!.status === 3 ? '#10b981' : rt!.status === 4 ? '#ef4444' : rt!.status === 2 ? '#3b82f6' : '#4b5563')
     : '#4b5563'
   const fillColor = hasRt
-    ? (rt!.status === 2 ? '#10b98118' : rt!.status === 3 ? '#ef444418' : rt!.status === 1 ? '#3b82f618' : '#6b728010')
-    : '#6b728010'
+    ? (rt!.status === 3 ? '#10b98130' : rt!.status === 4 ? '#ef444430' : rt!.status === 2 ? '#3b82f630' : 'var(--md-surface-container-low, #6b728010)')
+    : 'var(--md-surface-container-low, #6b728010)'
   const sw = isSelected ? 2.5 : hasRt ? 2 : 1
 
   const hasWhen = !!step.when
   const hasRetry = !!step.retry
   const color = actorColor(step.actor)
   const durStr = rt && rt.durationMs > 0 ? (rt.durationMs < 1000 ? `${rt.durationMs}ms` : `${(rt.durationMs / 1000).toFixed(1)}s`) : ''
-  const statusIcon = rt ? (rt.status === 2 ? '✓' : rt.status === 3 ? '✕' : rt.status === 1 ? '⟳' : '') : ''
+  const statusIcon = rt ? (rt.status === 3 ? '✓' : rt.status === 4 ? '✕' : rt.status === 2 ? '⟳' : '') : ''
 
   parts.push(`<g class="wf-step-g" data-step-id="${step.id}" style="cursor:pointer">`)
   parts.push(`<rect x="${x}" y="${y}" width="${BOX_W}" height="${BOX_H}" rx="${BOX_R}" fill="${fillColor}" stroke="${borderColor}" stroke-width="${sw}"/>`)
@@ -478,8 +508,8 @@ function placeStep(
 
   parts.push(`<foreignObject x="${x}" y="${y}" width="${BOX_W}" height="${BOX_H}">
     <div xmlns="http://www.w3.org/1999/xhtml" style="padding:5px 8px;height:${BOX_H}px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;font-family:system-ui;overflow:hidden">
-      <div style="font-size:10px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3">${step.title}</div>
-      <div style="font-size:8px;color:#999;margin-top:2px;display:flex;gap:4px;align-items:center;white-space:nowrap;overflow:hidden">
+      <div style="font-size:10px;font-weight:600;color:var(--on-surface-color,#e0e0e0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3">${step.title}</div>
+      <div style="font-size:8px;color:var(--secondary-text-color,#999);margin-top:2px;display:flex;gap:4px;align-items:center;white-space:nowrap;overflow:hidden">
         ${hasWhen ? '<span style="color:#f59e0b" title="conditional">◇</span>' : ''}
         ${hasRetry ? '<span title="retryable">↻' + step.retry!.maxAttempts + '</span>' : ''}
         ${durStr ? `<span>${durStr}</span>` : ''}
@@ -495,6 +525,7 @@ function placeStep(
 // Track how many arrows use each vertical channel so we can offset them
 const _channelCount = new Map<number, number>()
 
+
 function drawHArrowDashed(parts: string[], src: Pos, tgt: Pos, color: string, markerId: string) {
   const fx = src.x + src.w, fy = src.cy, tx = tgt.x, ty = tgt.cy
   if (Math.abs(fy - ty) < 3) {
@@ -509,8 +540,8 @@ function drawHArrowDashed(parts: string[], src: Pos, tgt: Pos, color: string, ma
 }
 
 function drawHArrow(parts: string[], src: Pos, tgt: Pos, srcStatus?: number) {
-  const color = srcStatus === 2 ? '#10b981' : srcStatus === 3 ? '#ef4444' : '#555'
-  const mid = srcStatus === 2 ? 'a-ok' : srcStatus === 3 ? 'a-err' : 'a'
+  const color = srcStatus === 3 ? '#10b981' : srcStatus === 4 ? '#ef4444' : '#555'
+  const mid = srcStatus === 3 ? 'a-ok' : srcStatus === 4 ? 'a-err' : 'a'
   const fx = src.x + src.w
   const fy = src.cy
   const tx = tgt.x
@@ -546,7 +577,9 @@ function runDuration(run: WorkflowRun): string {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 class PageClusterWorkflows extends HTMLElement {
-  private _def: WorkflowDef = WORKFLOW_DEFS[0]
+  private _defs: WorkflowDef[] = []
+  private _defCache = new Map<string, WorkflowDef>()
+  private _def: WorkflowDef | null = null
   private _runs: WorkflowRun[] = []
   private _run: WorkflowRun | null = null
   private _rtMap = new Map<string, WorkflowStep>()
@@ -560,17 +593,70 @@ class PageClusterWorkflows extends HTMLElement {
   private _pollT: number | null = null
   private _listT: number | null = null
 
-  connectedCallback() { this.style.display = 'block'; this.render(); this.loadRuns(); this._listT = window.setInterval(() => this.silentLoad(), 30_000) }
+  connectedCallback() {
+    this.style.display = 'block'
+    this.render()
+    this.loadDefinitions()
+    this._listT = window.setInterval(() => this.silentLoad(), 30_000)
+  }
   disconnectedCallback() { if (this._pollT) clearInterval(this._pollT); if (this._listT) clearInterval(this._listT) }
 
+  /** Fetch workflow definitions from MinIO (single source of truth) */
+  private async loadDefinitions() {
+    try {
+      const summaries = await listWorkflowDefinitions()
+      // Load full YAML for each definition and parse it
+      const defs: WorkflowDef[] = []
+      for (const s of summaries.sort((a, b) => a.name.localeCompare(b.name))) {
+        const cached = this._defCache.get(s.name)
+        if (cached) { defs.push(cached); continue }
+        try {
+          const yaml = await getWorkflowDefinition(s.name)
+          const def = parseWorkflowYaml(yaml)
+          if (def) { this._defCache.set(s.name, def); defs.push(def) }
+        } catch (e) {
+          console.error(`load definition ${s.name}:`, e)
+        }
+      }
+      this._defs = defs
+      if (defs.length > 0 && !this._def) this._def = defs[0]
+      this._error = ''
+    } catch (e: any) {
+      this._error = `Failed to load workflow definitions: ${e?.message || e}`
+    }
+    this._loading = false
+    if (this._def) this.loadRuns()
+    else { this.render() }
+  }
+
+  /** Client-side filter: match runs by workflowName or fall back to runFilter heuristics */
+  private matchesDef(r: WorkflowRun): boolean {
+    // Exact workflow_name match (set by new engine)
+    if (!this._def) return false
+    if (r.workflowName) return r.workflowName === this._def.name
+    // Legacy runs without workflow_name: use heuristic runFilter
+    const f = this._def.runFilter
+    if (!f) return false // no filter = only match by exact workflow_name
+    if (f.correlationPrefix && !r.correlationId?.startsWith(f.correlationPrefix)) return false
+    if (f.releaseKind && r.context?.releaseKind !== f.releaseKind) return false
+    if (f.triggerReason !== undefined && r.triggerReason !== f.triggerReason) return false
+    return true
+  }
+
   private async loadRuns() {
-    try { this._runs = await listWorkflowRuns('globular.internal', { limit: 50 }); this._error = '' }
+    try {
+      const all = await listWorkflowRuns('globular.internal', { limit: 50 })
+      // Client-side filter as fallback for old servers / legacy runs
+      this._runs = all.filter(r => this.matchesDef(r))
+      this._error = ''
+    }
     catch (e: any) { this._error = e?.message || 'Workflow service unreachable'; this._runs = [] }
     this._loading = false; this.render()
   }
   private async silentLoad() {
     try {
-      const newRuns = await listWorkflowRuns('globular.internal', { limit: 50 })
+      const all = await listWorkflowRuns('globular.internal', { limit: 50 })
+      const newRuns = all.filter(r => this.matchesDef(r))
       // Only re-render if the run list actually changed (avoid resetting UI state)
       const changed = newRuns.length !== this._runs.length ||
         newRuns.some((r, i) => r.id !== this._runs[i]?.id || r.status !== this._runs[i]?.status)
@@ -591,7 +677,7 @@ class PageClusterWorkflows extends HTMLElement {
     this._run = run; this._selStepId = ''; this._selStepDef = null; this._selStepRt = null; this._diag = null; this._loadingRun = true; this.render()
     try {
       const d = await getWorkflowRun('globular.internal', run.id)
-      this._run = d.run; this._rtMap = buildRtMap(d.steps, this._def)
+      this._run = d.run; this._rtMap = buildRtMap(d.steps, this._def!, d.run.status)
       if (d.run.status === 9 || d.run.status === 11) { try { this._diag = await diagnoseWorkflowRun('globular.internal', run.id) } catch {} }
       this.stopPoll()
       if (d.run && this.isActive(d.run.status)) {
@@ -605,7 +691,7 @@ class PageClusterWorkflows extends HTMLElement {
     if (!this._run) return
     try {
       const d = await getWorkflowRun('globular.internal', this._run.id); this._run = d.run
-      this._rtMap = new Map(); for (const s of d.steps) this._rtMap.set(s.stepKey, s)
+      this._rtMap = this._def ? buildRtMap(d.steps, this._def, d.run.status) : new Map()
       if (d.run && !this.isActive(d.run.status)) {
         this.stopPoll()
         if (d.run.status === 9 || d.run.status === 11) { try { this._diag = await diagnoseWorkflowRun('globular.internal', d.run.id) } catch {} }
@@ -617,13 +703,15 @@ class PageClusterWorkflows extends HTMLElement {
   private isActive(s: number) { return s >= 1 && s <= 7 }
   private stopPoll() { if (this._pollT) { clearInterval(this._pollT); this._pollT = null } }
   private findStep(id: string, steps?: StepDef[]): StepDef | null {
-    for (const s of steps ?? this._def.steps) { if (s.id === id) return s; if (s.steps) { const f = this.findStep(id, s.steps); if (f) return f } }
+    for (const s of steps ?? this._def?.steps ?? []) { if (s.id === id) return s; if (s.steps) { const f = this.findStep(id, s.steps); if (f) return f } }
     return null
   }
 
   private render() {
     const run = this._run
-    const { svg, width, height } = buildHorizontalSvg(this._def, this._rtMap, this._selStepId)
+    const { svg, width, height } = this._def
+      ? buildHorizontalSvg(this._def, this._rtMap, this._selStepId)
+      : { svg: '', width: 100, height: 100 }
 
     this.innerHTML = `
       <style>
@@ -675,10 +763,10 @@ class PageClusterWorkflows extends HTMLElement {
         <div class="cw-bar">
           <h2>Workflows</h2>
           <span class="cw-lbl">Definition</span>
-          <select id="selDef">${WORKFLOW_DEFS.map(d => `<option value="${d.name}" ${d.name === this._def.name ? 'selected' : ''}>${d.displayName}</option>`).join('')}</select>
+          <select id="selDef">${this._defs.map(d => `<option value="${d.name}" ${d.name === this._def?.name ? 'selected' : ''}>${d.displayName}</option>`).join('')}</select>
           <button class="cw-ref" id="btnR">↻</button>
         </div>
-        <p class="cw-desc">${this._def.description}</p>
+        <p class="cw-desc">${this._def?.description ?? 'Loading workflow definitions from MinIO…'}</p>
 
         ${this._loading ? '<div class="cw-empty">Loading…</div>' : ''}
         ${this._error && !this._loading ? `<div class="cw-err">${this._error}</div>` : ''}
@@ -691,7 +779,7 @@ class PageClusterWorkflows extends HTMLElement {
             <span style="color:var(--secondary-text-color);font-size:.7rem">${run.context?.nodeHostname || ''} · ${runDuration(run)} · <code style="font-size:.66rem">${run.id?.slice(0, 8)}</code></span>
           </div>` : ''}
           <div class="cw-svg" ${this._loadingRun ? 'style="opacity:.5"' : ''}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svg}</svg>
+            ${this._def ? `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svg}</svg>` : '<div class="cw-empty">Loading workflow definitions from MinIO…</div>'}
           </div>
           ${this.renderStepBar()}
           <div class="cw-tbl-wrap">${this.renderTable()}</div>
@@ -756,8 +844,8 @@ class PageClusterWorkflows extends HTMLElement {
 
   private bindEvents() {
     this.querySelector('#selDef')?.addEventListener('change', (e) => {
-      const d = WORKFLOW_DEFS.find(w => w.name === (e.target as HTMLSelectElement).value)
-      if (d) { this._def = d; this._run = null; this._rtMap = new Map(); this._selStepId = ''; this._selStepDef = null; this._selStepRt = null; this.render() }
+      const d = this._defs.find(w => w.name === (e.target as HTMLSelectElement).value)
+      if (d) { this._def = d; this._run = null; this._rtMap = new Map(); this._selStepId = ''; this._selStepDef = null; this._selStepRt = null; this._loading = true; this.render(); this.loadRuns() }
     })
     this.querySelector('#btnR')?.addEventListener('click', () => { this._loading = true; this.render(); this.loadRuns() })
     this.querySelectorAll<HTMLElement>('[data-rid]').forEach(r => r.addEventListener('click', () => { const run = this._runs.find(x => x.id === r.dataset.rid); if (run) this.selectRun(run) }))

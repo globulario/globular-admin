@@ -7,4 +7,3 @@ export * from "./network";
 export * from "./services";
 export * from "./cors";
 export * from "./domains";
-export * from "./upgrades";

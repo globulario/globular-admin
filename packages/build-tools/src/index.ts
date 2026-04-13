@@ -48,6 +48,8 @@ export function globularOptimizeDeps(): string[] {
   return [
     'globular-web-client/admin/admin_grpc_web_pb',
     'globular-web-client/admin/admin_pb',
+    'globular-web-client/ai_executor/ai_executor_grpc_web_pb',
+    'globular-web-client/ai_executor/ai_executor_pb',
     'globular-web-client/applications_manager/applications_manager_grpc_web_pb',
     'globular-web-client/applications_manager/applications_manager_pb',
     'globular-web-client/authentication/authentication_grpc_web_pb',

@@ -208,12 +208,14 @@ export async function fetchOverviewHistory(rangeSec: number, instance?: string):
     cpu: `100 - (avg(rate(node_cpu_seconds_total{mode="idle"${inst ? ', ' + inst : ''}}[1m])) * 100)`,
     memory: inst
       ? `(1 - node_memory_MemAvailable_bytes{${inst}} / node_memory_MemTotal_bytes{${inst}}) * 100`
-      : '(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100',
+      // Cluster-wide: total memory used / total memory (weighted) so a big node doesn't distort the avg.
+      : '(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100',
     networkRx: `sum(rate(node_network_receive_bytes_total{device!="lo"${inst ? ', ' + inst : ''}}[1m]))`,
     networkTx: `sum(rate(node_network_transmit_bytes_total{device!="lo"${inst ? ', ' + inst : ''}}[1m]))`,
     disk: inst
       ? `(1 - node_filesystem_avail_bytes{mountpoint="/", ${inst}} / node_filesystem_size_bytes{mountpoint="/", ${inst}}) * 100`
-      : '(1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100',
+      // Cluster-wide: total disk used / total disk capacity (weighted) so a big disk doesn't distort the avg.
+      : '(1 - sum(node_filesystem_avail_bytes{mountpoint="/"}) / sum(node_filesystem_size_bytes{mountpoint="/"})) * 100',
   }
 
   const [cpuRes, memRes, rxRes, txRes, diskRes] = await Promise.allSettled([

@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => {
       open: true,
       proxy: {
         '/prometheus': {
-          target: 'http://127.0.0.1:9090',
+          target: 'http://10.0.0.63:9090',
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/prometheus/, ''),
         },

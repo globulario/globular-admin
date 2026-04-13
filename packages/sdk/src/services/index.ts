@@ -14,3 +14,4 @@ export * from "../persistence/persistence";
 export * from "../search/search_document";
 export * from "../cluster_doctor/clusterdoctor_client";
 export * from "../workflow/workflow";
+export * from "../ai_executor/aiexecutor_client";

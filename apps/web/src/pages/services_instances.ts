@@ -151,11 +151,16 @@ class PageServicesInstances extends HTMLElement {
         })
       }
     }
-    // Also include services from per-node installed versions
+    // Also include services from per-node installed versions, but ONLY if
+    // they already appear in the cluster health summary (i.e. they have a
+    // desired-state entry). Entries that are installed but have no desired
+    // state are either COMMAND packages (claude, etcdctl, mc) or orphaned
+    // leftovers — neither belongs in the "Service Instances" view.
     for (const nh of nodeHealthMap.values()) {
       for (const svcName of Object.keys(nh.installedVersions ?? {})) {
         if (!allServices.has(svcName)) {
-          allServices.set(svcName, { desired: '', kind: 'SERVICE' })
+          // Skip: no desired-state entry → likely COMMAND or orphan.
+          // Operators can inspect these via `globular pkg info <name>`.
         }
       }
     }
@@ -165,6 +170,10 @@ class PageServicesInstances extends HTMLElement {
     const cpGroups: ServiceGroup[] = []
 
     for (const [svcName, info] of allServices) {
+      // COMMAND packages (claude, etcdctl, mc, etc.) are CLI tools, not
+      // service instances — skip them so they don't clutter the view.
+      if (info.kind === 'COMMAND') continue
+
       const meta = svcMeta.get(svcName)
       const instances: NodeInstance[] = []
 

@@ -534,6 +534,7 @@ class PageObservabilityMetrics extends HTMLElement {
   private _scrapeHealth: PrometheusScrapeHealth | null = null
   private _adminServices: ServicesResponse | null = null
   private _adminStorage: StorageResponse | null = null
+  private _storageNode: string = '' // selected node hostname for Storage tab (empty = current gateway)
   private _envoy: EnvoyResponse | null = null
   private _loading = true
   private _error = ''
@@ -601,7 +602,7 @@ class PageObservabilityMetrics extends HTMLElement {
       fetchServiceProcessMetrics(),
       getPrometheusScrapeHealth(),
       fetchAdminServices(),
-      fetchAdminStorage(),
+      this._fetchStorageForNode(),
       fetchAdminEnvoy(),
     ])
 
@@ -728,7 +729,9 @@ class PageObservabilityMetrics extends HTMLElement {
     // chart data comes from Prometheus. Show the selected hostname instead.
     if (this._selectedNode) {
       this._setLive('hostname', esc(this._selectedNode))
-      this._setLive('uptime', '--')
+      // Uptime for a remote node: query node_exporter's boot-time metric
+      // (federated from the peer Prometheus) and subtract from "now".
+      this._fetchNodeUptime(this._selectedNode)
       // cpu-val, mem-val, disk-val: leave as '--' (set at render time)
     } else {
       const cpuT = computeTrend(this._ring, x => x.cpu.usagePct)
@@ -737,7 +740,9 @@ class PageObservabilityMetrics extends HTMLElement {
       this._setLive('mem-val', fmtPct(s.memory.usedPct) + trendHtml(memT))
       this._setLive('disk-val', fmtPct(100 - s.disk.freePct))
       this._setLive('uptime', fmtDuration(s.uptimeSec))
-      this._setLive('hostname', esc(s.hostname))
+      // When viewing the whole cluster, show the cluster domain; fall back
+      // to the local gateway's hostname if the domain isn't known yet.
+      this._setLive('hostname', esc(this._health?.clusterDomain || s.hostname))
     }
     this._setLive('last-updated', this._lastUpdated ? `Updated ${this._ago(this._lastUpdated)}` : '')
 
@@ -780,10 +785,64 @@ class PageObservabilityMetrics extends HTMLElement {
     this._setLive('net-tx-sub', `last ${rangeLabel}`)
   }
 
+  // Fetch /admin/metrics/storage honouring the Storage tab's node selector.
+  // The server-side handler proxies to the peer gateway when ?node=<host>
+  // targets another node.
+  private async _fetchStorageForNode(): Promise<StorageResponse> {
+    const base = localStorage.getItem('globular.baseUrl') || ''
+    const localHost = this._ring.latest()?.stats?.hostname
+    const target = this._storageNode && this._storageNode !== localHost
+      ? `${base}/admin/metrics/storage?node=${encodeURIComponent(this._storageNode)}`
+      : `${base}/admin/metrics/storage`
+    const r = await fetch(target)
+    if (!r.ok) throw new Error(`admin/metrics/storage: ${r.status}`)
+    return r.json()
+  }
+
+  // Resolve the base URL to use when fetching /admin/metrics/storage.
+  // Returns undefined when no node is selected, so fetchAdminStorage falls
+  // through to its default (getBaseUrl()/localStorage). When a remote node
+  // is selected, returns that node's FQDN so the request bypasses the dev
+  // proxy and hits the target gateway directly.
+  private _storageBaseUrl(): string | undefined {
+    if (!this._storageNode) return undefined
+    const domain = this._health?.clusterDomain
+    if (!domain) return undefined
+    const localHost = this._ring.latest()?.stats?.hostname
+    if (this._storageNode === localHost) return undefined
+    return `https://${this._storageNode}.${domain}`
+  }
+
   private _setLive(key: string, html: string) {
     const el = this.querySelector<HTMLElement>(`[data-live="${key}"]`)
     if (el) el.innerHTML = html
   }
+
+  private async _fetchNodeUptime(hostname: string) {
+    // Guard: don't spam Prometheus — only fire if we haven't just fetched
+    // for this node, and fall back to '--' on any failure.
+    const now = Date.now()
+    if (this._uptimeCache.node === hostname && now - this._uptimeCache.at < 10000) {
+      this._setLive('uptime', this._uptimeCache.value)
+      return
+    }
+    this._setLive('uptime', '--')
+    try {
+      const q = encodeURIComponent(`time() - node_boot_time_seconds{node="${hostname}"}`)
+      const r = await fetch(`/prometheus/api/v1/query?query=${q}`)
+      const j = await r.json()
+      const sec = Number(j?.data?.result?.[0]?.value?.[1])
+      if (Number.isFinite(sec) && sec > 0) {
+        const value = fmtDuration(sec)
+        this._uptimeCache = { node: hostname, at: now, value }
+        // Only paint if the user hasn't switched node since we started.
+        if (this._selectedNode === hostname) this._setLive('uptime', value)
+      }
+    } catch {
+      /* leave '--' */
+    }
+  }
+  private _uptimeCache: { node: string; at: number; value: string } = { node: '', at: 0, value: '--' }
 
   private _ago(ts: number): string {
     const sec = Math.floor((Date.now() - ts) / 1000)
@@ -868,7 +927,7 @@ class PageObservabilityMetrics extends HTMLElement {
       (this.querySelector('#omInfoPanel') as any)?.toggle()
     })
 
-    this.querySelectorAll<HTMLButtonElement>('.om-tab').forEach(btn =>
+    this.querySelectorAll<HTMLButtonElement>('.om-tab[data-tab]').forEach(btn =>
       btn.addEventListener('click', () => { this._tab = btn.dataset.tab as Tab; this._render() })
     )
     this.querySelectorAll<HTMLButtonElement>('.om-health-toggle').forEach(btn =>
@@ -911,6 +970,23 @@ class PageObservabilityMetrics extends HTMLElement {
     )
     this.querySelectorAll<HTMLButtonElement>('[data-svc-status]').forEach(btn =>
       btn.addEventListener('click', () => { this._svcStatusFilter = btn.dataset.svcStatus!; this._render() })
+    )
+
+    // Storage per-node selector
+    this.querySelectorAll<HTMLButtonElement>('[data-storage-node]').forEach(btn =>
+      btn.addEventListener('click', async () => {
+        const host = btn.dataset.storageNode!
+        if (this._storageNode === host) return
+        this._storageNode = host
+        this._adminStorage = null
+        this._render()
+        try {
+          this._adminStorage = await this._fetchStorageForNode()
+        } catch {
+          /* render will show legacy fallback */
+        }
+        this._render()
+      })
     )
 
     // Per-node selection: click rows in overview node table
@@ -1037,8 +1113,8 @@ class PageObservabilityMetrics extends HTMLElement {
           <div class="om-stat-value"><span data-live="uptime">${nodeSelected ? '--' : (s ? fmtDuration(s.uptimeSec) : '--')}</span></div>
         </div>
         <div class="om-stat-card">
-          <div class="om-stat-label">Hostname</div>
-          <div class="om-stat-value" style="font:var(--md-typescale-title-medium);"><span data-live="hostname">${nodeSelected ? esc(this._selectedNode) : (s ? esc(s.hostname) : '--')}</span></div>
+          <div class="om-stat-label">${nodeSelected ? 'Hostname' : 'Cluster'}</div>
+          <div class="om-stat-value" style="font:var(--md-typescale-title-medium);"><span data-live="hostname">${nodeSelected ? esc(this._selectedNode) : (this._health?.clusterDomain ? esc(this._health.clusterDomain) : (s ? esc(s.hostname) : '--'))}</span></div>
         </div>
       </div>
 
@@ -1091,7 +1167,7 @@ class PageObservabilityMetrics extends HTMLElement {
       const cpuVal = s ? fmtPct(s.cpu.usagePct) : '--'
       const memVal = s ? fmtPct(s.memory.usedPct) : '--'
       const diskPct = caps && caps.diskBytes > 0 ? ((caps.diskBytes - caps.diskFreeBytes) / caps.diskBytes) * 100 : 0
-      const nClr = n.status.toUpperCase() === 'HEALTHY' || n.status.toUpperCase() === 'ACTIVE' ? 'ok' as Severity : n.status.toUpperCase() === 'DEGRADED' || n.status.toUpperCase() === 'CONVERGING' ? 'warning' as Severity : 'critical' as Severity
+      const nClr = ['HEALTHY', 'ACTIVE', 'READY'].includes(n.status.toUpperCase()) ? 'ok' as Severity : n.status.toUpperCase() === 'DEGRADED' || n.status.toUpperCase() === 'CONVERGING' ? 'warning' as Severity : 'critical' as Severity
       const selected = this._selectedNode === n.hostname
       return `<tr data-node-hostname="${esc(n.hostname)}"${selected ? ' class="om-node-selected"' : ''}>
         <td>${esc(n.hostname)}</td>
@@ -1135,7 +1211,7 @@ class PageObservabilityMetrics extends HTMLElement {
       const memClr = pctColor(memPct, THRESHOLDS.memory.warn, THRESHOLDS.memory.crit)
       const dskClr = diskUsedColor(diskPct)
 
-      const statusSev: Severity = n.status.toUpperCase() === 'HEALTHY' || n.status.toUpperCase() === 'ACTIVE'
+      const statusSev: Severity = ['HEALTHY', 'ACTIVE', 'READY'].includes(n.status.toUpperCase())
         ? 'ok' : n.status.toUpperCase() === 'DEGRADED' || n.status.toUpperCase() === 'CONVERGING' ? 'warning' : 'critical'
       const tooltip = n.status.toUpperCase() === 'CONVERGING' ? ' data-tooltip="Node is reconciling desired state"' : ''
 
@@ -1431,6 +1507,20 @@ class PageObservabilityMetrics extends HTMLElement {
       return this._renderStorageLegacy()
     }
 
+    // Node selector — lets the user see each node's ground-truth local
+    // filesystem + application-path probe (os.Stat) by fetching directly
+    // from that node's gateway at https://<host>.<domain>/admin/metrics/storage.
+    const domain = this._health?.clusterDomain || ''
+    const nodeBtns = (this._nodes || [])
+      .map(n => {
+        const active = this._storageNode === n.hostname
+          || (!this._storageNode && n.hostname === this._ring.latest()?.stats?.hostname)
+        return `<button class="om-tab${active ? ' active' : ''}" data-storage-node="${esc(n.hostname)}">${esc(n.hostname)}</button>`
+      }).join('')
+    const selector = (this._nodes || []).length > 1 && domain ? `
+      <div class="om-tabs" style="margin:0 0 12px 0">${nodeBtns}</div>
+    ` : ''
+
     const sev = statusToSeverity(st.derived_status)
     const label = st.derived_status === 'critical' ? 'CRITICAL' : st.derived_status === 'degraded' ? 'WARNING' : 'HEALTHY'
     const reasonText = st.reasons?.length ? st.reasons.join('; ') : ''
@@ -1464,6 +1554,7 @@ class PageObservabilityMetrics extends HTMLElement {
         </div>
       </div>
 
+      ${selector}
       ${this._renderMountsTable(st.mounts, st.most_critical_mount)}
       ${this._renderAppPathsTable(st.applications)}
     `

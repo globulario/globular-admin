@@ -45,6 +45,7 @@ export interface WorkflowRun {
   startedAt: string
   updatedAt: string
   finishedAt: string
+  workflowName: string
 }
 
 export interface WorkflowStep {
@@ -227,6 +228,7 @@ function pbToRun(r: any): WorkflowRun {
     startedAt: r.getStartedAt?.()?.toDate?.()?.toISOString?.() ?? '',
     updatedAt: r.getUpdatedAt?.()?.toDate?.()?.toISOString?.() ?? '',
     finishedAt: r.getFinishedAt?.()?.toDate?.()?.toISOString?.() ?? '',
+    workflowName: r.getWorkflowName?.() ?? '',
   }
 }
 
@@ -258,7 +260,7 @@ function pbToStep(s: any): WorkflowStep {
 /** List workflow runs for a component (service) on a specific node. */
 export async function listWorkflowRuns(
   clusterId: string,
-  opts: { nodeId?: string; componentName?: string; activeOnly?: boolean; failedOnly?: boolean; limit?: number } = {}
+  opts: { nodeId?: string; componentName?: string; activeOnly?: boolean; failedOnly?: boolean; limit?: number; workflowName?: string } = {}
 ): Promise<WorkflowRun[]> {
   const req = new wfPb.ListRunsRequest()
   req.setClusterId(clusterId)
@@ -266,6 +268,7 @@ export async function listWorkflowRuns(
   if (opts.componentName) req.setComponentName(opts.componentName)
   if (opts.activeOnly) req.setActiveOnly(true)
   if (opts.failedOnly) req.setFailedOnly(true)
+  if (opts.workflowName && typeof req.setWorkflowName === 'function') req.setWorkflowName(opts.workflowName)
   req.setLimit(opts.limit ?? 20)
 
   const resp = await unary<wfPb.ListRunsRequest, wfPb.ListRunsResponse>(
@@ -386,4 +389,217 @@ export async function getLatestRunForComponent(
 ): Promise<WorkflowRun | null> {
   const runs = await listWorkflowRuns(clusterId, { componentName, nodeId, limit: 1 })
   return runs.length > 0 ? runs[0] : null
+}
+
+// ─── Workflow Definitions (MinIO-backed) ───────────────────────────────────
+
+export interface WorkflowDefinitionSummary {
+  name: string
+  displayName: string
+  description: string
+}
+
+/** List all workflow definitions stored in MinIO (single source of truth). */
+export async function listWorkflowDefinitions(): Promise<WorkflowDefinitionSummary[]> {
+  const req = new wfPb.ListWorkflowDefinitionsRequest()
+  const resp = await unary<wfPb.ListWorkflowDefinitionsRequest, wfPb.ListWorkflowDefinitionsResponse>(
+    wfClient, 'listWorkflowDefinitions', req, 'workflow.WorkflowService'
+  )
+  return (resp.getDefinitionsList?.() ?? []).map((d: any) => ({
+    name: d.getName?.() ?? '',
+    displayName: d.getDisplayName?.() ?? '',
+    description: d.getDescription?.() ?? '',
+  }))
+}
+
+/** Get the raw YAML content of a workflow definition by name. */
+export async function getWorkflowDefinition(name: string): Promise<string> {
+  const req = new wfPb.GetWorkflowDefinitionRequest()
+  req.setName(name)
+  const resp = await unary<wfPb.GetWorkflowDefinitionRequest, wfPb.GetWorkflowDefinitionResponse>(
+    wfClient, 'getWorkflowDefinition', req, 'workflow.WorkflowService'
+  )
+  return resp.getYamlContent?.() ?? ''
+}
+
+// ─── Incidents ──────────────────────────────────────────────────────────────
+
+export type Provenance = 'OBSERVED' | 'CORRELATED' | 'DIAGNOSED' | 'AI_PROPOSED' | 'UNKNOWN'
+export type IncidentStatus = 'OPEN' | 'RESOLVING' | 'RESOLVED' | 'ACKED' | 'UNKNOWN'
+export type IncidentSeverity = 'CRITICAL' | 'ERROR' | 'WARN' | 'INFO' | 'UNKNOWN'
+
+export interface IncidentEvidenceItem {
+  id: string
+  provenance: Provenance
+  source: string
+  summary: string
+  facts: Record<string, string>
+  observedAt: string
+}
+export interface IncidentDiagnosisItem {
+  id: string
+  source: string
+  invariantId: string
+  summary: string
+  citedEvidenceIds: string[]
+  severity: IncidentSeverity
+  diagnosedAt: string
+}
+export interface IncidentProposedFix {
+  id: string
+  proposer: string
+  summary: string
+  confidence: 'high' | 'medium' | 'low' | ''
+  reasoning: string
+  citedEvidenceIds: string[]
+  citedDiagnosisIds: string[]
+  status: string
+  proposedAt: string
+  appliedBy: string
+  appliedAt: string
+  applicationResult: string
+  // One of: codePatch / configPatch / commandList / restartAction
+  codePatch?: { filePath: string; line: number; oldText: string; newText: string; repository: string }
+  configPatch?: { targetPath: string; oldValue: string; newValue: string; format: string }
+  commandList?: { commands: string[]; targetHost: string }
+  restartAction?: { unitNames: string[]; targetHost: string }
+}
+export interface Incident {
+  id: string
+  clusterId: string
+  category: string
+  signature: string
+  status: IncidentStatus
+  severity: IncidentSeverity
+  headline: string
+  occurrenceCount: number
+  firstSeenAt: string
+  lastSeenAt: string
+  entityRef: string
+  entityType: string
+  evidence: IncidentEvidenceItem[]
+  diagnoses: IncidentDiagnosisItem[]
+  proposedFixes: IncidentProposedFix[]
+  acknowledged: boolean
+  acknowledgedBy: string
+  acknowledgedAt: string
+  assignedTo: string
+  relatedIncidentIds: string[]
+}
+
+const statusName: Record<number, IncidentStatus> = {
+  0: 'UNKNOWN', 1: 'OPEN', 2: 'RESOLVING', 3: 'RESOLVED', 4: 'ACKED',
+}
+const sevName: Record<number, IncidentSeverity> = {
+  0: 'UNKNOWN', 1: 'INFO', 2: 'WARN', 3: 'ERROR', 4: 'CRITICAL',
+}
+const provName: Record<number, Provenance> = {
+  0: 'UNKNOWN', 1: 'OBSERVED', 2: 'CORRELATED', 3: 'DIAGNOSED', 4: 'AI_PROPOSED',
+}
+
+function tsStr(t: any): string {
+  if (!t?.getSeconds) return ''
+  const sec = Number(t.getSeconds?.() ?? 0)
+  const nano = Number(t.getNanos?.() ?? 0)
+  const ms = sec * 1000 + nano / 1e6
+  return new Date(ms).toISOString()
+}
+
+function convertEvidence(e: any): IncidentEvidenceItem {
+  const facts: Record<string, string> = {}
+  const m = e.getFactsMap?.()
+  if (m) m.forEach((v: string, k: string) => { facts[k] = v })
+  return {
+    id: e.getId?.() ?? '',
+    provenance: provName[e.getProvenance?.() ?? 0] ?? 'UNKNOWN',
+    source: e.getSource?.() ?? '',
+    summary: e.getSummary?.() ?? '',
+    facts,
+    observedAt: tsStr(e.getObservedAt?.()),
+  }
+}
+function convertDiagnosis(d: any): IncidentDiagnosisItem {
+  return {
+    id: d.getId?.() ?? '',
+    source: d.getSource?.() ?? '',
+    invariantId: d.getInvariantId?.() ?? '',
+    summary: d.getSummary?.() ?? '',
+    citedEvidenceIds: d.getCitedEvidenceIdsList?.() ?? [],
+    severity: sevName[d.getSeverity?.() ?? 0] ?? 'UNKNOWN',
+    diagnosedAt: tsStr(d.getDiagnosedAt?.()),
+  }
+}
+function convertFix(f: any): IncidentProposedFix {
+  const fix: IncidentProposedFix = {
+    id: f.getId?.() ?? '',
+    proposer: f.getProposer?.() ?? '',
+    summary: f.getSummary?.() ?? '',
+    confidence: (f.getConfidence?.() ?? '') as any,
+    reasoning: f.getReasoning?.() ?? '',
+    citedEvidenceIds: f.getCitedEvidenceIdsList?.() ?? [],
+    citedDiagnosisIds: f.getCitedDiagnosisIdsList?.() ?? [],
+    status: String(f.getStatus?.() ?? ''),
+    proposedAt: tsStr(f.getProposedAt?.()),
+    appliedBy: f.getAppliedBy?.() ?? '',
+    appliedAt: tsStr(f.getAppliedAt?.()),
+    applicationResult: f.getApplicationResult?.() ?? '',
+  }
+  const cp = f.getCodePatch?.()
+  if (cp) fix.codePatch = {
+    filePath: cp.getFilePath?.() ?? '', line: cp.getLine?.() ?? 0,
+    oldText: cp.getOldText?.() ?? '', newText: cp.getNewText?.() ?? '',
+    repository: cp.getRepository?.() ?? '',
+  }
+  return fix
+}
+function convertIncident(i: any): Incident {
+  return {
+    id: i.getId?.() ?? '',
+    clusterId: i.getClusterId?.() ?? '',
+    category: i.getCategory?.() ?? '',
+    signature: i.getSignature?.() ?? '',
+    status: statusName[i.getStatus?.() ?? 0] ?? 'UNKNOWN',
+    severity: sevName[i.getSeverity?.() ?? 0] ?? 'UNKNOWN',
+    headline: i.getHeadline?.() ?? '',
+    occurrenceCount: i.getOccurrenceCount?.() ?? 0,
+    firstSeenAt: tsStr(i.getFirstSeenAt?.()),
+    lastSeenAt: tsStr(i.getLastSeenAt?.()),
+    entityRef: i.getEntityRef?.() ?? '',
+    entityType: i.getEntityType?.() ?? '',
+    evidence: (i.getEvidenceList?.() ?? []).map(convertEvidence),
+    diagnoses: (i.getDiagnosesList?.() ?? []).map(convertDiagnosis),
+    proposedFixes: (i.getProposedFixesList?.() ?? []).map(convertFix),
+    acknowledged: i.getAcknowledged?.() ?? false,
+    acknowledgedBy: i.getAcknowledgedBy?.() ?? '',
+    acknowledgedAt: tsStr(i.getAcknowledgedAt?.()),
+    assignedTo: i.getAssignedTo?.() ?? '',
+    relatedIncidentIds: i.getRelatedIncidentIdsList?.() ?? [],
+  }
+}
+
+export async function listIncidents(clusterId: string, status: number = 0, limit: number = 50): Promise<Incident[]> {
+  const req = new wfPb.ListIncidentsRequest()
+  req.setClusterId(clusterId)
+  req.setStatus(status as any)
+  req.setLimit(limit)
+  const resp = await unary<any, any>(wfClient, 'listIncidents', req, 'workflow.WorkflowService')
+  return (resp.getIncidentsList?.() ?? []).map(convertIncident)
+}
+
+export async function getIncident(clusterId: string, incidentId: string): Promise<Incident> {
+  const req = new wfPb.GetIncidentRequest()
+  req.setClusterId(clusterId)
+  req.setIncidentId(incidentId)
+  const resp = await unary<any, any>(wfClient, 'getIncident', req, 'workflow.WorkflowService')
+  return convertIncident(resp)
+}
+
+export async function applyIncidentAction(incidentId: string, action: string, actor: string, fixId?: string, comment?: string): Promise<void> {
+  const req = new wfPb.IncidentAction()
+  req.setIncidentId(incidentId)
+  req.setAction(action)
+  req.setActor(actor)
+  if (fixId) req.setFixId(fixId)
+  if (comment) req.setComment(comment)
+  await unary<any, any>(wfClient, 'applyIncidentAction', req, 'workflow.WorkflowService')
 }

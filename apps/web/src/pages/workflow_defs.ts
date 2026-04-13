@@ -23,6 +23,17 @@ export interface StepDef {
   onFailure?: HandlerDef
 }
 
+export interface RunFilter {
+  /** Match correlationId prefix (e.g. "bootstrap/", "ServiceRelease/") */
+  correlationPrefix?: string
+  /** Match releaseKind exactly */
+  releaseKind?: string
+  /** Match triggerReason exactly */
+  triggerReason?: number
+  /** Match componentKind exactly */
+  componentKind?: number
+}
+
 export interface WorkflowDef {
   name: string
   displayName: string
@@ -30,6 +41,8 @@ export interface WorkflowDef {
   steps: StepDef[]
   onFailure?: HandlerDef
   onSuccess?: HandlerDef
+  /** Filter to match runs belonging to this workflow definition */
+  runFilter?: RunFilter
 }
 
 // ─── Definitions ────────────────────────────────────────────────────────────
@@ -40,6 +53,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'day0.bootstrap',
     displayName: 'Cluster Day-0 bootstrap',
+    // day0 runs only exist when workflow_name is set (new engine); no legacy runs
     description: 'Day-0 cluster bootstrap: prerequisites, storage, data layer, mesh, control plane, DNS, ops, workloads, CLI, post-install.',
     steps: [
       { id: 'verify_etcd_healthy', title: 'Verify etcd is healthy', actor: 'node-agent', action: 'node.probe_infra_health', retry: { maxAttempts: 30, backoff: '5s' }, timeout: '3m' },
@@ -72,6 +86,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'node.bootstrap',
     displayName: 'Node bootstrap',
+    runFilter: { correlationPrefix: 'bootstrap/', triggerReason: 2 },
     description: 'Advances a node from admitted to workload_ready by waiting on profile-specific convergence conditions.',
     steps: [
       { id: 'mark_infra_preparing', title: 'Mark infra_preparing', actor: 'cluster-controller', action: 'controller.bootstrap.set_phase' },
@@ -90,6 +105,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'node.join',
     displayName: 'Day-1 node join',
+    runFilter: { correlationPrefix: 'join/' },
     description: 'Full Day-1 join: install all packages in dependency-ordered tiers with parallelism.',
     steps: [
       { id: 'verify_prerequisites', title: 'Verify etcd + node-agent', actor: 'node-agent', action: 'node.verify_services_active', retry: { maxAttempts: 6, backoff: '5s' } },
@@ -113,6 +129,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'node.repair',
     displayName: 'Node repair',
+    runFilter: { correlationPrefix: 'repair/' },
     description: 'Diagnose, isolate and repair a degraded or partially converged node.',
     steps: [
       { id: 'mark_repair_started', title: 'Mark repair started', actor: 'cluster-controller', action: 'controller.node_repair.mark_started' },
@@ -134,6 +151,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'release.apply.package',
     displayName: 'Apply package release',
+    runFilter: { releaseKind: 'ServiceRelease' },
     description: 'Generic package rollout for SERVICE/INFRASTRUCTURE/COMMAND packages. Parallel per-node with concurrency control.',
     steps: [
       { id: 'mark_resolved', title: 'Mark release resolved', actor: 'cluster-controller', action: 'controller.release.mark_resolved' },
@@ -166,6 +184,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'release.apply.infrastructure',
     displayName: 'Apply infrastructure release',
+    runFilter: { releaseKind: 'InfrastructureRelease' },
     description: 'Infrastructure-specific rollout. Single-node-at-a-time with strict health checks.',
     steps: [
       { id: 'mark_resolved', title: 'Mark release resolved', actor: 'cluster-controller', action: 'controller.release.mark_resolved' },
@@ -198,6 +217,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'release.remove.package',
     displayName: 'Remove package',
+    runFilter: { correlationPrefix: 'remove/' },
     description: 'Uninstall a package from all target nodes: stop, disable, remove, clear state.',
     steps: [
       { id: 'mark_removing', title: 'Mark removing', actor: 'cluster-controller', action: 'controller.release.mark_applying' },
@@ -224,6 +244,7 @@ export const WORKFLOW_DEFS: WorkflowDef[] = [
   {
     name: 'cluster.reconcile',
     displayName: 'Cluster reconcile',
+    runFilter: { correlationPrefix: 'reconcile/' },
     description: 'Continuous drift detection and remediation dispatch. Scans, classifies, and launches child workflows.',
     steps: [
       { id: 'scan_drift', title: 'Scan cluster drift', actor: 'cluster-controller', action: 'controller.reconcile.scan_drift' },
