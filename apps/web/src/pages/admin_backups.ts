@@ -151,7 +151,7 @@ class PageAdminBackups extends HTMLElement {
 
   private _minioBuckets: MinioBucketInfo[] = []
   private _minioEndpoint = ''
-  private _minioConfig = { MinioEndpoint: '127.0.0.1:9000', MinioAccessKey: '', MinioSecretKey: '', MinioSecure: true }
+  private _minioConfig = { MinioEndpoint: '', MinioAccessKey: '', MinioSecretKey: '', MinioSecure: true }
 
   private _loading = false
   private _error = ''
@@ -1435,7 +1435,7 @@ class PageAdminBackups extends HTMLElement {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:560px;margin-bottom:12px">
             <div>
               <label style="${LABEL}">Endpoint</label>
-              <input id="bkMinioEndpoint" value="${esc(this._minioConfig.MinioEndpoint)}" placeholder="127.0.0.1:9000" style="${INPUT}">
+              <input id="bkMinioEndpoint" value="${esc(this._minioConfig.MinioEndpoint)}" placeholder="minio.globular.internal:9000" style="${INPUT}">
             </div>
             <div>
               <label style="${LABEL}">Protocol</label>
@@ -1802,7 +1802,7 @@ class PageAdminBackups extends HTMLElement {
 
       // MinIO connection
       this._minioConfig = {
-        MinioEndpoint: svc.MinioEndpoint || '127.0.0.1:9000',
+        MinioEndpoint: svc.MinioEndpoint || '',
         MinioAccessKey: svc.MinioAccessKey || '',
         MinioSecretKey: svc.MinioSecretKey || '',
         MinioSecure: svc.MinioSecure ?? true,
