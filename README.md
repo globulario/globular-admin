@@ -30,7 +30,7 @@ If you want to **operate it from the browser or build frontend apps on top of it
 
 ### Apps
 
-#### `apps/web`
+#### [`apps/web`](apps/web/README.md)
 The main **admin console** for Globular clusters.
 
 It includes pages and widgets for:
@@ -44,7 +44,7 @@ It includes pages and widgets for:
 - observability views for events, logs, and metrics
 - AI/operations views including diagnostics, backups, and AI console pages
 
-#### `apps/media`
+#### [`apps/media`](apps/media/README.md)
 A separate **media-focused web application** built on the same frontend stack.
 
 It contains pages for:
@@ -59,7 +59,7 @@ This repo therefore does not just host an admin shell. It is also the beginning 
 
 ### Packages
 
-#### `packages/sdk`
+#### [`packages/sdk`](packages/sdk/README.md)
 A **TypeScript SDK** for browser-based Globular applications.
 
 It exposes client code for multiple service domains, including:
@@ -76,7 +76,7 @@ It exposes client code for multiple service domains, including:
 
 The SDK depends on the generated web client artifacts from `services/typescript/dist`.
 
-#### `packages/components`
+#### [`packages/components`](packages/components/README.md)
 A **reusable UI/component library** for Globular apps.
 
 It includes building blocks such as:
