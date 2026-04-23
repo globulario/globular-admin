@@ -19,7 +19,7 @@ import {
 const POLL = 30_000
 
 type DnsTab = 'overview' | 'records' | 'external'
-type DnsState = 'no-zones' | 'ready'
+type DnsState = 'no-zones' | 'error' | 'ready'
 type SortCol = 'name' | 'type' | 'value'
 
 class PageInfrastructureDns extends HTMLElement {
@@ -89,8 +89,12 @@ class PageInfrastructureDns extends HTMLElement {
     ])
     this._services = svcR.status === 'fulfilled' ? svcR.value : null
     this._cluster  = clR.status  === 'fulfilled' ? clR.value  : null
-    this._domains  = domR.status === 'fulfilled' ? domR.value : []
-    this._error    = null
+    if (domR.status === 'fulfilled') {
+      this._domains = domR.value
+    }
+    this._error    = domR.status === 'rejected'
+      ? (domR.reason?.message ?? String(domR.reason ?? 'DNS domains RPC failed'))
+      : null
 
     console.log('[DNS] load results — clusterDomain: %s, dns zones: %o, domRPC: %s',
       this._cluster?.clusterDomain ?? '(empty)',
@@ -131,7 +135,15 @@ class PageInfrastructureDns extends HTMLElement {
   }
 
   private buildNames(domain: string): string[] {
-    const names = [domain, `dns.${domain}`, `api.${domain}`, `*.${domain}`]
+    const names = [
+      domain,
+      `dns.${domain}`,
+      `api.${domain}`,
+      `gateway.${domain}`,
+      `controller.${domain}`,
+      `controller-nodes.${domain}`,
+      `*.${domain}`,
+    ]
     const nodes = this._cluster?.nodes ?? []
     for (const n of nodes) {
       if (n.hostname) {
@@ -143,6 +155,7 @@ class PageInfrastructureDns extends HTMLElement {
   }
 
   private getDnsState(): DnsState {
+    if (this._error && this._domains.length === 0) return 'error'
     if (this._domains.length === 0) return 'no-zones'
     return 'ready'
   }
@@ -164,6 +177,17 @@ class PageInfrastructureDns extends HTMLElement {
     }
 
     const state = this.getDnsState()
+
+    if (state === 'error') {
+      body.innerHTML = `
+        <div class="dns-banner dns-banner--error">
+          <strong>DNS Status Unavailable.</strong>
+          <span>${esc(this._error || 'DNS domains query failed')}</span>
+        </div>
+        ${this.renderDnsServiceCard()}
+      `
+      return
+    }
 
     if (state === 'no-zones') {
       body.innerHTML = `
@@ -218,12 +242,13 @@ class PageInfrastructureDns extends HTMLElement {
   // ─── Overview Tab ─────────────────────────────────────────────────────────
 
   private renderOverview(el: HTMLElement) {
+    const drift = this._error ? '' : this._domains.map(zone => this.renderDriftCard(zone)).join('')
     el.innerHTML = `
       <div class="infra-grid">
         ${this.renderDnsServiceCard()}
         ${this._domains.map(zone => this.renderZoneStatusCard(zone)).join('')}
       </div>
-      ${this._domains.map(zone => this.renderDriftCard(zone)).join('')}
+      ${drift}
       ${this._error ? `<div class="dns-banner dns-banner--error">${esc(this._error)}</div>` : ''}
     `
   }

@@ -5,7 +5,7 @@
 
 import { unary } from '../core/rpc'
 import { grpcWebHostUrl } from '../core/endpoints'
-import { metadata } from '../core/auth'
+import { getFreshToken, metadata } from '../core/auth'
 import * as dnsGrpc from 'globular-web-client/dns/dns_grpc_web_pb'
 import * as dns from 'globular-web-client/dns/dns_pb'
 
@@ -47,12 +47,34 @@ export interface SoaRecord {
 // ─── Domain management ──────────────────────────────────────────────────────
 
 export async function getDnsDomains(): Promise<string[]> {
-  const md = metadata()
   const rq = new dns.GetDomainsRequest()
-  const rsp = await unary<dns.GetDomainsRequest, dns.GetDomainsResponse>(
-    dnsClient, 'getDomains', rq, undefined, md,
-  )
-  return rsp.getDomainsList?.() ?? []
+  let md = metadata()
+
+  // If token is stale/missing at first poll tick, try a just-in-time refresh.
+  if (!md.authorization && !md.token) {
+    try { await getFreshToken(0) } catch {}
+    md = metadata()
+  }
+
+  try {
+    const rsp = await unary<dns.GetDomainsRequest, dns.GetDomainsResponse>(
+      dnsClient, 'getDomains', rq, undefined, md,
+    )
+    return rsp.getDomainsList?.() ?? []
+  } catch (e: any) {
+    const msg = String(e?.message ?? e ?? '')
+    const authLike = msg.includes('UNAUTHENTICATED') || msg.includes('Unauthenticated') || msg.includes('cluster_id required')
+    if (!authLike) throw e
+
+    // One retry after forced token refresh.
+    try { await getFreshToken(0) } catch {}
+    const md2 = metadata()
+    if (!md2.authorization && !md2.token) throw e
+    const rsp2 = await unary<dns.GetDomainsRequest, dns.GetDomainsResponse>(
+      dnsClient, 'getDomains', rq, undefined, md2,
+    )
+    return rsp2.getDomainsList?.() ?? []
+  }
 }
 
 export async function setDnsDomains(domains: string[]): Promise<void> {
@@ -96,8 +118,17 @@ export async function getCNameRecord(name: string): Promise<string | null> {
     )
     const v = rsp.getCname?.() ?? ''
     return v || null
-  } catch {
-    return null
+  } catch (e: any) {
+    // Preserve "not found" behavior, but do not hide auth/transport failures.
+    const msg = String(e?.message ?? e ?? '').toLowerCase()
+    if (
+      msg.includes('not found') ||
+      msg.includes('key not found') ||
+      msg.includes('no such')
+    ) {
+      return null
+    }
+    throw e
   }
 }
 
@@ -175,6 +206,7 @@ export async function getSoaRecords(name: string): Promise<SoaRecord[]> {
  */
 export async function fetchZoneRecords(zone: string, names: string[]): Promise<DnsRecord[]> {
   const records: DnsRecord[] = []
+  const hardErrors: string[] = []
 
   const jobs = names.map(async (name) => {
     const results = await Promise.allSettled([
@@ -197,6 +229,16 @@ export async function fetchZoneRecords(zone: string, names: string[]): Promise<D
     if (txtR.status === 'fulfilled') {
       for (const v of txtR.value) records.push({ name, type: 'TXT', value: v })
     }
+
+    if (
+      aR.status === 'rejected' &&
+      aaaaR.status === 'rejected' &&
+      cnameR.status === 'rejected' &&
+      txtR.status === 'rejected'
+    ) {
+      const err = (aR.reason?.message || aaaaR.reason?.message || cnameR.reason?.message || txtR.reason?.message || '').toString()
+      hardErrors.push(`record query failed for ${name}: ${err || 'unknown error'}`)
+    }
   })
 
   // Also fetch NS and SOA for the zone root
@@ -213,8 +255,15 @@ export async function fetchZoneRecords(zone: string, names: string[]): Promise<D
         records.push({ name: zone, type: 'SOA', value: `${s.ns} ${s.mbox} (serial ${s.serial})` })
       }
     }
+    if (nsR.status === 'rejected' && soaR.status === 'rejected') {
+      const err = (nsR.reason?.message || soaR.reason?.message || '').toString()
+      hardErrors.push(`zone metadata query failed for ${zone}: ${err || 'unknown error'}`)
+    }
   })())
 
   await Promise.allSettled(jobs)
+  if (records.length === 0 && hardErrors.length > 0) {
+    throw new Error(hardErrors[0])
+  }
   return records
 }

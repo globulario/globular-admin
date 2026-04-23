@@ -2,7 +2,11 @@
   "mcpServers": {
     "globular": {
       "type": "http",
-      "url": "http://127.0.0.1:10050/mcp"
+      "url": "https://10.0.0.63:10260/mcp",
+      "headers": {},
+      "env": {
+        "NODE_TLS_REJECT_UNAUTHORIZED": "0"
+      }
     }
   }
 }

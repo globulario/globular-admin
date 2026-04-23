@@ -235,6 +235,56 @@ export async function fetchOverviewHistory(rangeSec: number, instance?: string):
   }
 }
 
+// ─── Per-node instant metrics (CPU + memory by instance) ─────────────────────
+
+/** CPU and memory usage for a single node, keyed by IP. */
+export interface NodeResourceMetrics {
+  cpuPct: number
+  memPct: number
+}
+
+/**
+ * Fetch current CPU and memory usage per node from Prometheus.
+ * Returns a map keyed by IP address (e.g. "10.0.0.8").
+ */
+export async function fetchPerNodeMetrics(): Promise<Map<string, NodeResourceMetrics>> {
+  const map = new Map<string, NodeResourceMetrics>()
+
+  const [cpuRes, memRes] = await Promise.allSettled([
+    queryPrometheus('100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)'),
+    queryPrometheus('(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100'),
+  ])
+
+  // Parse CPU results — instance label is "IP:9100"
+  if (cpuRes.status === 'fulfilled' && cpuRes.value?.result) {
+    for (const r of cpuRes.value.result) {
+      const inst = r.metric?.instance ?? ''
+      const ip = inst.split(':')[0]
+      if (!ip) continue
+      const val = parseFloat(r.value?.[1] ?? '0')
+      map.set(ip, { cpuPct: val, memPct: 0 })
+    }
+  }
+
+  // Parse memory results
+  if (memRes.status === 'fulfilled' && memRes.value?.result) {
+    for (const r of memRes.value.result) {
+      const inst = r.metric?.instance ?? ''
+      const ip = inst.split(':')[0]
+      if (!ip) continue
+      const val = parseFloat(r.value?.[1] ?? '0')
+      const existing = map.get(ip)
+      if (existing) {
+        existing.memPct = val
+      } else {
+        map.set(ip, { cpuPct: 0, memPct: val })
+      }
+    }
+  }
+
+  return map
+}
+
 // ─── Gateway history (Prometheus range queries for gateway runtime charts) ───
 
 export interface GatewayHistory {

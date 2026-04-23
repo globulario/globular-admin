@@ -55,6 +55,8 @@ import {
   type GatewayStats,
   type ApplicationPath,
   type InfraDetail,
+  fetchPerNodeMetrics,
+  type NodeResourceMetrics,
 } from '@globular/sdk'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
@@ -526,6 +528,7 @@ class PageObservabilityMetrics extends HTMLElement {
   private _ring = new StatsRingBuffer(60)
   private _health: ClusterHealth | null = null
   private _nodes: ClusterNode[] = []
+  private _nodeMetrics: Map<string, NodeResourceMetrics> = new Map()
   private _config: Record<string, any> | null = null
   private _objectStoreOk: boolean | null = null
   private _v1: ClusterHealthV1Result | null = null
@@ -604,6 +607,7 @@ class PageObservabilityMetrics extends HTMLElement {
       fetchAdminServices(),
       this._fetchStorageForNode(),
       fetchAdminEnvoy(),
+      fetchPerNodeMetrics(),
     ])
 
     if (results[0].status === 'fulfilled') this._health = results[0].value
@@ -616,6 +620,7 @@ class PageObservabilityMetrics extends HTMLElement {
     if (results[7].status === 'fulfilled') this._adminServices = results[7].value
     if (results[8].status === 'fulfilled') this._adminStorage = results[8].value
     if (results[9].status === 'fulfilled') this._envoy = results[9].value
+    if (results[10].status === 'fulfilled') this._nodeMetrics = results[10].value
 
     this._loading = false
     this._lastUpdated = Date.now()
@@ -1198,12 +1203,13 @@ class PageObservabilityMetrics extends HTMLElement {
 
   private _renderNodes(): string {
     if (!this._nodes.length) return '<div class="om-loading">No nodes found</div>'
-    const s = this._ring.latest()?.stats
 
     return `<div class="om-node-grid">${this._nodes.map(n => {
       const caps = n.capabilities
-      const cpuPct = s?.cpu.usagePct ?? 0
-      const memPct = s?.memory.usedPct ?? 0
+      // Look up per-node CPU/memory from Prometheus by matching node IPs.
+      const nodeRes = n.ips?.map(ip => this._nodeMetrics.get(ip)).find(m => m)
+      const cpuPct = nodeRes?.cpuPct ?? 0
+      const memPct = nodeRes?.memPct ?? 0
       let diskPct = 0
       if (caps && caps.diskBytes > 0) diskPct = ((caps.diskBytes - caps.diskFreeBytes) / caps.diskBytes) * 100
 
@@ -1224,11 +1230,11 @@ class PageObservabilityMetrics extends HTMLElement {
           <div class="om-node-resources">
             <div class="om-node-res-item">
               <div class="om-node-res-label">CPU</div>
-              <div class="om-node-res-val" style="color:${cpuClr};">${s ? fmtPct(cpuPct) : '--'}</div>
+              <div class="om-node-res-val" style="color:${cpuClr};">${nodeRes ? fmtPct(cpuPct) : '--'}</div>
             </div>
             <div class="om-node-res-item">
               <div class="om-node-res-label">Memory</div>
-              <div class="om-node-res-val" style="color:${memClr};">${s ? fmtPct(memPct) : '--'}</div>
+              <div class="om-node-res-val" style="color:${memClr};">${nodeRes ? fmtPct(memPct) : '--'}</div>
             </div>
             <div class="om-node-res-item">
               <div class="om-node-res-label">Disk</div>
