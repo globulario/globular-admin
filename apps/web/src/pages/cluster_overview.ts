@@ -113,6 +113,7 @@ class PageClusterOverview extends HTMLElement {
         <header class="header">
           <h2>Cluster Overview</h2>
           <div class="spacer"></div>
+          <paper-icon-button id="freshBtn" icon="icons:refresh" title="Force fresh snapshot (bypass cache)"></paper-icon-button>
           <paper-icon-button id="infoBtn" icon="icons:info-outline" title="Page info"></paper-icon-button>
         </header>
         <p class="subtitle">Cluster health diagnostics, drift analysis, and operational intelligence.</p>
@@ -131,6 +132,16 @@ class PageClusterOverview extends HTMLElement {
       d.hasAttribute('hidden') ? d.removeAttribute('hidden') : d.setAttribute('hidden', '')
     })
 
+    // Manual refresh: force a fresh snapshot, bypassing cluster-doctor's
+    // 5s snapshot cache. Without this, a user staring at a stale CRITICAL
+    // finding sees the same data on every cached re-read until the
+    // periodic 60s polling tick happens to land outside the cache window
+    // — which during the 2026-05-10 MinIO incident kept stale CRITICALs
+    // visible for many minutes after the underlying state had cleared.
+    this.querySelector('#freshBtn')?.addEventListener('click', () => {
+      this.load({ fresh: true })
+    })
+
     this.renderDocs()
     this.load()
     this._refreshTimer = window.setInterval(() => this.load(), 60_000)
@@ -142,15 +153,15 @@ class PageClusterOverview extends HTMLElement {
 
   // ─── Data loading ───────────────────────────────────────────────────────────
 
-  private async load() {
+  private async load(opts?: { fresh?: boolean }) {
     this._selectedFindingId = ''
     this._explanation = null
     this.renderExplain()
 
     const [reportRes, healthRes, driftRes, nodesRes, healthV1Res] = await Promise.allSettled([
-      getClusterReport(),
+      getClusterReport(opts),
       getClusterHealth(),
-      getDriftReport(),
+      getDriftReport(undefined, opts),
       listClusterNodes(),
       getClusterHealthV1Full(),
     ])
@@ -293,6 +304,17 @@ class PageClusterOverview extends HTMLElement {
       ${this._healthError ? `<div class="md-banner-warn">⚠ ClusterController — ${this._healthError}</div>` : ''}
       ${this._driftError  ? `<div class="md-banner-warn">⚠ Drift report — ${this._driftError}</div>` : ''}
       ${r?.dataIncomplete ? `<div class="md-banner-warn">⚠ Some data sources were unavailable — report may be incomplete.</div>` : ''}
+
+      <!-- Snapshot freshness — surface so users know when they're staring at stale data -->
+      ${r?.header ? `
+        <div class="ov-freshness" style="display:flex;gap:12px;font-size:.72rem;color:var(--secondary-text-color);margin-bottom:10px;align-items:center">
+          <span title="Source: ${r.header.source}; Snapshot ID: ${r.header.snapshotId}">
+            📷 snapshot age: <strong style="color:${r.header.ageSeconds > (r.header.cacheTtlSeconds || 5) * 4 ? 'var(--error-color)' : 'var(--primary-text-color)'}">${r.header.ageSeconds}s</strong>
+          </span>
+          <span>${r.header.cacheHit ? `cache hit (TTL ${r.header.cacheTtlSeconds}s)` : 'fresh fetch'}</span>
+          <span style="opacity:.6">— click ↻ in header to force fresh</span>
+        </div>
+      ` : ''}
 
       <!-- Cluster status -->
       <p class="ov-section-label">Cluster Status</p>

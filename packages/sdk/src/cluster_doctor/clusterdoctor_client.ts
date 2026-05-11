@@ -39,12 +39,58 @@ export interface Finding {
   invariantStatus: cd.InvariantStatus
 }
 
+/**
+ * Freshness contract published by every report response.
+ *
+ * cluster-doctor is stateless: every report is computed on-the-fly from
+ * a short-TTL (5s default) in-memory snapshot. Callers that need an
+ * authoritative read (e.g. right after a remediation, or on user-driven
+ * refresh) should pass `{ fresh: true }` to force a new collection.
+ *
+ * The response always carries this header so the UI can show "snapshot
+ * age: 4s, cache hit: yes" and the operator can reason about staleness
+ * — see Bug 2 of the 2026-05-10 MinIO incident, where the UI showed
+ * CRITICAL findings for minutes after the underlying state cleared
+ * because every call read from the cached snapshot without surfacing
+ * its age.
+ */
+export interface ReportHeaderInfo {
+  /** "cluster-doctor (leader)" or "cluster-doctor (follower)" */
+  source: string
+  /** Snapshot identifier — stable across cached re-reads of the same snapshot */
+  snapshotId: string
+  /** When the snapshot was collected (epoch milliseconds, server clock) */
+  observedAtMs: number
+  /** How old the snapshot is at response time (server-computed) */
+  ageSeconds: number
+  /** True when this response was served from cache */
+  cacheHit: boolean
+  /** Maximum staleness a cached read can have */
+  cacheTtlSeconds: number
+  /** Mode honoured by the server for this response */
+  freshnessMode: cd.FreshnessMode
+  /** True when collection touched a subset of upstream sources */
+  dataIncomplete: boolean
+}
+
+/**
+ * Options accepted by every report-fetching SDK function.
+ * Defaults to a cached read (server's 5s TTL); pass `fresh: true` to
+ * force a fresh collection.
+ */
+export interface ReportFetchOptions {
+  /** Force the server to bypass its snapshot cache. */
+  fresh?: boolean
+}
+
 export interface ClusterReport {
   overallStatus: cd.ClusterStatus
   findings: Finding[]
   countsByCategory: Record<string, number>
   topIssueIds: string[]
+  /** @deprecated read from `header.dataIncomplete` instead */
   dataIncomplete: boolean
+  header: ReportHeaderInfo
 }
 
 export interface NodeReport {
@@ -52,7 +98,9 @@ export interface NodeReport {
   reachable: boolean
   heartbeatAgeSeconds: number
   findings: Finding[]
+  /** @deprecated read from `header.dataIncomplete` instead */
   dataIncomplete: boolean
+  header: ReportHeaderInfo
 }
 
 export interface DriftItem {
@@ -66,7 +114,9 @@ export interface DriftItem {
 export interface DriftReport {
   items: DriftItem[]
   totalDriftCount: number
+  /** @deprecated read from `header.dataIncomplete` instead */
   dataIncomplete: boolean
+  header: ReportHeaderInfo
 }
 
 export interface FindingExplanation {
@@ -113,6 +163,35 @@ function mapEvidence(e: any): EvidenceItem {
   } satisfies EvidenceItem
 }
 
+function mapHeader(h: any): ReportHeaderInfo {
+  // observedAt is a google.protobuf.Timestamp; convert to epoch ms.
+  const observedAt = h?.getObservedAt?.()
+  const observedAtMs = observedAt
+    ? observedAt.getSeconds() * 1000 + Math.floor(observedAt.getNanos() / 1e6)
+    : 0
+  return {
+    source:          h?.getSource?.()              ?? '',
+    snapshotId:      h?.getSnapshotId?.()          ?? '',
+    observedAtMs,
+    ageSeconds:      h?.getSnapshotAgeSeconds?.()  ?? 0,
+    cacheHit:        h?.getCacheHit?.()            ?? false,
+    cacheTtlSeconds: h?.getCacheTtlSeconds?.()     ?? 0,
+    freshnessMode:   h?.getFreshnessMode?.()       ?? cd.FreshnessMode.FRESHNESS_UNSPECIFIED,
+    dataIncomplete:  h?.getDataIncomplete?.()      ?? false,
+  } satisfies ReportHeaderInfo
+}
+
+function applyFreshness(
+  rq: { setFreshness: (v: cd.FreshnessMode) => unknown },
+  opts?: ReportFetchOptions,
+): void {
+  if (opts?.fresh) {
+    rq.setFreshness(cd.FreshnessMode.FRESHNESS_FRESH)
+  }
+  // When opts.fresh is false / omitted, leave freshness unset
+  // (FRESHNESS_UNSPECIFIED) — server treats that as "honour cache".
+}
+
 function mapFinding(f: any): Finding {
   return {
     findingId:       f.getFindingId?.()       ?? '',
@@ -129,38 +208,44 @@ function mapFinding(f: any): Finding {
 
 // ─── API functions ───────────────────────────────────────────────────────────
 
-export async function getClusterReport(): Promise<ClusterReport> {
+export async function getClusterReport(opts?: ReportFetchOptions): Promise<ClusterReport> {
   const md = metadata()
   const rq = new cd.ClusterReportRequest()
+  applyFreshness(rq, opts)
 
   const rsp = await unary<cd.ClusterReportRequest, cd.ClusterReport>(
     cdClient, 'getClusterReport', rq, undefined, md,
   )
 
+  const header = mapHeader(rsp.getHeader?.())
   return {
     overallStatus:    rsp.getOverallStatus?.() ?? cd.ClusterStatus.CLUSTER_STATUS_UNKNOWN,
     findings:         (rsp.getFindingsList?.() ?? []).map(mapFinding),
     countsByCategory: mapNumberKV(rsp.getCountsByCategoryMap?.()),
     topIssueIds:      rsp.getTopIssueIdsList?.() ?? [],
-    dataIncomplete:   rsp.getHeader?.()?.getDataIncomplete?.() ?? false,
+    dataIncomplete:   header.dataIncomplete,
+    header,
   }
 }
 
-export async function getNodeReport(nodeId: string): Promise<NodeReport> {
+export async function getNodeReport(nodeId: string, opts?: ReportFetchOptions): Promise<NodeReport> {
   const md = metadata()
   const rq = new cd.NodeReportRequest()
   rq.setNodeId(nodeId)
+  applyFreshness(rq, opts)
 
   const rsp = await unary<cd.NodeReportRequest, cd.NodeReport>(
     cdClient, 'getNodeReport', rq, undefined, md,
   )
 
+  const header = mapHeader(rsp.getHeader?.())
   return {
     nodeId:              rsp.getNodeId?.()              ?? nodeId,
     reachable:           rsp.getReachable?.()           ?? false,
     heartbeatAgeSeconds: rsp.getHeartbeatAgeSeconds?.() ?? 0,
     findings:            (rsp.getFindingsList?.() ?? []).map(mapFinding),
-    dataIncomplete:      rsp.getHeader?.()?.getDataIncomplete?.() ?? false,
+    dataIncomplete:      header.dataIncomplete,
+    header,
   }
 }
 
@@ -168,15 +253,17 @@ export async function getNodeReport(nodeId: string): Promise<NodeReport> {
  * If nodeId is omitted/empty, server may return a cluster-wide drift report
  * (depends on server implementation).
  */
-export async function getDriftReport(nodeId?: string): Promise<DriftReport> {
+export async function getDriftReport(nodeId?: string, opts?: ReportFetchOptions): Promise<DriftReport> {
   const md = metadata()
   const rq = new cd.DriftReportRequest()
   if (nodeId) rq.setNodeId(nodeId)
+  applyFreshness(rq, opts)
 
   const rsp = await unary<cd.DriftReportRequest, cd.DriftReport>(
     cdClient, 'getDriftReport', rq, undefined, md,
   )
 
+  const header = mapHeader(rsp.getHeader?.())
   return {
     items: (rsp.getItemsList?.() ?? []).map((i: any) => ({
       nodeId:    i.getNodeId?.()    ?? '',
@@ -186,7 +273,8 @@ export async function getDriftReport(nodeId?: string): Promise<DriftReport> {
       actual:    i.getActual?.()    ?? '',
     } satisfies DriftItem)),
     totalDriftCount: rsp.getTotalDriftCount?.() ?? 0,
-    dataIncomplete:  rsp.getHeader?.()?.getDataIncomplete?.() ?? false,
+    dataIncomplete:  header.dataIncomplete,
+    header,
   }
 }
 
