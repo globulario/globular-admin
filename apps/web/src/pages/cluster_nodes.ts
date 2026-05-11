@@ -4,6 +4,7 @@ import {
   setNodeProfiles,
   getNodeReport,
   getNodeHealthDetail,
+  clusterdoctorpb,
   type ClusterNode,
   type NodeReport,
   type Finding,
@@ -79,6 +80,17 @@ function ageLabel(seconds: number): string {
 
 function worstSeverity(findings: Finding[]): number {
   return findings.reduce((max, f) => Math.max(max, f.severity), 0)
+}
+
+function isActiveInvariant(status: number): boolean {
+  const enumObj = (clusterdoctorpb as any)?.InvariantStatus ?? {}
+  const name = String(enumObj?.[status] ?? '').toUpperCase()
+  if (name.includes('PASS') || name.includes('OK') || name.includes('SATISF')) return false
+  return true
+}
+
+function activeFindings(findings: Finding[]): Finding[] {
+  return findings.filter(f => isActiveInvariant(Number(f.invariantStatus ?? 0)))
 }
 
 function statusBadge(status: string): string {
@@ -317,6 +329,7 @@ class PageClusterNodes extends HTMLElement {
     if (!row) { el.innerHTML = ''; return }
 
     const r = row.report
+    const rActive = r ? activeFindings(r.findings) : []
     if (!r) {
       el.innerHTML = `
         <div class="md-panel">
@@ -369,16 +382,21 @@ class PageClusterNodes extends HTMLElement {
                </tr>
              </thead>
              <tbody>
-               ${hd.checks.map((c: NodeHealthCheck) => `
+               ${hd.checks.map((c: NodeHealthCheck) => {
+                 const staleHashDrift =
+                   !c.ok &&
+                   c.reason.toLowerCase().includes('hash_drift') &&
+                   !rActive.some(f => f.summary.toLowerCase().includes('hash_drift'))
+                 return `
                <tr>
-                 <td><span class="cn-check-icon ${c.ok ? 'cn-check-ok' : 'cn-check-fail'}">${c.ok ? '✓' : '✕'}</span></td>
+                 <td><span class="cn-check-icon ${(c.ok || staleHashDrift) ? 'cn-check-ok' : 'cn-check-fail'}">${(c.ok || staleHashDrift) ? '✓' : '✕'}</span></td>
                  <td style="font-family:monospace;font-size:.78rem">${c.subsystem}</td>
-                 <td>${c.ok
+                 <td>${(c.ok || staleHashDrift)
                    ? badge('OK', 'var(--success-color)')
                    : badge('FAIL', 'var(--error-color)')
                  }</td>
-                 <td style="font-size:.82rem;color:var(--secondary-text-color)">${c.reason || '—'}</td>
-               </tr>`).join('')}
+                 <td style="font-size:.82rem;color:var(--secondary-text-color)">${staleHashDrift ? 'stale hash_drift check text (current findings are clean)' : (c.reason || '—')}</td>
+               </tr>`}).join('')}
              </tbody>
            </table>` : ''
 
@@ -386,7 +404,7 @@ class PageClusterNodes extends HTMLElement {
       <div class="cn-detail-panel">
         <div class="md-panel-header">
           <span>Findings — ${row.node.hostname || this._selectedNodeId}</span>
-          <span style="font-size:.78rem;font-weight:400">${r.findings.length} finding${r.findings.length !== 1 ? 's' : ''} · heartbeat ${ageLabel(r.heartbeatAgeSeconds)} ago</span>
+          <span style="font-size:.78rem;font-weight:400">${rActive.length} finding${rActive.length !== 1 ? 's' : ''} · heartbeat ${ageLabel(r.heartbeatAgeSeconds)} ago</span>
         </div>
         <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--border-subtle-color);">
           <div style="display:flex;align-items:baseline;gap:12px;font-size:.83rem;">
@@ -401,7 +419,7 @@ class PageClusterNodes extends HTMLElement {
 
         ${healthSection}
 
-        ${r.findings.length > 0 ? `
+        ${rActive.length > 0 ? `
         <div class="cn-section-label">Diagnostic Findings</div>
         <table class="md-table">
           <thead>
@@ -413,7 +431,7 @@ class PageClusterNodes extends HTMLElement {
             </tr>
           </thead>
           <tbody>
-            ${r.findings.map((f: Finding) => {
+            ${rActive.map((f: Finding) => {
               const kv = f.evidence.length > 0 ? f.evidence[0].keyValues : {}
               const kvPairs = Object.entries(kv).slice(0, 4).map(([k, v]) => `${k}=${v}`).join(' ')
               return `

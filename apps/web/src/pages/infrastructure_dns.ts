@@ -358,6 +358,11 @@ class PageInfrastructureDns extends HTMLElement {
 
     if (expected.length === 0) return ''
 
+    // Check if a wildcard record exists for this domain
+    const wildcardName = `*.${domain}`
+    const wildcardRecords = this._records.filter(r => r.name === wildcardName && (r.type === 'A' || r.type === 'AAAA'))
+    const hasWildcard = wildcardRecords.length > 0
+
     const rows = expected.map(e => {
       const matching = this._records.filter(r => r.name === e.name && (r.type === 'A' || r.type === 'AAAA'))
       const actualIps = matching.map(r => r.value)
@@ -365,6 +370,10 @@ class PageInfrastructureDns extends HTMLElement {
       let statusBadge: string
       if (actualIps.length > 0) {
         status = actualIps.join(', ')
+        statusBadge = badge('OK', '#22c55e')
+      } else if (hasWildcard && e.source.startsWith('node:')) {
+        // Per-node record is covered by the wildcard — not a real drift
+        status = wildcardRecords.map(r => r.value).join(', ') + ' (via wildcard)'
         statusBadge = badge('OK', '#22c55e')
       } else {
         status = '—'
@@ -382,7 +391,10 @@ class PageInfrastructureDns extends HTMLElement {
 
     const hasMissing = expected.some(e => {
       const matching = this._records.filter(r => r.name === e.name && (r.type === 'A' || r.type === 'AAAA'))
-      return matching.length === 0
+      if (matching.length > 0) return false
+      // Per-node records covered by wildcard are not missing
+      if (hasWildcard && e.source.startsWith('node:')) return false
+      return true
     })
 
     return `

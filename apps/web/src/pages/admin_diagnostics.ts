@@ -110,6 +110,17 @@ function extractNodeId(entityRef: string): string | null {
   return m ? m[1] : null
 }
 
+function isActiveInvariant(status: number): boolean {
+  const enumObj = (clusterdoctorpb as any)?.InvariantStatus ?? {}
+  const name = String(enumObj?.[status] ?? '').toUpperCase()
+  if (name.includes('PASS') || name.includes('OK') || name.includes('SATISF')) return false
+  return true
+}
+
+function activeFindings(findings: Finding[]): Finding[] {
+  return findings.filter(f => isActiveInvariant(Number(f.invariantStatus ?? 0)))
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageAdminDiagnostics extends HTMLElement {
@@ -358,15 +369,16 @@ class PageAdminDiagnostics extends HTMLElement {
       return
     }
 
-    const critCount = r.findings.filter(f => f.severity >= SEV_CRITICAL).length
-    const warnCount = r.findings.filter(f => f.severity === SEV_WARN).length
-    const errCount  = r.findings.filter(f => f.severity === SEV_ERROR).length
-    const infoCount = r.findings.filter(f => f.severity === SEV_INFO).length
+    const active = activeFindings(r.findings)
+    const critCount = active.filter(f => f.severity >= SEV_CRITICAL).length
+    const warnCount = active.filter(f => f.severity === SEV_WARN).length
+    const errCount  = active.filter(f => f.severity === SEV_ERROR).length
+    const infoCount = active.filter(f => f.severity === SEV_INFO).length
 
     // Derive node counts from findings
     const nodeIds = new Set<string>()
     const unreachableNodes = new Set<string>()
-    for (const f of r.findings) {
+    for (const f of active) {
       const nid = extractNodeId(f.entityRef)
       if (nid) {
         nodeIds.add(nid)
@@ -381,7 +393,7 @@ class PageAdminDiagnostics extends HTMLElement {
         <div class="dx-card">
           <div class="dx-card-label">Cluster Health</div>
           <div style="margin:6px 0">${badge(statusLabel(r.overallStatus), statusColor(r.overallStatus))}</div>
-          <div class="dx-card-sub">${r.findings.length} finding${r.findings.length !== 1 ? 's' : ''}</div>
+          <div class="dx-card-sub">${active.length} finding${active.length !== 1 ? 's' : ''}</div>
         </div>
         <div class="dx-card">
           <div class="dx-card-label">Nodes</div>
@@ -400,7 +412,7 @@ class PageAdminDiagnostics extends HTMLElement {
             ${errCount > 0 ? `<span style="color:var(--error-color)">${errCount} Error</span><br>` : ''}
             ${warnCount > 0 ? `<span style="color:#f59e0b">${warnCount} Warning</span><br>` : ''}
             ${infoCount > 0 ? `<span style="color:var(--secondary-text-color)">${infoCount} Info</span>` : ''}
-            ${r.findings.length === 0 ? '<span style="color:var(--success-color)">None</span>' : ''}
+            ${active.length === 0 ? '<span style="color:var(--success-color)">None</span>' : ''}
           </div>
         </div>
       </div>
@@ -414,7 +426,8 @@ class PageAdminDiagnostics extends HTMLElement {
     if (!el) return
 
     const r = this._report
-    if (!r || r.findings.length === 0) {
+    const active = r ? activeFindings(r.findings) : []
+    if (!r || active.length === 0) {
       el.innerHTML = r
         ? `<div class="md-panel"><div class="md-panel-header"><span>Findings</span></div><p class="dx-empty">&#10003; No active findings — cluster is healthy.</p></div>`
         : ''
@@ -429,7 +442,7 @@ class PageAdminDiagnostics extends HTMLElement {
       { sev: SEV_INFO,     label: 'Info',      color: 'var(--secondary-text-color)', findings: [] },
     ]
 
-    for (const f of r.findings) {
+    for (const f of active) {
       const g = groups.find(g => g.sev === f.severity) ?? groups[groups.length - 1]
       g.findings.push(f)
     }
@@ -437,7 +450,7 @@ class PageAdminDiagnostics extends HTMLElement {
     let html = `
       <div class="md-panel">
         <div class="md-panel-header">
-          <span>Findings (${r.findings.length})</span>
+          <span>Findings (${active.length})</span>
         </div>
     `
 
@@ -650,9 +663,10 @@ class PageAdminDiagnostics extends HTMLElement {
     const nr = this._nodeReport!
     const hbAge = nr.heartbeatAgeSeconds
 
+    const nodeActive = activeFindings(nr.findings)
     let findingsHtml = ''
-    if (nr.findings.length > 0) {
-      findingsHtml = nr.findings.map(f => `
+    if (nodeActive.length > 0) {
+      findingsHtml = nodeActive.map(f => `
         <div class="dx-finding-row" style="cursor:default">
           <div>${badge(sevLabel(f.severity), sevColor(f.severity))}</div>
           <div>
@@ -676,7 +690,7 @@ class PageAdminDiagnostics extends HTMLElement {
           <button class="dx-btn" id="dxBackToCluster">&#8592; Back to Cluster</button>
         </div>
         ${nr.dataIncomplete ? `<div class="md-banner-warn" style="margin-bottom:8px">&#9888; Node data may be incomplete.</div>` : ''}
-        <p style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--secondary-text-color);margin:0 0 6px">Node Findings (${nr.findings.length})</p>
+        <p style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--secondary-text-color);margin:0 0 6px">Node Findings (${nodeActive.length})</p>
         ${findingsHtml}
       </div>
     `

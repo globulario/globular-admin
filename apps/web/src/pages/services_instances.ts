@@ -76,6 +76,13 @@ const CONTROL_PLANE = new Set([
   'cluster-controller', 'node-agent', 'cluster-doctor',
 ])
 
+// Infrastructure daemons — not gRPC services, kind = INFRASTRUCTURE.
+const INFRA_SERVICES = new Set([
+  'etcd', 'scylladb', 'minio', 'envoy', 'xds', 'gateway', 'mcp',
+  'prometheus', 'alertmanager', 'node-exporter', 'sidekick',
+  'keepalived', 'scylla-manager', 'scylla-manager-agent',
+])
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageServicesInstances extends HTMLElement {
@@ -151,17 +158,22 @@ class PageServicesInstances extends HTMLElement {
         })
       }
     }
-    // Also include services from per-node installed versions, but ONLY if
-    // they already appear in the cluster health summary (i.e. they have a
-    // desired-state entry). Entries that are installed but have no desired
-    // state are either COMMAND packages (claude, etcdctl, mc) or orphaned
-    // leftovers — neither belongs in the "Service Instances" view.
+    // Also include services discovered in per-node installedVersions that are
+    // not yet in allServices (e.g. bootstrapped services with no desired-state
+    // entry, or control-plane services not tracked via the reconciler).
+    // Heuristic: CONTROL_PLANE → INFRASTRUCTURE, INFRA_SERVICES → INFRASTRUCTURE,
+    // everything else → SERVICE (CLI tools don't have globular-*.service units,
+    // so they won't appear here; the only false-positives are rare edge cases).
     for (const nh of nodeHealthMap.values()) {
       for (const svcName of Object.keys(nh.installedVersions ?? {})) {
-        if (!allServices.has(svcName)) {
-          // Skip: no desired-state entry → likely COMMAND or orphan.
-          // Operators can inspect these via `globular pkg info <name>`.
+        if (allServices.has(svcName)) continue
+        let kind: string
+        if (CONTROL_PLANE.has(svcName) || INFRA_SERVICES.has(svcName)) {
+          kind = 'INFRASTRUCTURE'
+        } else {
+          kind = 'SERVICE'
         }
+        allServices.set(svcName, { desired: '', kind })
       }
     }
 

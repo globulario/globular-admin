@@ -291,6 +291,10 @@ class PageServicesCatalog extends HTMLElement {
   private _expandedName      = ''
   private _refreshTimer:     number | null = null
 
+  // All installed packages regardless of kind (SERVICE + INFRASTRUCTURE + COMMAND).
+  // Used by the Repository Catalog tab to show correct "Installed ✓" for infra packages.
+  private _allInstalledMap:  Map<string, string> = new Map()
+
   // Repository tab state
   private _activeTab         = 'rollout'   // 'rollout' | 'repository'
   private _catalog:          CatalogItem[] = []
@@ -424,6 +428,25 @@ class PageServicesCatalog extends HTMLElement {
         }
       }
 
+      // All-kinds map — includes INFRASTRUCTURE and COMMAND packages.
+      // Used by the Repository Catalog tab and for controller-desired infra
+      // entries (e.g. etcd) that are INFRASTRUCTURE kind in the registry.
+      const allInstalledMap = new Map<string, string>()
+      for (const pkg of installedResult) {
+        const key = normalizeForMatch(pkg.name ?? '')
+        if (!key) continue
+        if (!allInstalledMap.has(key)) allInstalledMap.set(key, pkg.version ?? '')
+      }
+      // Also seed from nodeHealths installedVersions (covers services not yet
+      // written to the etcd registry, e.g. freshly bootstrapped nodes).
+      for (const nh of nodeHealths) {
+        for (const [svcName, ver] of Object.entries(nh.installedVersions ?? {})) {
+          const key = normalizeForMatch(svcName)
+          if (key && !allInstalledMap.has(key)) allInstalledMap.set(key, ver)
+        }
+      }
+      this._allInstalledMap = allInstalledMap
+
       // Aggregate node-health info: worst-case plan phase and overall privilege status
       let aggregatePlanPhase = ''
       for (const nh of nodeHealths) {
@@ -486,7 +509,7 @@ class PageServicesCatalog extends HTMLElement {
         if (e.serviceName.endsWith('-cmd')) continue
         const nk = normalizeForMatch(key)
         if (rowMap.has(nk)) continue
-        const registryVer = registryVersionMap.get(nk)
+        const registryVer = registryVersionMap.get(nk) ?? allInstalledMap.get(nk)
         rowMap.set(nk, {
           name:             e.serviceName,
           installedVersion: registryVer || null,
@@ -686,17 +709,25 @@ class PageServicesCatalog extends HTMLElement {
 
   private catalogItemStatusBadge(item: CatalogItem): string {
     const { version } = item
-    const sn        = normalizeForMatch(item.name)
-    const installed = this._rows.find(r => normalizeForMatch(r.name) === sn)
-    if (!installed || !installed.installedVersion) {
+    const sn = normalizeForMatch(item.name)
+    // Check SERVICE rows first; fall back to all-kinds map (covers INFRASTRUCTURE).
+    const serviceRow = this._rows.find(r => normalizeForMatch(r.name) === sn)
+    const installedVer = serviceRow?.installedVersion
+      ?? (this._allInstalledMap.has(sn) ? (this._allInstalledMap.get(sn) ?? '') : null)
+    // null  → no record at all → Not installed
+    // ''    → record exists but version unknown → show Installed ✓ without version comparison
+    if (installedVer === null) {
       return badge('Not installed', 'var(--secondary-text-color)')
     }
-    if (installed.installedVersion === version) {
+    if (!installedVer) {
+      return badge('Installed ✓', 'var(--success-color)')
+    }
+    if (installedVer === version) {
       return badge('Installed ✓', 'var(--success-color)')
     }
     // Only show "Update available" if the catalog version is newer than installed.
-    if (compareVersions(version, installed.installedVersion) > 0) {
-      return badge(`Update available (${installed.installedVersion} → ${version})`, '#f59e0b')
+    if (compareVersions(version, installedVer) > 0) {
+      return badge(`Update available (${installedVer} → ${version})`, '#f59e0b')
     }
     // Catalog version is older than installed — just show as installed.
     return badge('Installed ✓', 'var(--success-color)')
