@@ -54,6 +54,23 @@ function ext(a: ArtifactManifest): any { return a as any }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+// semverCompareDesc returns a negative number when `a` is a newer version
+// than `b`, positive when older, zero when equal — i.e. the sign convention
+// for an Array.sort that puts the newest first. Mirrors
+// `sortManifestsByVersionDesc` on the repository server so the "Latest" badge
+// stays consistent between the catalog UI and the install path. Defensive:
+// missing / non-numeric components are treated as 0 so a malformed version
+// string just sorts to the bottom instead of throwing.
+function semverCompareDesc(a: string, b: string): number {
+  const pa = (a || '0.0.0').split('.').map(Number)
+  const pb = (b || '0.0.0').split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const diff = (pb[i] || 0) - (pa[i] || 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
 function relativeTime(epochSeconds: number): string {
   if (!epochSeconds) return '--'
   const diff = Math.floor(Date.now() / 1000) - epochSeconds
@@ -567,10 +584,25 @@ class PageRepoPackageDetail extends HTMLElement {
       `
     }
 
-    // Sort versions descending by publishedUnix
-    const sorted = [...this._versions].sort((a, b) =>
-      (ext(b).publishedUnix || b.modifiedUnix || 0) - (ext(a).publishedUnix || a.modifiedUnix || 0)
-    )
+    // Sort: semver DESC, then build_number DESC, then publishedUnix DESC.
+    //
+    // Sorting by publishedUnix alone is wrong: an imported BOM version whose
+    // manifest stays at publishedUnix=0 (idempotent skip path on the repository
+    // — same build_id already present, ledger not re-stamped) regresses behind
+    // an older version that *does* carry a real published timestamp. That put
+    // the "Latest" badge on a stale row even though a higher semver was
+    // present in the catalog. Match the backend's `sortManifestsByVersionDesc`
+    // semantics so the badge tracks actual semantic version.
+    const sorted = [...this._versions].sort((a, b) => {
+      const vc = semverCompareDesc(a.ref?.version || '', b.ref?.version || '')
+      if (vc !== 0) return vc
+      const ba = (ext(a).buildNumber || 0) as number
+      const bb = (ext(b).buildNumber || 0) as number
+      if (bb !== ba) return bb - ba
+      const ta = (ext(a).publishedUnix || a.modifiedUnix || 0) as number
+      const tb = (ext(b).publishedUnix || b.modifiedUnix || 0) as number
+      return tb - ta
+    })
     const latestVersion = sorted[0]?.ref?.version || ''
 
     return `
