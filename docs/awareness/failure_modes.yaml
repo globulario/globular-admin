@@ -1,0 +1,130 @@
+# failure_modes.yaml — globular-admin
+#
+# Failure modes specific to the globular-admin frontend.
+# These are classes of bugs that AI agents are likely to introduce when editing this codebase.
+
+failure_modes:
+
+    - id: fm.desired_shown_as_running
+      title: Desired state displayed as runtime health
+      severity: critical
+      # origin: { type: industry_pattern, confidence: high }
+      root_cause: |
+          A UI component reads the DesiredService record from etcd and displays it as
+          running or healthy. The service may actually be absent, crashed, or in the
+          middle of a converge cycle. Operators see a false green and miss real outages.
+      symptoms:
+          - Service status badge shows running for a service that is not active on any node
+          - Node convergence failures are invisible to the operator
+          - All-services-healthy dashboard while cluster is partially down
+      forbidden_fixes:
+          - forbidden.render_desired_as_running
+          - forbidden.derive_runtime_from_desired
+      related_invariants:
+          - ui.state_authority_binding
+          - ui.unknown_state_must_not_appear_healthy
+
+    - id: fm.dispatch_shown_as_complete
+      title: Workflow dispatch shown as operation complete
+      severity: critical
+      # origin: { type: industry_pattern, confidence: high }
+      root_cause: |
+          After the UI dispatches a mutating RPC (join approval, service deploy, topology
+          apply), it immediately renders Success without waiting for the workflow to reach
+          a terminal state. The operation may fail 30 seconds later while the operator
+          believes it succeeded.
+      symptoms:
+          - Deploy-successful toast appears but service never starts
+          - Node-joined UI but node is still converging or failed
+          - Operator navigates away assuming completion and misses failure
+      forbidden_fixes:
+          - forbidden.render_dispatch_as_complete
+      related_invariants:
+          - ui.workflow_completion_requires_terminal_state_poll
+          - ui.join_approval_starts_workflow_not_completes_join
+
+    - id: fm.token_leaked_to_localStorage
+      title: Auth token written to localStorage instead of sessionStorage
+      severity: critical
+      # origin: { type: security_principle, confidence: high }
+      root_cause: |
+          A change to the auth or token-refresh logic writes the JWT to localStorage.
+          The token persists across browser sessions, is readable by any JS on the origin,
+          and survives logout (which only clears sessionStorage).
+      symptoms:
+          - Token survives tab close / browser restart
+          - Token visible under Application Local Storage in DevTools after logout
+          - Auto-login without credential prompt after full session close
+      forbidden_fixes:
+          - forbidden.token_in_localStorage
+          - forbidden.token_in_dom
+      related_invariants:
+          - ui.token_storage_sessionStorage_only
+
+    - id: fm.silent_grpc_error
+      title: gRPC-web error silently dropped — UI shows stale or empty state
+      severity: high
+      # origin: { type: inferred_from_code, confidence: medium }
+      root_cause: |
+          A component catches a gRPC-web error but does not surface it to the operator.
+          The UI stays in a loading state, shows an empty list, or renders the last
+          cached value. The operator has no signal that the backend is unreachable or
+          that the RPC failed.
+      symptoms:
+          - Component shows empty table with no error message
+          - Spinner never resolves
+          - Status badge stays in loading state indefinitely
+          - Console has gRPC errors; UI shows no indicator
+      forbidden_fixes: []
+      related_invariants:
+          - ui.grpc_web_errors_must_surface_to_operator
+
+    - id: fm.client_side_rbac_gate
+      title: Client-side RBAC check used as the sole security gate
+      severity: high
+      # origin: { type: security_principle, confidence: high }
+      root_cause: |
+          An AI agent adds a permission check in the UI as the primary guard for a
+          sensitive action. The server-side interceptor is still the real enforcer,
+          but the UI check creates a false sense of security and may be bypassed by
+          direct API calls or by manipulating local state.
+      symptoms:
+          - Button is hidden for non-admin users but the underlying RPC has no authz annotation
+          - Security audit finds UI-only guards for data deletion endpoints
+      forbidden_fixes: []
+      related_invariants:
+          - ui.rbac_is_server_enforced_not_ui
+
+    - id: fm.no_confirmation_on_destructive_action
+      title: Destructive action dispatched without operator confirmation
+      severity: high
+      # origin: { type: principle, confidence: high }
+      root_cause: |
+          A delete, wipe, or remove action is reachable with a single click and no
+          confirmation dialog. The operator can accidentally remove a node, delete a role,
+          or wipe an artifact without a chance to cancel.
+      symptoms:
+          - Delete button directly calls RPC on click without dialog
+          - Are-you-sure dialog has no resource name or consequence description
+          - Keyboard shortcut triggers destructive action with no confirmation
+      forbidden_fixes:
+          - forbidden.single_click_destructive_mutation
+      related_invariants:
+          - ui.destructive_action_requires_explicit_confirmation
+
+    - id: fm.hardcoded_backend_address
+      title: Backend address hardcoded in source instead of resolved from config
+      severity: high
+      # origin: { type: principle, confidence: high }
+      root_cause: |
+          A component or SDK module constructs a gRPC-web channel with a hardcoded
+          address. The admin UI becomes tied to a specific cluster, breaks in
+          dev/staging/prod, and prevents targeting different nodes.
+      symptoms:
+          - UI targets wrong cluster in non-production environment
+          - Changing the cluster address requires a code rebuild
+          - SDK config layer is bypassed for specific endpoints
+      forbidden_fixes:
+          - forbidden.hardcoded_backend_address
+      related_invariants:
+          - ui.no_hardcoded_backend_addresses

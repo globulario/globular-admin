@@ -1,0 +1,179 @@
+# invariants.yaml — globular-admin
+#
+# Laws the admin UI must uphold. An AI agent editing any frontend component
+# must not introduce a change that violates these invariants.
+#
+# Confidence levels: very_high (incident-proven) | high (principle/test) | medium (inferred)
+
+invariants:
+
+    - id: ui.state_authority_binding
+      title: Every visible state must be bound to the correct authority layer
+      severity: critical
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Every badge, status indicator, action button, and progress element in the
+          admin UI must derive its displayed value from the correct authority layer.
+          The 4-layer model applies: desired ≠ installed ≠ running ≠ healthy.
+          A component that renders service status must bind to a runtime health probe,
+          not to the desired-state record. A workflow-progress indicator must bind to
+          the workflow terminal state, not to the dispatch RPC return code.
+      enforcement: |
+          Before editing any component that renders cluster state, check authority_rules.yaml
+          to confirm the data source is correct for the displayed value.
+      forbidden_fixes:
+          - forbidden.render_desired_as_running
+          - forbidden.render_dispatch_as_complete
+          - forbidden.derive_runtime_from_desired
+
+    - id: ui.unknown_state_must_not_appear_healthy
+      title: Unknown or unreachable state must render as unknown, not healthy
+      severity: critical
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          When a health probe times out, an inventory record is absent, or a node is
+          unreachable, the UI must show "unknown" or "unreachable" — never "healthy" or "ok".
+          Defaulting unknown to healthy hides real outages from operators.
+      enforcement: |
+          Any component that renders a status badge or health indicator must have an
+          explicit branch for the absent/timeout/error case that shows a distinct
+          non-green state. The "no data = healthy" pattern is forbidden.
+      forbidden_fixes:
+          - forbidden.unknown_as_healthy
+
+    - id: ui.destructive_action_requires_explicit_confirmation
+      title: Destructive or irreversible actions must require explicit operator confirmation
+      severity: critical
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Actions that are hard or impossible to reverse — node removal, service deletion,
+          RBAC role deletion, artifact deletion, objectstore topology reset — must present
+          an explicit confirmation step before dispatching the mutating RPC.
+          The confirmation must name the resource being mutated and the consequence.
+          A single-click "Delete" button with no confirmation dialog is a violation.
+      enforcement: |
+          Before adding or editing a delete/remove/wipe/reset action in the UI, verify
+          there is a confirmation dialog that (a) names the resource, (b) describes the
+          consequence, and (c) requires an affirmative non-default action (not just OK).
+      forbidden_fixes:
+          - forbidden.single_click_destructive_mutation
+
+    - id: ui.token_storage_sessionStorage_only
+      title: Auth tokens must be stored in sessionStorage, never localStorage or DOM
+      severity: critical
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          The JWT auth token must be stored in sessionStorage (cleared on tab close),
+          never in localStorage (persists across sessions) or in DOM attributes / JS globals.
+          Persisting tokens in localStorage makes them available to XSS and across
+          unrelated sessions — violating the ephemeral token contract.
+          Current implementation: sessionStorage key __globular_token__.
+      enforcement: |
+          Any change to auth token storage must keep the token in sessionStorage only.
+          Do not migrate to localStorage. Do not embed tokens in URL fragments or custom headers
+          that are logged. Do not store tokens in any module-level variable that survives
+          across page navigations.
+      forbidden_fixes:
+          - forbidden.token_in_localStorage
+          - forbidden.token_in_dom
+
+    - id: ui.rbac_is_server_enforced_not_ui
+      title: RBAC enforcement is server-side; UI may hide but must not gate security on visibility
+      severity: high
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          The admin UI hides action buttons for users who lack permission. This is a UX
+          convenience only — it is not a security boundary. The server enforces RBAC on
+          every RPC via the interceptor chain.
+          An AI agent must not add client-side permission checks as the sole security gate
+          for a sensitive action. If a button is hidden, the underlying RPC endpoint must
+          still enforce authorization independently.
+      enforcement: |
+          Never add "if userHasRole(X) then allow" logic as the only guard for a sensitive
+          operation. UI visibility gates are supplemental only.
+
+    - id: ui.super_admin_detection_is_display_only
+      title: Super-admin detection via username === 'sa' is a display hint, not an auth gate
+      severity: high
+      status: active
+      # origin: { type: inferred_from_code, confidence: high }
+      summary: |
+          The SDK detects super-admin by checking if the parsed token's username equals 'sa'.
+          This is used to show or hide admin-only UI sections — it is NOT a security check.
+          Server-side RBAC enforces what 'sa' can actually do. An AI agent must not elevate
+          this client-side check into an authorization gate or rely on it for security decisions.
+      enforcement: |
+          Do not add business logic that grants additional permissions based on username === 'sa'.
+          Display-only visibility changes are acceptable; auth gates are not.
+
+    - id: ui.workflow_completion_requires_terminal_state_poll
+      title: Workflow success must be confirmed by polling for terminal state, not from dispatch
+      severity: high
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          When the UI dispatches a cluster mutation (service deploy, node join approval,
+          topology apply, package install), the dispatch RPC returning 200 does NOT mean the
+          operation completed. The workflow may still be running, blocked, or about to fail.
+          The UI must poll WorkflowService for SUCCEEDED or FAILED before showing a success
+          state. Showing "Done ✓" immediately after dispatch is a violation.
+      enforcement: |
+          Any mutation flow that results in a workflow must include a polling/streaming step
+          that waits for terminal state before presenting success to the operator.
+      forbidden_fixes:
+          - forbidden.render_dispatch_as_complete
+
+    - id: ui.join_approval_starts_workflow_not_completes_join
+      title: Approving a node join request starts a workflow — the node is not joined until convergence
+      severity: high
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Calling approveJoin(requestId, profiles) dispatches a join workflow.
+          The node is NOT joined when the RPC returns. The operator UI must show the
+          workflow progress (pending → converging → joined) and must not display the
+          node as a cluster member until the join workflow reaches SUCCEEDED and the
+          node's first heartbeat is observed.
+      enforcement: |
+          The join approval UI must present workflow-state feedback after the RPC call.
+          The node list must not include the joining node until its heartbeat is confirmed.
+      forbidden_fixes:
+          - forbidden.render_dispatch_as_complete
+
+    - id: ui.grpc_web_errors_must_surface_to_operator
+      title: gRPC-web errors must be surfaced to the operator, not silently swallowed
+      severity: high
+      status: active
+      # origin: { type: inferred_from_code, confidence: medium }
+      summary: |
+          The SDK auto-retries on auth expiry (one forced refresh + retry). After that,
+          any RPC error must be presented to the operator — not silently dropped, not
+          shown as "loading" indefinitely, not defaulted to empty/healthy state.
+          Swallowing errors hides real cluster problems from operators.
+      enforcement: |
+          Every RPC call site must have an error branch that surfaces the error to the
+          operator (toast, inline error, error state in component). An empty catch block
+          or a catch that only logs to console is a violation.
+
+    - id: ui.no_hardcoded_backend_addresses
+      title: Backend addresses must come from localStorage config, not hardcoded
+      severity: high
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          The Globular backend address is stored in localStorage (globular.baseUrl) and
+          routing mode in localStorage (globular.routingMode). These values allow the
+          admin UI to target different clusters without a rebuild.
+          An AI agent must not hardcode a backend address (IP, hostname, or port) in the
+          source code. If a component needs to call a backend, it must read the address
+          from the SDK config layer.
+      enforcement: |
+          Any code that constructs a gRPC-web channel or HTTP URL to a Globular backend
+          must use the SDK's config-resolved base URL, not a literal string.
+      forbidden_fixes:
+          - forbidden.hardcoded_backend_address

@@ -1,0 +1,107 @@
+# authority_rules.yaml — globular-admin
+#
+# Maps every category of state the admin UI can display to its canonical authority source.
+# An AI agent editing a component that shows state must check this map first.
+#
+# Rule: the authority determines what layer owns the truth for a given display value.
+# Violation: rendering state from a different layer than the one listed here.
+
+authorities:
+
+  - id: auth.token
+    owns:
+      - user identity (username, email)
+      - session validity
+      - token expiry / nbf / iat
+    source: sessionStorage key __globular_token__ (JWT, parsed client-side)
+    must_not_infer:
+      - server-side permission grants (RBAC is server-enforced, not token-claim-enforced)
+      - whether a user has a specific role (role_bindings come from RBAC RPC, not token claims)
+    stale_states:
+      - token expired but refresh not yet triggered (window between exp and refresh timer)
+      - sessionStorage cleared externally (tab crash, browser wipe)
+    consumers:
+      - rpc.ts (Bearer header injection)
+      - router (hasToken() gate for all authenticated routes)
+      - SDK auto-refresh timer (2-minute-early refresh)
+
+  - id: service.desired_state
+    owns:
+      - which service versions *should* be running
+      - desired topology configuration
+    source: etcd DesiredService records via ClusterControllerService RPC
+    must_not_infer:
+      - whether the service is actually running (that is runtime health)
+      - whether the package is installed (that is installed-state)
+      - whether a deploy succeeded (that is workflow terminal state)
+    stale_states:
+      - desired written but workflow not yet dispatched
+      - desired present but node not yet converged
+    consumers:
+      - apps/web/src/pages/cluster/ (service lifecycle pages)
+      - packages/sdk/src/cluster/ (upsertDesiredService, removeDesiredService)
+
+  - id: service.installed_state
+    owns:
+      - what is physically installed on each node
+      - per-node package version and checksum
+    source: etcd installed-state records via NodeAgent inventory
+    must_not_infer:
+      - whether the service is healthy (that is runtime health)
+      - whether the desired state has been applied
+    stale_states:
+      - inventory stale (node unreachable, heartbeat missed)
+      - installed but service unit not started
+
+  - id: service.runtime_health
+    owns:
+      - whether the service process is running and healthy
+      - systemd unit active state
+    source: live health probe or cluster-doctor finding
+    must_not_infer:
+      - whether the correct version is installed
+      - whether the desired state matches
+    stale_states:
+      - health probe timeout (node unreachable)
+      - health probe succeeds but service is in crash loop
+
+  - id: workflow.state
+    owns:
+      - whether a cluster mutation is in progress, succeeded, or failed
+      - workflow step completion
+    source: WorkflowService RPC — terminal state only (SUCCEEDED or FAILED)
+    must_not_infer:
+      - completion from dispatch confirmation (RPC call returning 200 ≠ workflow done)
+      - success from desired-state write (writing desired ≠ converged)
+    stale_states:
+      - workflow dispatched but not yet started
+      - workflow running (non-terminal — UI must poll, not assume done)
+
+  - id: rbac.permissions
+    owns:
+      - what actions a subject is allowed to perform
+      - role bindings, group memberships
+    source: RBAC service RPC (server-enforced)
+    must_not_infer:
+      - permissions from token claims (token has identity, not grants)
+      - permissions from UI visibility (hiding a button ≠ enforcing the rule)
+    consumers:
+      - apps/web/src/pages/security/ (RBAC management pages)
+      - UI gates: show/hide action buttons based on RBAC RPC response
+
+  - id: objectstore.topology
+    owns:
+      - MinIO pool member IPs, drive paths, EC configuration
+      - write quorum status
+    source: ObjectStoreService / ClusterDoctor findings
+    must_not_infer:
+      - quorum health from desired topology alone
+      - drive health from installed-state
+
+  - id: node.join_request
+    owns:
+      - pending join requests awaiting operator approval
+      - requested node profiles
+    source: ClusterControllerService.ListJoinRequests RPC
+    must_not_infer:
+      - join completion from approval action (approving starts a workflow, not completes it)

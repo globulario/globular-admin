@@ -1,0 +1,124 @@
+# forbidden_fixes.yaml — globular-admin
+#
+# Patterns that look like fixes but are actually wrong or dangerous in this codebase.
+# An AI agent that reaches for one of these is solving the symptom, not the cause.
+
+forbidden_fixes:
+
+    - id: forbidden.render_desired_as_running
+      title: Wiring a service status indicator to the desired-state RPC to show "running"
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Using the DesiredService etcd record as the source for a runtime health status
+          display. Desired state says what should be running — not what is. A service can
+          be in desired state with no live process on any node.
+      why_wrong: |
+          Desired ≠ Installed ≠ Runtime. Using desired as a proxy for runtime health
+          produces false-healthy displays that hide real outages from operators.
+      correct_fix: |
+          Wire the status indicator to a runtime health probe RPC or cluster-doctor finding.
+          If live health data is unavailable, show "unknown" — not the desired-state value.
+
+    - id: forbidden.render_dispatch_as_complete
+      title: Treating a 200-OK dispatch response as proof that the operation completed
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Showing "Success" or "Done" immediately after an RPC call that starts a workflow
+          (join approval, service deploy, topology apply, etc.).
+      why_wrong: |
+          The dispatch RPC returns 200 when the workflow is accepted, not when it finishes.
+          The workflow may fail 30 seconds later. Operators who see "Done" navigate away
+          and miss the failure.
+      correct_fix: |
+          Poll WorkflowService for SUCCEEDED or FAILED terminal state. Show a progress
+          indicator (pending → running → succeeded/failed) while the workflow executes.
+          Only show success when the terminal state is SUCCEEDED.
+
+    - id: forbidden.unknown_as_healthy
+      title: Defaulting a missing or timeout state to "healthy" or "ok"
+      # origin: { type: principle, confidence: high }
+      summary: |
+          When a health probe times out, a node inventory is absent, or an RPC fails
+          with UNAVAILABLE, rendering the entity as green/healthy/ok.
+      why_wrong: |
+          No data is not the same as good data. A node that can't be reached may be down.
+          Hiding this from the operator prevents them from diagnosing real issues.
+      correct_fix: |
+          Add an explicit unknown/unreachable visual state (grey badge, "?" icon, "unknown"
+          label). Never map null/undefined/timeout to the healthy color or icon.
+
+    - id: forbidden.token_in_localStorage
+      title: Writing the auth JWT to localStorage for persistence
+      # origin: { type: security_principle, confidence: high }
+      summary: |
+          Migrating the auth token from sessionStorage to localStorage to "keep the user
+          logged in" or "fix logout on refresh."
+      why_wrong: |
+          localStorage persists across sessions and is accessible to any JS on the origin.
+          The token contract is: ephemeral, tied to the tab session, never written to disk.
+          Persisting tokens violates this and creates XSS exposure.
+      correct_fix: |
+          Keep the token in sessionStorage. If the "logged out too often" problem needs
+          fixing, extend the refresh-before-expiry window (currently 2 min early) or
+          implement a silent re-auth flow that re-authenticates without storing the token.
+
+    - id: forbidden.token_in_dom
+      title: Embedding the auth token in DOM attributes, URL fragments, or module globals
+      # origin: { type: security_principle, confidence: high }
+      summary: |
+          Setting `data-token="..."` on a DOM element, including the token in a URL query
+          param or hash fragment, or storing it in a module-level variable that persists
+          across navigations.
+      why_wrong: |
+          DOM attributes are readable by any JS. URL fragments may be logged by proxies
+          or appear in browser history. Module globals survive navigation and can be read
+          by injected scripts.
+      correct_fix: |
+          Keep the token only in sessionStorage. Pass it to RPCs via the SDK's metadata
+          injection in rpc.ts — do not pass it as a prop or URL param.
+
+    - id: forbidden.single_click_destructive_mutation
+      title: Wiring a destructive RPC directly to a button onClick with no confirmation
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Connecting deleteRole(), deleteArtifact(), removeDesiredService(), or any
+          other irreversible mutation directly to a button's click handler without
+          an intermediate confirmation step.
+      why_wrong: |
+          Operators work fast under pressure. Single-click deletion causes accidental data
+          loss and irreversible cluster mutations. This has happened in real operations.
+      correct_fix: |
+          Always gate destructive actions with a confirmation dialog that names the resource
+          and states the consequence. The dialog's confirm button must be non-default
+          (not the keyboard Enter target). Bonus: require typing the resource name for
+          cluster-membership and data-reset operations.
+
+    - id: forbidden.hardcoded_backend_address
+      title: Hardcoding a Globular backend IP, hostname, or port in source
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Writing a literal backend address (e.g., "https://10.0.0.100:12000" or
+          "https://globular.io:10101") anywhere in the SDK or app source.
+      why_wrong: |
+          The admin UI is designed to target any Globular cluster by reading
+          globular.baseUrl from localStorage. Hardcoded addresses tie the build to a
+          specific environment, break dev/staging/prod targeting, and violate the
+          no-hardcoded-addresses rule from CLAUDE.md.
+      correct_fix: |
+          Read the base URL from the SDK config layer. New service clients must use the
+          same config-resolved base URL as all other services in packages/sdk/src/core/.
+
+    - id: forbidden.derive_runtime_from_desired
+      title: Computing runtime health or installed state from the desired-state record
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Writing logic like "if desiredService exists, the service is running" or
+          "if desired version matches installed version, the service is healthy."
+      why_wrong: |
+          Each layer of the 4-layer model is independent. Desired can exist without
+          an installed package, an installed package can exist without a running service,
+          and a running service can be unhealthy. Collapsing layers produces wrong conclusions.
+      correct_fix: |
+          Query each layer from its own authority. If the runtime health authority is
+          unavailable, show the state as unknown for that layer — do not substitute a
+          value from a different layer.
