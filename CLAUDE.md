@@ -319,3 +319,43 @@ The Makefile enforces security checks:
 - `nodeagent_server` can only use `os/exec` within `internal/supervisor/`
 
 Run checks: `make check-services`
+
+---
+
+## AI RULES — Awareness workflow
+
+This project is registered with the awareness system. The graph lives at
+`.globular/awareness/graph.json`. The knowledge files are in `docs/awareness/`.
+
+### Required sequence for any non-trivial edit
+
+1. **`awareness session-start`** — open a session before touching files. Records intent and establishes the edit boundary.
+2. **`awareness impact <file>`** — before editing a file, check blast radius. Returns affected invariants, rules, and tests.
+3. **`awareness scan-violations`** — after editing, scan for invariant violations before committing.
+
+**`NO_MATCH` ≠ safe.** When awareness returns NO_MATCH (no graph nodes matched), it means the graph has no coverage for that file — not that the edit is safe. Always grep `docs/awareness/failure_modes.yaml`, `docs/awareness/invariants.yaml`, and `docs/awareness/forbidden_fixes.yaml` directly on NO_MATCH.
+
+**`UNKNOWN_IMPACT`** — treat as high-risk. Do not proceed without reading the file and understanding the blast radius manually.
+
+### High-risk files — call `awareness decision_context` before editing
+
+- Any file that reads or writes `sessionStorage` (auth.token invariant)
+- Any file that constructs backend URLs or gRPC endpoints
+- Any file that performs destructive cluster actions (node join approval, leave, wipe)
+- Any file that checks permissions or renders RBAC state
+
+### Awareness token discipline — HARD LIMIT
+
+- **1 preflight per task** — compact (default) unless deep/forensic is justified.
+- **Do NOT call `awareness agent_context` in the same turn as `awareness preflight`** — preflight compact already contains essential safety fields.
+- **Choose the smallest sufficient mode**: micro → standard → deep → forensic.
+- **Never call `awareness session_resume_latest` mid-task** — only at session start if resuming.
+
+### Key invariants enforced
+
+- `auth.token.sessionstorage.only` — JWT in sessionStorage only; never localStorage or a cookie
+- `backend.address.from.localstorage` — backend URL from localStorage, never hardcoded
+- `unknown.state.not.healthy` — unknown service state must render as unknown, not healthy
+- `destructive.action.requires.confirmation` — wipe/leave/reset require explicit user confirmation
+- `rbac.server.enforced` — RBAC is enforced server-side; admin UI is display-only
+- `workflow.terminal.state.poll` — long-running ops (join, upgrade) must poll for terminal state
