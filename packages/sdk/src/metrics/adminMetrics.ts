@@ -291,9 +291,25 @@ export async function fetchAdminServices(
   const localNodeName = localData.groups[0]?.services[0]?.node ?? ''
   const remoteHosts = nodeHostnames.filter(h => h !== localNodeName)
 
+  // Derive per-node base URL from the local base URL by replacing the node prefix.
+  // e.g. base="https://globule-ryzen.globular.internal:8443", node="globule-hp-01"
+  //   → "https://globule-hp-01.globular.internal:8443"
+  let remoteUrlPrefix = ''
+  try {
+    const u = new URL(base)
+    const hostSuffix = localNodeName && u.hostname.startsWith(localNodeName)
+      ? u.hostname.slice(localNodeName.length)  // ".globular.internal"
+      : u.hostname.includes('.') ? u.hostname.slice(u.hostname.indexOf('.')) : ''
+    const port = u.port ? `:${u.port}` : ''
+    remoteUrlPrefix = `${u.protocol}//{NODE}${hostSuffix}${port}`
+  } catch { /* fall back to bare https below */ }
+
   const remoteResults = await Promise.allSettled(
     remoteHosts.map(async (hostname) => {
-      const resp = await fetch(`https://${hostname}/admin/metrics/services`, {
+      const remoteBase = remoteUrlPrefix
+        ? remoteUrlPrefix.replace('{NODE}', hostname)
+        : `https://${hostname}`
+      const resp = await fetch(`${remoteBase}/admin/metrics/services`, {
         headers: { ...metadata() },
       })
       if (!resp.ok) throw new Error(`${hostname}: ${resp.status}`)
