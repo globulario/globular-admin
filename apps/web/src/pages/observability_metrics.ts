@@ -562,6 +562,7 @@ class PageObservabilityMetrics extends HTMLElement {
   private _adminServices: ServicesResponse | null = null
   private _adminStorage: StorageResponse | null = null
   private _storageNode: string = '' // selected node hostname for Storage tab (empty = current gateway)
+  private _built = false
   private _envoy: EnvoyResponse | null = null
   private _loading = true
   private _error = ''
@@ -659,7 +660,7 @@ class PageObservabilityMetrics extends HTMLElement {
     // Each node runs its own Prometheus (not federated) so we must query
     // each one individually via ensureNodeConnection.
     const nodeIps = this._nodes.flatMap(n => n.ips ?? []).filter(ip => ip)
-    fetchPerNodeMetrics(nodeIps).then(m => { this._nodeMetrics = m; this._render() }).catch(() => {})
+    fetchPerNodeMetrics(nodeIps).then(m => { this._nodeMetrics = m; this._updateNodeTableMetrics() }).catch(() => {})
 
     // Update module cache with primary data
     _cache.data = {
@@ -864,6 +865,25 @@ class PageObservabilityMetrics extends HTMLElement {
     this._setLive('net-tx-total', hasNetData ? fmtBytes(this._totalFromRate(oh?.networkTx ?? null)) : '--')
     this._setLive('net-rx-sub', `last ${rangeLabel}`)
     this._setLive('net-tx-sub', `last ${rangeLabel}`)
+
+    // Scrape indicator lives in the shell (outside content) — patch in-place.
+    const scrapeEl = this.querySelector<HTMLElement>('#omScrapeIndicator')
+    if (scrapeEl) scrapeEl.innerHTML = this._renderScrapeIndicator()
+
+    this._updateNodeTableMetrics()
+  }
+
+  private _updateNodeTableMetrics() {
+    const rows = this.querySelectorAll<HTMLTableRowElement>('.om-node-table tbody tr[data-node-hostname]')
+    rows.forEach(row => {
+      const hostname = row.dataset.nodeHostname!
+      const node = this._nodes.find(n => n.hostname === hostname)
+      if (!node) return
+      const nodeRes = node.ips?.map(ip => this._nodeMetrics.get(ip)).find(m => m)
+      if (!nodeRes) return
+      if (row.cells[2]) row.cells[2].textContent = fmtPct(nodeRes.cpuPct)
+      if (row.cells[3]) row.cells[3].textContent = fmtPct(nodeRes.memPct)
+    })
   }
 
   // Fetch /admin/metrics/storage honouring the Storage tab's node selector.
@@ -949,13 +969,82 @@ class PageObservabilityMetrics extends HTMLElement {
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
+  // Build the static outer chrome once. All subsequent refreshes update the
+  // named slots (#omGolden, #omScrapeIndicator, #omContent) in-place so
+  // the style tag, header, and tab bar are never torn down.
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+
+    this.innerHTML = `
+      <style>${STYLES}</style>
+      <section class="om-wrap">
+        <div class="om-header">
+          <h2>Metrics</h2>
+          <div style="display:flex;align-items:center;">
+            <span class="om-last-updated" data-live="last-updated"></span>
+            <span id="omScrapeIndicator"></span>
+          </div>
+        </div>
+        <p class="om-subtitle">Cluster health, resource utilization, and service status.</p>
+        <div id="omGolden"></div>
+        <div style="display:flex;align-items:center;">
+          <div class="om-tabs" style="flex:1;">${TABS.map(t =>
+            `<button class="om-tab${this._tab === t.key ? ' active' : ''}" data-tab="${t.key}">${t.label}</button>`
+          ).join('')}</div>
+          <paper-icon-button id="omInfoBtn" icon="icons:help-outline" title="Help for this tab"></paper-icon-button>
+        </div>
+        <iron-collapse id="omInfoPanel" class="info">
+          <globular-markdown
+            style="
+              --content-bg-color: var(--surface-color);
+              --content-text-color: var(--on-surface-color);
+              --md-code-bg: color-mix(in srgb, var(--on-surface-color) 6%, var(--surface-color));
+              --md-code-fg: var(--on-surface-color);
+              --divider-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
+            "
+          ></globular-markdown>
+        </iron-collapse>
+        <div id="omContent" class="om-content"></div>
+      </section>
+    `
+
+    this.querySelector('#omInfoBtn')?.addEventListener('click', () => {
+      this._helpOpen = !this._helpOpen
+      ;(this.querySelector('#omInfoPanel') as any)?.toggle()
+    })
+
+    this.querySelectorAll<HTMLButtonElement>('.om-tab[data-tab]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const newTab = btn.dataset.tab as Tab
+        if (newTab === this._tab) return
+        this._tab = newTab
+        this._render()
+      })
+    )
+  }
+
   private _render() {
+    this._buildShell()
     this._destroyCharts()
 
-    const tabs = TABS.map(t =>
-      `<button class="om-tab${this._tab === t.key ? ' active' : ''}" data-tab="${t.key}">${t.label}</button>`
-    ).join('')
+    // Sync tab active class without touching the DOM structure.
+    this.querySelectorAll<HTMLButtonElement>('.om-tab[data-tab]').forEach(btn =>
+      btn.classList.toggle('active', btn.dataset.tab === this._tab)
+    )
 
+    // Update help markdown for current tab.
+    const mdEl = this.querySelector<HTMLElement>('#omInfoPanel globular-markdown')
+    if (mdEl) mdEl.textContent = this._helpForTab(this._tab)
+    if (this._helpOpen) (this.querySelector('#omInfoPanel') as any)?.show?.()
+
+    // Update the two header slots.
+    const goldenEl = this.querySelector('#omGolden')
+    if (goldenEl) goldenEl.innerHTML = this._loading ? '' : this._renderGoldenSignals()
+    const scrapeEl = this.querySelector('#omScrapeIndicator')
+    if (scrapeEl) scrapeEl.innerHTML = this._renderScrapeIndicator()
+
+    // Update the content slot.
     let content = ''
     if (this._loading) {
       content = '<div class="om-loading">Loading metrics...</div>'
@@ -971,53 +1060,19 @@ class PageObservabilityMetrics extends HTMLElement {
         case 'envoy':    content = this._renderEnvoy(); break
       }
     }
+    const contentEl = this.querySelector('#omContent')
+    if (contentEl) contentEl.innerHTML = content
 
-    this.innerHTML = `
-      <style>${STYLES}</style>
-      <section class="om-wrap">
-        <div class="om-header">
-          <h2>Metrics</h2>
-          <div style="display:flex;align-items:center;">
-            <span class="om-last-updated" data-live="last-updated">${this._lastUpdated ? `Updated ${this._ago(this._lastUpdated)}` : ''}</span>
-            ${this._renderScrapeIndicator()}
-          </div>
-        </div>
-        <p class="om-subtitle">Cluster health, resource utilization, and service status.</p>
-        ${this._loading ? '' : this._renderGoldenSignals()}
-        <div style="display:flex;align-items:center;">
-          <div class="om-tabs" style="flex:1;">${tabs}</div>
-          <paper-icon-button id="omInfoBtn" icon="icons:help-outline" title="Help for this tab"></paper-icon-button>
-        </div>
-        <iron-collapse id="omInfoPanel" class="info"${this._helpOpen ? ' opened' : ''}>
-          <globular-markdown
-            style="
-              --content-bg-color: var(--surface-color);
-              --content-text-color: var(--on-surface-color);
-              --md-code-bg: color-mix(in srgb, var(--on-surface-color) 6%, var(--surface-color));
-              --md-code-fg: var(--on-surface-color);
-              --divider-color: color-mix(in srgb, var(--on-surface-color) 12%, transparent);
-            "
-          >${this._helpForTab(this._tab)}</globular-markdown>
-        </iron-collapse>
-        <div class="om-content">${content}</div>
-      </section>
-    `
+    this._attachContentListeners()
+    this._mountRafId = requestAnimationFrame(() => { this._mountRafId = null; this._mountCharts() })
+  }
 
-    this.querySelector('#omInfoBtn')?.addEventListener('click', () => {
-      this._helpOpen = !this._helpOpen;
-      (this.querySelector('#omInfoPanel') as any)?.toggle()
-    })
-
-    this.querySelectorAll<HTMLButtonElement>('.om-tab[data-tab]').forEach(btn =>
-      btn.addEventListener('click', () => { this._tab = btn.dataset.tab as Tab; this._render() })
-    )
+  private _attachContentListeners() {
     this.querySelectorAll<HTMLButtonElement>('.om-health-toggle').forEach(btn =>
-      btn.addEventListener('click', () => {
-        navigateTo('#/admin/diagnostics')
-      })
+      btn.addEventListener('click', () => navigateTo('#/admin/diagnostics'))
     )
 
-    // Time range picker (shared across all chart tabs)
+    // Time range picker
     this.querySelectorAll<HTMLButtonElement>('[data-range]').forEach(btn =>
       btn.addEventListener('click', () => {
         const range = parseInt(btn.dataset.range!, 10) as RangeOption
@@ -1063,9 +1118,7 @@ class PageObservabilityMetrics extends HTMLElement {
         this._render()
         try {
           this._adminStorage = await this._fetchStorageForNode()
-        } catch {
-          /* render will show legacy fallback */
-        }
+        } catch { /* render will show legacy fallback */ }
         this._render()
       })
     )
@@ -1080,6 +1133,7 @@ class PageObservabilityMetrics extends HTMLElement {
         this._render()
       })
     )
+
     // "Show all" button in selection indicator
     const showAllBtn = this.querySelector<HTMLButtonElement>('[data-show-all]')
     if (showAllBtn) {
@@ -1091,8 +1145,6 @@ class PageObservabilityMetrics extends HTMLElement {
         this._render()
       })
     }
-
-    this._mountRafId = requestAnimationFrame(() => { this._mountRafId = null; this._mountCharts() })
   }
 
   // ── Golden Signals ─────────────────────────────────────────────────
