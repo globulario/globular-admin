@@ -323,29 +323,28 @@ export async function fetchPerNodeMetrics(nodeIps?: string[]): Promise<Map<strin
   if (nodeIps?.length) {
     // Each node runs its own Prometheus — query them in parallel.
     const now = Math.floor(Date.now() / 1000)
-    const start = now - 120  // 2-minute window to get a recent sample
+    const start = now - 300  // 5-minute window for sufficient samples on fresh connections
     const stepMs = 15000
-
-    const lastVal = (res: PromiseSettledResult<PromRangeResponse | null>): number => {
-      if (res.status !== 'fulfilled' || !res.value?.result?.[0]?.values?.length) return 0
-      const vals = res.value.result[0].values
-      return parseFloat(vals[vals.length - 1][1]) || 0
-    }
 
     await Promise.allSettled(nodeIps.map(async (ip) => {
       try {
         const connId = await ensureNodeConnection(ip)
-        const [cpuRes, memRes] = await Promise.allSettled([
-          queryPrometheusRange(
-            '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)',
-            start, now, stepMs, connId,
-          ),
-          queryPrometheusRange(
-            '(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100',
-            start, now, stepMs, connId,
-          ),
-        ])
-        map.set(ip, { cpuPct: lastVal(cpuRes), memPct: lastVal(memRes) })
+        // Serialize queries on the same connection — concurrent range queries on a
+        // single monitoring service connection can cause one to silently return empty.
+        const cpuResult = await queryPrometheusRange(
+          '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)',
+          start, now, stepMs, connId,
+        ).catch(() => null)
+        const memResult = await queryPrometheusRange(
+          '(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100',
+          start, now, stepMs, connId,
+        ).catch(() => null)
+        const extractVal = (res: PromRangeResponse | null): number => {
+          if (!res?.result?.[0]?.values?.length) return 0
+          const vals = res.result[0].values
+          return parseFloat(vals[vals.length - 1][1]) || 0
+        }
+        map.set(ip, { cpuPct: extractVal(cpuResult), memPct: extractVal(memResult) })
       } catch { /* node unreachable */ }
     }))
 
