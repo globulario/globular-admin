@@ -844,7 +844,7 @@ class PageClusterWorkflows extends HTMLElement {
           <select id="selDef">${this._defs.map(d => `<option value="${d.name}" ${d.name === this._def?.name ? 'selected' : ''}>${d.displayName}</option>`).join('')}</select>
           <button class="cw-ref" id="btnR">↻</button>
         </div>
-        <p class="cw-desc">${this._def?.description ?? (this._error ? '' : 'Loading workflow definitions from MinIO…')}</p>
+        <p class="cw-desc">${this._def?.description ?? (this._error ? '' : this._loading ? 'Loading workflow definitions…' : 'No workflow definitions found')}</p>
 
         ${this._loading ? '<div class="cw-empty">Loading…</div>' : ''}
 

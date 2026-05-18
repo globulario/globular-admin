@@ -399,7 +399,7 @@ export interface WorkflowDefinitionSummary {
   description: string
 }
 
-/** List all workflow definitions stored in MinIO (single source of truth). */
+/** List all workflow definitions (stored in etcd; MinIO used as fallback for service-specific definitions). */
 export async function listWorkflowDefinitions(): Promise<WorkflowDefinitionSummary[]> {
   const req = new wfPb.ListWorkflowDefinitionsRequest()
   const resp = await unary<wfPb.ListWorkflowDefinitionsRequest, wfPb.ListWorkflowDefinitionsResponse>(
