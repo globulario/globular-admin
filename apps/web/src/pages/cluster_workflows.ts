@@ -750,6 +750,7 @@ class PageClusterWorkflows extends HTMLElement {
       }
     }
     this._pushDefs()
+    this._patchRunView()  // show blueprint immediately while runs load
     this._loadRuns()
   }
 
@@ -765,6 +766,7 @@ class PageClusterWorkflows extends HTMLElement {
       else this._runs = []
     }
     this._pushRuns()
+    if (!this._run && this._runs.length > 0) this._selectRun(this._runs[0])
   }
 
   private async _silentLoad() {
@@ -979,6 +981,7 @@ class PageClusterWorkflows extends HTMLElement {
         this._def = d; this._run = null; this._rtMap = new Map()
         this._selStepId = ''; this._selStepDef = null; this._selStepRt = null
         this._pushDefs()
+        this._patchRunView()  // show new definition blueprint immediately
         this._loadRuns()
       }
     })
