@@ -135,6 +135,20 @@ export async function queryPrometheusRange(
   endSec: number,
   stepMs: number,
 ): Promise<PromRangeResponse | null> {
+  // Try direct HTTP first — same approach as queryPrometheus instant queries.
+  // More reliable than gRPC streaming which suffers from connection contention.
+  // Prometheus HTTP API expects step in seconds; stepMs is in milliseconds.
+  try {
+    const stepSec = Math.max(1, Math.round(stepMs / 1000))
+    const url = `/prometheus/api/v1/query_range?query=${encodeURIComponent(query)}&start=${startSec}&end=${endSec}&step=${stepSec}`
+    const resp = await fetch(url)
+    if (resp.ok) {
+      const json = await resp.json()
+      if (json.status === 'success' && json.data) return json.data
+    }
+  } catch { /* fall through to gRPC */ }
+
+  // Fallback: gRPC monitoring service (streaming)
   try {
     await ensureConnection()
     const rq = new monPb.QueryRangeRequest()
@@ -227,11 +241,11 @@ export async function fetchOverviewHistory(rangeSec: number, instance?: string):
   ])
 
   return {
-    cpu: cpuRes.status === 'fulfilled' ? rangeToSeries(cpuRes.value) : null,
-    memory: memRes.status === 'fulfilled' ? rangeToSeries(memRes.value) : null,
-    networkRx: rxRes.status === 'fulfilled' ? rangeToSeries(rxRes.value) : null,
-    networkTx: txRes.status === 'fulfilled' ? rangeToSeries(txRes.value) : null,
-    disk: diskRes.status === 'fulfilled' ? rangeToSeries(diskRes.value) : null,
+    cpu:       cpuRes.status  === 'fulfilled' ? rangeToSeries(cpuRes.value)  : null,
+    memory:    memRes.status  === 'fulfilled' ? rangeToSeries(memRes.value)  : null,
+    networkRx: rxRes.status   === 'fulfilled' ? rangeToSeries(rxRes.value)   : null,
+    networkTx: txRes.status   === 'fulfilled' ? rangeToSeries(txRes.value)   : null,
+    disk:      diskRes.status === 'fulfilled' ? rangeToSeries(diskRes.value) : null,
   }
 }
 
