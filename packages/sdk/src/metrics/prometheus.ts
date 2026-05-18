@@ -147,6 +147,36 @@ export async function queryPrometheus(query: string): Promise<PromQueryResponse 
   }
 }
 
+/**
+ * Execute an instant PromQL query on a named remote connection via the unary
+ * Query RPC. Avoids the streaming path which can silently drop results when
+ * multiple sequential calls share the same connection ID.
+ */
+async function queryPrometheusInstant(
+  query: string,
+  connId: string,
+): Promise<PromQueryResponse | null> {
+  try {
+    const rq = new monPb.QueryRequest()
+    rq.setConnectionid(connId)
+    rq.setQuery(query)
+    rq.setTs(Date.now() / 1000)
+
+    const rsp = await unary<monPb.QueryRequest, monPb.QueryResponse>(
+      client, 'query', rq, undefined, metadata(),
+    )
+    const raw = rsp.getValue()
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed.data) return parsed.data
+    if (parsed.resultType) return parsed
+    if (Array.isArray(parsed)) return { resultType: 'vector', result: parsed }
+    return null
+  } catch {
+    return null
+  }
+}
+
 // ─── Range query ────────────────────────────────────────────────────────────
 
 /** A single series from a Prometheus range query (matrix result). */
@@ -322,27 +352,22 @@ export async function fetchPerNodeMetrics(nodeIps?: string[]): Promise<Map<strin
 
   if (nodeIps?.length) {
     // Each node runs its own Prometheus — query them in parallel.
-    const now = Math.floor(Date.now() / 1000)
-    const start = now - 300  // 5-minute window for sufficient samples on fresh connections
-    const stepMs = 15000
-
+    // Use the unary Query RPC (instant query) to avoid streaming issues
+    // where sequential QueryRange calls on the same connId can silently fail.
     await Promise.allSettled(nodeIps.map(async (ip) => {
       try {
         const connId = await ensureNodeConnection(ip)
-        // Serialize queries on the same connection — concurrent range queries on a
-        // single monitoring service connection can cause one to silently return empty.
-        const cpuResult = await queryPrometheusRange(
-          '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)',
-          start, now, stepMs, connId,
-        ).catch(() => null)
-        const memResult = await queryPrometheusRange(
+        const cpuResult = await queryPrometheusInstant(
+          '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100)',
+          connId,
+        )
+        const memResult = await queryPrometheusInstant(
           '(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100',
-          start, now, stepMs, connId,
-        ).catch(() => null)
-        const extractVal = (res: PromRangeResponse | null): number => {
-          if (!res?.result?.[0]?.values?.length) return 0
-          const vals = res.result[0].values
-          return parseFloat(vals[vals.length - 1][1]) || 0
+          connId,
+        )
+        const extractVal = (res: PromQueryResponse | null): number => {
+          if (!res?.result?.[0]?.value?.[1]) return 0
+          return parseFloat(res.result[0].value[1]) || 0
         }
         map.set(ip, { cpuPct: extractVal(cpuResult), memPct: extractVal(memResult) })
       } catch { /* node unreachable */ }
