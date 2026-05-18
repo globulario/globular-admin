@@ -640,7 +640,6 @@ class PageObservabilityMetrics extends HTMLElement {
       getClusterHealthV1Full(),
       fetchServiceProcessMetrics(),
       getPrometheusScrapeHealth(),
-      fetchAdminServices(),
       this._fetchStorageForNode(),
       fetchAdminEnvoy(),
     ])
@@ -652,9 +651,18 @@ class PageObservabilityMetrics extends HTMLElement {
     if (results[4].status === 'fulfilled') this._v1 = results[4].value
     if (results[5].status === 'fulfilled') this._svcMetrics = results[5].value
     if (results[6].status === 'fulfilled') this._scrapeHealth = results[6].value
-    if (results[7].status === 'fulfilled') this._adminServices = results[7].value
-    if (results[8].status === 'fulfilled') this._adminStorage = results[8].value
-    if (results[9].status === 'fulfilled') this._envoy = results[9].value
+    if (results[7].status === 'fulfilled') this._adminStorage = results[7].value
+    if (results[8].status === 'fulfilled') this._envoy = results[8].value
+
+    // Fetch services with per-node hostnames so each node's gateway correctly
+    // attributes its own services (local gateway mislabels all as its own node).
+    const nodeHostnames = this._nodes.map(n => n.hostname).filter(Boolean)
+    fetchAdminServices(undefined, nodeHostnames)
+      .then(v => { this._adminServices = v; this._render() })
+      .catch(() => {
+        // Fallback: local-only (deduplicated, all labeled as gateway node)
+        fetchAdminServices().then(v => { this._adminServices = v; this._render() }).catch(() => {})
+      })
 
     // Fetch per-node CPU/memory after nodes are resolved so we have IPs.
     // Each node runs its own Prometheus (not federated) so we must query
@@ -1526,6 +1534,7 @@ class PageObservabilityMetrics extends HTMLElement {
             ${sevBadge(s.derived_status, sev)}
             ${s.version ? `<span>v${esc(s.version)}</span>` : ''}
             ${s.node ? `<span>${esc(s.node)}</span>` : ''}
+            ${(s.instance_count ?? 1) > 1 ? `<span style="color:var(--secondary-text-color)">&times;${s.instance_count}</span>` : ''}
           </div>
           ${stats.length ? `<div class="om-svc-divider"></div>
           <div class="om-svc-stats-grid">${stats.join('')}</div>` : ''}

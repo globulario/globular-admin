@@ -45,6 +45,8 @@ export interface ServiceInstance {
   reasons: string[] | null
   runtime: SvcRuntime | null
   grpc_health: GRPCHealth | null
+  /** Number of cluster nodes running this service (set by client dedup). */
+  instance_count?: number
 }
 
 export interface SvcRuntime {
@@ -225,16 +227,12 @@ import { getBaseUrl } from "../core/endpoints"
 
 const _statusRank: Record<string, number> = { critical: 0, degraded: 1, unknown: 2, healthy: 3 }
 
-export async function fetchAdminServices(base?: string): Promise<ServicesResponse> {
-  if (base == null) base = getBaseUrl() || ''
-  const resp = await fetch(`${base}/admin/metrics/services`)
-  if (!resp.ok) throw new Error(`admin/metrics/services: ${resp.status}`)
-  const data: ServicesResponse = await resp.json()
+/** Deduplicate services within a single node's response by name, keeping worst status. */
+function _deduplicateGroups(groups: ServiceGroup[]): void {
+  for (const g of groups) {
+    const counts = new Map<string, number>()
+    for (const s of g.services) counts.set(s.name, (counts.get(s.name) ?? 0) + 1)
 
-  // The gateway currently fans-out across all cluster nodes and returns each
-  // service once per node — deduplicate within each group by service name,
-  // keeping the entry with the worst derived_status.
-  for (const g of data.groups) {
     const best = new Map<string, ServiceInstance>()
     for (const s of g.services) {
       const prev = best.get(s.name)
@@ -242,10 +240,14 @@ export async function fetchAdminServices(base?: string): Promise<ServicesRespons
         best.set(s.name, s)
       }
     }
-    g.services = [...best.values()]
+    g.services = [...best.values()].map(s => ({
+      ...s,
+      instance_count: counts.get(s.name) ?? 1,
+    }))
   }
+}
 
-  // Recompute summary to match the deduplicated list.
+function _recomputeSummary(data: ServicesResponse): void {
   let total = 0, healthy = 0, degraded = 0, critical = 0, unknown = 0
   for (const g of data.groups) {
     for (const s of g.services) {
@@ -257,8 +259,70 @@ export async function fetchAdminServices(base?: string): Promise<ServicesRespons
     }
   }
   data.summary = { total, healthy, degraded, critical, unknown }
+}
 
-  return data
+/**
+ * Fetch and merge services from all cluster nodes.
+ * nodeHostnames: list of node hostnames (e.g. ["globule-hp-01", "globule-dell"]).
+ * When provided, each node's gateway is queried directly so services are
+ * correctly attributed to their node. The local gateway's response is always
+ * included (base param). Falls back to local-only when per-node queries fail.
+ */
+export async function fetchAdminServices(
+  base?: string,
+  nodeHostnames?: string[],
+): Promise<ServicesResponse> {
+  if (base == null) base = getBaseUrl() || ''
+
+  // Fetch from local gateway first — always succeeds and provides schema/thresholds.
+  const localResp = await fetch(`${base}/admin/metrics/services`)
+  if (!localResp.ok) throw new Error(`admin/metrics/services: ${localResp.status}`)
+  const localData: ServicesResponse = await localResp.json()
+  _deduplicateGroups(localData.groups)
+
+  if (!nodeHostnames?.length) {
+    _recomputeSummary(localData)
+    return localData
+  }
+
+  // Query each remote node's gateway in parallel, deduplicate, merge into localData.
+  // Only include nodes whose hostname differs from the local node's services.
+  const localNodeName = localData.groups[0]?.services[0]?.node ?? ''
+  const remoteHosts = nodeHostnames.filter(h => h !== localNodeName)
+
+  const remoteResults = await Promise.allSettled(
+    remoteHosts.map(async (hostname) => {
+      const resp = await fetch(`https://${hostname}/admin/metrics/services`, {
+        headers: { Authorization: (localResp.headers.get('Authorization') ?? '') },
+      })
+      if (!resp.ok) throw new Error(`${hostname}: ${resp.status}`)
+      const d: ServicesResponse = await resp.json()
+      _deduplicateGroups(d.groups)
+      return d
+    })
+  )
+
+  // Merge remote groups into localData by category, avoiding name+node duplicates.
+  for (const res of remoteResults) {
+    if (res.status !== 'fulfilled') continue
+    for (const remoteGroup of res.value.groups) {
+      let localGroup = localData.groups.find(g => g.category === remoteGroup.category)
+      if (!localGroup) {
+        localGroup = { category: remoteGroup.category, services: [] }
+        localData.groups.push(localGroup)
+      }
+      const existing = new Set(localGroup.services.map(s => `${s.name}::${s.node}`))
+      for (const s of remoteGroup.services) {
+        if (!existing.has(`${s.name}::${s.node}`)) {
+          localGroup.services.push(s)
+          existing.add(`${s.name}::${s.node}`)
+        }
+      }
+    }
+  }
+
+  _recomputeSummary(localData)
+  return localData
 }
 
 export async function fetchAdminStorage(base?: string): Promise<StorageResponse> {
