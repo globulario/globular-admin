@@ -289,37 +289,42 @@ class PageClusterTopology extends HTMLElement {
   }
 
   private async _load() {
-    const [nodesRes, healthRes, driftRes] = await Promise.allSettled([
-      listClusterNodes(),
-      getClusterHealth(),
-      getDriftReport(),
-    ])
+    // Start all three in parallel but render as each arrives.
+    const nodesPromise = listClusterNodes()
+    const healthPromise = getClusterHealth()
+    const driftPromise = getDriftReport()
 
-    if (nodesRes.status === 'fulfilled') {
-      this._nodes = nodesRes.value
+    // Nodes are fastest — show cards immediately.
+    try {
+      this._nodes = await nodesPromise
       this._nodesError = ''
-    } else {
-      this._nodesError = (nodesRes.reason as any)?.message || 'ClusterController unavailable'
+    } catch (e: any) {
+      this._nodesError = e?.message || 'ClusterController unavailable'
     }
+    this._loading = false
+    this._pushData()
 
-    if (healthRes.status === 'fulfilled') {
-      this._healthNodes = new Map(healthRes.value.nodes.map(n => [n.nodeId, n]))
-    }
+    // Health updates status badges.
+    try {
+      const h = await healthPromise
+      this._healthNodes = new Map(h.nodes.map(n => [n.nodeId, n]))
+      this._pushData()
+    } catch {}
 
-    if (driftRes.status === 'fulfilled') {
+    // Drift is slowest — add drift counts last.
+    try {
+      const dr = await driftPromise
       const byNode = new Map<string, DriftItem[]>()
-      for (const item of driftRes.value.items) {
+      for (const item of dr.items) {
         const list = byNode.get(item.nodeId) ?? []
         list.push(item)
         byNode.set(item.nodeId, list)
       }
       this._driftByNode = byNode
-    }
+    } catch {}
 
     _cache.data = { nodes: this._nodes, healthNodes: this._healthNodes, driftByNode: this._driftByNode }
     _cache.fetchedAt = Date.now()
-
-    this._loading = false
     this._pushData()
   }
 
