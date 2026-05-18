@@ -227,12 +227,16 @@ export async function queryPrometheusRange(
     rq.setStep(stepMs)
 
     // Collect chunked streaming response
+    // Remote connections get a hard 12 s timeout — without it the Prometheus
+    // HTTP client on the monitoring service has no deadline and hangs indefinitely
+    // when a node is slow, blocking all subsequent serialized queries.
     const chunks: string[] = []
     const factory = (addr: string) => new monGrpc.MonitoringServiceClient(addr, null, { withCredentials: false })
     await stream<monPb.QueryRangeRequest, monPb.QueryRangeResponse>(
       factory, 'queryRange', rq,
       (msg) => { const v = msg.getValue(); if (v) chunks.push(v) },
       'monitoring.MonitoringService',
+      connId ? { timeoutMs: 12_000 } : undefined,
     )
 
     const raw = chunks.join('')

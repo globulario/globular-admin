@@ -5,7 +5,7 @@ import * as grpcWeb from "grpc-web";
 
 
 export interface UnaryOpts { timeoutMs?: number, base?: string }
-export interface StreamOpts { base?: string, onCall?: (call: grpcWeb.ClientReadableStream<any>) => void, md?: Record<string, string> }
+export interface StreamOpts { base?: string, onCall?: (call: grpcWeb.ClientReadableStream<any>) => void, md?: Record<string, string>, timeoutMs?: number }
 
 /** Heuristic to detect auth expiry or invalid tokens across different backends/messages */
 function looksExpired(err: any): boolean {
@@ -101,9 +101,22 @@ export async function stream<TReq, TMsg>(
     new Promise<void>((resolve, reject) => {
       const call = client[methodName](req, headers);
       opts?.onCall?.(call);
+
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const done = (fn: () => void) => {
+        if (timer) { clearTimeout(timer); timer = null }
+        fn()
+      }
+      if (opts?.timeoutMs) {
+        timer = setTimeout(() => {
+          call.cancel()
+          reject(new Error(`stream timeout after ${opts.timeoutMs}ms`))
+        }, opts.timeoutMs)
+      }
+
       call.on("data", (m: TMsg) => onMsg(m));
-      call.on("end", () => resolve());
-      call.on("error", (e: any) => reject(normalizeError(e)));
+      call.on("end", () => done(resolve));
+      call.on("error", (e: any) => done(() => reject(normalizeError(e))));
     });
 
   try {
