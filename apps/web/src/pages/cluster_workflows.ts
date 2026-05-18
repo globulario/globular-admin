@@ -634,14 +634,20 @@ class PageClusterWorkflows extends HTMLElement {
       this._error = `Failed to load workflow definitions: ${e?.message || e}`
     }
     this._loading = false
-    if (this._def) this.loadRuns()
-    else { this.render() }
+    // Always load runs — definition is only needed for the SVG diagram, not the table
+    this.loadRuns()
+    // Auto-retry transient "not initialized" / "unavailable" errors
+    if (this._error && (this._error.includes('not initialized') || this._error.includes('unavailable'))) {
+      setTimeout(() => {
+        if (!this._def) this.loadDefinitions()
+      }, 5000)
+    }
   }
 
   /** Client-side filter: match runs by workflowName or fall back to runFilter heuristics */
   private matchesDef(r: WorkflowRun): boolean {
     // Exact workflow_name match (set by new engine)
-    if (!this._def) return false
+    if (!this._def) return true // no definition loaded — show all runs
     if (r.workflowName) return r.workflowName === this._def.name
     // Legacy runs without workflow_name: use heuristic runFilter
     const f = this._def.runFilter
@@ -838,13 +844,13 @@ class PageClusterWorkflows extends HTMLElement {
           <select id="selDef">${this._defs.map(d => `<option value="${d.name}" ${d.name === this._def?.name ? 'selected' : ''}>${d.displayName}</option>`).join('')}</select>
           <button class="cw-ref" id="btnR">↻</button>
         </div>
-        <p class="cw-desc">${this._def?.description ?? 'Loading workflow definitions from MinIO…'}</p>
+        <p class="cw-desc">${this._def?.description ?? (this._error ? '' : 'Loading workflow definitions from MinIO…')}</p>
 
         ${this._loading ? '<div class="cw-empty">Loading…</div>' : ''}
-        ${this._error && !this._loading ? `<div class="cw-err">${this._error}</div>` : ''}
 
-        ${!this._loading && !this._error ? `
+        ${!this._loading ? `
         <div class="cw-body">
+          ${this._error ? `<div class="cw-err" style="flex-shrink:0">${this._error} — showing all run history</div>` : ''}
           <div class="cw-svg-hdr" data-bind="svg-hdr"${run ? '' : ' style="display:none"'}>
             ${run ? `
             <strong style="font-weight:700">${run.context?.componentName || '—'}</strong>
@@ -854,7 +860,7 @@ class PageClusterWorkflows extends HTMLElement {
           </div>
           <div class="cw-svg" ${this._loadingRun ? 'style="opacity:.5"' : ''}>
             <div data-bind="svg-wrap">
-              ${this._def ? `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svg}</svg>` : '<div class="cw-empty">Loading workflow definitions from MinIO…</div>'}
+              ${this._def ? `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svg}</svg>` : '<div class="cw-empty" style="font-style:italic">Workflow diagram unavailable — run history is shown below</div>'}
             </div>
           </div>
           <div data-bind="step-bar">${this.renderStepBar()}</div>
