@@ -108,6 +108,40 @@ forbidden_fixes:
           Read the base URL from the SDK config layer. New service clients must use the
           same config-resolved base URL as all other services in packages/sdk/src/core/.
 
+    - id: forbidden.full_render_on_refresh
+      title: Calling this.innerHTML / this.render() inside a setInterval or polling callback
+      # origin: { type: incident, confidence: very_high }
+      summary: |
+          Wiping the component's DOM and rebuilding it from scratch every time the
+          polling loop fires (e.g., `this.innerHTML = buildTable(data)` inside setInterval).
+      why_wrong: |
+          Rebuilding the DOM on every tick destroys operator context: scroll position,
+          selected rows, open detail panels, and focus state. On the cluster nodes page this
+          caused a >30 s blank screen on every 30-second interval. Users lose their place
+          and cannot interact with the page while it rebuilds.
+      correct_fix: |
+          Build the DOM shell once in connectedCallback / first load. On subsequent refreshes,
+          use _syncRows() / targeted [data-bind] slot updates to push only changed values
+          into existing elements. Never call this.innerHTML = … from a timer.
+
+    - id: forbidden.wipe_slot_on_refresh
+      title: Resetting data-bind slots to a loading placeholder on every refresh cycle
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Inside a refresh/polling loop, resetting slot content back to "…", a spinner,
+          or an empty string before the new value arrives — even when the intent is to
+          signal "loading."
+      why_wrong: |
+          Wiping a slot on every refresh cycle creates visible flicker and erases the
+          last-known value the operator was looking at. The correct behaviour is to leave
+          old data in place until a concrete new value replaces it. Loading indicators
+          belong in a separate status slot (e.g., a spinner icon), not inside the data slot.
+      correct_fix: |
+          Keep the previous value in the slot. When new data arrives, replace the slot
+          content with the new value in one write. If you need to signal "refreshing",
+          add a subtle overlay or spinner class to the slot element without clearing its
+          text content.
+
     - id: forbidden.derive_runtime_from_desired
       title: Computing runtime health or installed state from the desired-state record
       # origin: { type: principle, confidence: high }

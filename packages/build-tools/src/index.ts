@@ -97,7 +97,6 @@ export function globularOptimizeDeps(): string[] {
     'globular-web-client/backup_manager/backup_manager_pb',
     'globular-web-client/workflow/workflow_grpc_web_pb',
     'globular-web-client/workflow/workflow_pb',
-    'google-protobuf/google/protobuf/descriptor_pb',
   ]
 }
 

@@ -160,6 +160,83 @@ invariants:
           operator (toast, inline error, error state in component). An empty catch block
           or a catch that only logs to console is a violation.
 
+    - id: ui.refresh_must_not_disrupt_view
+      title: Data refresh must update in-place; full DOM replacement is forbidden on refresh
+      severity: high
+      status: active
+      # origin: { type: incident, confidence: very_high }
+      summary: |
+          Auto-refresh and polling loops must patch existing DOM nodes with updated data.
+          Calling this.innerHTML = … or this.render() on a timer wipes the operator's
+          context — scroll position, selected rows, open detail panels, focus state —
+          and causes a blank screen while data reloads. This was observed on the cluster
+          nodes page causing >30 s of blank screen on every 30-second interval.
+
+          Rules:
+          1. The first render (connectedCallback / initial load) MAY build the full DOM.
+          2. All subsequent refreshes MUST use targeted in-place DOM updates:
+             - update only cells/elements whose data actually changed
+             - add rows for new items, remove rows for gone items
+             - never wipe and rebuild the whole component
+          3. A persistent error slot (e.g. id="*-error-banner") must exist in the
+             initial render so refresh failures can surface without a full re-render.
+          4. Only components whose underlying data changed must be touched.
+             Stable data (hostname, node ID, profiles) must not flicker.
+      enforcement: |
+          Before adding setInterval/setTimeout refresh to any page component, verify:
+          (a) there is a _rendered / _initialised flag that gates the full render to first load only,
+          (b) subsequent calls use a patch/diff method that updates only data cells,
+          (c) user selection state (_selectedId) and open panels are preserved across refresh.
+      forbidden_fixes:
+          - forbidden.full_render_on_refresh
+
+    - id: ui.view_data_separation
+      title: View structure and data must be separated; data slots receive updates via events, never by rebuilding the view
+      severity: high
+      status: active
+      # origin: { type: principle, confidence: very_high }
+      summary: |
+          Every component that displays backend data must separate the view (DOM structure)
+          from the data layer (live values). This separation applies to the WHOLE application.
+
+          The pattern:
+          1. The view shell (skeleton HTML with named slots) is built ONCE — in connectedCallback
+             or on first load. It never gets wiped.
+          2. Data slots are identified by a `data-bind="<key>"` attribute. Each slot holds
+             exactly one piece of live data (a cell value, a badge, a count).
+          3. When new data arrives from the backend (poll result, RPC response, event), it is
+             pushed into the slots by setting innerHTML / textContent on the matching
+             [data-bind] element. The surrounding DOM structure is never touched.
+          4. Old data REMAINS VISIBLE in its slot until new data explicitly replaces it.
+             Resetting slots to a loading placeholder ("…") on every refresh cycle is a violation
+             because it creates visible flicker and erases information the operator was reading.
+          5. Structural changes (adding/removing rows for new/gone entities) are the only
+             permitted reason to modify the table skeleton — and even then, pre-existing rows
+             must be reused if the entity still exists.
+
+          Forbidden patterns:
+          - Rebuilding a list/table from scratch on every data refresh
+          - Wiping slot content to a spinner/placeholder on each poll cycle
+          - Using this.innerHTML = <template> inside a refresh/polling callback
+          - Passing the full data object to a render() method from a timer
+
+          Compliant pattern (example):
+              // Push data into an existing slot
+              const cell = tr.querySelector('[data-bind="reachable"]')
+              if (cell) cell.innerHTML = newHtml
+      enforcement: |
+          Before adding any component that displays live backend data, verify:
+          (a) the shell is built once and stored in a _shell / _built / _initialised flag,
+          (b) data updates use querySelector('[data-bind="..."]').innerHTML = … (or equivalent),
+          (c) old slot content is never explicitly reset to "…" or a spinner inside a refresh loop,
+          (d) structural row adds/removes reuse existing row elements where the entity ID matches.
+
+          Any component that renders backend state and calls this.innerHTML = … or
+          this.render() inside a setInterval / polling callback is a violation.
+      forbidden_fixes:
+          - forbidden.full_render_on_refresh
+          - forbidden.wipe_slot_on_refresh
+
     - id: ui.no_hardcoded_backend_addresses
       title: Backend addresses must come from localStorage config, not hardcoded
       severity: high

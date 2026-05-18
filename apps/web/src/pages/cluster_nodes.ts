@@ -45,8 +45,6 @@ function capsLine(caps: NodeCapabilities | null): string {
     </div>`
 }
 
-// ─── Severity constants (numeric, from generated proto enums) ────────────────
-
 const SEV_INFO     = 1
 const SEV_WARN     = 2
 const SEV_ERROR    = 3
@@ -106,80 +104,38 @@ function statusBadge(status: string): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface NodeRow {
-  node: ClusterNode
+  node:   ClusterNode
   report: NodeReport | null
-  error: string
+  error:  string
 }
 
 class PageClusterNodes extends HTMLElement {
   private _rows: NodeRow[] = []
-  private _loadError = ''
-  private _loading = true
   private _selectedNodeId = ''
   private _refreshTimer: number | null = null
   private _editingProfiles = false
-  private _savingProfiles = false
-  private _saveError = ''
+  private _savingProfiles  = false
+  private _saveError       = ''
   private _healthDetail: NodeHealthDetail | null = null
-  private _healthLoading = false
-  private _healthError = ''
+  private _healthLoading   = false
+  private _healthError     = ''
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+    this._buildShell()
+    this._fetchData()
+    this._refreshTimer = window.setInterval(() => this._fetchData(), 30_000)
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
   }
 
-  private async load() {
-    let nodes: ClusterNode[]
-    try {
-      nodes = await listClusterNodes()
-      this._loadError = ''
-    } catch (e: any) {
-      this._loadError = e?.message || 'ClusterController unavailable'
-      this._loading = false
-      this.render()
-      return
-    }
+  // ── Shell — built ONCE, never rebuilt ─────────────────────────────────────
 
-    // Fetch doctor reports concurrently for all nodes
-    const results = await Promise.allSettled(
-      nodes.map(n => getNodeReport(n.nodeId))
-    )
-
-    this._rows = nodes.map((node, i) => {
-      const res = results[i]
-      return {
-        node,
-        report: res.status === 'fulfilled' ? res.value : null,
-        error:  res.status === 'rejected'  ? ((res.reason as any)?.message || 'Doctor unavailable') : '',
-      }
-    })
-
-    this._loading = false
-    this.render()
-  }
-
-  private async loadHealthDetail(nodeId: string) {
-    this._healthLoading = true
-    this._healthError = ''
-    this._healthDetail = null
-    this.renderDetail()
-    try {
-      this._healthDetail = await getNodeHealthDetail(nodeId)
-    } catch (e: any) {
-      this._healthError = e?.message || 'Health detail unavailable'
-    }
-    this._healthLoading = false
-    this.renderDetail()
-  }
-
-  private render() {
+  private _buildShell() {
     this.innerHTML = `
       <style>
         .cn-wrap { padding: 16px; }
@@ -188,24 +144,17 @@ class PageClusterNodes extends HTMLElement {
         .cn-subtitle { margin: 0.25rem 0 1rem; opacity: .85; font: var(--md-typescale-body-medium); }
         .cn-node-id  { font-family: monospace; font-size: .78rem; color: var(--secondary-text-color); }
         .cn-hostname { font-weight: 600; }
-        .cn-empty { padding: 14px; font: var(--md-typescale-body-medium); font-style: italic; color: var(--secondary-text-color); }
+        .cn-empty    { padding: 14px; font: var(--md-typescale-body-medium); font-style: italic; color: var(--secondary-text-color); }
         .cn-btn-refresh {
-          border:        1px solid var(--border-subtle-color);
-          background:    transparent;
-          color:         var(--on-surface-color);
-          border-radius: var(--md-shape-sm);
-          padding:       3px 10px;
-          cursor:        pointer;
-          font:          var(--md-typescale-label-medium);
+          border: 1px solid var(--border-subtle-color); background: transparent;
+          color: var(--on-surface-color); border-radius: var(--md-shape-sm);
+          padding: 3px 10px; cursor: pointer; font: var(--md-typescale-label-medium);
         }
         .cn-btn-refresh:hover { background: var(--md-state-hover); }
         .cn-detail-panel {
-          background:    var(--md-surface-container-low);
-          border:        1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-md);
-          box-shadow:    var(--md-elevation-1);
-          overflow:      hidden;
-          margin-bottom: 16px;
+          background: var(--md-surface-container-low); border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md); box-shadow: var(--md-elevation-1);
+          overflow: hidden; margin-bottom: 16px;
         }
         .cn-kv-list { font-size: .75rem; font-family: monospace; color: var(--secondary-text-color); }
         .cn-section-label {
@@ -223,25 +172,16 @@ class PageClusterNodes extends HTMLElement {
         <div class="cn-header">
           <h2>Cluster Nodes</h2>
           <div style="flex:1"></div>
-          <button class="cn-btn-refresh" id="btnRefresh">↻ Refresh</button>
+          <button class="cn-btn-refresh" id="cn-refresh">↻ Refresh</button>
         </div>
         <p class="cn-subtitle">Node inventory, health status, and diagnostic findings from ClusterDoctor.</p>
 
-        ${this._loading ? `<p class="cn-empty">Loading nodes…</p>` : ''}
+        <div id="cn-error" class="md-banner-warn" style="display:none"></div>
 
-        ${this._loadError ? `
-        <div class="md-banner-warn">
-          Could not load nodes — ${this._loadError}
-          <br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>
-        </div>
-        ` : ''}
-
-        ${!this._loading && !this._loadError ? `
         <div class="md-panel">
           <div class="md-panel-header">
-            <span>Nodes (${this._rows.length})</span>
+            <span id="cn-count">Nodes</span>
           </div>
-          ${this._rows.length > 0 ? `
           <table class="md-table">
             <thead>
               <tr>
@@ -254,87 +194,199 @@ class PageClusterNodes extends HTMLElement {
                 <th>Worst Severity</th>
               </tr>
             </thead>
-            <tbody class="md-interactive">
-              ${this._rows.map(row => {
-                const r = row.report
-                const wSev = r ? worstSeverity(r.findings) : 0
-                const findingCount = r ? r.findings.length : 0
-                const selected = row.node.nodeId === this._selectedNodeId
-                return `
-                <tr data-node-id="${row.node.nodeId}" class="${selected ? 'selected' : ''}">
-                  <td class="cn-hostname">${row.node.hostname || row.node.nodeId}</td>
-                  <td>${profileTags(row.node.profiles)}</td>
-                  <td class="cn-node-id">${row.node.nodeId}</td>
-                  <td>${r
-                    ? badge(r.reachable ? 'REACHABLE' : 'UNREACHABLE', r.reachable ? 'var(--success-color)' : 'var(--error-color)')
-                    : badge('UNKNOWN', 'var(--secondary-text-color)')
-                  }</td>
-                  <td style="color:var(--secondary-text-color)">${r ? ageLabel(r.heartbeatAgeSeconds) : '—'}</td>
-                  <td>${findingCount > 0
-                    ? `<span style="font-weight:600">${findingCount}</span>`
-                    : `<span style="color:var(--secondary-text-color)">0</span>`
-                  }</td>
-                  <td>${wSev > 0
-                    ? badge(sevLabel(wSev), sevColor(wSev))
-                    : `<span style="color:var(--success-color)">✓ OK</span>`
-                  }</td>
-                </tr>`
-              }).join('')}
+            <tbody id="cn-tbody" class="md-interactive">
+              <tr id="cn-loading"><td colspan="7" class="cn-empty">Loading nodes…</td></tr>
             </tbody>
           </table>
-          ` : `<p class="cn-empty">No nodes registered.</p>`}
         </div>
-        ` : ''}
 
-        <div id="detail"></div>
-      </div>
-    `
+        <div id="cn-detail"></div>
+      </div>`
 
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
-
-    // Row click → show findings detail
-    this.querySelectorAll('.md-table tbody tr[data-node-id]').forEach(tr => {
-      tr.addEventListener('click', () => {
-        const nodeId = (tr as HTMLElement).dataset.nodeId ?? ''
-        if (this._selectedNodeId === nodeId) {
-          this._selectedNodeId = ''
-          this._healthDetail = null
-        } else {
-          this._selectedNodeId = nodeId
-          this.loadHealthDetail(nodeId)
-        }
-        this._editingProfiles = false
-        this._saveError = ''
-        this.renderDetail()
-        // Update selected highlight without full re-render
-        this.querySelectorAll('.md-table tbody tr[data-node-id]').forEach(r => {
-          r.classList.toggle('selected', (r as HTMLElement).dataset.nodeId === this._selectedNodeId)
-        })
-      })
-    })
-
-    this.renderDetail()
+    this.querySelector('#cn-refresh')!.addEventListener('click', () => this._fetchData())
   }
 
-  private renderDetail() {
-    const el = this.querySelector('#detail') as HTMLElement
-    if (!el) return
+  // ── Data fetch — runs on every refresh tick ────────────────────────────────
 
-    if (!this._selectedNodeId) {
-      el.innerHTML = ''
+  private async _fetchData() {
+    let nodes: ClusterNode[]
+    try {
+      nodes = await listClusterNodes()
+      this._hideError()
+    } catch (e: any) {
+      this._showError(e?.message || 'ClusterController unavailable')
       return
     }
+
+    // Sync row structure: add new nodes, remove gone nodes.
+    // Existing rows keep their current data until fresh reports arrive.
+    this._syncRows(nodes)
+
+    // Fetch each node's report independently; push data into slots on arrival.
+    nodes.forEach((node, i) => {
+      getNodeReport(node.nodeId)
+        .then(report => {
+          this._rows[i].report = report
+          this._rows[i].error  = ''
+          this._pushReportToRow(node.nodeId)
+        })
+        .catch(e => {
+          this._rows[i].error = (e as any)?.message || 'Doctor unavailable'
+          this._pushReportToRow(node.nodeId)
+        })
+    })
+  }
+
+  // ── Row structure sync — only structural changes, never touches data cells ─
+
+  private _syncRows(newNodes: ClusterNode[]) {
+    const tbody   = this.querySelector('#cn-tbody')!
+    const loading = this.querySelector('#cn-loading')
+    if (loading) loading.remove()
+
+    const newIds = new Set(newNodes.map(n => n.nodeId))
+
+    // Remove rows for nodes that left the cluster.
+    this._rows
+      .filter(r => !newIds.has(r.node.nodeId))
+      .forEach(r => tbody.querySelector(`tr[data-node-id="${CSS.escape(r.node.nodeId)}"]`)?.remove())
+
+    // Rebuild model (keeps existing report data for nodes still present).
+    const prevReports = new Map(this._rows.map(r => [r.node.nodeId, r]))
+    this._rows = newNodes.map(node => {
+      const prev = prevReports.get(node.nodeId)
+      return { node, report: prev?.report ?? null, error: prev?.error ?? '' }
+    })
+
+    // Update node count.
+    const countEl = this.querySelector('#cn-count')
+    if (countEl) countEl.textContent = `Nodes (${newNodes.length})`
+
+    // Add rows for nodes not yet in the table.
+    newNodes.forEach(node => {
+      if (!tbody.querySelector(`tr[data-node-id="${CSS.escape(node.nodeId)}"]`)) {
+        tbody.appendChild(this._createRow(node))
+      } else {
+        // Update only the profiles cell — everything else is data-driven.
+        const profileSlot = tbody.querySelector(
+          `tr[data-node-id="${CSS.escape(node.nodeId)}"] [data-bind="profiles"]`
+        ) as HTMLElement | null
+        if (profileSlot) profileSlot.innerHTML = profileTags(node.profiles)
+      }
+    })
+  }
+
+  // Creates a new <tr> with named data-bind slots. Called once per new node.
+  private _createRow(node: ClusterNode): HTMLTableRowElement {
+    const pending = `<span style="color:var(--secondary-text-color)">…</span>`
+    const tr      = document.createElement('tr')
+    tr.dataset.nodeId = node.nodeId
+    if (node.nodeId === this._selectedNodeId) tr.classList.add('selected')
+    tr.innerHTML = `
+      <td class="cn-hostname">${node.hostname || node.nodeId}</td>
+      <td data-bind="profiles">${profileTags(node.profiles)}</td>
+      <td class="cn-node-id">${node.nodeId}</td>
+      <td data-bind="reachable">${pending}</td>
+      <td data-bind="age" style="color:var(--secondary-text-color)">…</td>
+      <td data-bind="findings">${pending}</td>
+      <td data-bind="severity">${pending}</td>`
+    tr.addEventListener('click', () => this._onRowClick(node.nodeId))
+    return tr
+  }
+
+  // ── Data push — writes report data into existing slots ────────────────────
+
+  private _pushReportToRow(nodeId: string) {
+    const row = this._rows.find(r => r.node.nodeId === nodeId)
+    if (!row) return
+
+    const tr = this.querySelector(`tr[data-node-id="${CSS.escape(nodeId)}"]`) as HTMLElement | null
+    if (!tr) return
+
+    const set = (bind: string, html: string) => {
+      const el = tr.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+      if (el) el.innerHTML = html
+    }
+
+    const r      = row.report
+    const wSev   = r ? worstSeverity(r.findings) : 0
+    const fCount = r ? r.findings.length : 0
+
+    set('reachable', r
+      ? badge(r.reachable ? 'REACHABLE' : 'UNREACHABLE', r.reachable ? 'var(--success-color)' : 'var(--error-color)')
+      : row.error ? badge('UNAVAIL', 'var(--secondary-text-color)') : `<span style="color:var(--secondary-text-color)">…</span>`)
+
+    set('age', r
+      ? ageLabel(r.heartbeatAgeSeconds)
+      : row.error ? '—' : '…')
+
+    set('findings', r
+      ? (fCount > 0 ? `<span style="font-weight:600">${fCount}</span>` : `<span style="color:var(--secondary-text-color)">0</span>`)
+      : row.error ? '—' : `<span style="color:var(--secondary-text-color)">…</span>`)
+
+    set('severity', r
+      ? (wSev > 0 ? badge(sevLabel(wSev), sevColor(wSev)) : `<span style="color:var(--success-color)">✓ OK</span>`)
+      : row.error ? `<span style="color:var(--secondary-text-color)">${row.error}</span>` : `<span style="color:var(--secondary-text-color)">…</span>`)
+
+    // If this node's detail panel is open, refresh it with the new report.
+    if (nodeId === this._selectedNodeId && (r || row.error)) {
+      this._renderDetail()
+    }
+  }
+
+  // ── Row selection ──────────────────────────────────────────────────────────
+
+  private _onRowClick(nodeId: string) {
+    if (this._selectedNodeId === nodeId) {
+      this._selectedNodeId = ''
+      this._healthDetail   = null
+    } else {
+      this._selectedNodeId = nodeId
+      this._loadHealthDetail(nodeId)
+    }
+    this._editingProfiles = false
+    this._saveError       = ''
+    this._renderDetail()
+    this.querySelectorAll('#cn-tbody tr[data-node-id]').forEach(r =>
+      r.classList.toggle('selected', (r as HTMLElement).dataset.nodeId === this._selectedNodeId)
+    )
+  }
+
+  // ── Health detail ──────────────────────────────────────────────────────────
+
+  private async _loadHealthDetail(nodeId: string) {
+    this._healthLoading = true
+    this._healthError   = ''
+    this._healthDetail  = null
+    this._renderDetail()
+    try {
+      this._healthDetail = await getNodeHealthDetail(nodeId)
+    } catch (e: any) {
+      this._healthError = e?.message || 'Health detail unavailable'
+    }
+    this._healthLoading = false
+    this._renderDetail()
+  }
+
+  // ── Detail panel — rebuilt only on explicit row click or health arrival ────
+
+  private _renderDetail() {
+    const el = this.querySelector('#cn-detail') as HTMLElement
+    if (!el) return
+
+    if (!this._selectedNodeId) { el.innerHTML = ''; return }
 
     const row = this._rows.find(r => r.node.nodeId === this._selectedNodeId)
     if (!row) { el.innerHTML = ''; return }
 
-    const r = row.report
+    const r       = row.report
     const rActive = r ? activeFindings(r.findings) : []
+
     if (!r) {
       el.innerHTML = `
         <div class="md-panel">
           <div class="md-panel-header"><span>Findings — ${row.node.hostname || this._selectedNodeId}</span></div>
-          <p class="cn-empty">ClusterDoctor unavailable for this node: ${row.error}</p>
+          <p class="cn-empty">${row.error ? `ClusterDoctor unavailable: ${row.error}` : 'Loading…'}</p>
         </div>`
       return
     }
@@ -344,9 +396,8 @@ class PageClusterNodes extends HTMLElement {
            <input id="profileInput" type="text"
              value="${row.node.profiles.join(', ')}"
              placeholder="core, control-plane, storage, gateway"
-             style="flex:1;min-width:200px;padding:4px 8px;border:1px solid var(--border-subtle-color);border-radius:6px;background:var(--surface-color);color:var(--on-surface-color);font-size:.84rem;"
-           >
-           <button type="submit" id="btnSaveProfiles" style="padding:3px 10px;border-radius:6px;border:none;background:var(--accent-color);color:#fff;font-size:.78rem;cursor:pointer;${this._savingProfiles ? 'opacity:.6;' : ''}">
+             style="flex:1;min-width:200px;padding:4px 8px;border:1px solid var(--border-subtle-color);border-radius:6px;background:var(--surface-color);color:var(--on-surface-color);font-size:.84rem;">
+           <button type="submit" style="padding:3px 10px;border-radius:6px;border:none;background:var(--accent-color);color:#fff;font-size:.78rem;cursor:pointer;${this._savingProfiles ? 'opacity:.6;' : ''}">
              ${this._savingProfiles ? 'Saving…' : 'Save'}
            </button>
            <button type="button" id="btnCancelProfiles" style="padding:3px 10px;border-radius:6px;border:1px solid var(--border-subtle-color);background:transparent;color:var(--on-surface-color);font-size:.78rem;cursor:pointer;">
@@ -355,50 +406,31 @@ class PageClusterNodes extends HTMLElement {
            ${this._saveError ? `<span style="font-size:.78rem;color:var(--error-color)">${this._saveError}</span>` : ''}
          </form>`
       : `${profileTags(row.node.profiles)}
-         <button id="btnEditProfiles" style="margin-left:8px;padding:2px 8px;border-radius:6px;border:1px solid var(--border-subtle-color);background:transparent;color:var(--secondary-text-color);font-size:.72rem;cursor:pointer;">
-           Edit
-         </button>`
+         <button id="btnEditProfiles" style="margin-left:8px;padding:2px 8px;border-radius:6px;border:1px solid var(--border-subtle-color);background:transparent;color:var(--secondary-text-color);font-size:.72rem;cursor:pointer;">Edit</button>`
 
-    // Build health detail section
     const hd = this._healthDetail
     const healthSection = this._healthLoading
-      ? `<div class="cn-section-label">Health Checks</div>
-         <p class="cn-empty">Loading health detail…</p>`
+      ? `<div class="cn-section-label">Health Checks</div><p class="cn-empty">Loading health detail…</p>`
       : this._healthError
-        ? `<div class="cn-section-label">Health Checks</div>
-           <p class="cn-empty">Could not load health detail: ${this._healthError}</p>`
+        ? `<div class="cn-section-label">Health Checks</div><p class="cn-empty">Could not load health detail: ${this._healthError}</p>`
         : hd ? `
            <div class="cn-section-label">
              Health Checks — ${statusBadge(hd.overallStatus)}
-             ${hd.inventoryComplete ? '' : ' <span style="color:#f59e0b;font-size:.72rem;font-weight:400">(inventory incomplete)</span>'}
+             ${hd.inventoryComplete ? '' : '<span style="color:#f59e0b;font-size:.72rem;font-weight:400"> (inventory incomplete)</span>'}
            </div>
-           <table class="md-table">
-             <thead>
-               <tr>
-                 <th></th>
-                 <th>Subsystem</th>
-                 <th>Status</th>
-                 <th>Reason</th>
-               </tr>
-             </thead>
-             <tbody>
-               ${hd.checks.map((c: NodeHealthCheck) => {
-                 const staleHashDrift =
-                   !c.ok &&
-                   c.reason.toLowerCase().includes('hash_drift') &&
-                   !rActive.some(f => f.summary.toLowerCase().includes('hash_drift'))
-                 return `
-               <tr>
-                 <td><span class="cn-check-icon ${(c.ok || staleHashDrift) ? 'cn-check-ok' : 'cn-check-fail'}">${(c.ok || staleHashDrift) ? '✓' : '✕'}</span></td>
+           <table class="md-table"><thead><tr><th></th><th>Subsystem</th><th>Status</th><th>Reason</th></tr></thead>
+           <tbody>
+             ${hd.checks.map((c: NodeHealthCheck) => {
+               const stale = !c.ok && c.reason.toLowerCase().includes('hash_drift') &&
+                 !rActive.some(f => f.summary.toLowerCase().includes('hash_drift'))
+               return `<tr>
+                 <td><span class="cn-check-icon ${c.ok || stale ? 'cn-check-ok' : 'cn-check-fail'}">${c.ok || stale ? '✓' : '✕'}</span></td>
                  <td style="font-family:monospace;font-size:.78rem">${c.subsystem}</td>
-                 <td>${(c.ok || staleHashDrift)
-                   ? badge('OK', 'var(--success-color)')
-                   : badge('FAIL', 'var(--error-color)')
-                 }</td>
-                 <td style="font-size:.82rem;color:var(--secondary-text-color)">${staleHashDrift ? 'stale hash_drift check text (current findings are clean)' : (c.reason || '—')}</td>
-               </tr>`}).join('')}
-             </tbody>
-           </table>` : ''
+                 <td>${c.ok || stale ? badge('OK', 'var(--success-color)') : badge('FAIL', 'var(--error-color)')}</td>
+                 <td style="font-size:.82rem;color:var(--secondary-text-color)">${stale ? 'stale hash_drift (current findings are clean)' : c.reason || '—'}</td>
+               </tr>`
+             }).join('')}
+           </tbody></table>` : ''
 
     el.innerHTML = `
       <div class="cn-detail-panel">
@@ -416,26 +448,16 @@ class PageClusterNodes extends HTMLElement {
             ${capsLine(row.node.capabilities)}
           </div>
         </div>
-
         ${healthSection}
-
         ${rActive.length > 0 ? `
         <div class="cn-section-label">Diagnostic Findings</div>
         <table class="md-table">
-          <thead>
-            <tr>
-              <th>Severity</th>
-              <th>Invariant</th>
-              <th>Summary</th>
-              <th>Evidence</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Severity</th><th>Invariant</th><th>Summary</th><th>Evidence</th></tr></thead>
           <tbody>
             ${rActive.map((f: Finding) => {
               const kv = f.evidence.length > 0 ? f.evidence[0].keyValues : {}
               const kvPairs = Object.entries(kv).slice(0, 4).map(([k, v]) => `${k}=${v}`).join(' ')
-              return `
-              <tr>
+              return `<tr>
                 <td>${badge(sevLabel(f.severity), sevColor(f.severity))}</td>
                 <td style="font-family:monospace;font-size:.78rem">${f.invariantId}</td>
                 <td>${f.summary}</td>
@@ -443,45 +465,54 @@ class PageClusterNodes extends HTMLElement {
               </tr>`
             }).join('')}
           </tbody>
-        </table>
-        ` : `<p class="cn-empty">✓ No findings for this node.</p>`}
-      </div>
-    `
+        </table>` : `<p class="cn-empty">✓ No findings for this node.</p>`}
+      </div>`
 
-    // Wire profile edit controls
     el.querySelector('#btnEditProfiles')?.addEventListener('click', () => {
-      this._editingProfiles = true
-      this._saveError = ''
-      this.renderDetail()
+      this._editingProfiles = true; this._saveError = ''; this._renderDetail()
     })
-
     el.querySelector('#btnCancelProfiles')?.addEventListener('click', () => {
-      this._editingProfiles = false
-      this._saveError = ''
-      this.renderDetail()
+      this._editingProfiles = false; this._saveError = ''; this._renderDetail()
     })
-
-    el.querySelector('#profileEditForm')?.addEventListener('submit', async (e) => {
+    el.querySelector('#profileEditForm')?.addEventListener('submit', async e => {
       e.preventDefault()
-      const input = (el.querySelector('#profileInput') as HTMLInputElement)?.value ?? ''
+      const input    = (el.querySelector('#profileInput') as HTMLInputElement)?.value ?? ''
       const profiles = input.split(',').map(s => s.trim()).filter(Boolean)
-      this._savingProfiles = true
-      this._saveError = ''
-      this.renderDetail()
+      this._savingProfiles = true; this._saveError = ''; this._renderDetail()
       try {
         await setNodeProfiles(this._selectedNodeId, profiles)
+        this._savingProfiles  = false
         this._editingProfiles = false
-        this._savingProfiles = false
-        // Update the local row so the table reflects the change immediately
         const rowIdx = this._rows.findIndex(r => r.node.nodeId === this._selectedNodeId)
-        if (rowIdx >= 0) this._rows[rowIdx].node.profiles = profiles
-        this.render()
+        if (rowIdx >= 0) {
+          this._rows[rowIdx].node.profiles = profiles
+          // Update the profiles slot in the table row directly — no full rebuild.
+          const profileSlot = this.querySelector(
+            `tr[data-node-id="${CSS.escape(this._selectedNodeId)}"] [data-bind="profiles"]`
+          ) as HTMLElement | null
+          if (profileSlot) profileSlot.innerHTML = profileTags(profiles)
+        }
+        this._renderDetail()
       } catch (err: any) {
         this._savingProfiles = false
-        this._saveError = err?.message || 'Failed to save profiles'
-        this.renderDetail()
+        this._saveError      = err?.message || 'Failed to save profiles'
+        this._renderDetail()
       }
     })
+  }
+
+  // ── Error banner helpers ───────────────────────────────────────────────────
+
+  private _showError(msg: string) {
+    const el = this.querySelector('#cn-error') as HTMLElement | null
+    if (!el) return
+    el.style.display = ''
+    el.innerHTML = `${msg}<br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>`
+  }
+
+  private _hideError() {
+    const el = this.querySelector('#cn-error') as HTMLElement | null
+    if (el) el.style.display = 'none'
   }
 }
 
