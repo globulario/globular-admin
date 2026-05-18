@@ -121,17 +121,20 @@ class PageInfrastructureControlPlane extends HTMLElement {
   }
 
   private async _load() {
-    const [svcR, clR, v1R, rpR] = await Promise.allSettled([
-      fetchAdminServices(),
-      getClusterHealth(),
-      getClusterHealthV1Full(),
-      getClusterReport(),
-    ])
+    const svcP = fetchAdminServices()
+    const clP  = getClusterHealth()
+    const v1P  = getClusterHealthV1Full()
+    const rpP  = getClusterReport()
 
-    this._services  = svcR.status === 'fulfilled' ? svcR.value : null
-    this._cluster   = clR.status  === 'fulfilled' ? clR.value  : null
-    this._clusterV1 = v1R.status  === 'fulfilled' ? v1R.value  : null
-    this._report    = rpR.status  === 'fulfilled' ? rpR.value  : null
+    // Fast calls render immediately on arrival.
+    clP .then(v => { this._cluster  = v; this._pushData() }).catch(() => {})
+    svcP.then(v => { this._services = v; this._pushData() }).catch(() => {})
+    // Slow calls (diagnostics) don't gate the initial display.
+    v1P.then(v => { this._clusterV1 = v }).catch(() => {})
+    rpP.then(v => { this._report    = v }).catch(() => {})
+
+    await Promise.allSettled([svcP, clP, v1P, rpP])
+
     this._lastUpdated = new Date()
     _cache.data = {
       services: this._services, cluster: this._cluster,
