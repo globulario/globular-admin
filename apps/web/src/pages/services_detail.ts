@@ -92,6 +92,7 @@ const STYLES = `
 // ─── Component ──────────────────────────────────────────────────────────────
 
 class PageServicesDetail extends HTMLElement {
+  private _built = false
   private _name = ''
   private _service: ServiceDesc | null = null
   private _loading = true
@@ -104,7 +105,7 @@ class PageServicesDetail extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._name = this.getAttribute('service-name') || ''
-    this.render()
+    this._buildShell()
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -113,11 +114,58 @@ class PageServicesDetail extends HTMLElement {
     if (this._refreshTimer) { clearInterval(this._refreshTimer); this._refreshTimer = null }
   }
 
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+
+    this.innerHTML = `
+      <style>${STYLES}</style>
+      <div class="sd-wrap">
+        <a class="sd-back" href="#/services/instances">&larr; Services</a>
+
+        <div class="sd-header" style="margin-top: 8px;">
+          <h2>${escHtml(this._name || 'Unknown Service')}</h2>
+          <span data-bind="state-badge"></span>
+          <div style="flex:1"></div>
+          <button class="sd-btn" id="sdRefresh">&circlearrowright; Refresh</button>
+        </div>
+        <p class="sd-subtitle" data-bind="subtitle">Service configuration and recent errors.</p>
+
+        <p id="sd-loading" class="sd-empty" style="display:none">Loading…</p>
+
+        <div id="sd-config-error" class="md-banner-warn" style="display:none">
+          Could not load service config — <span data-bind="config-error-msg"></span>
+          <br><span style="font-size:.8em;opacity:.8">Ensure the gateway is reachable.</span>
+        </div>
+
+        <div id="sd-not-found" class="md-banner-warn" style="display:none">
+          Service <code>${escHtml(this._name)}</code> not found in the gateway configuration.
+        </div>
+
+        <div data-bind="config-panel"></div>
+
+        <div data-bind="errors-panel"></div>
+
+        <p class="sd-status">Auto-refresh 30s</p>
+      </div>
+    `
+
+    this.querySelector('#sdRefresh')?.addEventListener('click', () => this._load())
+  }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
   private async _load() {
     await Promise.allSettled([this._loadConfig(), this._loadErrors()])
   }
 
   private async _loadConfig() {
+    const loadingEl = this.querySelector('#sd-loading') as HTMLElement | null
+    if (loadingEl) loadingEl.style.display = ''
+
     try {
       const cfg = await getConfig()
       const svcs = cfg?.Services ?? {}
@@ -136,11 +184,13 @@ class PageServicesDetail extends HTMLElement {
       this._loadError = e?.message || 'Could not reach gateway /config'
     }
     this._loading = false
-    this.render()
+    if (loadingEl) loadingEl.style.display = 'none'
+    this._pushConfig()
   }
 
   private async _loadErrors() {
     this._errorsLoading = true
+    this._pushErrors()
     try {
       this._errors = await queryLogs({ application: this._name, level: 'error', limit: 10, order: 'desc' })
       this._errorsError = ''
@@ -149,49 +199,40 @@ class PageServicesDetail extends HTMLElement {
       this._errors = []
     }
     this._errorsLoading = false
-    this.render()
+    this._pushErrors()
   }
 
-  private render() {
+  private _pushConfig() {
     const s = this._service
 
-    this.innerHTML = `
-      <style>${STYLES}</style>
-      <div class="sd-wrap">
-        <a class="sd-back" href="#/services/instances">&larr; Services</a>
+    // State badge and subtitle
+    this._set('state-badge', s ? stateBadge(s.State ?? '') : '')
+    this._set('subtitle', s?.Description ? escHtml(s.Description) : 'Service configuration and recent errors.')
 
-        <div class="sd-header" style="margin-top: 8px;">
-          <h2>${escHtml(this._name || 'Unknown Service')}</h2>
-          ${s ? stateBadge(s.State ?? '') : ''}
-          <div style="flex:1"></div>
-          <button class="sd-btn" id="sdRefresh">&circlearrowright; Refresh</button>
-        </div>
-        <p class="sd-subtitle">${s?.Description ? escHtml(s.Description) : 'Service configuration and recent errors.'}</p>
+    // Config error banner
+    const configErrorEl = this.querySelector('#sd-config-error') as HTMLElement | null
+    if (configErrorEl) {
+      if (this._loadError) {
+        const msgEl = configErrorEl.querySelector('[data-bind="config-error-msg"]') as HTMLElement | null
+        if (msgEl) msgEl.textContent = this._loadError
+        configErrorEl.style.display = ''
+      } else {
+        configErrorEl.style.display = 'none'
+      }
+    }
 
-        ${this._loading ? `<p class="sd-empty">Loading…</p>` : ''}
+    // Not-found banner
+    const notFoundEl = this.querySelector('#sd-not-found') as HTMLElement | null
+    if (notFoundEl) {
+      notFoundEl.style.display = (!this._loading && !this._loadError && !s) ? '' : 'none'
+    }
 
-        ${this._loadError ? `
-          <div class="md-banner-warn">
-            Could not load service config — ${escHtml(this._loadError)}
-            <br><span style="font-size:.8em;opacity:.8">Ensure the gateway is reachable.</span>
-          </div>
-        ` : ''}
+    // Config panel
+    this._set('config-panel', s ? this._renderConfig(s) : '')
+  }
 
-        ${!this._loading && !this._loadError && !s ? `
-          <div class="md-banner-warn">
-            Service <code>${escHtml(this._name)}</code> not found in the gateway configuration.
-          </div>
-        ` : ''}
-
-        ${s ? this._renderConfig(s) : ''}
-
-        ${this._renderErrors()}
-
-        <p class="sd-status">Auto-refresh 30s</p>
-      </div>
-    `
-
-    this.querySelector('#sdRefresh')?.addEventListener('click', () => this._load())
+  private _pushErrors() {
+    this._set('errors-panel', this._renderErrors())
   }
 
   private _renderConfig(s: ServiceDesc): string {

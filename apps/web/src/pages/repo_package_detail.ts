@@ -215,19 +215,118 @@ class PageRepoPackageDetail extends HTMLElement {
   private _activeTab: TabName = 'overview'
   private _versionsLoaded = false
   private _installedLoaded = false
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
     this._publisher = this.getAttribute('publisher') || ''
     this._pkgName = this.getAttribute('pkg-name') || ''
-    this.render()
-    this.load()
+    this._buildShell()
+    this._pushData()
+    this._load()
   }
 
-  private async load() {
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+    this.innerHTML = `
+      <style>
+        .pkg-detail { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+
+        /* back link */
+        .back-link {
+          display: inline-flex; align-items: center; gap: 6px;
+          font: var(--md-typescale-label-large); color: var(--accent-color);
+          text-decoration: none; cursor: pointer; padding: 4px 0;
+        }
+        .back-link:hover { text-decoration: underline; }
+
+        /* header block */
+        .pkg-header { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+        .pkg-header-info { flex: 1; min-width: 200px; }
+        .pkg-header-info h2 { margin: 0 0 4px; font: var(--md-typescale-headline-small); }
+        .pkg-alias-line { font: var(--md-typescale-body-medium); color: var(--secondary-text-color); margin-bottom: 8px; }
+        .pkg-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+        .pkg-meta { font: var(--md-typescale-body-small); color: var(--secondary-text-color); display: flex; gap: 16px; flex-wrap: wrap; }
+        .pkg-meta span { white-space: nowrap; }
+        .pkg-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; flex-shrink: 0; }
+
+        /* tab bar */
+        .tab-bar {
+          display: flex; gap: 0; border-bottom: 2px solid var(--border-subtle-color);
+        }
+        .tab-btn {
+          padding: 10px 20px; background: none; border: none; border-bottom: 2px solid transparent;
+          margin-bottom: -2px; cursor: pointer; font: var(--md-typescale-label-large);
+          color: var(--secondary-text-color); transition: color .12s, border-color .12s;
+        }
+        .tab-btn:hover { color: var(--on-surface-color); }
+        .tab-btn.active {
+          color: var(--accent-color); border-bottom-color: var(--accent-color); font-weight: 700;
+        }
+
+        /* detail grid (key/value rows) */
+        .detail-grid { display: flex; flex-direction: column; gap: 10px; }
+        .detail-row { display: flex; gap: 12px; align-items: baseline; }
+        .detail-label {
+          min-width: 140px; flex-shrink: 0;
+          font: var(--md-typescale-label-medium); text-transform: uppercase;
+          letter-spacing: .05em; color: var(--secondary-text-color);
+          font-size: .72rem;
+        }
+        .detail-value { font: var(--md-typescale-body-medium); color: var(--on-surface-color); }
+        .detail-value.mono { font-family: monospace; font-size: .8rem; }
+
+        /* manifest pre */
+        .manifest-pre {
+          margin: 0; padding: 16px; overflow: auto; max-height: 600px;
+          font-family: monospace; font-size: .78rem; line-height: 1.5;
+          color: var(--on-surface-color); background: var(--md-surface-container-lowest);
+          white-space: pre-wrap; word-break: break-all;
+        }
+
+        /* loading / error / empty */
+        .loading-msg { color: var(--secondary-text-color); font-size: .85rem; font-style: italic; padding: 16px; }
+
+        /* confirmation modal */
+        .pkg-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,.45);
+          display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .pkg-modal {
+          background: var(--md-surface-container-low, var(--surface-color, #fff));
+          border-radius: 16px; padding: 24px; min-width: 360px; max-width: 480px;
+          box-shadow: 0 8px 32px rgba(0,0,0,.25);
+        }
+        .pkg-modal-title {
+          font: var(--md-typescale-title-large, 600 1.1rem/1.3 sans-serif);
+          margin: 0 0 16px;
+        }
+        .pkg-modal-body { margin-bottom: 20px; font: var(--md-typescale-body-medium); }
+        .pkg-modal-body p { margin: 0 0 8px; }
+        .pkg-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+      </style>
+      <div class="pkg-detail">
+        <a class="back-link" id="btnBack">&larr; Back to Catalog</a>
+        <div data-bind="main-content"></div>
+      </div>
+      <div data-bind="modal-slot"></div>
+    `
+    this.querySelector('#btnBack')?.addEventListener('click', (ev) => {
+      ev.preventDefault()
+      window.location.hash = '#/repository/catalog'
+    })
+  }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private async _load() {
     this._loading = true
     this._error = ''
-    this.render()
+    this._pushData()
 
     await _backendReady
 
@@ -261,7 +360,7 @@ class PageRepoPackageDetail extends HTMLElement {
     }
 
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   private async loadVersions() {
@@ -323,7 +422,7 @@ class PageRepoPackageDetail extends HTMLElement {
     if (tab === 'installed' && !this._installedLoaded) {
       await this.loadInstalled()
     }
-    this.render()
+    this._pushData()
   }
 
   private async handleDelete() {
@@ -333,7 +432,7 @@ class PageRepoPackageDetail extends HTMLElement {
 
     if (!deleteArtifact) {
       this._error = 'Delete is not available in this build (proto stubs pending).'
-      this.render()
+      this._pushData()
       return
     }
 
@@ -346,7 +445,7 @@ class PageRepoPackageDetail extends HTMLElement {
       onConfirm: async () => {
         this._modalBusy = true
         this._modalBody = `<p style="font-style:italic;color:var(--secondary-text-color)">Deleting…</p>`
-        this.render()
+        this._pushData()
         try {
           await deleteArtifact!(ref, false)
           this.closeModal()
@@ -363,7 +462,7 @@ class PageRepoPackageDetail extends HTMLElement {
             this._modalConfirmFn = async () => {
               this._modalBusy = true
               this._modalBody = `<p style="font-style:italic;color:var(--secondary-text-color)">Force deleting…</p>`
-              this.render()
+              this._pushData()
               try {
                 await deleteArtifact!(ref, true)
                 this.closeModal()
@@ -371,14 +470,14 @@ class PageRepoPackageDetail extends HTMLElement {
               } catch (e2: any) {
                 this._modalBusy = false
                 this._modalBody = `<div class="md-banner-error">${escHtml(e2?.message || 'Force delete failed')}</div>`
-                this.render()
+                this._pushData()
               }
             }
-            this.render()
+            this._pushData()
           } else {
             this._modalBusy = false
             this._modalBody = `<div class="md-banner-error">${escHtml(msg || 'Delete failed')}</div>`
-            this.render()
+            this._pushData()
           }
         }
       },
@@ -399,7 +498,7 @@ class PageRepoPackageDetail extends HTMLElement {
     this._modalConfirmDanger = opts.danger || false
     this._modalBusy = false
     this._modalConfirmFn = opts.onConfirm
-    this.render()
+    this._pushData()
   }
 
   private closeModal() {
@@ -408,7 +507,7 @@ class PageRepoPackageDetail extends HTMLElement {
     this._modalBody = ''
     this._modalBusy = false
     this._modalConfirmFn = null
-    this.render()
+    this._pushData()
   }
 
   private async handleInstall(name: string, version: string) {
@@ -423,7 +522,7 @@ class PageRepoPackageDetail extends HTMLElement {
       onConfirm: async () => {
         this._modalBusy = true
         this._modalBody = `<p style="font-style:italic;color:var(--secondary-text-color)">Installing…</p>`
-        this.render()
+        this._pushData()
         try {
           await upsertDesiredService(name, version)
           const nodes = await listClusterNodes()
@@ -436,7 +535,7 @@ class PageRepoPackageDetail extends HTMLElement {
         } catch (e: unknown) {
           this._modalBusy = false
           this._modalBody = `<div class="md-banner-error">${escHtml(normalizeError(e).message)}</div>`
-          this.render()
+          this._pushData()
         }
       },
     })
@@ -798,96 +897,14 @@ class PageRepoPackageDetail extends HTMLElement {
     `
   }
 
-  private render() {
+  private _pushData() {
     const m = this._manifest
     const e = m ? ext(m) : {}
     const ref = m?.ref
     const kind = this.kind
     const label = this.kindStr
 
-    this.innerHTML = `
-      <style>
-        .pkg-detail { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
-
-        /* back link */
-        .back-link {
-          display: inline-flex; align-items: center; gap: 6px;
-          font: var(--md-typescale-label-large); color: var(--accent-color);
-          text-decoration: none; cursor: pointer; padding: 4px 0;
-        }
-        .back-link:hover { text-decoration: underline; }
-
-        /* header block */
-        .pkg-header { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-        .pkg-header-info { flex: 1; min-width: 200px; }
-        .pkg-header-info h2 { margin: 0 0 4px; font: var(--md-typescale-headline-small); }
-        .pkg-alias-line { font: var(--md-typescale-body-medium); color: var(--secondary-text-color); margin-bottom: 8px; }
-        .pkg-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
-        .pkg-meta { font: var(--md-typescale-body-small); color: var(--secondary-text-color); display: flex; gap: 16px; flex-wrap: wrap; }
-        .pkg-meta span { white-space: nowrap; }
-        .pkg-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; flex-shrink: 0; }
-
-        /* tab bar */
-        .tab-bar {
-          display: flex; gap: 0; border-bottom: 2px solid var(--border-subtle-color);
-        }
-        .tab-btn {
-          padding: 10px 20px; background: none; border: none; border-bottom: 2px solid transparent;
-          margin-bottom: -2px; cursor: pointer; font: var(--md-typescale-label-large);
-          color: var(--secondary-text-color); transition: color .12s, border-color .12s;
-        }
-        .tab-btn:hover { color: var(--on-surface-color); }
-        .tab-btn.active {
-          color: var(--accent-color); border-bottom-color: var(--accent-color); font-weight: 700;
-        }
-
-        /* detail grid (key/value rows) */
-        .detail-grid { display: flex; flex-direction: column; gap: 10px; }
-        .detail-row { display: flex; gap: 12px; align-items: baseline; }
-        .detail-label {
-          min-width: 140px; flex-shrink: 0;
-          font: var(--md-typescale-label-medium); text-transform: uppercase;
-          letter-spacing: .05em; color: var(--secondary-text-color);
-          font-size: .72rem;
-        }
-        .detail-value { font: var(--md-typescale-body-medium); color: var(--on-surface-color); }
-        .detail-value.mono { font-family: monospace; font-size: .8rem; }
-
-        /* manifest pre */
-        .manifest-pre {
-          margin: 0; padding: 16px; overflow: auto; max-height: 600px;
-          font-family: monospace; font-size: .78rem; line-height: 1.5;
-          color: var(--on-surface-color); background: var(--md-surface-container-lowest);
-          white-space: pre-wrap; word-break: break-all;
-        }
-
-        /* loading / error / empty */
-        .loading-msg { color: var(--secondary-text-color); font-size: .85rem; font-style: italic; padding: 16px; }
-
-        /* confirmation modal */
-        .pkg-modal-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,.45);
-          display: flex; align-items: center; justify-content: center; z-index: 1000;
-        }
-        .pkg-modal {
-          background: var(--md-surface-container-low, var(--surface-color, #fff));
-          border-radius: 16px; padding: 24px; min-width: 360px; max-width: 480px;
-          box-shadow: 0 8px 32px rgba(0,0,0,.25);
-        }
-        .pkg-modal-title {
-          font: var(--md-typescale-title-large, 600 1.1rem/1.3 sans-serif);
-          margin: 0 0 16px;
-        }
-        .pkg-modal-body { margin-bottom: 20px; font: var(--md-typescale-body-medium); }
-        .pkg-modal-body p { margin: 0 0 8px; }
-        .pkg-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-      </style>
-
-      <div class="pkg-detail">
-
-        <!-- Back link -->
-        <a class="back-link" id="btnBack">&larr; Back to Catalog</a>
-
+    this._set('main-content', `
         ${this._loading ? '<div class="loading-msg">Loading package details...</div>' : ''}
 
         ${this._error ? `
@@ -944,10 +961,9 @@ class PageRepoPackageDetail extends HTMLElement {
           ${this._activeTab === 'audit'       ? this.renderAuditTab()       : ''}
         </div>
         ` : ''}
+    `)
 
-      </div>
-
-      ${this._modalOpen ? `
+    this._set('modal-slot', this._modalOpen ? `
       <div class="pkg-modal-overlay" id="pkgModalOverlay">
         <div class="pkg-modal">
           <div class="pkg-modal-title">${this._modalTitle}</div>
@@ -960,20 +976,17 @@ class PageRepoPackageDetail extends HTMLElement {
             </button>
           </div>
         </div>
-      </div>` : ''}
-    `
+      </div>` : '')
 
-    // Wire up events
-    this.querySelector('#btnBack')?.addEventListener('click', (ev) => {
-      ev.preventDefault()
-      window.location.hash = '#/repository/catalog'
-    })
+    this._bindContentEvents()
+  }
 
+  private _bindContentEvents() {
     this.querySelector('#btnRetry')?.addEventListener('click', () => {
       this._error = ''
       this._loading = true
-      this.render()
-      this.load()
+      this._pushData()
+      this._load()
     })
 
     this.querySelector('#btnInstall')?.addEventListener('click', () => {
@@ -1049,6 +1062,9 @@ class PageRepoPackageDetail extends HTMLElement {
       })
     })
   }
+
+  /** @deprecated Use _pushData() */
+  private render() { this._pushData() }
 }
 
 customElements.define('page-repo-package-detail', PageRepoPackageDetail)

@@ -17,9 +17,22 @@ class PageInfrastructureObservability extends HTMLElement {
   private _lastUpdated: Date | null = null
   private _prometheus: PrometheusScrapeHealth | null = null
   private _services: ServicesResponse | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._timer = window.setInterval(() => this._load(), POLL)
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${INFRA_STYLES}</style>
       <section class="wrap">
@@ -38,16 +51,10 @@ class PageInfrastructureObservability extends HTMLElement {
         <div id="obLinks"></div>
       </section>
     `
-    this.querySelector('#obRefresh')?.addEventListener('click', () => this.load())
-    this.load()
-    this._timer = window.setInterval(() => this.load(), POLL)
+    this.querySelector('#obRefresh')?.addEventListener('click', () => this._load())
   }
 
-  disconnectedCallback() {
-    if (this._timer) clearInterval(this._timer)
-  }
-
-  private async load() {
+  private async _load() {
     const [prR, svcR] = await Promise.allSettled([
       getPrometheusScrapeHealth(),
       fetchAdminServices(),
@@ -55,10 +62,10 @@ class PageInfrastructureObservability extends HTMLElement {
     this._prometheus = prR.status === 'fulfilled' ? prR.value : null
     this._services   = svcR.status === 'fulfilled' ? svcR.value : null
     this._lastUpdated = new Date()
-    this.render()
+    this._pushData()
   }
 
-  private render() {
+  private _pushData() {
     const tsEl = this.querySelector('#obTimestamp') as HTMLElement
     if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
     const freshEl = this.querySelector('#obFreshness') as HTMLElement

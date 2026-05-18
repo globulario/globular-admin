@@ -244,6 +244,7 @@ export class WorkflowDetailPanel extends HTMLElement {
   private _selectedStep: WorkflowStep | null = null
   private _fullscreen = false
   private _pollTimer: number | null = null
+  private _built = false
 
   static get observedAttributes() { return ['cluster-id', 'node-id', 'node-hostname', 'component-name', 'run-id'] }
 
@@ -260,7 +261,8 @@ export class WorkflowDetailPanel extends HTMLElement {
   connectedCallback() {
     // Defer load to next microtask so all setAttribute() calls complete first.
     queueMicrotask(() => {
-      this.render()
+      this._buildShell()
+      this._pushData()
       if (this._clusterId && this._componentName) this.loadLatest()
     })
   }
@@ -307,8 +309,69 @@ export class WorkflowDetailPanel extends HTMLElement {
           try { this._diagnosis = await diagnoseWorkflowRun(this._clusterId, runId) } catch {}
         }
       }
-      this.render()
+      // Targeted patch: update only the status badge, SVG flowchart, and sidebar.
+      // The modal overlay structure (.wf-overlay > .wf-panel) is not rebuilt.
+      this._patchRunSlots()
     } catch { /* silent — will retry on next tick */ }
+  }
+
+  /** Push updated run data into data-bind slots without rebuilding the modal shell. */
+  private _patchRunSlots() {
+    const run = this._run
+    if (!run) return
+
+    // Patch status badge
+    const badge = this.querySelector<HTMLElement>('.wf-badge')
+    if (badge) {
+      badge.textContent = runStatusLabel(run.status)
+      badge.style.background = runStatusColor(run.status)
+    }
+
+    // Patch SVG flowchart inside .wf-flow
+    const flowEl = this.querySelector<HTMLElement>('.wf-flow')
+    if (flowEl) {
+      const estW = this._fullscreen ? (window.innerWidth - 300 - 32) : Math.min(1200 - 300 - 32, window.innerWidth - 64)
+      const lanes = lanesFromSteps(this._steps)
+      const L = makeLayout(Math.max(600, estW), lanes)
+      const { svg, height } = buildFlowchart(this._steps, this._selectedStep?.seq ?? -1, L)
+      const svgW = MARGIN_L + L.totalW + MARGIN_L
+      flowEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${height}" viewBox="0 0 ${svgW} ${height}">${svg}</svg>`
+      // Re-bind step click handlers on new SVG elements
+      flowEl.querySelectorAll<HTMLElement>('[data-step-seq]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation()
+          this._selectedStep = this._steps.find(s => s.seq === parseInt(el.dataset.stepSeq ?? '0')) ?? null
+          this._patchRunSlots()
+        })
+      })
+    }
+
+    // Patch sidebar: step detail + diagnosis + actions
+    const sb = this.querySelector<HTMLElement>('.wf-sb')
+    if (sb) {
+      const isFailed = run.status === 9 || run.status === 11
+      sb.innerHTML = `
+        ${this._selectedStep ? this.renderDetail(this._selectedStep) : '<div class="wf-hint">Click a step to inspect</div>'}
+        ${this._diagnosis ? this.renderDiag(this._diagnosis) : ''}
+        ${this.renderActions(run, isFailed)}
+      `
+      // Re-bind action buttons in the refreshed sidebar
+      sb.querySelector('#btnRetry')?.addEventListener('click', async () => {
+        if (!this._run) return
+        try { const r = await retryWorkflowRun(this._clusterId, this._run.id); await this.loadRun(r.id) }
+        catch (e: any) { this._error = `Retry: ${e?.message}`; this.render() }
+      })
+      sb.querySelector('#btnAck')?.addEventListener('click', async () => {
+        if (!this._run) return
+        try { await acknowledgeWorkflowRun(this._clusterId, this._run.id, 'admin-ui'); this._run.acknowledged = true; this._patchRunSlots() }
+        catch (e: any) { this._error = `Ack: ${e?.message}`; this.render() }
+      })
+      sb.querySelector('#btnDiagnose')?.addEventListener('click', async () => {
+        if (!this._run) return
+        try { this._diagnosis = await diagnoseWorkflowRun(this._clusterId, this._run.id); this._patchRunSlots() }
+        catch (e: any) { this._error = `Diagnose: ${e?.message}`; this.render() }
+      })
+    }
   }
 
   private isActive(status: number): boolean {
@@ -319,8 +382,9 @@ export class WorkflowDetailPanel extends HTMLElement {
     if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null }
   }
 
-  private render() {
-    const run = this._run
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .wf-overlay { position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.65);display:flex;justify-content:center;align-items:flex-start;padding:24px 12px;overflow-y:auto }
@@ -357,19 +421,73 @@ export class WorkflowDetailPanel extends HTMLElement {
         .wf-empty { padding:32px;text-align:center;color:var(--secondary-text-color,#888) }
         .wf-err { padding:20px;color:var(--error-color,#ef4444);font-size:.85rem }
       </style>
-      <div class="${this._fullscreen ? 'wf-fs' : ''}">
-      <div class="wf-overlay" id="wfOverlay">
-        <div class="wf-panel">
-          ${this._loading ? '<div class="wf-empty">Loading workflow…</div>' : ''}
-          ${this._error && !this._loading ? `<div class="wf-err">${this._error}<br><button class="wf-btn" id="wfClose" style="margin-top:12px">Close</button></div>` : ''}
-          ${!this._loading && !this._error && run ? this.renderRun(run) : ''}
-          ${!this._loading && !this._error && !run && !this._error ? '<div class="wf-empty">No workflow data</div>' : ''}
+      <div class="wf-fs-wrap">
+        <div class="wf-overlay" id="wfOverlay">
+          <div class="wf-panel">
+            <div data-bind="panel-content"></div>
+          </div>
         </div>
       </div>
-      </div>
     `
-    this.bindEvents()
+    this.querySelector('#wfOverlay')?.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).id === 'wfOverlay') this.close()
+    })
   }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private _pushData() {
+    const run = this._run
+    // Update fullscreen class on wrapper
+    const wrap = this.querySelector('.wf-fs-wrap') as HTMLElement | null
+    if (wrap) wrap.className = this._fullscreen ? 'wf-fs' : 'wf-fs-wrap'
+
+    let content = ''
+    if (this._loading) {
+      content = '<div class="wf-empty">Loading workflow…</div>'
+    } else if (this._error) {
+      content = `<div class="wf-err">${this._error}<br><button class="wf-btn" id="wfClose" style="margin-top:12px">Close</button></div>`
+    } else if (run) {
+      content = this.renderRun(run)
+    } else {
+      content = '<div class="wf-empty">No workflow data</div>'
+    }
+    this._set('panel-content', content)
+    this._bindPanelEvents()
+  }
+
+  private _bindPanelEvents() {
+    this.querySelector('#wfClose')?.addEventListener('click', () => this.close())
+    this.querySelector('#wfToggleFs')?.addEventListener('click', () => { this._fullscreen = !this._fullscreen; this._pushData() })
+    this.querySelectorAll<HTMLElement>('[data-step-seq]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this._selectedStep = this._steps.find(s => s.seq === parseInt(el.dataset.stepSeq ?? '0')) ?? null
+        this._pushData()
+      })
+    })
+    this.querySelector('#btnRetry')?.addEventListener('click', async () => {
+      if (!this._run) return
+      try { const r = await retryWorkflowRun(this._clusterId, this._run.id); await this.loadRun(r.id) }
+      catch (e: any) { this._error = `Retry: ${e?.message}`; this._pushData() }
+    })
+    this.querySelector('#btnAck')?.addEventListener('click', async () => {
+      if (!this._run) return
+      try { await acknowledgeWorkflowRun(this._clusterId, this._run.id, 'admin-ui'); this._run.acknowledged = true; this._pushData() }
+      catch (e: any) { this._error = `Ack: ${e?.message}`; this._pushData() }
+    })
+    this.querySelector('#btnDiagnose')?.addEventListener('click', async () => {
+      if (!this._run) return
+      try { this._diagnosis = await diagnoseWorkflowRun(this._clusterId, this._run.id); this._pushData() }
+      catch (e: any) { this._error = `Diagnose: ${e?.message}`; this._pushData() }
+    })
+  }
+
+  /** @deprecated Use _pushData() */
+  private render() { this._pushData() }
 
   private renderRun(run: WorkflowRun): string {
     const ctx = run.context

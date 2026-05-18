@@ -18,117 +18,17 @@ class PageRepoInstallPolicy extends HTMLElement {
   private _error = ''
   private _saving = false
   private _saveMsg = ''
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
+    this._buildShell()
+    this._load()
   }
 
-  private async load() {
-    try {
-      const token = getStoredTokenSync() ?? ''
-      const resp = await fetch('/admin/install-policy', {
-        headers: token ? { token } : {},
-      })
-      if (resp.status === 404) {
-        this._policy = null
-        this._error = ''
-      } else if (!resp.ok) {
-        this._error = `Failed to load install policy: HTTP ${resp.status}`
-      } else {
-        this._policy = await resp.json()
-        this._error = ''
-      }
-    } catch (e: any) {
-      // Policy endpoint may not exist yet — show empty state
-      this._policy = null
-      this._error = ''
-    }
-    this._loading = false
-    this.render()
-  }
-
-  private getFormValues(): InstallPolicy {
-    const form = this.querySelector('#policyForm') as HTMLFormElement | null
-    if (!form) {
-      return {
-        verifiedPublishersOnly: false,
-        allowedNamespaces: [],
-        blockedNamespaces: [],
-        blockDeprecated: false,
-        blockYanked: true,
-      }
-    }
-
-    const getChecked = (id: string): boolean => {
-      return (form.querySelector(`#${id}`) as HTMLInputElement)?.checked ?? false
-    }
-    const getTextareaLines = (id: string): string[] => {
-      const val = (form.querySelector(`#${id}`) as HTMLTextAreaElement)?.value ?? ''
-      return val.split('\n').map(s => s.trim()).filter(Boolean)
-    }
-
-    return {
-      verifiedPublishersOnly: getChecked('verifiedOnly'),
-      allowedNamespaces: getTextareaLines('allowedNs'),
-      blockedNamespaces: getTextareaLines('blockedNs'),
-      blockDeprecated: getChecked('blockDeprecated'),
-      blockYanked: getChecked('blockYanked'),
-    }
-  }
-
-  private async savePolicy() {
-    this._saving = true
-    this._saveMsg = ''
-    this.render()
-
-    try {
-      const policy = this.getFormValues()
-      const token = getStoredTokenSync() ?? ''
-      const resp = await fetch('/admin/install-policy', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { token } : {}),
-        },
-        body: JSON.stringify(policy),
-      })
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`)
-      }
-      this._policy = policy
-      this._saveMsg = 'Policy saved successfully.'
-    } catch (e: any) {
-      this._saveMsg = `Failed to save policy: ${e?.message || 'unknown error'}`
-    }
-    this._saving = false
-    this.render()
-  }
-
-  private async deletePolicy() {
-    if (!window.confirm('Remove the install policy? This will allow all packages to be installed.')) return
-
-    try {
-      const token = getStoredTokenSync() ?? ''
-      const resp = await fetch('/admin/install-policy', {
-        method: 'DELETE',
-        headers: token ? { token } : {},
-      })
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`)
-      }
-      this._policy = null
-      this._saveMsg = 'Policy removed.'
-    } catch (e: any) {
-      this._saveMsg = `Failed to remove policy: ${e?.message || 'unknown error'}`
-    }
-    this.render()
-  }
-
-  private render() {
-    const p = this._policy
-
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .policy-page { padding: 16px; display: flex; flex-direction: column; gap: 20px; max-width:700px; }
@@ -179,57 +79,168 @@ class PageRepoInstallPolicy extends HTMLElement {
           <h2>Install Policy</h2>
           <p class="policy-subtitle">Control which packages can be installed on this cluster.</p>
         </div>
-
-        ${this._loading ? '<div class="loading-msg">Loading policy...</div>' : ''}
-
-        ${this._error ? `
-        <div class="md-banner-warn">${escHtml(this._error)}</div>
-        ` : ''}
-
-        ${!this._loading ? `
-        <form id="policyForm" class="policy-form">
-          <div class="checkbox-row">
-            <input type="checkbox" id="verifiedOnly" ${p?.verifiedPublishersOnly ? 'checked' : ''} />
-            <span>Verified publishers only</span>
-          </div>
-          <div class="form-hint" style="margin-left:26px">Only allow artifacts from namespaces with a claimed owner.</div>
-
-          <div class="form-group">
-            <label for="allowedNs">Allowed Namespaces</label>
-            <textarea id="allowedNs" rows="3" placeholder="One namespace per line...">${(p?.allowedNamespaces || []).join('\n')}</textarea>
-            <div class="form-hint">Only these namespaces will be allowed. Leave empty to allow all.</div>
-          </div>
-
-          <div class="form-group">
-            <label for="blockedNs">Blocked Namespaces</label>
-            <textarea id="blockedNs" rows="3" placeholder="One namespace per line...">${(p?.blockedNamespaces || []).join('\n')}</textarea>
-            <div class="form-hint">These namespaces will always be blocked.</div>
-          </div>
-
-          <div class="checkbox-row">
-            <input type="checkbox" id="blockDeprecated" ${p?.blockDeprecated ? 'checked' : ''} />
-            <span>Block deprecated packages</span>
-          </div>
-
-          <div class="checkbox-row">
-            <input type="checkbox" id="blockYanked" ${p?.blockYanked !== false ? 'checked' : ''} />
-            <span>Block yanked packages</span>
-          </div>
-
-          <div class="policy-actions">
-            <button type="button" class="md-btn md-btn-filled" id="btnSave" ${this._saving ? 'disabled' : ''}>
-              ${this._saving ? 'Saving...' : 'Save Policy'}
-            </button>
-            ${p ? '<button type="button" class="md-btn md-btn-danger" id="btnDelete">Remove Policy</button>' : ''}
-            ${this._saveMsg ? `<span class="save-msg ${this._saveMsg.includes('success') || this._saveMsg.includes('removed') ? 'ok' : 'err'}">${escHtml(this._saveMsg)}</span>` : ''}
-          </div>
-        </form>
-        ` : ''}
+        <div data-bind="content"></div>
       </div>
     `
+  }
 
-    this.querySelector('#btnSave')?.addEventListener('click', () => this.savePolicy())
-    this.querySelector('#btnDelete')?.addEventListener('click', () => this.deletePolicy())
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private async _load() {
+    try {
+      const token = getStoredTokenSync() ?? ''
+      const resp = await fetch('/admin/install-policy', {
+        headers: token ? { token } : {},
+      })
+      if (resp.status === 404) {
+        this._policy = null
+        this._error = ''
+      } else if (!resp.ok) {
+        this._error = `Failed to load install policy: HTTP ${resp.status}`
+      } else {
+        this._policy = await resp.json()
+        this._error = ''
+      }
+    } catch (e: any) {
+      // Policy endpoint may not exist yet — show empty state
+      this._policy = null
+      this._error = ''
+    }
+    this._loading = false
+    this._pushData()
+  }
+
+  private _pushData() {
+    const p = this._policy
+    this._set('content', `
+      ${this._loading ? '<div class="loading-msg">Loading policy...</div>' : ''}
+
+      ${this._error ? `
+      <div class="md-banner-warn">${escHtml(this._error)}</div>
+      ` : ''}
+
+      ${!this._loading ? `
+      <form id="policyForm" class="policy-form">
+        <div class="checkbox-row">
+          <input type="checkbox" id="verifiedOnly" ${p?.verifiedPublishersOnly ? 'checked' : ''} />
+          <span>Verified publishers only</span>
+        </div>
+        <div class="form-hint" style="margin-left:26px">Only allow artifacts from namespaces with a claimed owner.</div>
+
+        <div class="form-group">
+          <label for="allowedNs">Allowed Namespaces</label>
+          <textarea id="allowedNs" rows="3" placeholder="One namespace per line...">${(p?.allowedNamespaces || []).join('\n')}</textarea>
+          <div class="form-hint">Only these namespaces will be allowed. Leave empty to allow all.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="blockedNs">Blocked Namespaces</label>
+          <textarea id="blockedNs" rows="3" placeholder="One namespace per line...">${(p?.blockedNamespaces || []).join('\n')}</textarea>
+          <div class="form-hint">These namespaces will always be blocked.</div>
+        </div>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="blockDeprecated" ${p?.blockDeprecated ? 'checked' : ''} />
+          <span>Block deprecated packages</span>
+        </div>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="blockYanked" ${p?.blockYanked !== false ? 'checked' : ''} />
+          <span>Block yanked packages</span>
+        </div>
+
+        <div class="policy-actions">
+          <button type="button" class="md-btn md-btn-filled" id="btnSave" ${this._saving ? 'disabled' : ''}>
+            ${this._saving ? 'Saving...' : 'Save Policy'}
+          </button>
+          ${p ? '<button type="button" class="md-btn md-btn-danger" id="btnDelete">Remove Policy</button>' : ''}
+          ${this._saveMsg ? `<span class="save-msg ${this._saveMsg.includes('success') || this._saveMsg.includes('removed') ? 'ok' : 'err'}">${escHtml(this._saveMsg)}</span>` : ''}
+        </div>
+      </form>
+      ` : ''}
+    `)
+    this.querySelector('#btnSave')?.addEventListener('click', () => this._savePolicy())
+    this.querySelector('#btnDelete')?.addEventListener('click', () => this._deletePolicy())
+  }
+
+  private getFormValues(): InstallPolicy {
+    const form = this.querySelector('#policyForm') as HTMLFormElement | null
+    if (!form) {
+      return {
+        verifiedPublishersOnly: false,
+        allowedNamespaces: [],
+        blockedNamespaces: [],
+        blockDeprecated: false,
+        blockYanked: true,
+      }
+    }
+
+    const getChecked = (id: string): boolean => {
+      return (form.querySelector(`#${id}`) as HTMLInputElement)?.checked ?? false
+    }
+    const getTextareaLines = (id: string): string[] => {
+      const val = (form.querySelector(`#${id}`) as HTMLTextAreaElement)?.value ?? ''
+      return val.split('\n').map(s => s.trim()).filter(Boolean)
+    }
+
+    return {
+      verifiedPublishersOnly: getChecked('verifiedOnly'),
+      allowedNamespaces: getTextareaLines('allowedNs'),
+      blockedNamespaces: getTextareaLines('blockedNs'),
+      blockDeprecated: getChecked('blockDeprecated'),
+      blockYanked: getChecked('blockYanked'),
+    }
+  }
+
+  private async _savePolicy() {
+    this._saving = true
+    this._saveMsg = ''
+    this._pushData()
+
+    try {
+      const policy = this.getFormValues()
+      const token = getStoredTokenSync() ?? ''
+      const resp = await fetch('/admin/install-policy', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { token } : {}),
+        },
+        body: JSON.stringify(policy),
+      })
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`)
+      }
+      this._policy = policy
+      this._saveMsg = 'Policy saved successfully.'
+    } catch (e: any) {
+      this._saveMsg = `Failed to save policy: ${e?.message || 'unknown error'}`
+    }
+    this._saving = false
+    this._pushData()
+  }
+
+  private async _deletePolicy() {
+    if (!window.confirm('Remove the install policy? This will allow all packages to be installed.')) return
+
+    try {
+      const token = getStoredTokenSync() ?? ''
+      const resp = await fetch('/admin/install-policy', {
+        method: 'DELETE',
+        headers: token ? { token } : {},
+      })
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`)
+      }
+      this._policy = null
+      this._saveMsg = 'Policy removed.'
+    } catch (e: any) {
+      this._saveMsg = `Failed to remove policy: ${e?.message || 'unknown error'}`
+    }
+    this._pushData()
   }
 }
 

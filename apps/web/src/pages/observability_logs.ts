@@ -302,7 +302,13 @@ class PageObservabilityLogs extends HTMLElement {
   private async _loadOverview() {
     this._overviewLoading = true
     this._overviewError = ''
-    this.render()
+    // On initial load, render() builds the shell + patches content.
+    // On timer-fired reloads, _patchTabContent() only replaces the content slot.
+    if (!this._built) {
+      this.render()
+    } else {
+      this._patchTabContent()
+    }
     try {
       const [fatals, errors] = await Promise.allSettled([
         queryLogs({ level: 'fatal', limit: 10, order: 'desc' }),
@@ -315,7 +321,8 @@ class PageObservabilityLogs extends HTMLElement {
       this._overviewError = e?.message || 'LogService unavailable'
     }
     this._overviewLoading = false
-    this.render()
+    // Always patch — shell already built, only content slot is replaced.
+    this._patchTabContent()
     this._startOverviewTimer()
     this._startOverviewSub()
   }
@@ -604,7 +611,7 @@ class PageObservabilityLogs extends HTMLElement {
     this._searchLoading = true
     this._searchError = ''
     this._searchExpandedIdx = -1
-    this.render()
+    this._patchTabContent()
 
     const opts: QueryLogsOpts = {
       level: this._searchLevel,
@@ -636,7 +643,7 @@ class PageObservabilityLogs extends HTMLElement {
       this._searchError = e?.message || 'Query failed'
     }
     this._searchLoading = false
-    this.render()
+    this._patchTabContent()
   }
 
   private _renderSearch(): string {
@@ -721,19 +728,19 @@ class PageObservabilityLogs extends HTMLElement {
     this._correlationId = id
     this._correlationLoading = true
     this._correlationResults = []
-    this.render()
+    this._patchTabContent()
 
     try {
       this._correlationResults = await queryLogs({ contains: id, level: '*', order: 'asc', limit: 200 })
     } catch { /* silently empty */ }
     this._correlationLoading = false
-    this.render()
+    this._patchTabContent()
   }
 
   private _clearCorrelation() {
     this._correlationId = ''
     this._correlationResults = []
-    this.render()
+    this._patchTabContent()
   }
 
   private _renderCorrelation(): string {
@@ -776,16 +783,14 @@ class PageObservabilityLogs extends HTMLElement {
     `
   }
 
-  // ─── Main render ────────────────────────────────────────────────────────
+  // ─── Shell + targeted slot updates ──────────────────────────────────────────
 
-  private render() {
-    let tabContent = ''
-    switch (this._tab) {
-      case 'overview': tabContent = this._renderOverview(); break
-      case 'tail': tabContent = this._renderTail(); break
-      case 'search': tabContent = this._renderSearch(); break
-    }
+  private _built = false
 
+  /** Build the static shell once; subsequent content updates go through _patchTabContent(). */
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${STYLES}</style>
       <div class="ol-wrap">
@@ -795,20 +800,50 @@ class PageObservabilityLogs extends HTMLElement {
         <p class="ol-subtitle">Unified log view. Filter by severity, application, and time range.</p>
 
         <div class="ol-tabs">
-          <button class="ol-tab${this._tab === 'overview' ? ' active' : ''}" data-tab="overview">Overview</button>
-          <button class="ol-tab${this._tab === 'tail' ? ' active' : ''}" data-tab="tail">Live Tail</button>
-          <button class="ol-tab${this._tab === 'search' ? ' active' : ''}" data-tab="search">Search</button>
+          <button class="ol-tab" data-tab="overview">Overview</button>
+          <button class="ol-tab" data-tab="tail">Live Tail</button>
+          <button class="ol-tab" data-tab="search">Search</button>
         </div>
 
-        ${this._correlationId ? this._renderCorrelation() : tabContent}
+        <div data-bind="tab-content"></div>
       </div>
     `
-
-    this._wireEvents()
+    this._wireTabButtons()
   }
 
-  private _wireEvents() {
-    // Tab switching
+  /** Replace only the tab content slot and re-wire its inner events. */
+  private _patchTabContent() {
+    // Update active tab indicators
+    this.querySelectorAll<HTMLElement>('.ol-tab').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === this._tab)
+    })
+
+    let content = ''
+    if (this._correlationId) {
+      content = this._renderCorrelation()
+    } else {
+      switch (this._tab) {
+        case 'overview': content = this._renderOverview(); break
+        case 'tail':     content = this._renderTail(); break
+        case 'search':   content = this._renderSearch(); break
+      }
+    }
+    const slot = this.querySelector<HTMLElement>('[data-bind="tab-content"]')
+    if (slot) slot.innerHTML = content
+    this._wireContentEvents()
+  }
+
+  // ─── Main render (now delegates to shell + patch) ────────────────────────────
+
+  private render() {
+    if (!this._built) {
+      this._buildShell()
+    }
+    this._patchTabContent()
+  }
+
+  /** Wire the tab buttons — called once when the shell is built. */
+  private _wireTabButtons() {
     this.querySelectorAll<HTMLElement>('.ol-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         const tab = btn.dataset.tab as Tab
@@ -817,36 +852,39 @@ class PageObservabilityLogs extends HTMLElement {
         if (this._tab === 'overview') { this._stopOverviewTimer(); this._stopOverviewSub() }
         this._tab = tab
         this._correlationId = ''
-        this.render()
+        this._patchTabContent()
         if (tab === 'overview') this._loadOverview()
       })
     })
+  }
 
+  /** Wire events inside the tab content slot — called after every _patchTabContent(). */
+  private _wireContentEvents() {
     // Overview quick links
     this.querySelector('#olGoTail')?.addEventListener('click', () => {
       this._stopOverviewTimer()
       this._tab = 'tail'
-      this.render()
+      this._patchTabContent()
     })
     this.querySelector('#olGoSearch')?.addEventListener('click', () => {
       this._stopOverviewTimer()
       this._tab = 'search'
       this._searchLevel = 'error'
-      this.render()
+      this._patchTabContent()
     })
 
     // Live tail controls
     this.querySelector('#olTailStart')?.addEventListener('click', () => {
       this._startTail()
-      this.render()
+      this._patchTabContent()
     })
     this.querySelector('#olTailStop')?.addEventListener('click', () => {
       this._stopTail()
-      this.render()
+      this._patchTabContent()
     })
     this.querySelector('#olTailPause')?.addEventListener('click', () => {
       this._tailPaused = !this._tailPaused
-      this.render()
+      this._patchTabContent()
       if (!this._tailPaused) this._renderTailOutput()
     })
     this.querySelector('#olTailAutoScroll')?.addEventListener('change', (ev: Event) => {
@@ -876,7 +914,6 @@ class PageObservabilityLogs extends HTMLElement {
       btn.addEventListener('click', () => {
         this._tailPreset = btn.dataset.tailPreset!
         this._renderTailOutput()
-        // Update active class
         this.querySelectorAll('[data-tail-preset]').forEach(b => b.classList.remove('active'))
         btn.classList.add('active')
       })
@@ -903,7 +940,6 @@ class PageObservabilityLogs extends HTMLElement {
     this.querySelectorAll<HTMLElement>('[data-search-preset]').forEach(btn => {
       btn.addEventListener('click', () => {
         this._searchPreset = btn.dataset.searchPreset!
-        // If a preset with apps is selected, set the app filter to the first app
         const preset = SOURCES.find(s => s.key === this._searchPreset)
         if (preset?.apps) {
           this._searchApp = preset.apps[0]
@@ -922,11 +958,10 @@ class PageObservabilityLogs extends HTMLElement {
     // Search row expand
     this.querySelectorAll<HTMLElement>('.ol-search-row').forEach(row => {
       row.addEventListener('click', (ev: Event) => {
-        // Don't toggle if clicking a link
         if ((ev.target as HTMLElement).closest('a')) return
         const idx = parseInt(row.dataset.searchIdx!, 10)
         this._searchExpandedIdx = this._searchExpandedIdx === idx ? -1 : idx
-        this.render()
+        this._patchTabContent()
       })
     })
 

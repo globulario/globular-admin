@@ -74,9 +74,18 @@ class PageInfrastructureStorage extends HTMLElement {
   private _scylla: ScyllaMetrics | null = null
   private _scyllaAvailable = true  // false if Scylla queries return nothing
   private _tab: 'overview' | 'minio' | 'scylladb' | 'mounts' = 'overview'
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._timer = window.setInterval(() => this._load(), POLL)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${INFRA_STYLES}</style>
       <section class="wrap">
@@ -99,7 +108,7 @@ class PageInfrastructureStorage extends HTMLElement {
         <div id="stContent"></div>
       </section>
     `
-    this.querySelector('#stRefresh')?.addEventListener('click', () => this.load())
+    this.querySelector('#stRefresh')?.addEventListener('click', () => this._load())
     this.querySelectorAll<HTMLElement>('.infra-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         this._tab = btn.dataset.tab as typeof this._tab
@@ -108,15 +117,13 @@ class PageInfrastructureStorage extends HTMLElement {
         this.renderContent()
       })
     })
-    this.load()
-    this._timer = window.setInterval(() => this.load(), POLL)
   }
 
   disconnectedCallback() {
     if (this._timer) clearInterval(this._timer)
   }
 
-  private async load() {
+  private async _load() {
     const [stR, svcR] = await Promise.allSettled([
       fetchAdminStorage(),
       fetchAdminServices(),
@@ -136,7 +143,7 @@ class PageInfrastructureStorage extends HTMLElement {
     this._minio = minioResult.status === 'fulfilled' ? minioResult.value : null
     this._scylla = scyllaResult.status === 'fulfilled' ? scyllaResult.value : null
 
-    this.render()
+    this._pushData()
   }
 
   private async loadMinioMetrics(): Promise<MinioMetrics | null> {
@@ -291,7 +298,7 @@ class PageInfrastructureStorage extends HTMLElement {
     }
   }
 
-  private render() {
+  private _pushData() {
     const tsEl = this.querySelector('#stTimestamp') as HTMLElement
     if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
     const freshEl = this.querySelector('#stFreshness') as HTMLElement
@@ -299,6 +306,9 @@ class PageInfrastructureStorage extends HTMLElement {
 
     this.renderContent()
   }
+
+  /** @deprecated Use _pushData() */
+  private render() { this._pushData() }
 
   private renderContent() {
     const el = this.querySelector('#stContent') as HTMLElement

@@ -16,9 +16,22 @@ class PageInfrastructureNetworking extends HTMLElement {
   private _timer: number | null = null
   private _lastUpdated: Date | null = null
   private _envoy: EnvoyResponse | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._timer = window.setInterval(() => this._load(), POLL)
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${INFRA_STYLES}</style>
       <section class="wrap">
@@ -40,26 +53,20 @@ class PageInfrastructureNetworking extends HTMLElement {
         <div id="netLinks"></div>
       </section>
     `
-    this.querySelector('#netRefresh')?.addEventListener('click', () => this.load())
-    this.load()
-    this._timer = window.setInterval(() => this.load(), POLL)
+    this.querySelector('#netRefresh')?.addEventListener('click', () => this._load())
   }
 
-  disconnectedCallback() {
-    if (this._timer) clearInterval(this._timer)
-  }
-
-  private async load() {
+  private async _load() {
     try {
       this._envoy = await fetchAdminEnvoy()
     } catch {
       this._envoy = null
     }
     this._lastUpdated = new Date()
-    this.render()
+    this._pushData()
   }
 
-  private render() {
+  private _pushData() {
     const tsEl = this.querySelector('#netTimestamp') as HTMLElement
     if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
     const freshEl = this.querySelector('#netFreshness') as HTMLElement

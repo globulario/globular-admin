@@ -100,6 +100,7 @@ function esc(s: string): string {
 // ── Component ───────────────────────────────────────────────────────────────
 
 class PageRepoInstalled extends HTMLElement {
+  private _built = false
   private _refreshTimer: number | null = null
   private _installed: InstalledPackage[] = []
   private _artifacts: ArtifactManifest[] = []
@@ -117,16 +118,119 @@ class PageRepoInstalled extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+    this._buildShell()
+    this._load()
+    this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
   }
 
-  private async load() {
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+    this.innerHTML = `
+      <style>
+        .installed { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+
+        /* header */
+        .installed-header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        .installed-header h2 { margin:0; font: var(--md-typescale-headline-small); }
+        .installed-subtitle { margin:2px 0 0; font: var(--md-typescale-body-medium);
+          color:var(--secondary-text-color); opacity:.9; }
+        .installed-header .spacer { flex:1; }
+
+        /* stat strip */
+        .stat-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+        @media(max-width:800px) { .stat-strip { grid-template-columns:repeat(3,1fr); } }
+        @media(max-width:500px) { .stat-strip { grid-template-columns:repeat(2,1fr); } }
+        .stat-mini {
+          background: var(--md-surface-container-low); border:1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-md); padding:12px 16px;
+          box-shadow: var(--md-elevation-1); cursor:pointer; transition: border-color .15s;
+        }
+        .stat-mini:hover { border-color: var(--accent-color); }
+        .stat-mini.active { border-color: var(--accent-color);
+          box-shadow: 0 0 0 1px var(--accent-color), var(--md-elevation-1); }
+        .stat-mini .label { font-size:.7rem; font-weight:600; text-transform:uppercase;
+          letter-spacing:.06em; color:var(--secondary-text-color); margin-bottom:4px; }
+        .stat-mini .value { font-size:1.6rem; font-weight:800; line-height:1; }
+
+        /* toolbar */
+        .toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .toolbar .search-input {
+          padding:8px 12px; border:1px solid var(--border-strong-color);
+          border-radius: var(--md-shape-sm); background:var(--md-surface-container-lowest);
+          color:var(--on-surface-color); font: var(--md-typescale-body-medium);
+          outline:none; transition: border-color .12s, box-shadow .12s;
+          min-width:200px; flex:1; max-width:360px;
+        }
+        .toolbar .search-input:focus { border-color:var(--accent-color);
+          box-shadow: var(--md-focus-ring); }
+        .toolbar select {
+          padding:8px 12px; border:1px solid var(--border-strong-color);
+          border-radius: var(--md-shape-sm); background:var(--md-surface-container-lowest);
+          color:var(--on-surface-color); font: var(--md-typescale-body-medium);
+          outline:none; cursor:pointer;
+        }
+        .toolbar select:focus { border-color:var(--accent-color);
+          box-shadow: var(--md-focus-ring); }
+
+        /* table enhancements */
+        .pkg-name { font-weight:600; }
+        .node-group-header td {
+          font-weight:700; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em;
+          background: var(--md-surface-container); color:var(--secondary-text-color);
+          padding:10px 12px !important; border-bottom:1px solid var(--border-subtle-color);
+        }
+        .ver-match { color:var(--success-color); }
+        .ver-mismatch { color:#f59e0b; font-weight:600; }
+
+        /* empty / loading / error */
+        .empty-state { text-align:center; padding:48px 16px; }
+        .empty-state h3 { margin:0 0 8px; font: var(--md-typescale-title-medium);
+          color:var(--secondary-text-color); }
+        .empty-state p { margin:0; font: var(--md-typescale-body-medium);
+          color:var(--secondary-text-color); opacity:.7; }
+        .loading-msg { color:var(--secondary-text-color); font-size:.85rem;
+          font-style:italic; padding:16px; }
+      </style>
+
+      <div class="installed">
+
+        <!-- Header (static) -->
+        <div>
+          <div class="installed-header">
+            <h2>Installed Packages</h2>
+            <span class="spacer"></span>
+            <button class="md-btn md-btn-outlined" id="btnRefresh">Refresh</button>
+          </div>
+          <p class="installed-subtitle">Track package presence, versions, and drift across nodes.</p>
+        </div>
+
+        <div data-bind="loading"></div>
+        <div data-bind="error"></div>
+        <div data-bind="stats"></div>
+        <div data-bind="toolbar"></div>
+        <div data-bind="table"></div>
+
+      </div>
+    `
+
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => {
+      this._loading = true
+      this._pushData()
+      this._load()
+    })
+  }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private async _load() {
     try {
       // Wrap each call with a timeout to prevent the page from hanging
       // indefinitely if a backend (gRPC/REST) connection stalls.
@@ -170,7 +274,7 @@ class PageRepoInstalled extends HTMLElement {
       this._error = e?.message || 'Failed to load installed packages'
     }
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   // ── Computed properties ─────────────────────────────────────────────────
@@ -254,237 +358,103 @@ class PageRepoInstalled extends HTMLElement {
     return this._installed.filter(p => this.statusOf(p) === 'failed').length
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  // ── Push data into slots ───────────────────────────────────────────────
 
-  private render() {
-    const grouped = this.groupedByNode
-    const filteredCount = this.filteredInstalled.length
-    const nodes = this.distinctNodes
+  private _pushData() {
+    this._set('loading', this._loading ? '<div class="loading-msg">Loading installed packages...</div>' : '')
 
-    this.innerHTML = `
-      <style>
-        .installed { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
-
-        /* header */
-        .installed-header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-        .installed-header h2 { margin:0; font: var(--md-typescale-headline-small); }
-        .installed-subtitle { margin:2px 0 0; font: var(--md-typescale-body-medium);
-          color:var(--secondary-text-color); opacity:.9; }
-        .installed-header .spacer { flex:1; }
-
-        /* stat strip */
-        .stat-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
-        @media(max-width:800px) { .stat-strip { grid-template-columns:repeat(3,1fr); } }
-        @media(max-width:500px) { .stat-strip { grid-template-columns:repeat(2,1fr); } }
-        .stat-mini {
-          background: var(--md-surface-container-low); border:1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-md); padding:12px 16px;
-          box-shadow: var(--md-elevation-1); cursor:pointer; transition: border-color .15s;
-        }
-        .stat-mini:hover { border-color: var(--accent-color); }
-        .stat-mini.active { border-color: var(--accent-color);
-          box-shadow: 0 0 0 1px var(--accent-color), var(--md-elevation-1); }
-        .stat-mini .label { font-size:.7rem; font-weight:600; text-transform:uppercase;
-          letter-spacing:.06em; color:var(--secondary-text-color); margin-bottom:4px; }
-        .stat-mini .value { font-size:1.6rem; font-weight:800; line-height:1; }
-
-        /* toolbar */
-        .toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-        .toolbar .search-input {
-          padding:8px 12px; border:1px solid var(--border-strong-color);
-          border-radius: var(--md-shape-sm); background:var(--md-surface-container-lowest);
-          color:var(--on-surface-color); font: var(--md-typescale-body-medium);
-          outline:none; transition: border-color .12s, box-shadow .12s;
-          min-width:200px; flex:1; max-width:360px;
-        }
-        .toolbar .search-input:focus { border-color:var(--accent-color);
-          box-shadow: var(--md-focus-ring); }
-        .toolbar select {
-          padding:8px 12px; border:1px solid var(--border-strong-color);
-          border-radius: var(--md-shape-sm); background:var(--md-surface-container-lowest);
-          color:var(--on-surface-color); font: var(--md-typescale-body-medium);
-          outline:none; cursor:pointer;
-        }
-        .toolbar select:focus { border-color:var(--accent-color);
-          box-shadow: var(--md-focus-ring); }
-
-        /* table enhancements */
-        .pkg-name { font-weight:600; }
-        .node-group-header td {
-          font-weight:700; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em;
-          background: var(--md-surface-container); color:var(--secondary-text-color);
-          padding:10px 12px !important; border-bottom:1px solid var(--border-subtle-color);
-        }
-        .ver-match { color:var(--success-color); }
-        .ver-mismatch { color:#f59e0b; font-weight:600; }
-
-        /* empty / loading / error */
-        .empty-state { text-align:center; padding:48px 16px; }
-        .empty-state h3 { margin:0 0 8px; font: var(--md-typescale-title-medium);
-          color:var(--secondary-text-color); }
-        .empty-state p { margin:0; font: var(--md-typescale-body-medium);
-          color:var(--secondary-text-color); opacity:.7; }
-        .loading-msg { color:var(--secondary-text-color); font-size:.85rem;
-          font-style:italic; padding:16px; }
-      </style>
-
-      <div class="installed">
-
-        <!-- Header -->
-        <div>
-          <div class="installed-header">
-            <h2>Installed Packages</h2>
-            <span class="spacer"></span>
-            <button class="md-btn md-btn-outlined" id="btnRefresh">Refresh</button>
-          </div>
-          <p class="installed-subtitle">Track package presence, versions, and drift across nodes.</p>
-        </div>
-
-        ${this._loading ? '<div class="loading-msg">Loading installed packages...</div>' : ''}
-
-        ${this._error ? `
+    if (this._error) {
+      this._set('error', `
         <div class="md-banner-warn">
           ${this._error}
           <button class="md-btn md-btn-outlined md-btn-sm" id="btnRetry" style="margin-left:12px">Retry</button>
         </div>
-        ` : ''}
+      `)
+      this.querySelector('#btnRetry')?.addEventListener('click', () => {
+        this._error = ''
+        this._loading = true
+        this._pushData()
+        this._load()
+      })
+    } else {
+      this._set('error', '')
+    }
 
-        ${!this._loading && !this._error ? `
-        <!-- Stat Strip -->
-        <div class="stat-strip">
-          <div class="stat-mini${this._statusFilter === '' ? ' active' : ''}" data-status="">
-            <div class="label">Total Installed</div>
-            <div class="value">${this.totalInstalled}</div>
-          </div>
-          <div class="stat-mini" style="cursor:default">
-            <div class="label">Distinct Packages</div>
-            <div class="value">${this.distinctPackages}</div>
-          </div>
-          <div class="stat-mini" style="cursor:default">
-            <div class="label">Nodes</div>
-            <div class="value">${this.nodeCount}</div>
-          </div>
-          <div class="stat-mini${this._statusFilter === 'drifted' ? ' active' : ''}" data-status="drifted">
-            <div class="label">Drifted</div>
-            <div class="value" style="color:#f59e0b">${this.updateAvailableCount}</div>
-          </div>
-          <div class="stat-mini${this._statusFilter === 'failed' ? ' active' : ''}" data-status="failed">
-            <div class="label">Failed</div>
-            <div class="value" style="color:var(--error-color)">${this.failedCount}</div>
-          </div>
-        </div>
+    if (this._loading || this._error) {
+      this._set('stats', '')
+      this._set('toolbar', '')
+      this._set('table', '')
+      return
+    }
 
-        <!-- Toolbar -->
-        <div class="toolbar">
-          <input type="text" class="search-input" id="searchInput"
-            placeholder="Search packages..." value="${esc(this._searchQuery)}" />
-          <select id="nodeSelect">
-            <option value=""${this._nodeFilter === '' ? ' selected' : ''}>All Nodes</option>
-            ${nodes.map(n => `<option value="${esc(n)}"${this._nodeFilter === n ? ' selected' : ''}>${n}</option>`).join('')}
-          </select>
-          <select id="kindSelect">
-            <option value=""${this._kindFilter === '' ? ' selected' : ''}>All Types</option>
-            <option value="service"${this._kindFilter === 'service' ? ' selected' : ''}>Services</option>
-            <option value="application"${this._kindFilter === 'application' ? ' selected' : ''}>Applications</option>
-            <option value="infrastructure"${this._kindFilter === 'infrastructure' ? ' selected' : ''}>Infrastructure</option>
-          </select>
-          <select id="statusSelect">
-            <option value=""${this._statusFilter === '' ? ' selected' : ''}>All Statuses</option>
-            <option value="installed"${this._statusFilter === 'installed' ? ' selected' : ''}>Installed</option>
-            <option value="drifted"${this._statusFilter === 'drifted' ? ' selected' : ''}>Drifted</option>
-            <option value="missing-in-repo"${this._statusFilter === 'missing-in-repo' ? ' selected' : ''}>Missing in repo</option>
-            <option value="failed"${this._statusFilter === 'failed' ? ' selected' : ''}>Failed</option>
-          </select>
-        </div>
+    const nodes = this.distinctNodes
 
-        <!-- Package Table -->
-        ${filteredCount > 0 ? `
-        <div class="md-panel" style="margin-bottom:0">
-          <table class="md-table">
-            <thead>
-              <tr>
-                <th>Package</th>
-                <th>Type</th>
-                <th>Installed Version</th>
-                <th>Latest Version</th>
-                <th>Status</th>
-                <th>Integrity</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody class="md-interactive">
-              ${Array.from(grouped.entries()).map(([node, pkgs]) => {
-                const nodeHeader = `
-              <tr class="node-group-header">
-                <td colspan="7">${node}</td>
-              </tr>`
-                const rows = pkgs.map(p => {
-                  const kind = kindFromString(p.kind || '')
-                  const latest = this._latestMap.get(p.name) ?? '--'
-                  const status = this.statusOf(p)
-                  const verClass = status === 'installed' ? 'ver-match'
-                    : status === 'drifted' ? 'ver-mismatch' : ''
-                  return `
-              <tr class="pkg-row" data-publisher="${esc(p.publisher)}" data-name="${esc(p.name)}">
-                <td class="pkg-name">${p.name}</td>
-                <td>${kindBadge(kind)}</td>
-                <td>${(p.version || '--') + ((p as any).buildNumber > 0 ? '+b' + (p as any).buildNumber : '')}</td>
-                <td class="${verClass}">${latest}</td>
-                <td>${statusBadge(status)}</td>
-                <td>${integrityChip(p)}</td>
-                <td>
-                  <button class="md-btn md-btn-text md-btn-sm btn-view"
-                    data-publisher="${esc(p.publisher)}"
-                    data-name="${esc(p.name)}">View</button>
-                </td>
-              </tr>`
-                }).join('')
-                return nodeHeader + rows
-              }).join('')}
-            </tbody>
-          </table>
+    // Stats strip
+    this._set('stats', `
+      <div class="stat-strip">
+        <div class="stat-mini${this._statusFilter === '' ? ' active' : ''}" data-status="">
+          <div class="label">Total Installed</div>
+          <div class="value">${this.totalInstalled}</div>
         </div>
-        ` : `
-        <div class="empty-state">
-          <h3>No installed packages found.</h3>
-          <p>Install packages from the repository catalog to see them here.</p>
+        <div class="stat-mini" style="cursor:default">
+          <div class="label">Distinct Packages</div>
+          <div class="value">${this.distinctPackages}</div>
         </div>
-        `}
-        ` : ''}
-
+        <div class="stat-mini" style="cursor:default">
+          <div class="label">Nodes</div>
+          <div class="value">${this.nodeCount}</div>
+        </div>
+        <div class="stat-mini${this._statusFilter === 'drifted' ? ' active' : ''}" data-status="drifted">
+          <div class="label">Drifted</div>
+          <div class="value" style="color:#f59e0b">${this.updateAvailableCount}</div>
+        </div>
+        <div class="stat-mini${this._statusFilter === 'failed' ? ' active' : ''}" data-status="failed">
+          <div class="label">Failed</div>
+          <div class="value" style="color:var(--error-color)">${this.failedCount}</div>
+        </div>
       </div>
-    `
-
-    // ── Wire up events ──────────────────────────────────────────────────
-
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => {
-      this._loading = true
-      this.render()
-      this.load()
-    })
-
-    this.querySelector('#btnRetry')?.addEventListener('click', () => {
-      this._error = ''
-      this._loading = true
-      this.render()
-      this.load()
-    })
+    `)
 
     // Stat card clicks (filter by status)
     this.querySelectorAll('.stat-mini[data-status]').forEach(card => {
       card.addEventListener('click', () => {
         const status = (card as HTMLElement).dataset.status || ''
         this._statusFilter = this._statusFilter === status ? '' : status
-        this.render()
+        this._pushData()
       })
     })
+
+    // Toolbar
+    this._set('toolbar', `
+      <div class="toolbar">
+        <input type="text" class="search-input" id="searchInput"
+          placeholder="Search packages..." value="${esc(this._searchQuery)}" />
+        <select id="nodeSelect">
+          <option value=""${this._nodeFilter === '' ? ' selected' : ''}>All Nodes</option>
+          ${nodes.map(n => `<option value="${esc(n)}"${this._nodeFilter === n ? ' selected' : ''}>${n}</option>`).join('')}
+        </select>
+        <select id="kindSelect">
+          <option value=""${this._kindFilter === '' ? ' selected' : ''}>All Types</option>
+          <option value="service"${this._kindFilter === 'service' ? ' selected' : ''}>Services</option>
+          <option value="application"${this._kindFilter === 'application' ? ' selected' : ''}>Applications</option>
+          <option value="infrastructure"${this._kindFilter === 'infrastructure' ? ' selected' : ''}>Infrastructure</option>
+        </select>
+        <select id="statusSelect">
+          <option value=""${this._statusFilter === '' ? ' selected' : ''}>All Statuses</option>
+          <option value="installed"${this._statusFilter === 'installed' ? ' selected' : ''}>Installed</option>
+          <option value="drifted"${this._statusFilter === 'drifted' ? ' selected' : ''}>Drifted</option>
+          <option value="missing-in-repo"${this._statusFilter === 'missing-in-repo' ? ' selected' : ''}>Missing in repo</option>
+          <option value="failed"${this._statusFilter === 'failed' ? ' selected' : ''}>Failed</option>
+        </select>
+      </div>
+    `)
 
     // Search
     const searchInput = this.querySelector('#searchInput') as HTMLInputElement | null
     if (searchInput) {
       searchInput.addEventListener('input', () => {
         this._searchQuery = searchInput.value
-        this.render()
+        this._pushTable()
         const newInput = this.querySelector('#searchInput') as HTMLInputElement | null
         if (newInput) {
           newInput.focus()
@@ -496,20 +466,86 @@ class PageRepoInstalled extends HTMLElement {
     // Node dropdown
     this.querySelector('#nodeSelect')?.addEventListener('change', (e) => {
       this._nodeFilter = (e.target as HTMLSelectElement).value
-      this.render()
+      this._pushData()
     })
 
     // Kind dropdown
     this.querySelector('#kindSelect')?.addEventListener('change', (e) => {
       this._kindFilter = (e.target as HTMLSelectElement).value
-      this.render()
+      this._pushData()
     })
 
     // Status dropdown
     this.querySelector('#statusSelect')?.addEventListener('change', (e) => {
       this._statusFilter = (e.target as HTMLSelectElement).value
-      this.render()
+      this._pushData()
     })
+
+    this._pushTable()
+  }
+
+  private _pushTable() {
+    const grouped = this.groupedByNode
+    const filteredCount = this.filteredInstalled.length
+
+    if (filteredCount === 0) {
+      this._set('table', `
+        <div class="empty-state">
+          <h3>No installed packages found.</h3>
+          <p>Install packages from the repository catalog to see them here.</p>
+        </div>
+      `)
+      return
+    }
+
+    const tableHtml = `
+      <div class="md-panel" style="margin-bottom:0">
+        <table class="md-table">
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>Type</th>
+              <th>Installed Version</th>
+              <th>Latest Version</th>
+              <th>Status</th>
+              <th>Integrity</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody class="md-interactive">
+            ${Array.from(grouped.entries()).map(([node, pkgs]) => {
+              const nodeHeader = `
+            <tr class="node-group-header">
+              <td colspan="7">${node}</td>
+            </tr>`
+              const rows = pkgs.map(p => {
+                const kind = kindFromString(p.kind || '')
+                const latest = this._latestMap.get(p.name) ?? '--'
+                const status = this.statusOf(p)
+                const verClass = status === 'installed' ? 'ver-match'
+                  : status === 'drifted' ? 'ver-mismatch' : ''
+                return `
+            <tr class="pkg-row" data-publisher="${esc(p.publisher)}" data-name="${esc(p.name)}">
+              <td class="pkg-name">${p.name}</td>
+              <td>${kindBadge(kind)}</td>
+              <td>${(p.version || '--') + ((p as any).buildNumber > 0 ? '+b' + (p as any).buildNumber : '')}</td>
+              <td class="${verClass}">${latest}</td>
+              <td>${statusBadge(status)}</td>
+              <td>${integrityChip(p)}</td>
+              <td>
+                <button class="md-btn md-btn-text md-btn-sm btn-view"
+                  data-publisher="${esc(p.publisher)}"
+                  data-name="${esc(p.name)}">View</button>
+              </td>
+            </tr>`
+              }).join('')
+              return nodeHeader + rows
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+    this._set('table', tableHtml)
 
     // Row clicks
     this.querySelectorAll('.pkg-row').forEach(row => {

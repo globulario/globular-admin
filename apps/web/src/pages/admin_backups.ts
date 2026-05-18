@@ -156,9 +156,11 @@ class PageAdminBackups extends HTMLElement {
   private _loading = false
   private _error = ''
 
+  private _built = false
+
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
+    this._buildShell()
     this.loadTab()
   }
 
@@ -167,7 +169,9 @@ class PageAdminBackups extends HTMLElement {
     this.stopJobsListPoll()
   }
 
-  private render() {
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .bk-tabs {

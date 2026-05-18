@@ -622,19 +622,26 @@ class PageObservabilityMetrics extends HTMLElement {
     if (results[9].status === 'fulfilled') this._envoy = results[9].value
     if (results[10].status === 'fulfilled') this._nodeMetrics = results[10].value
 
+    const wasLoading = this._loading
     this._loading = false
     this._lastUpdated = Date.now()
 
     // Stale selection guard: clear if selected node no longer in list
+    let nodeStale = false
     if (this._selectedNode && this._nodes.length > 0 &&
         !this._nodes.some(n => n.hostname === this._selectedNode)) {
       this._selectedNode = ''
       this._overviewHistory = null
       this._fetchHistory()
+      nodeStale = true
     }
 
-    if (!this._tryUpdateCharts()) {
+    if (wasLoading || nodeStale) {
+      // First successful poll: transition out of loading state or node changed — full render needed.
       this._render()
+    } else if (!this._tryUpdateCharts()) {
+      // Charts not mounted (non-chart tab active): patch live slots only.
+      this._updateLiveValues()
     }
   }
 
@@ -664,8 +671,12 @@ class PageObservabilityMetrics extends HTMLElement {
       // leave existing values
     }
     this._historyLoading = false
+    // Update the range-loading indicator in the range picker (slot patch).
+    const loadingEl = this.querySelector<HTMLElement>('.om-range-loading')
+    if (loadingEl) loadingEl.style.display = 'none'
     if (!this._tryUpdateCharts()) {
-      this._render()
+      // No charts mounted: just patch live slots, don't rebuild shell.
+      this._updateLiveValues()
     }
   }
 

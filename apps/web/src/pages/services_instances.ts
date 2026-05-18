@@ -86,6 +86,7 @@ const INFRA_SERVICES = new Set([
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageServicesInstances extends HTMLElement {
+  private _built = false
   private _groups:        ServiceGroup[] = []
   private _cpGroups:      ServiceGroup[] = []
   private _loadError    = ''
@@ -95,16 +96,125 @@ class PageServicesInstances extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+    this._buildShell()
+    this._load()
+    this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
   }
 
-  private async load() {
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+    this.innerHTML = `
+      <style>
+        .si-wrap { padding: 16px; }
+        .si-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+        .si-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
+        .si-subtitle { margin: .25rem 0 1rem; opacity: .85; font: var(--md-typescale-body-medium); }
+        .si-mono { font-family: monospace; font-size: .8em; color: var(--secondary-text-color); }
+        .si-name { font-weight: 600; }
+        .si-chevron { font-size: .9rem; color: var(--secondary-text-color); transition: transform .15s; cursor: pointer; }
+        .si-chevron.open { transform: rotate(90deg); }
+        .si-empty { padding: 14px 16px; font-style: italic; color: var(--secondary-text-color); font-size: .82rem; }
+        .si-btn {
+          border: 1px solid var(--border-subtle-color);
+          background: transparent;
+          color: var(--on-surface-color);
+          border-radius: var(--md-shape-sm);
+          padding: 3px 10px;
+          cursor: pointer;
+          font-size: .72rem;
+        }
+        .si-btn:hover { background: var(--md-state-hover); }
+        .si-kind {
+          display: inline-block;
+          font-size: .6rem;
+          padding: 1px 5px;
+          border-radius: 3px;
+          margin-left: 6px;
+          vertical-align: middle;
+          font-weight: 500;
+          color: var(--secondary-text-color);
+          border: 1px solid var(--border-subtle-color);
+        }
+        .si-instance-row td {
+          padding: 4px 12px;
+          font-size: .8rem;
+          background: var(--md-surface-container-lowest);
+          border-bottom: 1px solid var(--border-subtle-color);
+        }
+        .si-instance-row td:first-child { padding-left: 36px; }
+        .si-node-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-weight: 500;
+        }
+        .si-node-dot {
+          width: 8px; height: 8px; border-radius: 50%;
+          display: inline-block;
+        }
+        .si-node-dot.ready { background: var(--success-color); }
+        .si-node-dot.unhealthy { background: var(--error-color); }
+        .si-node-dot.converging { background: #f59e0b; }
+        .si-node-dot.unknown { background: var(--secondary-text-color); }
+        .si-count {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: .8rem;
+          font-family: monospace;
+        }
+        .si-count-bar {
+          display: inline-flex; height: 6px; border-radius: 3px; overflow: hidden; width: 40px;
+        }
+        .si-count-fill { height: 100%; }
+        .si-profiles {
+          display: inline-flex; gap: 3px; flex-wrap: wrap;
+        }
+        .si-profile-chip {
+          font-size: .6rem;
+          padding: 0 4px;
+          border-radius: 3px;
+          background: var(--md-surface-container);
+          color: var(--secondary-text-color);
+        }
+        .si-cp-note {
+          padding: 10px 14px;
+          font-size: .72rem;
+          color: var(--secondary-text-color);
+          background: var(--md-surface-container-lowest);
+          border-top: 1px solid var(--border-subtle-color);
+          line-height: 1.5;
+        }
+      </style>
+
+      <div class="si-wrap">
+        <div class="si-header">
+          <h2>Service Instances</h2>
+          <div style="flex:1"></div>
+          <button class="si-btn" id="btnRefresh">↻ Refresh</button>
+        </div>
+        <p class="si-subtitle">Cluster-wide service instances across all nodes.</p>
+
+        <div data-bind="loading"></div>
+        <div data-bind="error"></div>
+        <div data-bind="content"></div>
+      </div>
+    `
+
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => this._load())
+  }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private async _load() {
     try {
       // Fetch cluster-wide data in parallel.
       const [nodes, healthResult, cfg] = await Promise.all([
@@ -119,7 +229,7 @@ class PageServicesInstances extends HTMLElement {
       this._loadError = e?.message || 'Could not load cluster data'
     }
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   private buildGroups(
@@ -230,179 +340,81 @@ class PageServicesInstances extends HTMLElement {
     this._cpGroups = cpGroups
   }
 
-  private render() {
+  private _pushData() {
+    this._set('loading', this._loading ? `<p style="padding:14px;font-style:italic;color:var(--secondary-text-color)">Loading…</p>` : '')
+    this._set('error', this._loadError ? `<div class="md-banner-warn">⚠ ${this._loadError}</div>` : '')
+
+    if (this._loading || this._loadError) {
+      this._set('content', '')
+      return
+    }
+
     const totalRunning = this._groups.reduce((n, g) => n + g.running, 0)
     const totalInstances = this._groups.reduce((n, g) => n + g.instances.length, 0)
 
-    this.innerHTML = `
-      <style>
-        .si-wrap { padding: 16px; }
-        .si-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-        .si-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
-        .si-subtitle { margin: .25rem 0 1rem; opacity: .85; font: var(--md-typescale-body-medium); }
-        .si-mono { font-family: monospace; font-size: .8em; color: var(--secondary-text-color); }
-        .si-name { font-weight: 600; }
-        .si-chevron { font-size: .9rem; color: var(--secondary-text-color); transition: transform .15s; cursor: pointer; }
-        .si-chevron.open { transform: rotate(90deg); }
-        .si-empty { padding: 14px 16px; font-style: italic; color: var(--secondary-text-color); font-size: .82rem; }
-        .si-btn {
-          border: 1px solid var(--border-subtle-color);
-          background: transparent;
-          color: var(--on-surface-color);
-          border-radius: var(--md-shape-sm);
-          padding: 3px 10px;
-          cursor: pointer;
-          font-size: .72rem;
-        }
-        .si-btn:hover { background: var(--md-state-hover); }
-        .si-kind {
-          display: inline-block;
-          font-size: .6rem;
-          padding: 1px 5px;
-          border-radius: 3px;
-          margin-left: 6px;
-          vertical-align: middle;
-          font-weight: 500;
-          color: var(--secondary-text-color);
-          border: 1px solid var(--border-subtle-color);
-        }
-        .si-instance-row td {
-          padding: 4px 12px;
-          font-size: .8rem;
-          background: var(--md-surface-container-lowest);
-          border-bottom: 1px solid var(--border-subtle-color);
-        }
-        .si-instance-row td:first-child { padding-left: 36px; }
-        .si-node-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          font-weight: 500;
-        }
-        .si-node-dot {
-          width: 8px; height: 8px; border-radius: 50%;
-          display: inline-block;
-        }
-        .si-node-dot.ready { background: var(--success-color); }
-        .si-node-dot.unhealthy { background: var(--error-color); }
-        .si-node-dot.converging { background: #f59e0b; }
-        .si-node-dot.unknown { background: var(--secondary-text-color); }
-        .si-count {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          font-size: .8rem;
-          font-family: monospace;
-        }
-        .si-count-bar {
-          display: inline-flex; height: 6px; border-radius: 3px; overflow: hidden; width: 40px;
-        }
-        .si-count-fill { height: 100%; }
-        .si-profiles {
-          display: inline-flex; gap: 3px; flex-wrap: wrap;
-        }
-        .si-profile-chip {
-          font-size: .6rem;
-          padding: 0 4px;
-          border-radius: 3px;
-          background: var(--md-surface-container);
-          color: var(--secondary-text-color);
-        }
-        .si-cp-note {
-          padding: 10px 14px;
-          font-size: .72rem;
-          color: var(--secondary-text-color);
-          background: var(--md-surface-container-lowest);
-          border-top: 1px solid var(--border-subtle-color);
-          line-height: 1.5;
-        }
-      </style>
-
-      <div class="si-wrap">
-        <div class="si-header">
-          <h2>Service Instances</h2>
-          <div style="flex:1"></div>
-          <button class="si-btn" id="btnRefresh">↻ Refresh</button>
+    this._set('content', `
+      <!-- ── Application services ────────────────────────── -->
+      <div class="md-panel">
+        <div class="md-panel-header">
+          <span>Application Services (${this._groups.length} services, ${totalInstances} instances)</span>
+          <span>${totalRunning} running across nodes</span>
         </div>
-        <p class="si-subtitle">Cluster-wide service instances across all nodes.</p>
-
-        ${this._loading ? `<p style="padding:14px;font-style:italic;color:var(--secondary-text-color)">Loading…</p>` : ''}
-
-        ${this._loadError ? `
-        <div class="md-banner-warn">
-          ⚠ ${this._loadError}
-        </div>` : ''}
-
-        ${!this._loading && !this._loadError ? `
-
-        <!-- ── Application services ────────────────────────── -->
-        <div class="md-panel">
-          <div class="md-panel-header">
-            <span>Application Services (${this._groups.length} services, ${totalInstances} instances)</span>
-            <span>${totalRunning} running across nodes</span>
-          </div>
-          ${this._groups.length === 0
-            ? `<p class="si-empty">No services registered.</p>`
-            : `<table class="md-table">
-                <thead>
-                  <tr>
-                    <th style="width:24px"></th>
-                    <th>Service</th>
-                    <th>Port</th>
-                    <th>Version</th>
-                    <th>Nodes</th>
-                    <th>TLS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${this._groups.map(g => this.renderGroupRows(g)).join('')}
-                </tbody>
-              </table>`
-          }
-        </div>
-
-        <!-- ── Cluster Control Plane ───────────────────────── -->
-        <div class="md-panel">
-          <div class="md-panel-header">
-            <span>Cluster Control Plane (${this._cpGroups.length})</span>
-            <span>systemd-managed</span>
-          </div>
-          ${this._cpGroups.length === 0
-            ? `<p class="si-empty">No control-plane services detected.</p>`
-            : `<table class="md-table">
-                <thead>
-                  <tr>
-                    <th style="width:24px"></th>
-                    <th>Service</th>
-                    <th>Port</th>
-                    <th>Version</th>
-                    <th>Nodes</th>
-                    <th>TLS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${this._cpGroups.map(g => this.renderGroupRows(g)).join('')}
-                </tbody>
-              </table>
-              <div class="si-cp-note">
-                Control-plane services (NodeAgent, ClusterController, ClusterDoctor) run on
-                every node as systemd units. They are not routed through Envoy.
-              </div>`
-          }
-        </div>
-
-        ` : ''}
+        ${this._groups.length === 0
+          ? `<p class="si-empty">No services registered.</p>`
+          : `<table class="md-table">
+              <thead>
+                <tr>
+                  <th style="width:24px"></th>
+                  <th>Service</th>
+                  <th>Port</th>
+                  <th>Version</th>
+                  <th>Nodes</th>
+                  <th>TLS</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${this._groups.map(g => this.renderGroupRows(g)).join('')}
+              </tbody>
+            </table>`
+        }
       </div>
-    `
 
-    // Event listeners
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+      <!-- ── Cluster Control Plane ───────────────────────── -->
+      <div class="md-panel">
+        <div class="md-panel-header">
+          <span>Cluster Control Plane (${this._cpGroups.length})</span>
+          <span>systemd-managed</span>
+        </div>
+        ${this._cpGroups.length === 0
+          ? `<p class="si-empty">No control-plane services detected.</p>`
+          : `<table class="md-table">
+              <thead>
+                <tr>
+                  <th style="width:24px"></th>
+                  <th>Service</th>
+                  <th>Port</th>
+                  <th>Version</th>
+                  <th>Nodes</th>
+                  <th>TLS</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${this._cpGroups.map(g => this.renderGroupRows(g)).join('')}
+              </tbody>
+            </table>
+            <div class="si-cp-note">
+              Control-plane services (NodeAgent, ClusterController, ClusterDoctor) run on
+              every node as systemd units. They are not routed through Envoy.
+            </div>`
+        }
+      </div>
+    `)
 
     this.querySelectorAll<HTMLElement>('tr.si-group-row[data-svc]').forEach(el => {
       el.addEventListener('click', () => {
         const svc = el.dataset.svc ?? ''
         this._expandedSvc = this._expandedSvc === svc ? '' : svc
-        this.render()
+        this._pushData()
       })
     })
   }

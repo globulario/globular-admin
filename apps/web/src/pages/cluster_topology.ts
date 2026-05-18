@@ -93,144 +93,22 @@ class PageClusterTopology extends HTMLElement {
   private _loading = true
   private _nodesError = ''
   private _expandedNode: string | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+    this._buildShell()
+    this._load()
+    this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
   }
 
-  private async load() {
-    const [nodesRes, healthRes, driftRes] = await Promise.allSettled([
-      listClusterNodes(),
-      getClusterHealth(),
-      getDriftReport(),
-    ])
-
-    if (nodesRes.status === 'fulfilled') {
-      this._nodes = nodesRes.value
-      this._nodesError = ''
-    } else {
-      this._nodesError = (nodesRes.reason as any)?.message || 'ClusterController unavailable'
-    }
-
-    if (healthRes.status === 'fulfilled') {
-      this._healthNodes = new Map(healthRes.value.nodes.map(n => [n.nodeId, n]))
-    }
-
-    if (driftRes.status === 'fulfilled') {
-      const byNode = new Map<string, DriftItem[]>()
-      for (const item of driftRes.value.items) {
-        const list = byNode.get(item.nodeId) ?? []
-        list.push(item)
-        byNode.set(item.nodeId, list)
-      }
-      this._driftByNode = byNode
-    }
-
-    this._loading = false
-    this.render()
-  }
-
-  private renderNodeCard(node: ClusterNode): string {
-    const health = this._healthNodes.get(node.nodeId)
-    const drift = this._driftByNode.get(node.nodeId) ?? []
-    const status = health?.status || node.status || 'unknown'
-    const borderColor = statusColor(status)
-    const lastSeen = health?.lastSeen || node.lastSeen
-    const failedChecks = health?.failedChecks ?? 0
-    const expanded = this._expandedNode === node.nodeId
-
-    const profileTags = node.profiles.length > 0
-      ? node.profiles.map(p => `<span class="md-chip md-chip-tonal">${p}</span>`).join('')
-      : ''
-
-    return `
-      <div class="node-card${expanded ? ' expanded' : ''}"
-           style="border-left:4px solid ${borderColor}"
-           data-node-id="${node.nodeId}">
-
-        <div class="node-card-header">
-          <div class="node-name">
-            <span class="dot" style="background:${borderColor}"></span>
-            <span class="hostname">${node.hostname || node.nodeId}</span>
-            ${profileTags}
-          </div>
-          ${statusBadge(status)}
-        </div>
-
-        <div class="node-card-body">
-          <div class="node-meta">
-            <span class="meta-label">IPs</span>
-            <span class="meta-value mono">${node.ips.join(' · ') || '—'}</span>
-          </div>
-          <div class="node-meta">
-            <span class="meta-label">Last seen</span>
-            <span class="meta-value">${relativeTime(lastSeen)}</span>
-          </div>
-          <div class="node-meta">
-            <span class="meta-label">Inventory</span>
-            ${node.inventoryComplete
-              ? `<span class="meta-value ok">✓ complete</span>`
-              : `<span class="meta-value warn">⚠ incomplete</span>`}
-          </div>
-          ${failedChecks > 0 ? `
-          <div class="node-meta">
-            <span class="meta-label">Checks</span>
-            <span class="meta-value err">${failedChecks} failed</span>
-          </div>` : ''}
-          <div class="node-meta">
-            <span class="meta-label">Drift</span>
-            ${drift.length > 0
-              ? `<span class="meta-value warn">${drift.length} item${drift.length !== 1 ? 's' : ''}</span>`
-              : `<span class="meta-value ok">✓ none</span>`}
-          </div>
-          ${node.lastError ? `
-          <div class="node-meta">
-            <span class="meta-label">Error</span>
-            <span class="meta-value err" style="font-size:.75rem">${node.lastError}</span>
-          </div>` : ''}
-        </div>
-
-        ${capsCard(node.capabilities)}
-
-        ${expanded && drift.length > 0 ? `
-        <div class="node-drift">
-          <div class="drift-header">Drift Details</div>
-          ${drift.map(d => `
-          <div class="drift-row">
-            <span class="drift-entity">${d.entityRef}</span>
-            <span class="drift-cat">${driftCategoryLabel(d.category)}</span>
-            <div class="drift-vals">
-              <span class="drift-kv"><span class="drift-kv-label">desired</span><code>${d.desired}</code></span>
-              <span class="drift-kv"><span class="drift-kv-label">actual</span><code>${d.actual}</code></span>
-            </div>
-          </div>`).join('')}
-        </div>` : ''}
-
-        <button class="node-toggle" data-node-id="${node.nodeId}">
-          ${expanded ? '▲ Less' : '▼ Details'}
-        </button>
-      </div>
-    `
-  }
-
-  private render() {
-    const now = new Date().toLocaleTimeString()
-
-    const totalDrift = [...this._driftByNode.values()].reduce((s, items) => s + items.length, 0)
-
-    const healthyCount = this._nodes.filter(n => {
-      const st = (this._healthNodes.get(n.nodeId)?.status || n.status || '').toUpperCase()
-      return st === 'HEALTHY' || st === 'READY' || st === 'CONVERGING'
-    }).length
-    const degradedCount = this._nodes.length - healthyCount
-
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .topo { padding:16px; display:flex; flex-direction:column; gap:20px; }
@@ -370,61 +248,204 @@ class PageClusterTopology extends HTMLElement {
       </style>
 
       <div class="topo">
-
-        <!-- Header -->
         <div class="topo-header">
           <h2>Cluster Topology</h2>
-          <span class="topo-ts">Updated ${now}</span>
+          <span class="topo-ts" data-bind="timestamp"></span>
           <button class="btn-refresh" id="btnRefresh">↻ Refresh</button>
         </div>
-
-        ${this._loading ? `<div class="empty-msg">Loading topology data…</div>` : ''}
-
-        ${this._nodesError ? `
-        <div class="md-banner-warn">
-          ⚠ ${this._nodesError}
-        </div>` : ''}
-
-        <!-- Summary stats -->
-        ${!this._nodesError ? `
-        <div class="stat-grid">
-          <div class="stat-card">
-            <div class="label">Nodes</div>
-            <div class="value">${this._nodes.length}</div>
-          </div>
-          <div class="stat-card">
-            <div class="label">Healthy</div>
-            <div class="value" style="color:var(--success-color)">${healthyCount}</div>
-          </div>
-          <div class="stat-card">
-            <div class="label">Degraded</div>
-            <div class="value" style="color:${degradedCount > 0 ? '#f59e0b' : 'inherit'}">${degradedCount}</div>
-          </div>
-          <div class="stat-card">
-            <div class="label">Drift Items</div>
-            <div class="value" style="color:${totalDrift > 0 ? '#f59e0b' : 'var(--success-color)'}">${totalDrift}</div>
-          </div>
-        </div>` : ''}
-
-        <!-- Node cards -->
-        <div class="node-grid">
-          ${this._nodes.length === 0 && !this._loading && !this._nodesError
-            ? `<p class="empty-msg">No nodes registered in this cluster.</p>`
-            : this._nodes.map(n => this.renderNodeCard(n)).join('')}
-        </div>
-
+        <div data-bind="error"></div>
+        <div data-bind="stats"></div>
+        <div class="node-grid" data-bind="nodes"></div>
       </div>
     `
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => this._load())
+  }
 
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
 
+  private async _load() {
+    const [nodesRes, healthRes, driftRes] = await Promise.allSettled([
+      listClusterNodes(),
+      getClusterHealth(),
+      getDriftReport(),
+    ])
+
+    if (nodesRes.status === 'fulfilled') {
+      this._nodes = nodesRes.value
+      this._nodesError = ''
+    } else {
+      this._nodesError = (nodesRes.reason as any)?.message || 'ClusterController unavailable'
+    }
+
+    if (healthRes.status === 'fulfilled') {
+      this._healthNodes = new Map(healthRes.value.nodes.map(n => [n.nodeId, n]))
+    }
+
+    if (driftRes.status === 'fulfilled') {
+      const byNode = new Map<string, DriftItem[]>()
+      for (const item of driftRes.value.items) {
+        const list = byNode.get(item.nodeId) ?? []
+        list.push(item)
+        byNode.set(item.nodeId, list)
+      }
+      this._driftByNode = byNode
+    }
+
+    this._loading = false
+    this._pushData()
+  }
+
+  private _renderNodeCard(node: ClusterNode): string {
+    const health = this._healthNodes.get(node.nodeId)
+    const drift = this._driftByNode.get(node.nodeId) ?? []
+    const status = health?.status || node.status || 'unknown'
+    const borderColor = statusColor(status)
+    const lastSeen = health?.lastSeen || node.lastSeen
+    const failedChecks = health?.failedChecks ?? 0
+    const expanded = this._expandedNode === node.nodeId
+
+    const profileTags = node.profiles.length > 0
+      ? node.profiles.map(p => `<span class="md-chip md-chip-tonal">${p}</span>`).join('')
+      : ''
+
+    return `
+      <div class="node-card${expanded ? ' expanded' : ''}"
+           style="border-left:4px solid ${borderColor}"
+           data-node-id="${node.nodeId}">
+
+        <div class="node-card-header">
+          <div class="node-name">
+            <span class="dot" style="background:${borderColor}"></span>
+            <span class="hostname">${node.hostname || node.nodeId}</span>
+            ${profileTags}
+          </div>
+          ${statusBadge(status)}
+        </div>
+
+        <div class="node-card-body">
+          <div class="node-meta">
+            <span class="meta-label">IPs</span>
+            <span class="meta-value mono">${node.ips.join(' · ') || '—'}</span>
+          </div>
+          <div class="node-meta">
+            <span class="meta-label">Last seen</span>
+            <span class="meta-value">${relativeTime(lastSeen)}</span>
+          </div>
+          <div class="node-meta">
+            <span class="meta-label">Inventory</span>
+            ${node.inventoryComplete
+              ? `<span class="meta-value ok">✓ complete</span>`
+              : `<span class="meta-value warn">⚠ incomplete</span>`}
+          </div>
+          ${failedChecks > 0 ? `
+          <div class="node-meta">
+            <span class="meta-label">Checks</span>
+            <span class="meta-value err">${failedChecks} failed</span>
+          </div>` : ''}
+          <div class="node-meta">
+            <span class="meta-label">Drift</span>
+            ${drift.length > 0
+              ? `<span class="meta-value warn">${drift.length} item${drift.length !== 1 ? 's' : ''}</span>`
+              : `<span class="meta-value ok">✓ none</span>`}
+          </div>
+          ${node.lastError ? `
+          <div class="node-meta">
+            <span class="meta-label">Error</span>
+            <span class="meta-value err" style="font-size:.75rem">${node.lastError}</span>
+          </div>` : ''}
+        </div>
+
+        ${capsCard(node.capabilities)}
+
+        ${expanded && drift.length > 0 ? `
+        <div class="node-drift">
+          <div class="drift-header">Drift Details</div>
+          ${drift.map(d => `
+          <div class="drift-row">
+            <span class="drift-entity">${d.entityRef}</span>
+            <span class="drift-cat">${driftCategoryLabel(d.category)}</span>
+            <div class="drift-vals">
+              <span class="drift-kv"><span class="drift-kv-label">desired</span><code>${d.desired}</code></span>
+              <span class="drift-kv"><span class="drift-kv-label">actual</span><code>${d.actual}</code></span>
+            </div>
+          </div>`).join('')}
+        </div>` : ''}
+
+        <button class="node-toggle" data-node-id="${node.nodeId}">
+          ${expanded ? '▲ Less' : '▼ Details'}
+        </button>
+      </div>
+    `
+  }
+
+  private _pushData() {
+    const now = new Date().toLocaleTimeString()
+    this._set('timestamp', `Updated ${now}`)
+
+    if (this._loading) {
+      this._set('error', '')
+      this._set('stats', '<div class="empty-msg">Loading topology data…</div>')
+      this._set('nodes', '')
+      return
+    }
+
+    if (this._nodesError) {
+      this._set('error', `<div class="md-banner-warn">⚠ ${this._nodesError}</div>`)
+      this._set('stats', '')
+      this._set('nodes', '')
+      return
+    }
+
+    this._set('error', '')
+
+    const totalDrift = [...this._driftByNode.values()].reduce((s, items) => s + items.length, 0)
+    const healthyCount = this._nodes.filter(n => {
+      const st = (this._healthNodes.get(n.nodeId)?.status || n.status || '').toUpperCase()
+      return st === 'HEALTHY' || st === 'READY' || st === 'CONVERGING'
+    }).length
+    const degradedCount = this._nodes.length - healthyCount
+
+    this._set('stats', `
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="label">Nodes</div>
+          <div class="value">${this._nodes.length}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Healthy</div>
+          <div class="value" style="color:var(--success-color)">${healthyCount}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Degraded</div>
+          <div class="value" style="color:${degradedCount > 0 ? '#f59e0b' : 'inherit'}">${degradedCount}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Drift Items</div>
+          <div class="value" style="color:${totalDrift > 0 ? '#f59e0b' : 'var(--success-color)'}">${totalDrift}</div>
+        </div>
+      </div>
+    `)
+
+    if (this._nodes.length === 0) {
+      this._set('nodes', '<p class="empty-msg">No nodes registered in this cluster.</p>')
+    } else {
+      this._set('nodes', this._nodes.map(n => this._renderNodeCard(n)).join(''))
+    }
+
+    this._bindNodeEvents()
+  }
+
+  private _bindNodeEvents() {
     // Wire up toggle buttons (stop propagation so card click doesn't double-fire)
     this.querySelectorAll<HTMLButtonElement>('.node-toggle').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation()
         const nodeId = btn.dataset.nodeId!
         this._expandedNode = this._expandedNode === nodeId ? null : nodeId
-        this.render()
+        this._pushData()
       })
     })
 
@@ -433,7 +454,7 @@ class PageClusterTopology extends HTMLElement {
       card.addEventListener('click', () => {
         const nodeId = card.dataset.nodeId!
         this._expandedNode = this._expandedNode === nodeId ? null : nodeId
-        this.render()
+        this._pushData()
       })
     })
   }

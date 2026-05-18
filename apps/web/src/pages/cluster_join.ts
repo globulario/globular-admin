@@ -52,10 +52,22 @@ class PageClusterJoin extends HTMLElement {
   private _tokenLoading = false
 
   private _refreshTimer: number | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._refreshTimer = window.setInterval(() => this._load(), 30_000)
+  }
 
+  disconnectedCallback() {
+    if (this._refreshTimer) clearInterval(this._refreshTimer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     // Static shell — info panel lives here so collapse state survives re-renders
     this.innerHTML = `
       <style>
@@ -297,19 +309,12 @@ the cluster default. Common values:
     const infoPanel = this.querySelector('#infoPanel') as any
     infoBtn?.addEventListener('click', () => infoPanel?.toggle())
 
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
-
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
-  }
-
-  disconnectedCallback() {
-    if (this._refreshTimer) clearInterval(this._refreshTimer)
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => this._load())
   }
 
   // ─── Data ─────────────────────────────────────────────────────────────────
 
-  private async load() {
+  private async _load() {
     try {
       this._requests = await listJoinRequests()
       this._loadError = ''
@@ -317,7 +322,7 @@ the cluster default. Common values:
       this._loadError = e?.message || 'ClusterController unavailable'
     }
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   private async doApprove(requestId: string) {
@@ -329,17 +334,17 @@ the cluster default. Common values:
 
     this._actionPending = true
     this._actionError = ''
-    this.render()
+    this._pushData()
 
     try {
       await approveJoin(requestId, profiles)
       this._expandedId = ''
       this._actionPending = false
-      await this.load()
+      await this._load()
     } catch (e: any) {
       this._actionError = e?.message || 'Approval failed'
       this._actionPending = false
-      this.render()
+      this._pushData()
     }
   }
 
@@ -349,17 +354,17 @@ the cluster default. Common values:
 
     this._actionPending = true
     this._actionError = ''
-    this.render()
+    this._pushData()
 
     try {
       await rejectJoin(requestId, reason)
       this._expandedId = ''
       this._actionPending = false
-      await this.load()
+      await this._load()
     } catch (e: any) {
       this._actionError = e?.message || 'Rejection failed'
       this._actionPending = false
-      this.render()
+      this._pushData()
     }
   }
 
@@ -368,7 +373,7 @@ the cluster default. Common values:
     this._tokenError = ''
     this._token = ''
     this._tokenExpiry = ''
-    this.render()
+    this._pushData()
 
     try {
       const result = await createJoinToken()
@@ -378,12 +383,12 @@ the cluster default. Common values:
       this._tokenError = e?.message || 'Failed to create join token'
     }
     this._tokenLoading = false
-    this.render()
+    this._pushData()
   }
 
   // ─── Render (dynamic content only) ────────────────────────────────────────
 
-  private render() {
+  private _pushData() {
     const el = this.querySelector('#content') as HTMLElement
     if (!el) return
 
@@ -488,9 +493,9 @@ the cluster default. Common values:
       btn.addEventListener('click', () => {
         const id = btn.dataset.approve!
         if (this._expandedId === id && this._actionMode === 'approve') {
-          this._expandedId = ''; this.render()
+          this._expandedId = ''; this._pushData()
         } else {
-          this._expandedId = id; this._actionMode = 'approve'; this._actionError = ''; this.render()
+          this._expandedId = id; this._actionMode = 'approve'; this._actionError = ''; this._pushData()
         }
       })
     })
@@ -499,9 +504,9 @@ the cluster default. Common values:
       btn.addEventListener('click', () => {
         const id = btn.dataset.reject!
         if (this._expandedId === id && this._actionMode === 'reject') {
-          this._expandedId = ''; this.render()
+          this._expandedId = ''; this._pushData()
         } else {
-          this._expandedId = id; this._actionMode = 'reject'; this._actionError = ''; this.render()
+          this._expandedId = id; this._actionMode = 'reject'; this._actionError = ''; this._pushData()
         }
       })
     })
@@ -509,7 +514,7 @@ the cluster default. Common values:
     el.querySelector<HTMLButtonElement>('#btnConfirmApprove')?.addEventListener('click', () => this.doApprove(this._expandedId))
     el.querySelector<HTMLButtonElement>('#btnConfirmReject')?.addEventListener('click', () => this.doReject(this._expandedId))
     el.querySelector<HTMLButtonElement>('#btnCancelAction')?.addEventListener('click', () => {
-      this._expandedId = ''; this._actionError = ''; this.render()
+      this._expandedId = ''; this._actionError = ''; this._pushData()
     })
   }
 

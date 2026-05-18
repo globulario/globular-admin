@@ -28,9 +28,22 @@ class PageInfrastructureOverview extends HTMLElement {
   private _clusterV1: ClusterHealthV1Result | null = null
   private _report: ClusterReport | null = null
   private _minioReqRate: number | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._timer = window.setInterval(() => this._load(), POLL)
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${INFRA_STYLES}</style>
       <section class="wrap">
@@ -48,16 +61,10 @@ class PageInfrastructureOverview extends HTMLElement {
         <div id="ioIssues"></div>
       </section>
     `
-    this.querySelector('#ioRefresh')?.addEventListener('click', () => this.load())
-    this.load()
-    this._timer = window.setInterval(() => this.load(), POLL)
+    this.querySelector('#ioRefresh')?.addEventListener('click', () => this._load())
   }
 
-  disconnectedCallback() {
-    if (this._timer) clearInterval(this._timer)
-  }
-
-  private async load() {
+  private async _load() {
     const [svcR, stR, envR, clR, prR, v1R, rpR] = await Promise.allSettled([
       fetchAdminServices(),
       fetchAdminStorage(),
@@ -84,10 +91,10 @@ class PageInfrastructureOverview extends HTMLElement {
 
     this._lastUpdated = new Date()
 
-    this.render()
+    this._pushData()
   }
 
-  private render() {
+  private _pushData() {
     const tsEl = this.querySelector('#ioTimestamp') as HTMLElement
     if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
     const freshEl = this.querySelector('#ioFreshness') as HTMLElement

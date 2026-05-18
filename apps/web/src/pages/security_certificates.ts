@@ -392,8 +392,22 @@ class PageSecurityCertificates extends HTMLElement {
   private _clusterFilter: ClusterFilter = 'all'
   private _expandedNodes: Set<string> = new Set()
 
+  private _built = false
+
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._timer = window.setInterval(() => this._load(), POLL)
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${INFRA_STYLES}${PAGE_STYLES}</style>
       <section class="wrap">
@@ -410,20 +424,14 @@ class PageSecurityCertificates extends HTMLElement {
         <div id="certBody"></div>
       </section>
     `
-    this.querySelector('#certRefresh')?.addEventListener('click', () => this.load())
-    this.load()
-    this._timer = window.setInterval(() => this.load(), POLL)
-  }
-
-  disconnectedCallback() {
-    if (this._timer) clearInterval(this._timer)
+    this.querySelector('#certRefresh')?.addEventListener('click', () => this._load())
   }
 
   // ─── Data ───────────────────────────────────────────────────────────────────
 
-  private async load() {
+  private async _load() {
     this._loading = true
-    this.render()
+    this._pushData()
 
     try {
       if (this._mode === 'cluster') {
@@ -443,12 +451,12 @@ class PageSecurityCertificates extends HTMLElement {
 
     this._lastUpdated = new Date()
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
-  private render() {
+  private _pushData() {
     const tsEl = this.querySelector('#certTimestamp') as HTMLElement
     if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
     const freshEl = this.querySelector('#certFreshness') as HTMLElement
@@ -505,14 +513,14 @@ class PageSecurityCertificates extends HTMLElement {
     // Wire toast dismiss
     body.querySelector('[data-action="dismiss-toast"]')?.addEventListener('click', () => {
       this._actionResult = null
-      this.render()
+      this._pushData()
     })
 
     // Wire tabs
     body.querySelectorAll('.infra-tab:not(.mode-tab)').forEach(btn => {
       btn.addEventListener('click', () => {
         this._tab = (btn as HTMLElement).dataset.tab as CertTab
-        this.render()
+        this._pushData()
       })
     })
 
@@ -540,7 +548,7 @@ class PageSecurityCertificates extends HTMLElement {
         const newMode = (btn as HTMLElement).dataset.mode as CertMode
         if (newMode !== this._mode) {
           this._mode = newMode
-          this.load()
+          this._load()
         }
       })
     })
@@ -965,7 +973,7 @@ class PageSecurityCertificates extends HTMLElement {
 
     this._actionRunning = 'renew'
     this._actionResult = null
-    this.render()
+    this._pushData()
 
     try {
       const result = await renewPublicCert()
@@ -975,10 +983,10 @@ class PageSecurityCertificates extends HTMLElement {
     }
 
     this._actionRunning = null
-    this.render()
+    this._pushData()
 
     // Delayed re-fetch to pick up changes
-    setTimeout(() => this.load(), 3000)
+    setTimeout(() => this._load(), 3000)
   }
 
   private async doRegenerateInternal() {
@@ -994,7 +1002,7 @@ class PageSecurityCertificates extends HTMLElement {
 
     this._actionRunning = 'regenerate'
     this._actionResult = null
-    this.render()
+    this._pushData()
 
     try {
       const result = await regenerateInternalCerts()
@@ -1004,11 +1012,11 @@ class PageSecurityCertificates extends HTMLElement {
     }
 
     this._actionRunning = null
-    this.render()
+    this._pushData()
 
     // Immediate + delayed re-fetch
-    this.load()
-    setTimeout(() => this.load(), 3000)
+    this._load()
+    setTimeout(() => this._load(), 3000)
   }
 
   // ─── Cluster view ─────────────────────────────────────────────────────────

@@ -183,6 +183,7 @@ function groupArtifacts(artifacts: ArtifactManifest[]): PackageGroup[] {
 // ── Component ───────────────────────────────────────────────────────────────
 
 class PageRepository extends HTMLElement {
+  private _built = false
   private _refreshTimer: number | null = null
   private _artifacts: ArtifactManifest[] = []
   private _loading = true
@@ -196,114 +197,18 @@ class PageRepository extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+    this._buildShell()
+    this._load()
+    this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
   }
 
-  private async load() {
-    try {
-      this._artifacts = await listArtifacts()
-      this._error = ''
-    } catch (e: any) {
-      this._error = e?.message || 'Failed to load packages from repository'
-    }
-    this._loading = false
-    this.render()
-  }
-
-  private get filteredArtifacts(): ArtifactManifest[] {
-    let list = this._artifacts
-
-    // Kind filter
-    if (this._kindFilter !== 0) {
-      list = list.filter(a => a.ref?.kind === this._kindFilter)
-    }
-
-    // Publisher filter
-    if (this._publisherFilter) {
-      list = list.filter(a => a.ref?.publisherId === this._publisherFilter)
-    }
-
-    // State filter
-    if (this._stateFilter >= 0) {
-      list = list.filter(a => (ext(a).publishState ?? 0) === this._stateFilter)
-    }
-
-    // Trust filter
-    if (this._trustFilter) {
-      list = list.filter(a => {
-        const labels: string[] = ext(a).trustLabelsList || []
-        return labels.includes(this._trustFilter)
-      })
-    }
-
-    // Search filter
-    if (this._searchQuery) {
-      const q = this._searchQuery.toLowerCase()
-      list = list.filter(a => {
-        const e = ext(a)
-        const name = (a.ref?.name || '').toLowerCase()
-        const alias = ((e.alias as string) || '').toLowerCase()
-        const publisher = (a.ref?.publisherId || '').toLowerCase()
-        const keywords = ((e.keywordsList as string[]) || []).join(' ').toLowerCase()
-        const desc = ((e.description as string) || '').toLowerCase()
-        return name.includes(q) || alias.includes(q) || publisher.includes(q)
-            || keywords.includes(q) || desc.includes(q)
-      })
-    }
-
-    return list
-  }
-
-  private get distinctPublishers(): string[] {
-    const set = new Set<string>()
-    for (const a of this._artifacts) {
-      if (a.ref?.publisherId) set.add(a.ref.publisherId)
-    }
-    return Array.from(set).sort()
-  }
-
-  private countByKind(kind: number): number {
-    return this._artifacts.filter(a => a.ref?.kind === kind).length
-  }
-
-  private countByState(state: number): number {
-    return this._artifacts.filter(a => (ext(a) as any).publishState === state).length
-  }
-
-  private countVerified(): number {
-    return this._artifacts.filter(a => {
-      const labels: string[] = (ext(a) as any).trustLabelsList || []
-      return labels.includes('owned') || labels.includes('verified_namespace') || labels.includes('official')
-    }).length
-  }
-
-  private countTrustedCI(): number {
-    return this._artifacts.filter(a => {
-      const labels: string[] = (ext(a) as any).trustLabelsList || []
-      return labels.includes('trusted_ci')
-    }).length
-  }
-
-  private render() {
-    const filtered = this.filteredArtifacts
-    const publishers = this.distinctPublishers
-    const allGroups = groupArtifacts(this._artifacts)
-    const total = allGroups.length
-    const svcCount = allGroups.filter(g => g.latest.ref?.kind === KIND_SERVICE).length
-    const appCount = allGroups.filter(g => g.latest.ref?.kind === KIND_APPLICATION).length
-    const infraCount = allGroups.filter(g => g.latest.ref?.kind === KIND_INFRASTRUCTURE).length
-    const cmdCount = allGroups.filter(g => g.latest.ref?.kind === KIND_COMMAND).length
-    const verifiedCount = this.countVerified()
-    const ciCount = this.countTrustedCI()
-    const deprecatedCount = this.countByState(PS_DEPRECATED)
-    const quarantinedCount = this.countByState(PS_QUARANTINED)
-
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .repo { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
@@ -389,129 +294,287 @@ class PageRepository extends HTMLElement {
           <p class="repo-subtitle">Browse and manage deployable packages across the cluster.</p>
         </div>
 
-        ${this._loading ? '<div class="loading-msg">Loading packages...</div>' : ''}
-
-        ${this._error ? `
-        <div class="md-banner-warn">
-          ${this._error}
-          <button class="md-btn md-btn-outlined md-btn-sm" id="btnRetry" style="margin-left:12px">Retry</button>
-        </div>
-        ` : ''}
-
-        ${!this._loading && !this._error ? `
-        <!-- Stat Cards -->
-        <div class="stat-grid">
-          <div class="stat-card${this._kindFilter === 0 ? ' active' : ''}" data-kind="0">
-            <div class="label">Total Packages</div>
-            <div class="value">${total}</div>
-            <div class="sub">all types</div>
-          </div>
-          <div class="stat-card${this._kindFilter === KIND_SERVICE ? ' active' : ''}" data-kind="${KIND_SERVICE}">
-            <div class="label">Services</div>
-            <div class="value" style="color:#2563eb">${svcCount}</div>
-            <div class="sub">gRPC services</div>
-          </div>
-          <div class="stat-card${this._kindFilter === KIND_APPLICATION ? ' active' : ''}" data-kind="${KIND_APPLICATION}">
-            <div class="label">Applications</div>
-            <div class="value" style="color:#7c3aed">${appCount}</div>
-            <div class="sub">web applications</div>
-          </div>
-          <div class="stat-card${this._kindFilter === KIND_INFRASTRUCTURE ? ' active' : ''}" data-kind="${KIND_INFRASTRUCTURE}">
-            <div class="label">Infrastructure</div>
-            <div class="value" style="color:#d97706">${infraCount}</div>
-            <div class="sub">system daemons</div>
-          </div>
-          <div class="stat-card${this._kindFilter === KIND_COMMAND ? ' active' : ''}" data-kind="${KIND_COMMAND}">
-            <div class="label">Commands</div>
-            <div class="value" style="color:#059669">${cmdCount}</div>
-            <div class="sub">CLI tools</div>
-          </div>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-card" data-trust="verified" style="cursor:pointer">
-            <div class="label">Verified Publishers</div>
-            <div class="value" style="color:#16a34a">${verifiedCount}</div>
-            <div class="sub">owned namespaces</div>
-          </div>
-          <div class="stat-card" data-trust="trusted_ci" style="cursor:pointer">
-            <div class="label">Trusted CI</div>
-            <div class="value" style="color:#2563eb">${ciCount}</div>
-            <div class="sub">automated publish</div>
-          </div>
-          <div class="stat-card" data-state="${PS_DEPRECATED}" style="cursor:pointer">
-            <div class="label">Deprecated</div>
-            <div class="value" style="color:#ca8a04">${deprecatedCount}</div>
-            <div class="sub">end-of-life</div>
-          </div>
-          <div class="stat-card" data-state="${PS_QUARANTINED}" style="cursor:pointer">
-            <div class="label">Quarantined</div>
-            <div class="value" style="color:#dc2626">${quarantinedCount}</div>
-            <div class="sub">security review</div>
-          </div>
-        </div>
-
-        <!-- Toolbar -->
-        <div class="toolbar">
-          <input type="text" class="search-input" id="searchInput"
-            placeholder="Search packages..." value="${this._searchQuery.replace(/"/g, '&quot;')}" />
-          <select id="kindSelect">
-            <option value="0"${this._kindFilter === 0 ? ' selected' : ''}>All Types</option>
-            <option value="${KIND_SERVICE}"${this._kindFilter === KIND_SERVICE ? ' selected' : ''}>Services</option>
-            <option value="${KIND_APPLICATION}"${this._kindFilter === KIND_APPLICATION ? ' selected' : ''}>Applications</option>
-            <option value="${KIND_INFRASTRUCTURE}"${this._kindFilter === KIND_INFRASTRUCTURE ? ' selected' : ''}>Infrastructure</option>
-            <option value="${KIND_COMMAND}"${this._kindFilter === KIND_COMMAND ? ' selected' : ''}>Commands</option>
-          </select>
-          <select id="publisherSelect">
-            <option value=""${this._publisherFilter === '' ? ' selected' : ''}>All Publishers</option>
-            ${publishers.map(p => `<option value="${p}"${this._publisherFilter === p ? ' selected' : ''}>${p}</option>`).join('')}
-          </select>
-          <select id="stateSelect">
-            <option value="-1"${this._stateFilter === -1 ? ' selected' : ''}>All States</option>
-            <option value="${PS_PUBLISHED}"${this._stateFilter === PS_PUBLISHED ? ' selected' : ''}>Published</option>
-            <option value="${PS_DEPRECATED}"${this._stateFilter === PS_DEPRECATED ? ' selected' : ''}>Deprecated</option>
-            <option value="${PS_YANKED}"${this._stateFilter === PS_YANKED ? ' selected' : ''}>Yanked</option>
-            <option value="${PS_QUARANTINED}"${this._stateFilter === PS_QUARANTINED ? ' selected' : ''}>Quarantined</option>
-          </select>
-          <select id="trustSelect">
-            <option value=""${this._trustFilter === '' ? ' selected' : ''}>All Trust</option>
-            <option value="owned"${this._trustFilter === 'owned' ? ' selected' : ''}>Verified</option>
-            <option value="trusted_ci"${this._trustFilter === 'trusted_ci' ? ' selected' : ''}>Trusted CI</option>
-            <option value="unclaimed_namespace"${this._trustFilter === 'unclaimed_namespace' ? ' selected' : ''}>Unclaimed</option>
-          </select>
-        </div>
-
-        <!-- Package Table (grouped by package, latest version shown) -->
-        ${filtered.length > 0 ? this.renderPackageTable(filtered) : `
-        <div class="empty-state">
-          <h3>No packages found in the repository.</h3>
-          <p>Publish a service, application, or infrastructure package to make it available.</p>
-        </div>
-        `}
-        ` : ''}
+        <div data-bind="loading"></div>
+        <div data-bind="error"></div>
+        <div data-bind="content"></div>
 
       </div>
     `
 
-    // Wire up events
     this.querySelector('#btnRefresh')?.addEventListener('click', () => {
       this._loading = true
-      this.render()
-      this.load()
+      this._pushData()
+      this._load()
     })
+  }
 
-    this.querySelector('#btnRetry')?.addEventListener('click', () => {
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private async _load() {
+    try {
+      this._artifacts = await listArtifacts()
       this._error = ''
-      this._loading = true
-      this.render()
-      this.load()
+    } catch (e: any) {
+      this._error = e?.message || 'Failed to load packages from repository'
+    }
+    this._loading = false
+    this._pushData()
+  }
+
+  private get filteredArtifacts(): ArtifactManifest[] {
+    let list = this._artifacts
+
+    // Kind filter
+    if (this._kindFilter !== 0) {
+      list = list.filter(a => a.ref?.kind === this._kindFilter)
+    }
+
+    // Publisher filter
+    if (this._publisherFilter) {
+      list = list.filter(a => a.ref?.publisherId === this._publisherFilter)
+    }
+
+    // State filter
+    if (this._stateFilter >= 0) {
+      list = list.filter(a => (ext(a).publishState ?? 0) === this._stateFilter)
+    }
+
+    // Trust filter
+    if (this._trustFilter) {
+      list = list.filter(a => {
+        const labels: string[] = ext(a).trustLabelsList || []
+        return labels.includes(this._trustFilter)
+      })
+    }
+
+    // Search filter
+    if (this._searchQuery) {
+      const q = this._searchQuery.toLowerCase()
+      list = list.filter(a => {
+        const e = ext(a)
+        const name = (a.ref?.name || '').toLowerCase()
+        const alias = ((e.alias as string) || '').toLowerCase()
+        const publisher = (a.ref?.publisherId || '').toLowerCase()
+        const keywords = ((e.keywordsList as string[]) || []).join(' ').toLowerCase()
+        const desc = ((e.description as string) || '').toLowerCase()
+        return name.includes(q) || alias.includes(q) || publisher.includes(q)
+            || keywords.includes(q) || desc.includes(q)
+      })
+    }
+
+    return list
+  }
+
+  private get distinctPublishers(): string[] {
+    const set = new Set<string>()
+    for (const a of this._artifacts) {
+      if (a.ref?.publisherId) set.add(a.ref.publisherId)
+    }
+    return Array.from(set).sort()
+  }
+
+  private countByKind(kind: number): number {
+    return this._artifacts.filter(a => a.ref?.kind === kind).length
+  }
+
+  private countByState(state: number): number {
+    return this._artifacts.filter(a => (ext(a) as any).publishState === state).length
+  }
+
+  private countVerified(): number {
+    return this._artifacts.filter(a => {
+      const labels: string[] = (ext(a) as any).trustLabelsList || []
+      return labels.includes('owned') || labels.includes('verified_namespace') || labels.includes('official')
+    }).length
+  }
+
+  private countTrustedCI(): number {
+    return this._artifacts.filter(a => {
+      const labels: string[] = (ext(a) as any).trustLabelsList || []
+      return labels.includes('trusted_ci')
+    }).length
+  }
+
+  private _pushData() {
+    this._set('loading', this._loading ? '<div class="loading-msg">Loading packages...</div>' : '')
+
+    if (this._error) {
+      this._set('error', `
+        <div class="md-banner-warn">
+          ${this._error}
+          <button class="md-btn md-btn-outlined md-btn-sm" id="btnRetry" style="margin-left:12px">Retry</button>
+        </div>
+      `)
+      this.querySelector('#btnRetry')?.addEventListener('click', () => {
+        this._error = ''
+        this._loading = true
+        this._pushData()
+        this._load()
+      })
+    } else {
+      this._set('error', '')
+    }
+
+    if (this._loading || this._error) {
+      this._set('content', '')
+      return
+    }
+
+    const filtered = this.filteredArtifacts
+    const publishers = this.distinctPublishers
+    const allGroups = groupArtifacts(this._artifacts)
+    const total = allGroups.length
+    const svcCount = allGroups.filter(g => g.latest.ref?.kind === KIND_SERVICE).length
+    const appCount = allGroups.filter(g => g.latest.ref?.kind === KIND_APPLICATION).length
+    const infraCount = allGroups.filter(g => g.latest.ref?.kind === KIND_INFRASTRUCTURE).length
+    const cmdCount = allGroups.filter(g => g.latest.ref?.kind === KIND_COMMAND).length
+    const verifiedCount = this.countVerified()
+    const ciCount = this.countTrustedCI()
+    const deprecatedCount = this.countByState(PS_DEPRECATED)
+    const quarantinedCount = this.countByState(PS_QUARANTINED)
+
+    this._set('content', `
+      <!-- Stat Cards -->
+      <div class="stat-grid">
+        <div class="stat-card${this._kindFilter === 0 ? ' active' : ''}" data-kind="0">
+          <div class="label">Total Packages</div>
+          <div class="value">${total}</div>
+          <div class="sub">all types</div>
+        </div>
+        <div class="stat-card${this._kindFilter === KIND_SERVICE ? ' active' : ''}" data-kind="${KIND_SERVICE}">
+          <div class="label">Services</div>
+          <div class="value" style="color:#2563eb">${svcCount}</div>
+          <div class="sub">gRPC services</div>
+        </div>
+        <div class="stat-card${this._kindFilter === KIND_APPLICATION ? ' active' : ''}" data-kind="${KIND_APPLICATION}">
+          <div class="label">Applications</div>
+          <div class="value" style="color:#7c3aed">${appCount}</div>
+          <div class="sub">web applications</div>
+        </div>
+        <div class="stat-card${this._kindFilter === KIND_INFRASTRUCTURE ? ' active' : ''}" data-kind="${KIND_INFRASTRUCTURE}">
+          <div class="label">Infrastructure</div>
+          <div class="value" style="color:#d97706">${infraCount}</div>
+          <div class="sub">system daemons</div>
+        </div>
+        <div class="stat-card${this._kindFilter === KIND_COMMAND ? ' active' : ''}" data-kind="${KIND_COMMAND}">
+          <div class="label">Commands</div>
+          <div class="value" style="color:#059669">${cmdCount}</div>
+          <div class="sub">CLI tools</div>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card" data-trust="verified" style="cursor:pointer">
+          <div class="label">Verified Publishers</div>
+          <div class="value" style="color:#16a34a">${verifiedCount}</div>
+          <div class="sub">owned namespaces</div>
+        </div>
+        <div class="stat-card" data-trust="trusted_ci" style="cursor:pointer">
+          <div class="label">Trusted CI</div>
+          <div class="value" style="color:#2563eb">${ciCount}</div>
+          <div class="sub">automated publish</div>
+        </div>
+        <div class="stat-card" data-state="${PS_DEPRECATED}" style="cursor:pointer">
+          <div class="label">Deprecated</div>
+          <div class="value" style="color:#ca8a04">${deprecatedCount}</div>
+          <div class="sub">end-of-life</div>
+        </div>
+        <div class="stat-card" data-state="${PS_QUARANTINED}" style="cursor:pointer">
+          <div class="label">Quarantined</div>
+          <div class="value" style="color:#dc2626">${quarantinedCount}</div>
+          <div class="sub">security review</div>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <input type="text" class="search-input" id="searchInput"
+          placeholder="Search packages..." value="${this._searchQuery.replace(/"/g, '&quot;')}" />
+        <select id="kindSelect">
+          <option value="0"${this._kindFilter === 0 ? ' selected' : ''}>All Types</option>
+          <option value="${KIND_SERVICE}"${this._kindFilter === KIND_SERVICE ? ' selected' : ''}>Services</option>
+          <option value="${KIND_APPLICATION}"${this._kindFilter === KIND_APPLICATION ? ' selected' : ''}>Applications</option>
+          <option value="${KIND_INFRASTRUCTURE}"${this._kindFilter === KIND_INFRASTRUCTURE ? ' selected' : ''}>Infrastructure</option>
+          <option value="${KIND_COMMAND}"${this._kindFilter === KIND_COMMAND ? ' selected' : ''}>Commands</option>
+        </select>
+        <select id="publisherSelect">
+          <option value=""${this._publisherFilter === '' ? ' selected' : ''}>All Publishers</option>
+          ${publishers.map(p => `<option value="${p}"${this._publisherFilter === p ? ' selected' : ''}>${p}</option>`).join('')}
+        </select>
+        <select id="stateSelect">
+          <option value="-1"${this._stateFilter === -1 ? ' selected' : ''}>All States</option>
+          <option value="${PS_PUBLISHED}"${this._stateFilter === PS_PUBLISHED ? ' selected' : ''}>Published</option>
+          <option value="${PS_DEPRECATED}"${this._stateFilter === PS_DEPRECATED ? ' selected' : ''}>Deprecated</option>
+          <option value="${PS_YANKED}"${this._stateFilter === PS_YANKED ? ' selected' : ''}>Yanked</option>
+          <option value="${PS_QUARANTINED}"${this._stateFilter === PS_QUARANTINED ? ' selected' : ''}>Quarantined</option>
+        </select>
+        <select id="trustSelect">
+          <option value=""${this._trustFilter === '' ? ' selected' : ''}>All Trust</option>
+          <option value="owned"${this._trustFilter === 'owned' ? ' selected' : ''}>Verified</option>
+          <option value="trusted_ci"${this._trustFilter === 'trusted_ci' ? ' selected' : ''}>Trusted CI</option>
+          <option value="unclaimed_namespace"${this._trustFilter === 'unclaimed_namespace' ? ' selected' : ''}>Unclaimed</option>
+        </select>
+      </div>
+
+      <!-- Package Table (grouped by package, latest version shown) -->
+      <div data-bind="table"></div>
+    `)
+
+    this._bindContentEvents()
+    this._pushTable(filtered)
+  }
+
+  private _pushTable(filtered: ArtifactManifest[]) {
+    const tableSlot = this.querySelector('[data-bind="table"]') as HTMLElement | null
+    if (!tableSlot) return
+    tableSlot.innerHTML = filtered.length > 0
+      ? this.renderPackageTable(filtered)
+      : `<div class="empty-state">
+          <h3>No packages found in the repository.</h3>
+          <p>Publish a service, application, or infrastructure package to make it available.</p>
+        </div>`
+
+    // Expand/collapse version groups
+    tableSlot.querySelectorAll('.btn-expand').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const key = (btn as HTMLElement).dataset.key || ''
+        if (this._expanded.has(key)) this._expanded.delete(key)
+        else this._expanded.add(key)
+        this._pushTable(this.filteredArtifacts)
+      })
     })
 
+    // Row clicks
+    tableSlot.querySelectorAll('.pkg-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        // Don't navigate if clicking the View button (it handles its own nav)
+        if ((e.target as HTMLElement).closest('.btn-view')) return
+        const publisher = (row as HTMLElement).dataset.publisher || ''
+        const name = (row as HTMLElement).dataset.name || ''
+        window.location.hash = `#/repository/package/${encodeURIComponent(publisher)}/${encodeURIComponent(name)}`
+      })
+    })
+
+    // View button clicks
+    tableSlot.querySelectorAll('.btn-view').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const publisher = (btn as HTMLElement).dataset.publisher || ''
+        const name = (btn as HTMLElement).dataset.name || ''
+        window.location.hash = `#/repository/package/${encodeURIComponent(publisher)}/${encodeURIComponent(name)}`
+      })
+    })
+  }
+
+  private _bindContentEvents() {
     // Stat card clicks
-    this.querySelectorAll('.stat-card').forEach(card => {
+    this.querySelectorAll('.stat-card[data-kind]').forEach(card => {
       card.addEventListener('click', () => {
         const kind = parseInt((card as HTMLElement).dataset.kind || '0', 10)
         this._kindFilter = kind
-        this.render()
+        this._pushData()
       })
     })
 
@@ -520,7 +583,7 @@ class PageRepository extends HTMLElement {
     if (searchInput) {
       searchInput.addEventListener('input', () => {
         this._searchQuery = searchInput.value
-        this.render()
+        this._pushTable(this.filteredArtifacts)
         // Re-focus and restore cursor position
         const newInput = this.querySelector('#searchInput') as HTMLInputElement | null
         if (newInput) {
@@ -533,25 +596,25 @@ class PageRepository extends HTMLElement {
     // Kind dropdown
     this.querySelector('#kindSelect')?.addEventListener('change', (e) => {
       this._kindFilter = parseInt((e.target as HTMLSelectElement).value, 10)
-      this.render()
+      this._pushData()
     })
 
     // Publisher dropdown
     this.querySelector('#publisherSelect')?.addEventListener('change', (e) => {
       this._publisherFilter = (e.target as HTMLSelectElement).value
-      this.render()
+      this._pushData()
     })
 
     // State dropdown
     this.querySelector('#stateSelect')?.addEventListener('change', (e) => {
       this._stateFilter = parseInt((e.target as HTMLSelectElement).value, 10)
-      this.render()
+      this._pushData()
     })
 
     // Trust dropdown
     this.querySelector('#trustSelect')?.addEventListener('change', (e) => {
       this._trustFilter = (e.target as HTMLSelectElement).value
-      this.render()
+      this._pushData()
     })
 
     // Trust stat card clicks
@@ -559,7 +622,7 @@ class PageRepository extends HTMLElement {
       card.addEventListener('click', () => {
         const trust = (card as HTMLElement).dataset.trust || ''
         this._trustFilter = this._trustFilter === trust ? '' : trust
-        this.render()
+        this._pushData()
       })
     })
 
@@ -568,38 +631,7 @@ class PageRepository extends HTMLElement {
       card.addEventListener('click', () => {
         const state = parseInt((card as HTMLElement).dataset.state || '-1', 10)
         this._stateFilter = this._stateFilter === state ? -1 : state
-        this.render()
-      })
-    })
-
-    // Expand/collapse version groups
-    this.querySelectorAll('.btn-expand').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const key = (btn as HTMLElement).dataset.key || ''
-        if (this._expanded.has(key)) this._expanded.delete(key)
-        else this._expanded.add(key)
-        this.render()
-      })
-    })
-
-    // Row clicks
-    this.querySelectorAll('.pkg-row').forEach(row => {
-      row.addEventListener('click', (e) => {
-        // Don't navigate if clicking the View button (it handles its own nav)
-        if ((e.target as HTMLElement).closest('.btn-view')) return
-        const publisher = (row as HTMLElement).dataset.publisher || ''
-        const name = (row as HTMLElement).dataset.name || ''
-        window.location.hash = `#/repository/package/${encodeURIComponent(publisher)}/${encodeURIComponent(name)}`
-      })
-    })
-
-    // View button clicks
-    this.querySelectorAll('.btn-view').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const publisher = (btn as HTMLElement).dataset.publisher || ''
-        const name = (btn as HTMLElement).dataset.name || ''
-        window.location.hash = `#/repository/package/${encodeURIComponent(publisher)}/${encodeURIComponent(name)}`
+        this._pushData()
       })
     })
   }
@@ -610,10 +642,10 @@ class PageRepository extends HTMLElement {
       const a = g.latest
       const e = ext(a)
       const ref = a.ref
-      const name = ref?.name || '\u2014'
-      const publisher = ref?.publisherId || '\u2014'
-      const version = ref?.version || '\u2014'
-      const platform = ref?.platform || '\u2014'
+      const name = ref?.name || '—'
+      const publisher = ref?.publisherId || '—'
+      const version = ref?.version || '—'
+      const platform = ref?.platform || '—'
       const kind = ref?.kind ?? 0
       const alias: string = e.alias || ''
       const ts: number = e.publishedUnix || a.modifiedUnix || 0
@@ -643,8 +675,8 @@ class PageRepository extends HTMLElement {
         for (let i = 1; i < g.versions.length; i++) {
           const ov = g.versions[i]
           const oe = ext(ov)
-          const oVersion = ov.ref?.version || '\u2014'
-          const oPlatform = ov.ref?.platform || '\u2014'
+          const oVersion = ov.ref?.version || '—'
+          const oPlatform = ov.ref?.platform || '—'
           const oTs: number = oe.publishedUnix || ov.modifiedUnix || 0
           const oState: number = oe.publishState ?? 0
           const oBuild: number = oe.buildNumber || 0

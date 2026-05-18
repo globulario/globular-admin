@@ -93,7 +93,7 @@ interface CatalogRow {
 //   Installed       — desired release exists, installed version matches
 //   Drifted         — desired version differs from installed version
 //   Unmanaged       — installed package exists, but no desired release
-//   Missing in repo — desired/installed exists, but artifact not in repo
+//   Missing in repo — desired/installed exists, but artifact not in repository
 //   Orphaned        — artifact exists, no desired release, no installation
 //
 // Operational sub-states (retained for actionability):
@@ -278,6 +278,7 @@ function rolloutCell(row: CatalogRow, ccAvailable: boolean): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageServicesCatalog extends HTMLElement {
+  private _built = false
   private _rows:             CatalogRow[]       = []
   private _nodes:            ClusterNode[]      = []
   private _ccAvailable       = false
@@ -313,13 +314,250 @@ class PageServicesCatalog extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
+    this._buildShell()
     this.load()
     this._refreshTimer = window.setInterval(() => this.load(), 30_000)
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+    this.innerHTML = `
+      <style>
+        .sc-wrap { padding: 16px; }
+        .sc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+        .sc-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
+        .sc-subtitle { margin: .25rem 0 .75rem; opacity: .85; font: var(--md-typescale-body-medium); }
+
+        .sc-tabs {
+          display: flex; gap: 4px; margin-bottom: 12px;
+          border-bottom: 1px solid var(--border-subtle-color);
+        }
+        .sc-tab {
+          padding: 6px 14px; cursor: pointer; font-size: .8rem;
+          border: none; background: transparent; color: var(--secondary-text-color);
+          border-bottom: 2px solid transparent; margin-bottom: -1px;
+        }
+        .sc-tab:hover { color: var(--on-surface-color); }
+        .sc-tab.active {
+          color: var(--accent-color); border-bottom-color: var(--accent-color);
+          font-weight: 600;
+        }
+
+        .sc-toolbar {
+          display: flex; gap: 8px; flex-wrap: wrap;
+          margin-bottom: 12px; align-items: center;
+        }
+        .sc-search {
+          flex: 1; min-width: 180px; padding: 5px 10px;
+          border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-sm);
+          background: var(--md-surface-container-low);
+          color: var(--on-surface-color); font-size: .82rem;
+        }
+        .sc-search:focus { outline: none; border-color: var(--accent-color); }
+        .sc-select {
+          padding: 5px 8px;
+          border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-sm);
+          background: var(--md-surface-container-low);
+          color: var(--on-surface-color); font-size: .82rem; cursor: pointer;
+        }
+        .sc-count {
+          font-size: .75rem; color: var(--secondary-text-color);
+          margin-left: auto; white-space: nowrap;
+        }
+
+        .sc-banner {
+          padding: 8px 14px; margin-bottom: 8px;
+          border-radius: var(--md-shape-sm); font-size: .82rem; line-height: 1.5;
+        }
+        .sc-banner-warn  { border: 1px solid #f59e0b;
+          background: color-mix(in srgb, #f59e0b 10%, transparent); color: #b45309; }
+        .sc-banner-error { border: 1px solid var(--error-color);
+          background: color-mix(in srgb, var(--error-color) 10%, transparent); color: var(--error-color); }
+        .sc-banner-info  { border: 1px solid var(--border-subtle-color);
+          background: var(--md-surface-container-low); color: var(--secondary-text-color); }
+        .sc-banner-ok    { border: 1px solid var(--success-color);
+          background: color-mix(in srgb, var(--success-color) 10%, transparent); color: var(--success-color); }
+
+        .sc-name { font-weight: 600; }
+        .sc-mono { font-family: monospace; }
+        .sc-muted { color: var(--secondary-text-color); font-size: .75rem; }
+        .sc-chevron {
+          display: inline-block; font-size: 1rem;
+          color: var(--secondary-text-color);
+          transition: transform .15s; line-height: 1;
+        }
+        .sc-chevron.open { transform: rotate(90deg); }
+
+        .sc-detail td {
+          padding: 0; border-bottom: 1px solid var(--border-subtle-color);
+          background: var(--md-surface-container-lowest) !important;
+        }
+        .sc-detail-inner {
+          padding: 12px 16px 12px 28px;
+          display: flex; flex-wrap: wrap; gap: 16px 32px;
+        }
+        .sc-detail-section { min-width: 180px; }
+        .sc-detail-title {
+          font-size: .68rem; font-weight: 700; text-transform: uppercase;
+          letter-spacing: .05em; color: var(--secondary-text-color); margin-bottom: 6px;
+        }
+        .sc-kv { display: flex; gap: 6px; margin-bottom: 3px; font-size: .75rem; }
+        .sc-kv-key { color: var(--secondary-text-color); white-space: nowrap; min-width: 80px; }
+        .sc-kv-val { word-break: break-all; }
+
+        .sc-badge {
+          display: inline-block; padding: 1px 7px; border-radius: 99px;
+          font-size: .65rem; font-weight: 700; letter-spacing: .04em;
+          background: color-mix(in srgb, var(--badge-color) 15%, transparent);
+          color: var(--badge-color);
+          border: 1px solid color-mix(in srgb, var(--badge-color) 30%, transparent);
+        }
+        .sc-progress-track {
+          display: inline-block; width: 60px; height: 5px; border-radius: 99px;
+          background: color-mix(in srgb, var(--on-surface-color) 15%, transparent);
+          vertical-align: middle; overflow: hidden;
+        }
+        .sc-progress-fill { height: 100%; border-radius: 99px; }
+        .sc-empty {
+          padding: 24px 16px; text-align: center;
+          font-style: italic; color: var(--secondary-text-color); font-size: .82rem;
+        }
+        .sc-btn {
+          border: 1px solid var(--border-subtle-color); background: transparent;
+          color: var(--on-surface-color); border-radius: var(--md-shape-sm);
+          padding: 3px 10px; cursor: pointer; font-size: .72rem;
+        }
+        .sc-btn:hover { background: var(--md-state-hover); }
+
+        .sc-action-btn {
+          padding: 4px 12px; border-radius: var(--md-shape-sm);
+          border: 1px solid var(--border-subtle-color);
+          background: transparent; color: var(--secondary-text-color);
+          font-size: .75rem; cursor: pointer; display: block; margin-bottom: 4px;
+        }
+        .sc-action-btn:hover { background: var(--md-state-hover); }
+        .sc-action-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .sc-action-live { color: var(--accent-color); border-color: var(--accent-color); }
+
+        .sc-apply-hint { margin-top: 6px; }
+        .sc-apply-label {
+          font-size: .72rem; font-weight: 600;
+          text-transform: uppercase; letter-spacing: .04em;
+          color: var(--secondary-text-color);
+          display: block; margin-bottom: 4px;
+        }
+        .sc-apply-cmd {
+          display: inline-flex; align-items: center; gap: 6px;
+          background: var(--md-surface-container);
+          border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-sm);
+          padding: 4px 8px;
+        }
+        .sc-apply-cmd code {
+          font-size: .78rem; white-space: nowrap;
+          color: var(--on-surface-color);
+        }
+        .sc-copy-btn {
+          background: transparent; border: none; cursor: pointer;
+          color: var(--secondary-text-color);
+          padding: 2px; display: inline-flex; align-items: center;
+          border-radius: 3px; transition: color .15s;
+        }
+        .sc-copy-btn:hover { color: var(--accent-color); }
+        .sc-copy-btn.sc-copy-ok { color: var(--success-color); }
+
+        .sc-modal-overlay {
+          position: fixed; inset: 0;
+          background: rgba(0,0,0,.45); z-index: 9999;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .sc-modal {
+          background: var(--md-surface-container);
+          border: 1px solid var(--border-subtle-color);
+          border-radius: var(--md-shape-lg);
+          box-shadow: 0 8px 32px rgba(0,0,0,.3);
+          min-width: 360px; max-width: 580px; width: 90%;
+          display: flex; flex-direction: column; max-height: 80vh;
+        }
+        .sc-modal-header {
+          padding: 14px 16px 10px;
+          font-weight: 700; font-size: .88rem;
+          border-bottom: 1px solid var(--border-subtle-color);
+        }
+        .sc-modal-body {
+          padding: 14px 16px; overflow-y: auto; flex: 1; font-size: .8rem;
+        }
+        .sc-modal-footer {
+          padding: 10px 16px;
+          border-top: 1px solid var(--border-subtle-color);
+          display: flex; gap: 8px; justify-content: flex-end;
+        }
+        .sc-issue-error {
+          padding: 4px 8px; margin-bottom: 4px; border-radius: var(--md-shape-sm);
+          color: var(--error-color);
+          background: color-mix(in srgb, var(--error-color) 10%, transparent);
+          font-size: .78rem;
+        }
+        .sc-issue-warn {
+          padding: 4px 8px; margin-bottom: 4px; border-radius: var(--md-shape-sm);
+          color: #b45309;
+          background: color-mix(in srgb, #f59e0b 10%, transparent);
+          font-size: .78rem;
+        }
+        .sc-issue-ok {
+          padding: 4px 8px; margin-bottom: 4px; border-radius: var(--md-shape-sm);
+          color: var(--success-color);
+          background: color-mix(in srgb, var(--success-color) 10%, transparent);
+          font-size: .78rem;
+        }
+        .sc-preview-node {
+          margin-bottom: 6px; font-size: .75rem;
+        }
+        .sc-preview-node-id {
+          font-family: monospace; color: var(--secondary-text-color); font-size: .7rem;
+        }
+      </style>
+
+      <div class="sc-wrap">
+        <div class="sc-header">
+          <h2>Service Rollout</h2>
+          <div style="flex:1"></div>
+          <button class="sc-btn" id="btnRefresh">↻ Refresh</button>
+        </div>
+        <p class="sc-subtitle">Artifact, desired release, installed observed, and runtime health</p>
+
+        <div class="sc-tabs">
+          <button class="sc-tab active" data-tab="rollout">Service Rollout</button>
+          <button class="sc-tab" data-tab="repository">Repository Catalog <span data-bind="repo-count"></span></button>
+        </div>
+
+        <div data-bind="tab-content"></div>
+        <div data-bind="modal"></div>
+      </div>
+    `
+
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+
+    this.querySelectorAll<HTMLElement>('[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._activeTab = btn.dataset.tab ?? 'rollout'
+        this.querySelectorAll('.sc-tab').forEach(t => t.classList.remove('active'))
+        btn.classList.add('active')
+        this._pushTabContent()
+      })
+    })
+  }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
   }
 
   // ─── Data ────────────────────────────────────────────────────────────────
@@ -550,7 +788,7 @@ class PageServicesCatalog extends HTMLElement {
       this._loadError = normalizeError(e).message
     }
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   // ─── Filtering ───────────────────────────────────────────────────────────
@@ -580,6 +818,227 @@ class PageServicesCatalog extends HTMLElement {
       }
 
       return matchesSearch && matchesStatus
+    })
+  }
+
+  // ─── Push data into slots ─────────────────────────────────────────────────
+
+  private _pushData() {
+    // Update repo-count badge in tab
+    if (this._catalog.length > 0) {
+      this._set('repo-count', `<span class="sc-badge" style="--badge-color:var(--accent-color);margin-left:4px">${this._catalog.length}</span>`)
+    } else {
+      this._set('repo-count', '')
+    }
+
+    // Update refresh button state
+    const refreshBtn = this.querySelector('#btnRefresh') as HTMLButtonElement | null
+    if (refreshBtn) {
+      refreshBtn.disabled = this._busy
+      refreshBtn.textContent = this._busy ? '…' : '↻ Refresh'
+    }
+
+    this._pushTabContent()
+    this._pushModal()
+  }
+
+  private _pushTabContent() {
+    if (this._activeTab === 'repository') {
+      this._set('tab-content', this.renderRepositoryTab())
+      this._bindRepositoryEvents()
+    } else {
+      this._pushRolloutTab()
+    }
+  }
+
+  private _pushRolloutTab() {
+    const rows  = this.filteredRows
+    const total = this._rows.length
+
+    // Controller state banner — one clear statement
+    let ccBanner = ''
+    if (!this._loading) {
+      if (!this._ccAvailable) {
+        ccBanner = `<div class="sc-banner sc-banner-warn">
+          ⚠ Controller unreachable — desired state and rollout progress unavailable.
+        </div>`
+      } else if (!this._ccHasPlan) {
+        const canSeed = this._runtimeAvailable
+        ccBanner = `<div class="sc-banner sc-banner-info" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span>ℹ Controller is reachable but has no desired-state entries configured yet.</span>
+          ${canSeed ? `<button class="sc-btn" id="btnSeed" style="white-space:nowrap">
+            ↑ Import from installed
+          </button>` : ''}
+        </div>`
+      } else {
+        const n = this._rows.filter(r => r.desiredVersion !== undefined).length
+        ccBanner = `<div class="sc-banner sc-banner-ok">
+          ✓ Controller managing ${n} service${n !== 1 ? 's' : ''}.
+        </div>`
+      }
+    }
+
+    const loadErrorBanner = this._loadError
+      ? `<div class="sc-banner sc-banner-error">⚠ ${this._loadError}</div>` : ''
+
+    // Empty-state message
+    let emptyMsg = ''
+    if (!this._loading && total === 0) {
+      if (!this._runtimeAvailable && !this._ccAvailable)
+        emptyMsg = 'No data — runtime registry and controller are both unreachable.'
+      else if (!this._ccAvailable)
+        emptyMsg = 'No services found in runtime registry.'
+      else
+        emptyMsg = 'No services found.'
+    } else if (!this._loading && rows.length === 0) {
+      emptyMsg = 'No services match the current filters.'
+    }
+
+    this._set('tab-content', `
+      ${loadErrorBanner}
+      ${ccBanner}
+
+      <div class="sc-toolbar">
+        <input class="sc-search" id="searchInput" type="search"
+          placeholder="Search by name or version…"
+          value="${this._search.replace(/"/g, '&quot;')}">
+        <select class="sc-select" id="statusFilter">
+          <option value="all"${this._filterStatus === 'all'       ? ' selected' : ''}>All</option>
+          <option value="managed"${this._filterStatus === 'managed'   ? ' selected' : ''}>Managed</option>
+          <option value="unmanaged"${this._filterStatus === 'unmanaged' ? ' selected' : ''}>Unmanaged</option>
+          <option value="drift"${this._filterStatus === 'drift'     ? ' selected' : ''}>Drift / Needs action</option>
+          <option value="pending"${this._filterStatus === 'pending'   ? ' selected' : ''}>Pending</option>
+          <option value="available"${this._filterStatus === 'available' ? ' selected' : ''}>Available in repo</option>
+          <option value="installed"${this._filterStatus === 'installed' ? ' selected' : ''}>Installed</option>
+        </select>
+        <span class="sc-count">
+          ${this._loading ? 'Loading…' : `${rows.length} of ${total} services`}
+        </span>
+      </div>
+
+      ${this._loading
+        ? `<p style="padding:14px;font-style:italic;color:var(--secondary-text-color)">Loading…</p>`
+        : emptyMsg
+        ? `<div class="md-panel"><p class="sc-empty">${emptyMsg}</p></div>`
+        : `<div class="md-panel">
+            <table class="md-table">
+              <thead>
+                <tr>
+                  <th style="width:24px"></th>
+                  <th>Service</th>
+                  <th>Desired</th>
+                  <th>Installed</th>
+                  <th>Repo Latest</th>
+                  <th>Rollout</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => this.renderRow(r)).join('')}
+              </tbody>
+            </table>
+          </div>`}
+    `)
+
+    this.querySelector('#btnSeed')?.addEventListener('click', () => this.doSeedFromInstalled())
+
+    const search = this.querySelector('#searchInput') as HTMLInputElement | null
+    search?.addEventListener('input', () => { this._search = search.value; this._pushRolloutTab() })
+
+    const sel = this.querySelector('#statusFilter') as HTMLSelectElement | null
+    sel?.addEventListener('change', () => { this._filterStatus = sel.value; this._pushRolloutTab() })
+
+    // Table click delegation for row expand + action buttons
+    this.querySelector('.md-table')?.addEventListener('click', (e: Event) => {
+      const actionBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')
+      if (actionBtn) {
+        e.stopPropagation()
+        const action  = actionBtn.dataset.action ?? ''
+        const name    = actionBtn.dataset.name ?? ''
+        const version = actionBtn.dataset.version ?? ''
+        if (action === 'add') this.doAddToDesired(name, version)
+        if (action === 'repo-add') this.doSetDesired(name, version)
+        if (action === 'remove-desired') this.doRemoveFromDesired(name)
+        return
+      }
+      // Copy button
+      const copyBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-copy]')
+      if (copyBtn) {
+        e.stopPropagation()
+        const text = copyBtn.dataset.copy ?? ''
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.classList.add('sc-copy-ok')
+          setTimeout(() => copyBtn.classList.remove('sc-copy-ok'), 1200)
+        })
+        return
+      }
+      // Rollout tab row expand
+      const rolloutRow = (e.target as HTMLElement).closest<HTMLTableRowElement>('[data-name]')
+      if (rolloutRow?.dataset.name) {
+        const name = rolloutRow.dataset.name
+        this._expandedName = this._expandedName === name ? '' : name
+        this._pushRolloutTab()
+      }
+    })
+  }
+
+  private _pushModal() {
+    this._set('modal', this._modalOpen ? `
+      <div class="sc-modal-overlay" id="scModalOverlay">
+        <div class="sc-modal">
+          <div class="sc-modal-header">${this._modalTitle}</div>
+          <div class="sc-modal-body" id="scModalBody">${this._modalHtml}</div>
+          <div class="sc-modal-footer">
+            <button class="sc-btn" id="btnModalCancel">Cancel</button>
+            <button class="sc-action-btn sc-action-live" id="btnModalConfirm"
+              style="display:inline-block;margin:0"
+              ${this._modalConfirmEnabled ? '' : 'disabled'}>
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>` : '')
+
+    this.querySelector('#btnModalCancel')?.addEventListener('click', () => this.closeModal())
+    this.querySelector('#btnModalConfirm')?.addEventListener('click', () => {
+      if (this._modalConfirmFn) this._modalConfirmFn()
+    })
+  }
+
+  private _bindRepositoryEvents() {
+    // Repository search
+    const repoSearch = this.querySelector('#repoSearch') as HTMLInputElement | null
+    repoSearch?.addEventListener('input', () => { this._repoSearch = repoSearch.value; this._pushTabContent() })
+
+    // Repository table row expand + action buttons
+    this.querySelector('.md-table')?.addEventListener('click', (e: Event) => {
+      const actionBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')
+      if (actionBtn) {
+        e.stopPropagation()
+        const action  = actionBtn.dataset.action ?? ''
+        const name    = actionBtn.dataset.name ?? ''
+        const version = actionBtn.dataset.version ?? ''
+        if (action === 'repo-add') this.doSetDesired(name, version)
+        return
+      }
+      // Copy button
+      const copyBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-copy]')
+      if (copyBtn) {
+        e.stopPropagation()
+        const text = copyBtn.dataset.copy ?? ''
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.classList.add('sc-copy-ok')
+          setTimeout(() => copyBtn.classList.remove('sc-copy-ok'), 1200)
+        })
+        return
+      }
+      // Repository tab row expand
+      const repoRow = (e.target as HTMLElement).closest<HTMLTableRowElement>('[data-repo-row]')
+      if (repoRow?.dataset.repoRow) {
+        const key = repoRow.dataset.repoRow
+        this._repoExpandedKey = this._repoExpandedKey === key ? '' : key
+        this._pushTabContent()
+      }
     })
   }
 
@@ -835,414 +1294,6 @@ class PageServicesCatalog extends HTMLElement {
       </div>`
   }
 
-  // ─── Full render ─────────────────────────────────────────────────────────
-
-  private render() {
-    const rows  = this.filteredRows
-    const total = this._rows.length
-
-    // Controller state banner — one clear statement
-    let ccBanner = ''
-    if (!this._loading) {
-      if (!this._ccAvailable) {
-        ccBanner = `<div class="sc-banner sc-banner-warn">
-          ⚠ Controller unreachable — desired state and rollout progress unavailable.
-        </div>`
-      } else if (!this._ccHasPlan) {
-        const canSeed = this._runtimeAvailable
-        ccBanner = `<div class="sc-banner sc-banner-info" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <span>ℹ Controller is reachable but has no desired-state entries configured yet.</span>
-          ${canSeed ? `<button class="sc-btn" id="btnSeed" style="white-space:nowrap">
-            ↑ Import from installed
-          </button>` : ''}
-        </div>`
-      } else {
-        const n = this._rows.filter(r => r.desiredVersion !== undefined).length
-        ccBanner = `<div class="sc-banner sc-banner-ok">
-          ✓ Controller managing ${n} service${n !== 1 ? 's' : ''}.
-        </div>`
-      }
-    }
-
-    const loadErrorBanner = this._loadError
-      ? `<div class="sc-banner sc-banner-error">⚠ ${this._loadError}</div>` : ''
-
-    // Dynamic title
-    const title    = 'Service Rollout'
-    const subtitle = 'Artifact, desired release, installed observed, and runtime health'
-
-    // Empty-state message
-    let emptyMsg = ''
-    if (!this._loading && total === 0) {
-      if (!this._runtimeAvailable && !this._ccAvailable)
-        emptyMsg = 'No data — runtime registry and controller are both unreachable.'
-      else if (!this._ccAvailable)
-        emptyMsg = 'No services found in runtime registry.'
-      else
-        emptyMsg = 'No services found.'
-    } else if (!this._loading && rows.length === 0) {
-      emptyMsg = 'No services match the current filters.'
-    }
-
-    this.innerHTML = `
-      <style>
-        .sc-wrap { padding: 16px; }
-        .sc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-        .sc-header h2 { margin: 0; font: var(--md-typescale-headline-small); }
-        .sc-subtitle { margin: .25rem 0 .75rem; opacity: .85; font: var(--md-typescale-body-medium); }
-
-        .sc-tabs {
-          display: flex; gap: 4px; margin-bottom: 12px;
-          border-bottom: 1px solid var(--border-subtle-color);
-        }
-        .sc-tab {
-          padding: 6px 14px; cursor: pointer; font-size: .8rem;
-          border: none; background: transparent; color: var(--secondary-text-color);
-          border-bottom: 2px solid transparent; margin-bottom: -1px;
-        }
-        .sc-tab:hover { color: var(--on-surface-color); }
-        .sc-tab.active {
-          color: var(--accent-color); border-bottom-color: var(--accent-color);
-          font-weight: 600;
-        }
-
-        .sc-toolbar {
-          display: flex; gap: 8px; flex-wrap: wrap;
-          margin-bottom: 12px; align-items: center;
-        }
-        .sc-search {
-          flex: 1; min-width: 180px; padding: 5px 10px;
-          border: 1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-sm);
-          background: var(--md-surface-container-low);
-          color: var(--on-surface-color); font-size: .82rem;
-        }
-        .sc-search:focus { outline: none; border-color: var(--accent-color); }
-        .sc-select {
-          padding: 5px 8px;
-          border: 1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-sm);
-          background: var(--md-surface-container-low);
-          color: var(--on-surface-color); font-size: .82rem; cursor: pointer;
-        }
-        .sc-count {
-          font-size: .75rem; color: var(--secondary-text-color);
-          margin-left: auto; white-space: nowrap;
-        }
-
-        .sc-banner {
-          padding: 8px 14px; margin-bottom: 8px;
-          border-radius: var(--md-shape-sm); font-size: .82rem; line-height: 1.5;
-        }
-        .sc-banner-warn  { border: 1px solid #f59e0b;
-          background: color-mix(in srgb, #f59e0b 10%, transparent); color: #b45309; }
-        .sc-banner-error { border: 1px solid var(--error-color);
-          background: color-mix(in srgb, var(--error-color) 10%, transparent); color: var(--error-color); }
-        .sc-banner-info  { border: 1px solid var(--border-subtle-color);
-          background: var(--md-surface-container-low); color: var(--secondary-text-color); }
-        .sc-banner-ok    { border: 1px solid var(--success-color);
-          background: color-mix(in srgb, var(--success-color) 10%, transparent); color: var(--success-color); }
-
-        .sc-name { font-weight: 600; }
-        .sc-mono { font-family: monospace; }
-        .sc-muted { color: var(--secondary-text-color); font-size: .75rem; }
-        .sc-chevron {
-          display: inline-block; font-size: 1rem;
-          color: var(--secondary-text-color);
-          transition: transform .15s; line-height: 1;
-        }
-        .sc-chevron.open { transform: rotate(90deg); }
-
-        .sc-detail td {
-          padding: 0; border-bottom: 1px solid var(--border-subtle-color);
-          background: var(--md-surface-container-lowest) !important;
-        }
-        .sc-detail-inner {
-          padding: 12px 16px 12px 28px;
-          display: flex; flex-wrap: wrap; gap: 16px 32px;
-        }
-        .sc-detail-section { min-width: 180px; }
-        .sc-detail-title {
-          font-size: .68rem; font-weight: 700; text-transform: uppercase;
-          letter-spacing: .05em; color: var(--secondary-text-color); margin-bottom: 6px;
-        }
-        .sc-kv { display: flex; gap: 6px; margin-bottom: 3px; font-size: .75rem; }
-        .sc-kv-key { color: var(--secondary-text-color); white-space: nowrap; min-width: 80px; }
-        .sc-kv-val { word-break: break-all; }
-
-        .sc-badge {
-          display: inline-block; padding: 1px 7px; border-radius: 99px;
-          font-size: .65rem; font-weight: 700; letter-spacing: .04em;
-          background: color-mix(in srgb, var(--badge-color) 15%, transparent);
-          color: var(--badge-color);
-          border: 1px solid color-mix(in srgb, var(--badge-color) 30%, transparent);
-        }
-        .sc-progress-track {
-          display: inline-block; width: 60px; height: 5px; border-radius: 99px;
-          background: color-mix(in srgb, var(--on-surface-color) 15%, transparent);
-          vertical-align: middle; overflow: hidden;
-        }
-        .sc-progress-fill { height: 100%; border-radius: 99px; }
-        .sc-empty {
-          padding: 24px 16px; text-align: center;
-          font-style: italic; color: var(--secondary-text-color); font-size: .82rem;
-        }
-        .sc-btn {
-          border: 1px solid var(--border-subtle-color); background: transparent;
-          color: var(--on-surface-color); border-radius: var(--md-shape-sm);
-          padding: 3px 10px; cursor: pointer; font-size: .72rem;
-        }
-        .sc-btn:hover { background: var(--md-state-hover); }
-
-        .sc-action-btn {
-          padding: 4px 12px; border-radius: var(--md-shape-sm);
-          border: 1px solid var(--border-subtle-color);
-          background: transparent; color: var(--secondary-text-color);
-          font-size: .75rem; cursor: pointer; display: block; margin-bottom: 4px;
-        }
-        .sc-action-btn:hover { background: var(--md-state-hover); }
-        .sc-action-btn:disabled { opacity: .5; cursor: not-allowed; }
-        .sc-action-live { color: var(--accent-color); border-color: var(--accent-color); }
-
-        .sc-apply-hint { margin-top: 6px; }
-        .sc-apply-label {
-          font-size: .72rem; font-weight: 600;
-          text-transform: uppercase; letter-spacing: .04em;
-          color: var(--secondary-text-color);
-          display: block; margin-bottom: 4px;
-        }
-        .sc-apply-cmd {
-          display: inline-flex; align-items: center; gap: 6px;
-          background: var(--md-surface-container);
-          border: 1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-sm);
-          padding: 4px 8px;
-        }
-        .sc-apply-cmd code {
-          font-size: .78rem; white-space: nowrap;
-          color: var(--on-surface-color);
-        }
-        .sc-copy-btn {
-          background: transparent; border: none; cursor: pointer;
-          color: var(--secondary-text-color);
-          padding: 2px; display: inline-flex; align-items: center;
-          border-radius: 3px; transition: color .15s;
-        }
-        .sc-copy-btn:hover { color: var(--accent-color); }
-        .sc-copy-btn.sc-copy-ok { color: var(--success-color); }
-
-        .sc-modal-overlay {
-          position: fixed; inset: 0;
-          background: rgba(0,0,0,.45); z-index: 9999;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .sc-modal {
-          background: var(--md-surface-container);
-          border: 1px solid var(--border-subtle-color);
-          border-radius: var(--md-shape-lg);
-          box-shadow: 0 8px 32px rgba(0,0,0,.3);
-          min-width: 360px; max-width: 580px; width: 90%;
-          display: flex; flex-direction: column; max-height: 80vh;
-        }
-        .sc-modal-header {
-          padding: 14px 16px 10px;
-          font-weight: 700; font-size: .88rem;
-          border-bottom: 1px solid var(--border-subtle-color);
-        }
-        .sc-modal-body {
-          padding: 14px 16px; overflow-y: auto; flex: 1; font-size: .8rem;
-        }
-        .sc-modal-footer {
-          padding: 10px 16px;
-          border-top: 1px solid var(--border-subtle-color);
-          display: flex; gap: 8px; justify-content: flex-end;
-        }
-        .sc-issue-error {
-          padding: 4px 8px; margin-bottom: 4px; border-radius: var(--md-shape-sm);
-          color: var(--error-color);
-          background: color-mix(in srgb, var(--error-color) 10%, transparent);
-          font-size: .78rem;
-        }
-        .sc-issue-warn {
-          padding: 4px 8px; margin-bottom: 4px; border-radius: var(--md-shape-sm);
-          color: #b45309;
-          background: color-mix(in srgb, #f59e0b 10%, transparent);
-          font-size: .78rem;
-        }
-        .sc-issue-ok {
-          padding: 4px 8px; margin-bottom: 4px; border-radius: var(--md-shape-sm);
-          color: var(--success-color);
-          background: color-mix(in srgb, var(--success-color) 10%, transparent);
-          font-size: .78rem;
-        }
-        .sc-preview-node {
-          margin-bottom: 6px; font-size: .75rem;
-        }
-        .sc-preview-node-id {
-          font-family: monospace; color: var(--secondary-text-color); font-size: .7rem;
-        }
-      </style>
-
-      <div class="sc-wrap">
-        <div class="sc-header">
-          <h2>${title}</h2>
-          <div style="flex:1"></div>
-          <button class="sc-btn" id="btnRefresh" ${this._busy ? 'disabled' : ''}>
-            ${this._busy ? '…' : '↻ Refresh'}
-          </button>
-        </div>
-        <p class="sc-subtitle">${subtitle}</p>
-
-        <div class="sc-tabs">
-          <button class="sc-tab${this._activeTab === 'rollout' ? ' active' : ''}" data-tab="rollout">
-            Service Rollout
-          </button>
-          <button class="sc-tab${this._activeTab === 'repository' ? ' active' : ''}" data-tab="repository">
-            Repository Catalog
-            ${this._catalog.length > 0 ? `<span class="sc-badge" style="--badge-color:var(--accent-color);margin-left:4px">${this._catalog.length}</span>` : ''}
-          </button>
-        </div>
-
-        ${this._activeTab === 'repository'
-          ? this.renderRepositoryTab()
-          : `
-            ${loadErrorBanner}
-            ${ccBanner}
-
-            <div class="sc-toolbar">
-              <input class="sc-search" id="searchInput" type="search"
-                placeholder="Search by name or version…"
-                value="${this._search.replace(/"/g, '&quot;')}">
-              <select class="sc-select" id="statusFilter">
-                <option value="all"${this._filterStatus === 'all'       ? ' selected' : ''}>All</option>
-                <option value="managed"${this._filterStatus === 'managed'   ? ' selected' : ''}>Managed</option>
-                <option value="unmanaged"${this._filterStatus === 'unmanaged' ? ' selected' : ''}>Unmanaged</option>
-                <option value="drift"${this._filterStatus === 'drift'     ? ' selected' : ''}>Drift / Needs action</option>
-                <option value="pending"${this._filterStatus === 'pending'   ? ' selected' : ''}>Pending</option>
-                <option value="available"${this._filterStatus === 'available' ? ' selected' : ''}>Available in repo</option>
-                <option value="installed"${this._filterStatus === 'installed' ? ' selected' : ''}>Installed</option>
-              </select>
-              <span class="sc-count">
-                ${this._loading ? 'Loading…' : `${rows.length} of ${total} services`}
-              </span>
-            </div>
-
-            ${this._loading
-              ? `<p style="padding:14px;font-style:italic;color:var(--secondary-text-color)">Loading…</p>`
-              : emptyMsg
-              ? `<div class="md-panel"><p class="sc-empty">${emptyMsg}</p></div>`
-              : `<div class="md-panel">
-                  <table class="md-table">
-                    <thead>
-                      <tr>
-                        <th style="width:24px"></th>
-                        <th>Service</th>
-                        <th>Desired</th>
-                        <th>Installed</th>
-                        <th>Repo Latest</th>
-                        <th>Rollout</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${rows.map(r => this.renderRow(r)).join('')}
-                    </tbody>
-                  </table>
-                </div>`}
-          `}
-      </div>
-
-      ${this._modalOpen ? `
-        <div class="sc-modal-overlay" id="scModalOverlay">
-          <div class="sc-modal">
-            <div class="sc-modal-header">${this._modalTitle}</div>
-            <div class="sc-modal-body" id="scModalBody">${this._modalHtml}</div>
-            <div class="sc-modal-footer">
-              <button class="sc-btn" id="btnModalCancel">Cancel</button>
-              <button class="sc-action-btn sc-action-live" id="btnModalConfirm"
-                style="display:inline-block;margin:0"
-                ${this._modalConfirmEnabled ? '' : 'disabled'}>
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>` : ''}
-    `
-
-    this.bindEvents()
-  }
-
-  private bindEvents() {
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
-
-    this.querySelector('#btnSeed')?.addEventListener('click', () => this.doSeedFromInstalled())
-
-    const search = this.querySelector('#searchInput') as HTMLInputElement | null
-    search?.addEventListener('input', () => { this._search = search.value; this.render() })
-
-    const sel = this.querySelector('#statusFilter') as HTMLSelectElement | null
-    sel?.addEventListener('change', () => { this._filterStatus = sel.value; this.render() })
-
-    // Tab switching
-    this.querySelectorAll<HTMLElement>('[data-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this._activeTab = btn.dataset.tab ?? 'rollout'
-        this.render()
-      })
-    })
-
-    // Repository search
-    const repoSearch = this.querySelector('#repoSearch') as HTMLInputElement | null
-    repoSearch?.addEventListener('input', () => { this._repoSearch = repoSearch.value; this.render() })
-
-    // Modal buttons
-    this.querySelector('#btnModalCancel')?.addEventListener('click', () => this.closeModal())
-    this.querySelector('#btnModalConfirm')?.addEventListener('click', () => {
-      if (this._modalConfirmFn) this._modalConfirmFn()
-    })
-
-    // Repository table: expand row + action buttons
-    this.querySelector('.md-table')?.addEventListener('click', (e: Event) => {
-      const actionBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')
-      if (actionBtn) {
-        e.stopPropagation()
-        const action  = actionBtn.dataset.action ?? ''
-        const name    = actionBtn.dataset.name ?? ''
-        const version = actionBtn.dataset.version ?? ''
-        if (action === 'add') this.doAddToDesired(name, version)
-        if (action === 'repo-add') this.doSetDesired(name, version)
-        if (action === 'remove-desired') this.doRemoveFromDesired(name)
-        return
-      }
-      // Copy button
-      const copyBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-copy]')
-      if (copyBtn) {
-        e.stopPropagation()
-        const text = copyBtn.dataset.copy ?? ''
-        navigator.clipboard.writeText(text).then(() => {
-          copyBtn.classList.add('sc-copy-ok')
-          setTimeout(() => copyBtn.classList.remove('sc-copy-ok'), 1200)
-        })
-        return
-      }
-      // Rollout tab row expand
-      const rolloutRow = (e.target as HTMLElement).closest<HTMLTableRowElement>('[data-name]')
-      if (rolloutRow?.dataset.name) {
-        const name = rolloutRow.dataset.name
-        this._expandedName = this._expandedName === name ? '' : name
-        this.render()
-        return
-      }
-      // Repository tab row expand
-      const repoRow = (e.target as HTMLElement).closest<HTMLTableRowElement>('[data-repo-row]')
-      if (repoRow?.dataset.repoRow) {
-        const key = repoRow.dataset.repoRow
-        this._repoExpandedKey = this._repoExpandedKey === key ? '' : key
-        this.render()
-      }
-    })
-  }
-
   // ─── Modal helpers ────────────────────────────────────────────────────────
 
   private openModal(title: string, bodyHtml: string) {
@@ -1251,7 +1302,7 @@ class PageServicesCatalog extends HTMLElement {
     this._modalHtml = bodyHtml
     this._modalConfirmEnabled = false
     this._modalConfirmFn = null
-    this.render()
+    this._pushModal()
   }
 
   private updateModalBody(bodyHtml: string, confirmEnabled: boolean, confirmFn: (() => Promise<void>) | null) {
@@ -1270,7 +1321,7 @@ class PageServicesCatalog extends HTMLElement {
     this._modalHtml = ''
     this._modalConfirmEnabled = false
     this._modalConfirmFn = null
-    this.render()
+    this._pushModal()
   }
 
   private issueHtml(issues: ValidationIssue[]): string {
@@ -1391,7 +1442,7 @@ class PageServicesCatalog extends HTMLElement {
   private async doSeedFromInstalled() {
     if (this._busy) return
     this._busy = true
-    this.render()
+    this._pushData()
     try {
       const result = await seedDesiredState('IMPORT_FROM_INSTALLED')
       const count = result.length
@@ -1402,14 +1453,14 @@ class PageServicesCatalog extends HTMLElement {
       displayError(normalizeError(e).message)
     } finally {
       this._busy = false
-      this.render()
+      this._pushData()
     }
   }
 
   private async doAddToDesired(name: string, version: string) {
     if (this._busy || !name || !version) return
     this._busy = true
-    this.render()
+    this._pushData()
     try {
       await upsertDesiredService(name, version)
       displaySuccess(`${name} added to desired state at ${version}`)
@@ -1419,14 +1470,14 @@ class PageServicesCatalog extends HTMLElement {
       displayError(normalizeError(e).message)
     } finally {
       this._busy = false
-      this.render()
+      this._pushData()
     }
   }
 
   private async doRemoveFromDesired(name: string) {
     if (this._busy || !name) return
     this._busy = true
-    this.render()
+    this._pushData()
     try {
       await removeDesiredService(name)
       displaySuccess(`${name} removed from desired state`)
@@ -1435,7 +1486,7 @@ class PageServicesCatalog extends HTMLElement {
       displayError(normalizeError(e).message)
     } finally {
       this._busy = false
-      this.render()
+      this._pushData()
     }
   }
 

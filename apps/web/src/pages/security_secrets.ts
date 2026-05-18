@@ -277,6 +277,7 @@ function credRow(
 // ── Component ───────────────────────────────────────────────────────────────
 
 class PageSecuritySecrets extends HTMLElement {
+  private _built = false
   private _timer: number | null = null
   private _lastUpdated: Date | null = null
   private _loading = false
@@ -295,23 +296,7 @@ class PageSecuritySecrets extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
-    this.innerHTML = `
-      <style>${INFRA_STYLES}${PAGE_STYLES}</style>
-      <section class="wrap">
-        <header class="infra-header">
-          <h2>Secrets</h2>
-          <div class="spacer"></div>
-          <span id="secTimestamp" class="infra-timestamp"></span>
-          <span id="secFreshness"></span>
-          <button id="secRefresh" class="infra-btn">&#8635; Refresh</button>
-        </header>
-        <p style="font:var(--md-typescale-body-medium);color:var(--secondary-text-color);margin:0 0 16px">
-          Manage platform credentials: DNS providers, object storage, backup keys, and tokens.
-        </p>
-        <div id="secBody"></div>
-      </section>
-    `
-    this.querySelector('#secRefresh')?.addEventListener('click', () => this.load())
+    this._buildShell()
     this.load()
     this._timer = window.setInterval(() => this.load(), POLL)
   }
@@ -320,12 +305,36 @@ class PageSecuritySecrets extends HTMLElement {
     if (this._timer) clearInterval(this._timer)
   }
 
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+    this.innerHTML = `
+      <style>${INFRA_STYLES}${PAGE_STYLES}</style>
+      <section class="wrap">
+        <header class="infra-header">
+          <h2>Secrets</h2>
+          <div class="spacer"></div>
+          <span data-bind="timestamp" class="infra-timestamp"></span>
+          <span data-bind="freshness"></span>
+          <button id="secRefresh" class="infra-btn">&#8635; Refresh</button>
+        </header>
+        <p style="font:var(--md-typescale-body-medium);color:var(--secondary-text-color);margin:0 0 16px">
+          Manage platform credentials: DNS providers, object storage, backup keys, and tokens.
+        </p>
+        <div data-bind="body"></div>
+      </section>
+    `
+    this.querySelector('#secRefresh')?.addEventListener('click', () => this.load())
+  }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
   // ─── Data ─────────────────────────────────────────────────────────────────
 
   private async load() {
-    this._loading = true
-    this.render()
-
     const [provR, bkR, tokR] = await Promise.allSettled([
       fetchProviders(),
       this.loadBackupConfig(),
@@ -339,7 +348,7 @@ class PageSecuritySecrets extends HTMLElement {
 
     this._lastUpdated = new Date()
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   private async loadBackupConfig(reveal = false): Promise<BackupConfig | null> {
@@ -372,25 +381,17 @@ class PageSecuritySecrets extends HTMLElement {
     }
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Push data into slots ─────────────────────────────────────────────────
 
-  private render() {
-    const tsEl = this.querySelector('#secTimestamp') as HTMLElement
-    if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
-    const freshEl = this.querySelector('#secFreshness') as HTMLElement
-    if (freshEl) freshEl.innerHTML = freshnessBadge(this._lastUpdated?.getTime() ?? null, POLL)
-
-    const body = this.querySelector('#secBody') as HTMLElement
-    if (!body) return
-
-    if (this._loading && !this._lastUpdated) {
-      body.innerHTML = '<div class="sec-empty">Loading...</div>'
-      return
+  private _pushData() {
+    if (this._lastUpdated) {
+      this._set('timestamp', `Last updated: ${fmtTime(this._lastUpdated)}`)
     }
+    this._set('freshness', freshnessBadge(this._lastUpdated?.getTime() ?? null, POLL))
 
     const destCount = this._backup?.Destinations?.length ?? 0
 
-    body.innerHTML = `
+    const tabsHtml = `
       <div class="sec-tabs">
         <button class="sec-tab ${this._tab === 'providers' ? 'sec-tab--active' : ''}" data-tab="providers">
           DNS Providers <span style="opacity:.6;font-size:.78rem">(${this._providers.length})</span>
@@ -407,6 +408,10 @@ class PageSecuritySecrets extends HTMLElement {
       </div>
       <div id="tabContent"></div>
     `
+    this._set('body', tabsHtml)
+
+    const body = this.querySelector('[data-bind="body"]') as HTMLElement
+    if (!body) return
 
     body.querySelectorAll('.sec-tab').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -414,7 +419,7 @@ class PageSecuritySecrets extends HTMLElement {
         this._showForm = false
         this._editingProvider = null
         this._editingSection = null
-        this.render()
+        this._pushData()
       })
     })
 
@@ -489,7 +494,7 @@ class PageSecuritySecrets extends HTMLElement {
         const id = (btn as HTMLElement).dataset.credId!
         if (this._revealedCreds.has(id)) this._revealedCreds.delete(id)
         else this._revealedCreds.add(id)
-        this.render()
+        this._pushData()
       })
     })
     el.querySelectorAll('[data-edit-idx]').forEach(btn => {
@@ -497,7 +502,7 @@ class PageSecuritySecrets extends HTMLElement {
         const idx = parseInt((btn as HTMLElement).dataset.editIdx!, 10)
         this._editingProvider = { ...this._providers[idx] }
         this._showForm = true
-        this.render()
+        this._pushData()
       })
     })
     el.querySelectorAll('[data-del-name]').forEach(btn => {
@@ -510,7 +515,7 @@ class PageSecuritySecrets extends HTMLElement {
         })
         if (!ok) return
         try { await deleteProvider(name); await this.load() }
-        catch (e: any) { this._error = e?.message ?? 'Delete failed'; this.render() }
+        catch (e: any) { this._error = e?.message ?? 'Delete failed'; this._pushData() }
       })
     })
   }
@@ -553,22 +558,22 @@ class PageSecuritySecrets extends HTMLElement {
     }
     updateCreds()
     container.querySelector('#pType')?.addEventListener('change', updateCreds)
-    container.querySelector('#pCancel')?.addEventListener('click', () => { this._showForm = false; this._editingProvider = null; this.render() })
+    container.querySelector('#pCancel')?.addEventListener('click', () => { this._showForm = false; this._editingProvider = null; this._pushData() })
     container.querySelector('#pSave')?.addEventListener('click', async () => {
       const name = (container.querySelector('#pName') as HTMLInputElement).value.trim()
       const type = (container.querySelector('#pType') as HTMLSelectElement).value
       const zone = (container.querySelector('#pZone') as HTMLInputElement).value.trim()
       const ttl  = parseInt((container.querySelector('#pTtl') as HTMLInputElement).value, 10) || 600
-      if (!name || !zone) { this._error = 'Name and zone are required'; this.render(); return }
+      if (!name || !zone) { this._error = 'Name and zone are required'; this._pushData(); return }
       const fields = credFieldsForType(type)
       const credentials: Record<string, string> = {}
       for (const f of fields) {
         const el = container.querySelector(`#pc_${f.key}`) as HTMLInputElement
         if (el?.value) credentials[f.key] = el.value
-        else if (f.required) { this._error = `${f.label} is required`; this.render(); return }
+        else if (f.required) { this._error = `${f.label} is required`; this._pushData(); return }
       }
       try { await saveProvider({ name, type, zone, credentials, default_ttl: ttl }); this._showForm = false; this._editingProvider = null; this._error = null; await this.load() }
-      catch (e: any) { this._error = e?.message ?? 'Save failed'; this.render() }
+      catch (e: any) { this._error = e?.message ?? 'Save failed'; this._pushData() }
     })
   }
 
@@ -604,14 +609,14 @@ class PageSecuritySecrets extends HTMLElement {
         const id = (btn as HTMLElement).dataset.credId!
         if (this._revealedCreds.has(id)) this._revealedCreds.delete(id)
         else this._revealedCreds.add(id)
-        this.render()
+        this._pushData()
       })
     })
 
     el.querySelector('#editMinio')?.addEventListener('click', async () => {
       this._backup = await this.loadBackupConfig(true) ?? this._backup
       this._editingSection = 'minio'
-      this.render()
+      this._pushData()
     })
 
     if (this._editingSection === 'minio') {
@@ -639,7 +644,7 @@ class PageSecuritySecrets extends HTMLElement {
           <button class="infra-btn" id="mCancel" style="background:var(--surface-variant)">Cancel</button>
         </div>
       </div>`
-    container.querySelector('#mCancel')?.addEventListener('click', () => { this._editingSection = null; this.render() })
+    container.querySelector('#mCancel')?.addEventListener('click', () => { this._editingSection = null; this._pushData() })
     container.querySelector('#mSave')?.addEventListener('click', async () => {
       try {
         await saveServiceConfig({
@@ -651,7 +656,7 @@ class PageSecuritySecrets extends HTMLElement {
         } as any)
         this._editingSection = null
         await this.load()
-      } catch (e: any) { this._error = e?.message ?? 'Save failed'; this.render() }
+      } catch (e: any) { this._error = e?.message ?? 'Save failed'; this._pushData() }
     })
   }
 
@@ -728,19 +733,19 @@ class PageSecuritySecrets extends HTMLElement {
         const id = (btn as HTMLElement).dataset.credId!
         if (this._revealedCreds.has(id)) this._revealedCreds.delete(id)
         else this._revealedCreds.add(id)
-        this.render()
+        this._pushData()
       })
     })
 
     el.querySelector('#editRestic')?.addEventListener('click', async () => {
       this._backup = await this.loadBackupConfig(true) ?? this._backup
       this._editingSection = 'restic'
-      this.render()
+      this._pushData()
     })
     el.querySelector('#editScylla')?.addEventListener('click', async () => {
       this._backup = await this.loadBackupConfig(true) ?? this._backup
       this._editingSection = 'scylla'
-      this.render()
+      this._pushData()
     })
 
     if (this._editingSection === 'restic') this.renderResticForm(el.querySelector('#backupForm') as HTMLElement)
@@ -763,7 +768,7 @@ class PageSecuritySecrets extends HTMLElement {
           <button class="infra-btn" id="rCancel" style="background:var(--surface-variant)">Cancel</button>
         </div>
       </div>`
-    container.querySelector('#rCancel')?.addEventListener('click', () => { this._editingSection = null; this.render() })
+    container.querySelector('#rCancel')?.addEventListener('click', () => { this._editingSection = null; this._pushData() })
     container.querySelector('#rSave')?.addEventListener('click', async () => {
       try {
         await saveServiceConfig({
@@ -773,7 +778,7 @@ class PageSecuritySecrets extends HTMLElement {
           ResticPaths: (container.querySelector('#rPaths') as HTMLInputElement).value.trim(),
         } as any)
         this._editingSection = null; await this.load()
-      } catch (e: any) { this._error = e?.message ?? 'Save failed'; this.render() }
+      } catch (e: any) { this._error = e?.message ?? 'Save failed'; this._pushData() }
     })
   }
 
@@ -793,7 +798,7 @@ class PageSecuritySecrets extends HTMLElement {
           <button class="infra-btn" id="sCancel" style="background:var(--surface-variant)">Cancel</button>
         </div>
       </div>`
-    container.querySelector('#sCancel')?.addEventListener('click', () => { this._editingSection = null; this.render() })
+    container.querySelector('#sCancel')?.addEventListener('click', () => { this._editingSection = null; this._pushData() })
     container.querySelector('#sSave')?.addEventListener('click', async () => {
       try {
         await saveServiceConfig({
@@ -803,7 +808,7 @@ class PageSecuritySecrets extends HTMLElement {
           ScyllaManagerAPI: (container.querySelector('#sApi') as HTMLInputElement).value.trim(),
         } as any)
         this._editingSection = null; await this.load()
-      } catch (e: any) { this._error = e?.message ?? 'Save failed'; this.render() }
+      } catch (e: any) { this._error = e?.message ?? 'Save failed'; this._pushData() }
     })
   }
 

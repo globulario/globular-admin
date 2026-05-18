@@ -41,6 +41,7 @@ function relativeTime(epochSeconds: number): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 class PageDashboard extends HTMLElement {
+  private _built = false
   private _refreshTimer: number | null = null
   private _eventSubs: Array<[string, string]> = []
   private _events: Array<{
@@ -59,9 +60,9 @@ class PageDashboard extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+    this._buildShell()
+    this._load()
+    this._refreshTimer = window.setInterval(() => this._load(), 30_000)
     this.subscribeEvents()
   }
 
@@ -71,343 +72,9 @@ class PageDashboard extends HTMLElement {
     this._eventSubs = []
   }
 
-  private async load() {
-    const [healthResult, nodesResult] = await Promise.allSettled([
-      getClusterHealth(),
-      listClusterNodes(),
-    ])
-
-    if (healthResult.status === 'fulfilled') {
-      this._health = healthResult.value
-      this._healthError = ''
-    } else {
-      this._healthError = (healthResult.reason as any)?.message || 'ClusterController unavailable'
-    }
-
-    if (nodesResult.status === 'fulfilled') {
-      this._nodes = nodesResult.value
-      this._nodesError = ''
-    } else {
-      this._nodesError = (nodesResult.reason as any)?.message || 'Could not list nodes'
-    }
-
-    // Load recent control-plane events from history (survives page refresh).
-    try {
-      const [planResult, serviceResult, incidentResult] = await Promise.allSettled([
-        queryEvents({ nameFilter: 'plan_', limit: 50 }),
-        queryEvents({ nameFilter: 'service_apply_', limit: 50 }),
-        queryEvents({ nameFilter: 'alert.incident.', limit: 50 }),
-      ])
-      type DashEvent = { time: string; name: string; data: string; severity?: string; type?: string; message?: string; nodeId?: string; service?: string; correlationId?: string }
-      const allHistorical: Array<{ ev: DashEvent; seq: number }> = []
-      for (const r of [planResult, serviceResult, incidentResult]) {
-        if (r.status !== 'fulfilled') continue
-        for (const ev of r.value.events) {
-          allHistorical.push({
-            ev: {
-              time: ev.tsEpoch ? new Date(ev.tsEpoch * 1000).toLocaleTimeString() : '??:??',
-              name: ev.name,
-              data: ev.dataJson?.message || ev.dataJson?.summary || (typeof ev.dataJson === 'object' ? JSON.stringify(ev.dataJson) : `${ev.data.length} bytes`),
-              severity: ev.dataJson?.severity as string | undefined,
-              type: ev.name,
-              message: (ev.dataJson?.message || ev.dataJson?.summary) as string | undefined,
-              nodeId: ev.dataJson?.node_id as string | undefined,
-              service: ev.dataJson?.service as string | undefined,
-              correlationId: (ev.dataJson?.correlation_id || ev.dataJson?.incident_id) as string | undefined,
-              _parsed: ev.dataJson,
-            },
-            seq: ev.sequence,
-          })
-        }
-        if (r.value.latestSequence > this._latestSequence) {
-          this._latestSequence = r.value.latestSequence
-        }
-      }
-      // Sort by sequence descending (newest first), take top 50.
-      allHistorical.sort((a, b) => b.seq - a.seq)
-      const historical = allHistorical.slice(0, 50).map(h => h.ev)
-      if (historical.length > 0) {
-        const existing = new Set(this._events.map(e => `${e.time}:${e.name}`))
-        for (const h of historical) {
-          if (!existing.has(`${h.time}:${h.name}`)) {
-            this._events.push(h)
-          }
-        }
-        this._events = this._events.slice(0, 50)
-      }
-    } catch { /* event service may be unavailable */ }
-
-    this._loading = false
-    this.render()
-  }
-
-  private subscribeEvents() {
-    if (!Backend.eventHub) return
-    const controlPlaneEvents = [
-      'plan_generated', 'plan_apply_started', 'plan_blocked_privileged',
-      'plan_apply_succeeded', 'plan_apply_failed', 'plan_blocked',
-      'service_apply_started', 'service_apply_succeeded', 'service_apply_failed',
-      // AI incident lifecycle events
-      'alert.incident.resolved', 'alert.incident.failed',
-      'alert.incident.approval_required', 'alert.incident.expired',
-      'alert.incident.denied',
-      // Service crash / security events
-      'alert.auth.denied', 'alert.auth.failed',
-      'alert.dos.detected', 'alert.error.spike',
-      'alert.admin.notification',
-    ]
-    const channels = [...controlPlaneEvents]
-    channels.forEach(ch => {
-      Backend.subscribe(ch, (uuid) => {
-        this._eventSubs.push([ch, uuid])
-      }, (data) => {
-        let parsed: any = null
-        if (typeof data === 'string') {
-          try { parsed = JSON.parse(data) } catch { /* not JSON */ }
-        } else if (typeof data === 'object') {
-          parsed = data
-        }
-        const incidentId = parsed?.incident_id
-        // When an incident resolves, remove ALL earlier events for the same
-        // incident (admin alerts, remediations, etc.) — no false urgency.
-        if (incidentId && ch === 'alert.incident.resolved') {
-          this._events = this._events.filter(e => e.correlationId !== incidentId)
-        }
-
-        this._events.unshift({
-          time: new Date().toLocaleTimeString(),
-          name: ch,
-          data: parsed?.message || parsed?.summary || (typeof data === 'string' ? data : JSON.stringify(data)),
-          severity: parsed?.severity,
-          type: ch,
-          message: parsed?.message || parsed?.summary,
-          nodeId: parsed?.node_id,
-          service: parsed?.service,
-          correlationId: incidentId || parsed?.correlation_id,
-          _parsed: parsed,
-        })
-        if (this._events.length > 50) this._events.pop()
-        this.renderEventsFeed()
-      }, false)
-    })
-  }
-
-  private severityColor(sev?: string): string {
-    const s = (sev || '').toUpperCase()
-    if (s === 'ERROR') return '#ef4444'
-    if (s === 'WARN' || s === 'WARNING') return '#f59e0b'
-    if (s === 'INFO') return '#3b82f6'
-    return 'var(--secondary-text-color)'
-  }
-
-  /** Map raw event names to human-readable labels with icons. */
-  private formatEvent(e: any): { icon: string; label: string; detail: string; color: string } {
-    const p = e._parsed || {}
-    const sev = e.severity || 'INFO'
-    const color = this.severityColor(sev)
-
-    switch (e.name) {
-      // ── AI Incident Lifecycle ──
-      case 'alert.incident.resolved':
-        return {
-          icon: '\u2705', label: 'Resolved',
-          detail: p.message || this.formatAIDiagnosis(p),
-          color: '#22c55e', // green — no longer urgent
-        }
-      case 'alert.incident.failed':
-        return {
-          icon: '\u274C', label: 'Incident Failed',
-          detail: p.summary || p.message || 'Remediation failed',
-          color,
-        }
-      case 'alert.incident.approval_required':
-        return {
-          icon: '\u270B', label: 'Approval Required',
-          detail: this.formatApprovalRequest(p),
-          color: '#ef4444',
-        }
-      case 'alert.incident.expired':
-        return {
-          icon: '\u23F0', label: 'Approval Expired',
-          detail: p.summary || 'Action expired before approval',
-          color: '#f59e0b',
-        }
-      case 'alert.incident.denied':
-        return {
-          icon: '\u{1F6AB}', label: 'Action Denied',
-          detail: p.summary || 'Operator denied the proposed action',
-          color,
-        }
-      case 'operation.remediation.completed':
-        return {
-          icon: '\u{1F527}', label: 'Remediation',
-          detail: this.formatRemediation(p),
-          color,
-        }
-
-      // ── Security Events ──
-      case 'alert.auth.denied':
-        return {
-          icon: '\u{1F6E1}', label: 'Auth Denied',
-          detail: `${p.subject || 'unknown'} blocked from ${p.method || 'unknown method'} \u2014 ${p.reason || ''}`,
-          color: '#f59e0b',
-        }
-      case 'alert.auth.failed':
-        return {
-          icon: '\u{1F512}', label: 'Login Failed',
-          detail: `Account "${p.account || 'unknown'}" \u2014 ${p.reason || 'invalid credentials'}`,
-          color: '#f59e0b',
-        }
-      case 'alert.dos.detected':
-        return {
-          icon: '\u26A0', label: 'DoS Detected',
-          detail: p.message || 'Request flood from single source',
-          color: '#ef4444',
-        }
-      case 'alert.error.spike':
-        return {
-          icon: '\u{1F4C8}', label: 'Error Spike',
-          detail: p.message || 'High error rate across service',
-          color: '#ef4444',
-        }
-      case 'alert.admin.notification':
-        return {
-          icon: '\u{1F4E3}', label: 'Admin Alert',
-          detail: this.formatAdminNotification(p),
-          color: '#ef4444',
-        }
-
-      // ── Plan Events ──
-      case 'plan_generated':
-        return { icon: '\u{1F4CB}', label: 'Plan Created', detail: p.message || 'New plan generated', color }
-      case 'plan_apply_started':
-        return { icon: '\u25B6', label: 'Plan Applying', detail: p.message || 'Plan execution started', color }
-      case 'plan_apply_succeeded':
-        return { icon: '\u2705', label: 'Plan Succeeded', detail: p.message || 'Plan applied successfully', color }
-      case 'plan_apply_failed':
-        return { icon: '\u274C', label: 'Plan Failed', detail: p.message || 'Plan execution failed', color: '#ef4444' }
-      case 'plan_blocked':
-      case 'plan_blocked_privileged':
-        return { icon: '\u23F8', label: 'Plan Blocked', detail: p.message || 'Plan requires manual action', color: '#f59e0b' }
-      case 'service_apply_started':
-        return { icon: '\u{1F504}', label: 'Service Update', detail: p.message || 'Service installation started', color }
-      case 'service_apply_succeeded':
-        return { icon: '\u2705', label: 'Service Installed', detail: p.message || 'Service installed successfully', color }
-      case 'service_apply_failed':
-        return { icon: '\u274C', label: 'Service Failed', detail: p.message || 'Service installation failed', color: '#ef4444' }
-
-      default:
-        return { icon: '\u2022', label: e.name, detail: e.message || e.data || '', color }
-    }
-  }
-
-  private formatAIDiagnosis(p: any): string {
-    const parts: string[] = []
-    if (p.root_cause) parts.push(`Root cause: ${p.root_cause}`)
-    if (p.confidence) parts.push(`(${Math.round(p.confidence * 100)}% confidence)`)
-    if (p.proposed_action) parts.push(`\u2192 ${this.humanAction(p.proposed_action)}`)
-    if (p.summary && !parts.length) parts.push(p.summary)
-    return parts.join(' ') || p.message || 'Incident diagnosed and resolved'
-  }
-
-  private formatApprovalRequest(p: any): string {
-    const parts = [p.summary || 'Action requires approval']
-    if (p.proposed_action) parts.push(`Proposed: ${this.humanAction(p.proposed_action)}`)
-    if (p.rationale) parts.push(`\u2014 ${p.rationale}`)
-    return parts.join('. ')
-  }
-
-  private formatRemediation(p: any): string {
-    const action = this.humanAction(p.action_type || '')
-    const status = (p.status || '').replace('ACTION_', '')
-    const target = (p.target || '').replace(/^restart_service:/, '')
-    if (target) return `${action} "${target}" \u2192 ${status}`
-    return `${action} \u2192 ${status}`
-  }
-
-  private formatAdminNotification(p: any): string {
-    const parts: string[] = []
-    if (p.summary) parts.push(p.summary)
-    if (p.root_cause) parts.push(`Root cause: ${p.root_cause}`)
-    if (p.rationale) parts.push(p.rationale)
-    return parts.join(' \u2014 ') || p.message || 'Admin notification'
-  }
-
-  private humanAction(action: string): string {
-    const map: Record<string, string> = {
-      'restart_service': 'Restart service',
-      'notify_admin': 'Notify admin',
-      'observe_and_record': 'Observe & record',
-      'drain_endpoint': 'Drain endpoint',
-      'block_ip': 'Block IP',
-      'tighten_circuit_breakers': 'Tighten circuit breakers',
-      'clear_corrupted_storage': 'Clear corrupted storage',
-      'cert_renew': 'Renew certificate',
-      'ACTION_RESTART_SERVICE': 'Restart service',
-      'ACTION_NOTIFY_ADMIN': 'Notify admin',
-      'ACTION_DRAIN_ENDPOINT': 'Drain endpoint',
-      'ACTION_BLOCK_IP': 'Block IP',
-      'ACTION_NONE': 'Observe',
-    }
-    // Handle "restart_service:unit_name" format
-    const base = action.split(':')[0]
-    return map[base] || map[action] || action
-  }
-
-  private eventMatchesFilter(e: any): boolean {
-    if (this._eventFilter === 'all') return true
-    const sev = (e.severity || '').toUpperCase()
-    switch (this._eventFilter) {
-      case 'error': return sev === 'ERROR'
-      case 'warn': return sev === 'WARN' || sev === 'WARNING'
-      case 'info': return sev === 'INFO' || sev === ''
-      default: return true
-    }
-  }
-
-  private renderEventsFeed() {
-    const feed = this.querySelector('#events-feed')
-    if (!feed) return
-    const filtered = this._events.filter(e => this.eventMatchesFilter(e))
-    if (filtered.length === 0) {
-      feed.innerHTML = `<p class="empty-msg">${this._events.length === 0 ? 'No events yet \u2014 waiting for cluster activity\u2026' : 'No events match this filter'}</p>`
-      return
-    }
-    feed.innerHTML = filtered.slice(0, 30).map(e => {
-      const fmt = this.formatEvent(e)
-      const meta = [e.nodeId, e.service, e.correlationId].filter(Boolean)
-      const metaHtml = meta.length > 0
-        ? `<div class="ev-meta">${meta.join(' \u00b7 ')}</div>`
-        : ''
-      return `
-        <div class="event-row">
-          <span class="ev-time">${e.time}</span>
-          <div class="ev-badge" style="
-            background:color-mix(in srgb,${fmt.color} 12%,transparent);
-            color:${fmt.color};
-            border-color:color-mix(in srgb,${fmt.color} 25%,transparent);
-          ">${fmt.icon} ${fmt.label}</div>
-          <div class="ev-detail">
-            <span style="color:${e.severity === 'ERROR' ? '#ef4444' : 'var(--on-surface-color)'}">${fmt.detail}</span>
-            ${metaHtml}
-          </div>
-        </div>
-      `
-    }).join('')
-  }
-
-  private render() {
-    const h = this._health
-    const now = new Date().toLocaleTimeString()
-    const serviceUnavailable = !!this._healthError
-
-    // Nodes with non-healthy status or failed checks
-    const degraded = h?.nodes.filter(n =>
-      !n.status.toUpperCase().includes('HEALTHY') || (n.failedChecks ?? 0) > 0
-    ) ?? []
-
-    // Nodes with incomplete inventory
-    const inventoryIssues = this._nodes.filter(n => !n.inventoryComplete)
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
 
     this.innerHTML = `
       <style>
@@ -521,53 +188,24 @@ class PageDashboard extends HTMLElement {
         <!-- Header -->
         <div class="dash-header">
           <h2>Overview</h2>
-          ${h ? `<span class="cluster-id">${h.clusterDomain || h.clusterId}</span>` : ''}
-          <span class="dash-ts">Updated ${now}</span>
+          <span data-bind="cluster-id"></span>
+          <span class="dash-ts" data-bind="timestamp">Updated —</span>
           <button class="btn-refresh" id="btnRefresh">↻ Refresh</button>
         </div>
 
-        ${this._loading ? `<div class="empty-msg">Loading cluster data…</div>` : ''}
+        <!-- Loading / error banners -->
+        <div data-bind="loading-msg" style="display:none">
+          <p class="empty-msg">Loading cluster data…</p>
+        </div>
+        <div data-bind="error-banner" style="display:none"></div>
 
         <!-- Stat cards -->
-        ${serviceUnavailable ? `
-        <div class="md-banner-warn">
-          ⚠ ClusterController service not reachable —
-          <span style="font-family:monospace;font-size:.8em">${this._healthError}</span>
-          <br><span style="font-size:.8em;opacity:.8">
-            Ensure the <code>cluster_controller.ClusterControllerService</code> subdomain is
-            registered in the Envoy/xDS routing on your cluster.
-          </span>
-        </div>
-        ` : ''}
-        ${h ? `
-        <div class="stat-grid">
-          <div class="stat-card">
-            <div class="label">Total Nodes</div>
-            <div class="value">${h.totalNodes}</div>
-            <div class="sub">${h.clusterDomain || 'cluster'}</div>
-          </div>
-          <div class="stat-card">
-            <div class="label">Healthy</div>
-            <div class="value" style="color:var(--success-color)">${h.healthyNodes}</div>
-            <div class="sub">nodes nominal</div>
-          </div>
-          <div class="stat-card">
-            <div class="label">Degraded</div>
-            <div class="value" style="color:#f59e0b">${h.unhealthyNodes}</div>
-            <div class="sub">need attention</div>
-          </div>
-          <div class="stat-card">
-            <div class="label">Unknown</div>
-            <div class="value" style="color:var(--error-color)">${h.unknownNodes}</div>
-            <div class="sub">unreachable</div>
-          </div>
-        </div>
-        ` : ''}
+        <div data-bind="stat-cards"></div>
 
         <!-- Main body -->
         <div class="dash-body">
 
-          <!-- Left column: node health + drift -->
+          <!-- Left column: node health + drift + events -->
           <div style="display:flex;flex-direction:column;gap:16px;">
 
             <!-- Node Health table -->
@@ -576,75 +214,18 @@ class PageDashboard extends HTMLElement {
                 <span class="dot" style="background:var(--success-color)"></span>
                 Node Health
               </div>
-              <div class="panel-body no-pad">
-                ${h && h.nodes.length > 0 && !serviceUnavailable ? `
-                <table class="md-table">
-                  <thead>
-                    <tr>
-                      <th>Hostname</th>
-                      <th>Status</th>
-                      <th>Issues</th>
-                      <th>Last Seen</th>
-                    </tr>
-                  </thead>
-                  <tbody class="md-interactive">
-                    ${h.nodes.map(n => `
-                    <tr>
-                      <td class="hostname">${n.hostname || n.nodeId}</td>
-                      <td>${statusBadge(n.status)}</td>
-                      <td>
-                        ${n.failedChecks > 0
-                          ? `<span class="failed-checks">${n.failedChecks} failed</span>`
-                          : '<span style="color:var(--secondary-text-color)">—</span>'}
-                      </td>
-                      <td style="color:var(--secondary-text-color)">${relativeTime(n.lastSeen)}</td>
-                    </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-                ` : serviceUnavailable
-                  ? `<p class="empty-msg">ClusterController service not available.</p>`
-                  : `<p class="empty-msg">No node health data available.</p>`}
-              </div>
+              <div class="panel-body no-pad" data-bind="node-health"></div>
             </div>
 
             <!-- Drift / Inventory issues -->
-            ${degraded.length > 0 || inventoryIssues.length > 0 ? `
-            <div class="panel">
-              <div class="panel-header" style="color:#f59e0b;">
-                <span class="dot" style="background:#f59e0b"></span>
-                Drift & Inventory Issues
-              </div>
-              <div class="panel-body no-pad">
-                <table class="md-table">
-                  <thead><tr><th>Hostname</th><th>Problem</th><th>Detail</th></tr></thead>
-                  <tbody class="md-interactive">
-                    ${degraded.map(n => `
-                    <tr>
-                      <td class="hostname">${n.hostname || n.nodeId}</td>
-                      <td>${statusBadge(n.status)}</td>
-                      <td class="failed-checks">${n.failedChecks ? `${n.failedChecks} failed checks` : n.lastError || '—'}</td>
-                    </tr>
-                    `).join('')}
-                    ${inventoryIssues.map(n => `
-                    <tr>
-                      <td class="hostname">${n.hostname || n.nodeId}</td>
-                      <td>${statusBadge('INVENTORY_INCOMPLETE')}</td>
-                      <td style="color:var(--secondary-text-color)">Inventory not yet complete</td>
-                    </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            ` : ''}
+            <div data-bind="drift-panel"></div>
 
             <!-- Events feed -->
             <div class="panel">
               <div class="panel-header">
                 <span class="dot" style="background:var(--accent-color);animation:pulse 2s infinite"></span>
                 Live Events
-                <span style="margin-left:auto;font-size:.65rem;font-weight:400;text-transform:none;letter-spacing:0">${this._events.length} events</span>
+                <span data-bind="events-count" style="margin-left:auto;font-size:.65rem;font-weight:400;text-transform:none;letter-spacing:0">0 events</span>
               </div>
               <div class="ev-filters" id="ev-filters">
                 <button class="ev-filter-btn active" data-filter="all">All</button>
@@ -659,7 +240,7 @@ class PageDashboard extends HTMLElement {
 
           </div>
 
-          <!-- Right column: quick actions -->
+          <!-- Right column: quick actions + cluster info -->
           <div style="display:flex;flex-direction:column;gap:16px;">
             <div class="panel">
               <div class="panel-header">Quick Actions</div>
@@ -681,27 +262,18 @@ class PageDashboard extends HTMLElement {
               </div>
             </div>
 
-            ${h ? `
-            <div class="panel">
-              <div class="panel-header">Cluster Info</div>
-              <div class="panel-body" style="font-size:.82rem;display:flex;flex-direction:column;gap:8px;">
-                <div><span style="color:var(--secondary-text-color)">Status</span>
-                  <span style="float:right">${statusBadge(h.status || 'UNKNOWN')}</span></div>
-                ${h.clusterId ? `<div><span style="color:var(--secondary-text-color)">Cluster ID</span>
-                  <span style="float:right;font-family:monospace;font-size:.75rem">${h.clusterId.slice(0,12)}…</span></div>` : ''}
-                ${h.clusterDomain ? `<div><span style="color:var(--secondary-text-color)">Domain</span>
-                  <span style="float:right">${h.clusterDomain}</span></div>` : ''}
-              </div>
-            </div>
-            ` : ''}
+            <div data-bind="cluster-info"></div>
           </div>
 
         </div>
       </div>
     `
 
-    // Wire up buttons
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+    this._bindShellEvents()
+  }
+
+  private _bindShellEvents() {
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => this._load())
     this.querySelector('#btnReconcile')?.addEventListener('click', () => this.handleReconcile())
     this.querySelector('#btnPause')?.addEventListener('click', () => this.handlePause())
     this.querySelector('#btnDiagnostics')?.addEventListener('click', () => {
@@ -718,8 +290,488 @@ class PageDashboard extends HTMLElement {
         this.renderEventsFeed()
       })
     })
+  }
 
-    // Re-render events feed without full re-render
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private _show(bind: string, visible: boolean) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.style.display = visible ? '' : 'none'
+  }
+
+  private async _load() {
+    const [healthResult, nodesResult] = await Promise.allSettled([
+      getClusterHealth(),
+      listClusterNodes(),
+    ])
+
+    if (healthResult.status === 'fulfilled') {
+      this._health = healthResult.value
+      this._healthError = ''
+    } else {
+      this._healthError = (healthResult.reason as any)?.message || 'ClusterController unavailable'
+    }
+
+    if (nodesResult.status === 'fulfilled') {
+      this._nodes = nodesResult.value
+      this._nodesError = ''
+    } else {
+      this._nodesError = (nodesResult.reason as any)?.message || 'Could not list nodes'
+    }
+
+    // Load recent control-plane events from history (survives page refresh).
+    try {
+      const [planResult, serviceResult, incidentResult] = await Promise.allSettled([
+        queryEvents({ nameFilter: 'plan_', limit: 50 }),
+        queryEvents({ nameFilter: 'service_apply_', limit: 50 }),
+        queryEvents({ nameFilter: 'alert.incident.', limit: 50 }),
+      ])
+      type DashEvent = { time: string; name: string; data: string; severity?: string; type?: string; message?: string; nodeId?: string; service?: string; correlationId?: string; _parsed?: any }
+      const allHistorical: Array<{ ev: DashEvent; seq: number }> = []
+      for (const r of [planResult, serviceResult, incidentResult]) {
+        if (r.status !== 'fulfilled') continue
+        for (const ev of r.value.events) {
+          allHistorical.push({
+            ev: {
+              time: ev.tsEpoch ? new Date(ev.tsEpoch * 1000).toLocaleTimeString() : '??:??',
+              name: ev.name,
+              data: ev.dataJson?.message || ev.dataJson?.summary || (typeof ev.dataJson === 'object' ? JSON.stringify(ev.dataJson) : `${ev.data.length} bytes`),
+              severity: ev.dataJson?.severity as string | undefined,
+              type: ev.name,
+              message: (ev.dataJson?.message || ev.dataJson?.summary) as string | undefined,
+              nodeId: ev.dataJson?.node_id as string | undefined,
+              service: ev.dataJson?.service as string | undefined,
+              correlationId: (ev.dataJson?.correlation_id || ev.dataJson?.incident_id) as string | undefined,
+              _parsed: ev.dataJson,
+            },
+            seq: ev.sequence,
+          })
+        }
+        if (r.value.latestSequence > this._latestSequence) {
+          this._latestSequence = r.value.latestSequence
+        }
+      }
+      // Sort by sequence descending (newest first), take top 50.
+      allHistorical.sort((a, b) => b.seq - a.seq)
+      const historical = allHistorical.slice(0, 50).map(h => h.ev)
+      if (historical.length > 0) {
+        const existing = new Set(this._events.map(e => `${e.time}:${e.name}`))
+        for (const h of historical) {
+          if (!existing.has(`${h.time}:${h.name}`)) {
+            this._events.push(h)
+          }
+        }
+        this._events = this._events.slice(0, 50)
+      }
+    } catch { /* event service may be unavailable */ }
+
+    this._loading = false
+    this._pushData()
+  }
+
+  private subscribeEvents() {
+    if (!Backend.eventHub) return
+    const controlPlaneEvents = [
+      'plan_generated', 'plan_apply_started', 'plan_blocked_privileged',
+      'plan_apply_succeeded', 'plan_apply_failed', 'plan_blocked',
+      'service_apply_started', 'service_apply_succeeded', 'service_apply_failed',
+      // AI incident lifecycle events
+      'alert.incident.resolved', 'alert.incident.failed',
+      'alert.incident.approval_required', 'alert.incident.expired',
+      'alert.incident.denied',
+      // Service crash / security events
+      'alert.auth.denied', 'alert.auth.failed',
+      'alert.dos.detected', 'alert.error.spike',
+      'alert.admin.notification',
+    ]
+    const channels = [...controlPlaneEvents]
+    channels.forEach(ch => {
+      Backend.subscribe(ch, (uuid) => {
+        this._eventSubs.push([ch, uuid])
+      }, (data) => {
+        let parsed: any = null
+        if (typeof data === 'string') {
+          try { parsed = JSON.parse(data) } catch { /* not JSON */ }
+        } else if (typeof data === 'object') {
+          parsed = data
+        }
+        const incidentId = parsed?.incident_id
+        // When an incident resolves, remove ALL earlier events for the same
+        // incident (admin alerts, remediations, etc.) — no false urgency.
+        if (incidentId && ch === 'alert.incident.resolved') {
+          this._events = this._events.filter(e => e.correlationId !== incidentId)
+        }
+
+        this._events.unshift({
+          time: new Date().toLocaleTimeString(),
+          name: ch,
+          data: parsed?.message || parsed?.summary || (typeof data === 'string' ? data : JSON.stringify(data)),
+          severity: parsed?.severity,
+          type: ch,
+          message: parsed?.message || parsed?.summary,
+          nodeId: parsed?.node_id,
+          service: parsed?.service,
+          correlationId: incidentId || parsed?.correlation_id,
+          _parsed: parsed,
+        })
+        if (this._events.length > 50) this._events.pop()
+        this.renderEventsFeed()
+      }, false)
+    })
+  }
+
+  private severityColor(sev?: string): string {
+    const s = (sev || '').toUpperCase()
+    if (s === 'ERROR') return '#ef4444'
+    if (s === 'WARN' || s === 'WARNING') return '#f59e0b'
+    if (s === 'INFO') return '#3b82f6'
+    return 'var(--secondary-text-color)'
+  }
+
+  /** Map raw event names to human-readable labels with icons. */
+  private formatEvent(e: any): { icon: string; label: string; detail: string; color: string } {
+    const p = e._parsed || {}
+    const sev = e.severity || 'INFO'
+    const color = this.severityColor(sev)
+
+    switch (e.name) {
+      // ── AI Incident Lifecycle ──
+      case 'alert.incident.resolved':
+        return {
+          icon: '✅', label: 'Resolved',
+          detail: p.message || this.formatAIDiagnosis(p),
+          color: '#22c55e', // green — no longer urgent
+        }
+      case 'alert.incident.failed':
+        return {
+          icon: '❌', label: 'Incident Failed',
+          detail: p.summary || p.message || 'Remediation failed',
+          color,
+        }
+      case 'alert.incident.approval_required':
+        return {
+          icon: '✋', label: 'Approval Required',
+          detail: this.formatApprovalRequest(p),
+          color: '#ef4444',
+        }
+      case 'alert.incident.expired':
+        return {
+          icon: '⏰', label: 'Approval Expired',
+          detail: p.summary || 'Action expired before approval',
+          color: '#f59e0b',
+        }
+      case 'alert.incident.denied':
+        return {
+          icon: '\u{1F6AB}', label: 'Action Denied',
+          detail: p.summary || 'Operator denied the proposed action',
+          color,
+        }
+      case 'operation.remediation.completed':
+        return {
+          icon: '\u{1F527}', label: 'Remediation',
+          detail: this.formatRemediation(p),
+          color,
+        }
+
+      // ── Security Events ──
+      case 'alert.auth.denied':
+        return {
+          icon: '\u{1F6E1}', label: 'Auth Denied',
+          detail: `${p.subject || 'unknown'} blocked from ${p.method || 'unknown method'} — ${p.reason || ''}`,
+          color: '#f59e0b',
+        }
+      case 'alert.auth.failed':
+        return {
+          icon: '\u{1F512}', label: 'Login Failed',
+          detail: `Account "${p.account || 'unknown'}" — ${p.reason || 'invalid credentials'}`,
+          color: '#f59e0b',
+        }
+      case 'alert.dos.detected':
+        return {
+          icon: '⚠', label: 'DoS Detected',
+          detail: p.message || 'Request flood from single source',
+          color: '#ef4444',
+        }
+      case 'alert.error.spike':
+        return {
+          icon: '\u{1F4C8}', label: 'Error Spike',
+          detail: p.message || 'High error rate across service',
+          color: '#ef4444',
+        }
+      case 'alert.admin.notification':
+        return {
+          icon: '\u{1F4E3}', label: 'Admin Alert',
+          detail: this.formatAdminNotification(p),
+          color: '#ef4444',
+        }
+
+      // ── Plan Events ──
+      case 'plan_generated':
+        return { icon: '\u{1F4CB}', label: 'Plan Created', detail: p.message || 'New plan generated', color }
+      case 'plan_apply_started':
+        return { icon: '▶', label: 'Plan Applying', detail: p.message || 'Plan execution started', color }
+      case 'plan_apply_succeeded':
+        return { icon: '✅', label: 'Plan Succeeded', detail: p.message || 'Plan applied successfully', color }
+      case 'plan_apply_failed':
+        return { icon: '❌', label: 'Plan Failed', detail: p.message || 'Plan execution failed', color: '#ef4444' }
+      case 'plan_blocked':
+      case 'plan_blocked_privileged':
+        return { icon: '⏸', label: 'Plan Blocked', detail: p.message || 'Plan requires manual action', color: '#f59e0b' }
+      case 'service_apply_started':
+        return { icon: '\u{1F504}', label: 'Service Update', detail: p.message || 'Service installation started', color }
+      case 'service_apply_succeeded':
+        return { icon: '✅', label: 'Service Installed', detail: p.message || 'Service installed successfully', color }
+      case 'service_apply_failed':
+        return { icon: '❌', label: 'Service Failed', detail: p.message || 'Service installation failed', color: '#ef4444' }
+
+      default:
+        return { icon: '•', label: e.name, detail: e.message || e.data || '', color }
+    }
+  }
+
+  private formatAIDiagnosis(p: any): string {
+    const parts: string[] = []
+    if (p.root_cause) parts.push(`Root cause: ${p.root_cause}`)
+    if (p.confidence) parts.push(`(${Math.round(p.confidence * 100)}% confidence)`)
+    if (p.proposed_action) parts.push(`→ ${this.humanAction(p.proposed_action)}`)
+    if (p.summary && !parts.length) parts.push(p.summary)
+    return parts.join(' ') || p.message || 'Incident diagnosed and resolved'
+  }
+
+  private formatApprovalRequest(p: any): string {
+    const parts = [p.summary || 'Action requires approval']
+    if (p.proposed_action) parts.push(`Proposed: ${this.humanAction(p.proposed_action)}`)
+    if (p.rationale) parts.push(`— ${p.rationale}`)
+    return parts.join('. ')
+  }
+
+  private formatRemediation(p: any): string {
+    const action = this.humanAction(p.action_type || '')
+    const status = (p.status || '').replace('ACTION_', '')
+    const target = (p.target || '').replace(/^restart_service:/, '')
+    if (target) return `${action} "${target}" → ${status}`
+    return `${action} → ${status}`
+  }
+
+  private formatAdminNotification(p: any): string {
+    const parts: string[] = []
+    if (p.summary) parts.push(p.summary)
+    if (p.root_cause) parts.push(`Root cause: ${p.root_cause}`)
+    if (p.rationale) parts.push(p.rationale)
+    return parts.join(' — ') || p.message || 'Admin notification'
+  }
+
+  private humanAction(action: string): string {
+    const map: Record<string, string> = {
+      'restart_service': 'Restart service',
+      'notify_admin': 'Notify admin',
+      'observe_and_record': 'Observe & record',
+      'drain_endpoint': 'Drain endpoint',
+      'block_ip': 'Block IP',
+      'tighten_circuit_breakers': 'Tighten circuit breakers',
+      'clear_corrupted_storage': 'Clear corrupted storage',
+      'cert_renew': 'Renew certificate',
+      'ACTION_RESTART_SERVICE': 'Restart service',
+      'ACTION_NOTIFY_ADMIN': 'Notify admin',
+      'ACTION_DRAIN_ENDPOINT': 'Drain endpoint',
+      'ACTION_BLOCK_IP': 'Block IP',
+      'ACTION_NONE': 'Observe',
+    }
+    // Handle "restart_service:unit_name" format
+    const base = action.split(':')[0]
+    return map[base] || map[action] || action
+  }
+
+  private eventMatchesFilter(e: any): boolean {
+    if (this._eventFilter === 'all') return true
+    const sev = (e.severity || '').toUpperCase()
+    switch (this._eventFilter) {
+      case 'error': return sev === 'ERROR'
+      case 'warn': return sev === 'WARN' || sev === 'WARNING'
+      case 'info': return sev === 'INFO' || sev === ''
+      default: return true
+    }
+  }
+
+  private renderEventsFeed() {
+    const feed = this.querySelector('#events-feed')
+    if (!feed) return
+    const filtered = this._events.filter(e => this.eventMatchesFilter(e))
+    if (filtered.length === 0) {
+      feed.innerHTML = `<p class="empty-msg">${this._events.length === 0 ? 'No events yet — waiting for cluster activity…' : 'No events match this filter'}</p>`
+      return
+    }
+    feed.innerHTML = filtered.slice(0, 30).map(e => {
+      const fmt = this.formatEvent(e)
+      const meta = [e.nodeId, e.service, e.correlationId].filter(Boolean)
+      const metaHtml = meta.length > 0
+        ? `<div class="ev-meta">${meta.join(' · ')}</div>`
+        : ''
+      return `
+        <div class="event-row">
+          <span class="ev-time">${e.time}</span>
+          <div class="ev-badge" style="
+            background:color-mix(in srgb,${fmt.color} 12%,transparent);
+            color:${fmt.color};
+            border-color:color-mix(in srgb,${fmt.color} 25%,transparent);
+          ">${fmt.icon} ${fmt.label}</div>
+          <div class="ev-detail">
+            <span style="color:${e.severity === 'ERROR' ? '#ef4444' : 'var(--on-surface-color)'}">${fmt.detail}</span>
+            ${metaHtml}
+          </div>
+        </div>
+      `
+    }).join('')
+  }
+
+  private _pushData() {
+    const h = this._health
+    const now = new Date().toLocaleTimeString()
+    const serviceUnavailable = !!this._healthError
+
+    // Update timestamp
+    this._set('timestamp', `Updated ${now}`)
+
+    // Update cluster ID in header
+    this._set('cluster-id', h ? `<span class="cluster-id">${h.clusterDomain || h.clusterId}</span>` : '')
+
+    // Update loading indicator
+    this._show('loading-msg', this._loading)
+
+    // Update error banner
+    const errorBannerEl = this.querySelector('[data-bind="error-banner"]') as HTMLElement | null
+    if (errorBannerEl) {
+      if (serviceUnavailable) {
+        errorBannerEl.style.display = ''
+        errorBannerEl.innerHTML = `
+          <div class="md-banner-warn">
+            ⚠ ClusterController service not reachable —
+            <span style="font-family:monospace;font-size:.8em">${this._healthError}</span>
+            <br><span style="font-size:.8em;opacity:.8">
+              Ensure the <code>cluster_controller.ClusterControllerService</code> subdomain is
+              registered in the Envoy/xDS routing on your cluster.
+            </span>
+          </div>`
+      } else {
+        errorBannerEl.style.display = 'none'
+        errorBannerEl.innerHTML = ''
+      }
+    }
+
+    // Update stat cards
+    this._set('stat-cards', h ? `
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="label">Total Nodes</div>
+          <div class="value">${h.totalNodes}</div>
+          <div class="sub">${h.clusterDomain || 'cluster'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Healthy</div>
+          <div class="value" style="color:var(--success-color)">${h.healthyNodes}</div>
+          <div class="sub">nodes nominal</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Degraded</div>
+          <div class="value" style="color:#f59e0b">${h.unhealthyNodes}</div>
+          <div class="sub">need attention</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Unknown</div>
+          <div class="value" style="color:var(--error-color)">${h.unknownNodes}</div>
+          <div class="sub">unreachable</div>
+        </div>
+      </div>
+    ` : '')
+
+    // Update node health table
+    this._set('node-health', h && h.nodes.length > 0 && !serviceUnavailable ? `
+      <table class="md-table">
+        <thead>
+          <tr>
+            <th>Hostname</th>
+            <th>Status</th>
+            <th>Issues</th>
+            <th>Last Seen</th>
+          </tr>
+        </thead>
+        <tbody class="md-interactive">
+          ${h.nodes.map(n => `
+          <tr>
+            <td class="hostname">${n.hostname || n.nodeId}</td>
+            <td>${statusBadge(n.status)}</td>
+            <td>
+              ${n.failedChecks > 0
+                ? `<span class="failed-checks">${n.failedChecks} failed</span>`
+                : '<span style="color:var(--secondary-text-color)">—</span>'}
+            </td>
+            <td style="color:var(--secondary-text-color)">${relativeTime(n.lastSeen)}</td>
+          </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : serviceUnavailable
+        ? `<p class="empty-msg">ClusterController service not available.</p>`
+        : `<p class="empty-msg">No node health data available.</p>`)
+
+    // Update drift panel
+    const degraded = h?.nodes.filter(n =>
+      !n.status.toUpperCase().includes('HEALTHY') || (n.failedChecks ?? 0) > 0
+    ) ?? []
+    const inventoryIssues = this._nodes.filter(n => !n.inventoryComplete)
+
+    this._set('drift-panel', degraded.length > 0 || inventoryIssues.length > 0 ? `
+      <div class="panel">
+        <div class="panel-header" style="color:#f59e0b;">
+          <span class="dot" style="background:#f59e0b"></span>
+          Drift &amp; Inventory Issues
+        </div>
+        <div class="panel-body no-pad">
+          <table class="md-table">
+            <thead><tr><th>Hostname</th><th>Problem</th><th>Detail</th></tr></thead>
+            <tbody class="md-interactive">
+              ${degraded.map(n => `
+              <tr>
+                <td class="hostname">${n.hostname || n.nodeId}</td>
+                <td>${statusBadge(n.status)}</td>
+                <td class="failed-checks">${n.failedChecks ? `${n.failedChecks} failed checks` : n.lastError || '—'}</td>
+              </tr>
+              `).join('')}
+              ${inventoryIssues.map(n => `
+              <tr>
+                <td class="hostname">${n.hostname || n.nodeId}</td>
+                <td>${statusBadge('INVENTORY_INCOMPLETE')}</td>
+                <td style="color:var(--secondary-text-color)">Inventory not yet complete</td>
+              </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : '')
+
+    // Update events count badge
+    this._set('events-count', `${this._events.length} events`)
+
+    // Update cluster info panel
+    this._set('cluster-info', h ? `
+      <div class="panel">
+        <div class="panel-header">Cluster Info</div>
+        <div class="panel-body" style="font-size:.82rem;display:flex;flex-direction:column;gap:8px;">
+          <div><span style="color:var(--secondary-text-color)">Status</span>
+            <span style="float:right">${statusBadge(h.status || 'UNKNOWN')}</span></div>
+          ${h.clusterId ? `<div><span style="color:var(--secondary-text-color)">Cluster ID</span>
+            <span style="float:right;font-family:monospace;font-size:.75rem">${h.clusterId.slice(0,12)}…</span></div>` : ''}
+          ${h.clusterDomain ? `<div><span style="color:var(--secondary-text-color)">Domain</span>
+            <span style="float:right">${h.clusterDomain}</span></div>` : ''}
+        </div>
+      </div>
+    ` : '')
+
+    // Re-render events feed
     this.renderEventsFeed()
   }
 
@@ -732,7 +784,7 @@ class PageDashboard extends HTMLElement {
       // reconcileNodeV1 requires a node ID; a full-cluster trigger is not yet exposed
       // as a single RPC. Reload health after a short delay to reflect any changes.
       await new Promise(r => setTimeout(r, 1500))
-      await this.load()
+      await this._load()
     } finally {
       btn.disabled = false
       btn.innerHTML = '<span class="icon">⟳</span> Reconcile Cluster'

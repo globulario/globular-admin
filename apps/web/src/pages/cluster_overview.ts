@@ -88,6 +88,7 @@ function badge(label: string, color: string): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageClusterOverview extends HTMLElement {
+  private _built = false
   private _report: ClusterReport | null = null
   private _health: ClusterHealth | null = null
   private _drift: DriftReport | null = null
@@ -108,6 +109,20 @@ class PageClusterOverview extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this.renderDocs()
+    this.load()
+    this._refreshTimer = window.setInterval(() => this.load(), 60_000)
+  }
+
+  disconnectedCallback() {
+    if (this._refreshTimer) clearInterval(this._refreshTimer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+
     this.innerHTML = `
       <section class="wrap">
         <header class="header">
@@ -141,14 +156,6 @@ class PageClusterOverview extends HTMLElement {
     this.querySelector('#freshBtn')?.addEventListener('click', () => {
       this.load({ fresh: true })
     })
-
-    this.renderDocs()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 60_000)
-  }
-
-  disconnectedCallback() {
-    if (this._refreshTimer) clearInterval(this._refreshTimer)
   }
 
   // ─── Data loading ───────────────────────────────────────────────────────────

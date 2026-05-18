@@ -63,9 +63,22 @@ class PageInfrastructureControlPlane extends HTMLElement {
   private _report: ClusterReport | null = null
   private _logs: ServiceLogsResponse | null = null
   private _logsLoading = false
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._timer = window.setInterval(() => this._load(), POLL)
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${INFRA_STYLES}${LOG_STYLES}</style>
       <section class="wrap">
@@ -86,16 +99,10 @@ class PageInfrastructureControlPlane extends HTMLElement {
         <div id="cpLinks"></div>
       </section>
     `
-    this.querySelector('#cpRefresh')?.addEventListener('click', () => this.load())
-    this.load()
-    this._timer = window.setInterval(() => this.load(), POLL)
+    this.querySelector('#cpRefresh')?.addEventListener('click', () => this._load())
   }
 
-  disconnectedCallback() {
-    if (this._timer) clearInterval(this._timer)
-  }
-
-  private async load() {
+  private async _load() {
     const [svcR, clR, v1R, rpR] = await Promise.allSettled([
       fetchAdminServices(),
       getClusterHealth(),
@@ -108,10 +115,10 @@ class PageInfrastructureControlPlane extends HTMLElement {
     this._clusterV1 = v1R.status  === 'fulfilled' ? v1R.value  : null
     this._report    = rpR.status  === 'fulfilled' ? rpR.value  : null
     this._lastUpdated = new Date()
-    this.render()
+    this._pushData()
   }
 
-  private render() {
+  private _pushData() {
     const tsEl = this.querySelector('#cpTimestamp') as HTMLElement
     if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
     const freshEl = this.querySelector('#cpFreshness') as HTMLElement
@@ -123,6 +130,9 @@ class PageInfrastructureControlPlane extends HTMLElement {
     this.renderLogsPanel()
     this.renderLinks()
   }
+
+  /** @deprecated Use _pushData() */
+  private render() { this._pushData() }
 
   private renderSummary() {
     const el = this.querySelector('#cpSummary') as HTMLElement
@@ -266,14 +276,14 @@ class PageInfrastructureControlPlane extends HTMLElement {
           <div id="logOutput"></div>
         </div>
       `
-      this.querySelector('#logFetch')?.addEventListener('click', () => this.fetchLogs())
+      this.querySelector('#logFetch')?.addEventListener('click', () => this._fetchLogs())
     }
 
     // If logs were already fetched, re-render them
     if (this._logs || this._logsLoading) this.renderLogOutput()
   }
 
-  private async fetchLogs() {
+  private async _fetchLogs() {
     const unitEl = this.querySelector('#logUnit') as HTMLSelectElement
     const linesEl = this.querySelector('#logLines') as HTMLSelectElement
     if (!unitEl || !linesEl) return

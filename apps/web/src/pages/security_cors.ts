@@ -26,16 +26,19 @@ class PageSecurityCors extends HTMLElement {
   private gwSection!: HTMLElement
   private svcSection!: HTMLElement
   private expandedSvc: string | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
+    this._buildShell()
+    this._load()
   }
 
   /* ── Render shell ─────────────────────────────────────────────────── */
 
-  private render() {
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .cors-page { max-width: 1200px; margin: 0 auto; }
@@ -216,7 +219,7 @@ class PageSecurityCors extends HTMLElement {
 
   /* ── Data loading ─────────────────────────────────────────────────── */
 
-  private async load() {
+  private async _load() {
     this.dirty.clear()
     this.syncSaveAllBtn()
     try {

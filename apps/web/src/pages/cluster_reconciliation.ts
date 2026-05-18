@@ -80,72 +80,22 @@ class PageClusterReconciliation extends HTMLElement {
   private _loadError = ''
   private _loading = true
   private _refreshTimer: number | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
-    this.render()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), 30_000)
+    this._buildShell()
+    this._load()
+    this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
 
   disconnectedCallback() {
     if (this._refreshTimer) clearInterval(this._refreshTimer)
   }
 
-  private async load() {
-    let nodes: ClusterNode[]
-    try {
-      const [nodeList, healthResult, diffs] = await Promise.all([
-        listClusterNodes(),
-        getClusterHealthV1Full().catch(() => null),
-        computeReconciliationDiff().catch(() => [] as NodeReconciliationDiff[]),
-      ])
-      nodes = nodeList
-      this._nodeHealths = healthResult?.nodeHealths ?? []
-      this._diffs = diffs
-      this._loadError = ''
-    } catch (e: any) {
-      this._loadError = e?.message || 'ClusterController unavailable'
-      this._loading = false
-      this.render()
-      return
-    }
-
-    // Fetch drift reports concurrently for all nodes
-    const results = await Promise.allSettled(
-      nodes.map(n => getDriftReport(n.nodeId))
-    )
-
-    this._rows = nodes.map((node, i) => {
-      const res = results[i]
-      return {
-        node,
-        report: res.status === 'fulfilled' ? res.value : null,
-        error:  res.status === 'rejected'  ? ((res.reason as any)?.message || 'Doctor unavailable') : '',
-      }
-    })
-
-    this._loading = false
-    this.render()
-  }
-
-  private render() {
-    const allItems: Array<DriftItem & { hostname: string }> = []
-    for (const row of this._rows) {
-      if (row.report) {
-        for (const item of row.report.items) {
-          allItems.push({ ...item, hostname: row.node.hostname || row.node.nodeId })
-        }
-      }
-    }
-
-    const totalDrift = allItems.length
-    const criticalCats = new Set([MISSING_UNIT_FILE, UNIT_STOPPED])
-    const criticalCount = allItems.filter(i => criticalCats.has(i.category)).length
-    const needsPrivApplyCount = this._nodeHealths.filter(nh =>
-      !nh.canApplyPrivileged && nh.desiredServicesHash && nh.desiredServicesHash !== nh.appliedServicesHash
-    ).length
-
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .cr-wrap { padding: 16px; }
@@ -221,137 +171,218 @@ class PageClusterReconciliation extends HTMLElement {
           <button class="cr-btn-refresh" id="btnRefresh">↻ Refresh</button>
         </div>
         <p class="cr-subtitle">Service version diff, drift between desired and applied state, and missing units per node.</p>
+        <div data-bind="status"></div>
+        <div data-bind="stats"></div>
+        <div data-bind="nodes"></div>
+      </div>
+    `
+    this.querySelector('#btnRefresh')?.addEventListener('click', () => this._load())
+  }
 
-        ${this._loading ? `<p class="cr-empty">Loading drift data…</p>` : ''}
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
 
-        ${this._loadError ? `
+  private async _load() {
+    let nodes: ClusterNode[]
+    try {
+      const [nodeList, healthResult, diffs] = await Promise.all([
+        listClusterNodes(),
+        getClusterHealthV1Full().catch(() => null),
+        computeReconciliationDiff().catch(() => [] as NodeReconciliationDiff[]),
+      ])
+      nodes = nodeList
+      this._nodeHealths = healthResult?.nodeHealths ?? []
+      this._diffs = diffs
+      this._loadError = ''
+    } catch (e: any) {
+      this._loadError = e?.message || 'ClusterController unavailable'
+      this._loading = false
+      this._pushData()
+      return
+    }
+
+    // Fetch drift reports concurrently for all nodes
+    const results = await Promise.allSettled(
+      nodes.map(n => getDriftReport(n.nodeId))
+    )
+
+    this._rows = nodes.map((node, i) => {
+      const res = results[i]
+      return {
+        node,
+        report: res.status === 'fulfilled' ? res.value : null,
+        error:  res.status === 'rejected'  ? ((res.reason as any)?.message || 'Doctor unavailable') : '',
+      }
+    })
+
+    this._loading = false
+    this._pushData()
+  }
+
+  private _pushData() {
+    // Status / error banner
+    if (this._loading) {
+      this._set('status', `<p class="cr-empty">Loading drift data…</p>`)
+      this._set('stats', '')
+      this._set('nodes', '')
+      return
+    }
+
+    if (this._loadError) {
+      this._set('status', `
         <div class="md-banner-warn">
           Could not load nodes — ${this._loadError}
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>
         </div>
-        ` : ''}
+      `)
+      this._set('stats', '')
+      this._set('nodes', '')
+      return
+    }
 
-        ${!this._loading && !this._loadError ? `
-        <div class="cr-stat-grid">
-          <div class="cr-stat-card">
-            <div class="cr-stat-label">Nodes Checked</div>
-            <div class="cr-stat-value">${this._rows.length}</div>
-          </div>
-          <div class="cr-stat-card">
-            <div class="cr-stat-label">Total Drift Items</div>
-            <div class="cr-stat-value" style="color:${totalDrift > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${totalDrift}</div>
-          </div>
-          <div class="cr-stat-card">
-            <div class="cr-stat-label">Critical Items</div>
-            <div class="cr-stat-value" style="color:${criticalCount > 0 ? 'var(--error-color)' : 'var(--secondary-text-color)'}">${criticalCount}</div>
-          </div>
-          <div class="cr-stat-card">
-            <div class="cr-stat-label">Needs Privileged Apply</div>
-            <div class="cr-stat-value" style="color:${needsPrivApplyCount > 0 ? '#f97316' : 'var(--secondary-text-color)'}">${needsPrivApplyCount}</div>
-          </div>
+    this._set('status', '')
+
+    // Stats
+    const allItems: Array<DriftItem & { hostname: string }> = []
+    for (const row of this._rows) {
+      if (row.report) {
+        for (const item of row.report.items) {
+          allItems.push({ ...item, hostname: row.node.hostname || row.node.nodeId })
+        }
+      }
+    }
+    const totalDrift = allItems.length
+    const criticalCats = new Set([MISSING_UNIT_FILE, UNIT_STOPPED])
+    const criticalCount = allItems.filter(i => criticalCats.has(i.category)).length
+    const needsPrivApplyCount = this._nodeHealths.filter(nh =>
+      !nh.canApplyPrivileged && nh.desiredServicesHash && nh.desiredServicesHash !== nh.appliedServicesHash
+    ).length
+
+    this._set('stats', `
+      <div class="cr-stat-grid">
+        <div class="cr-stat-card">
+          <div class="cr-stat-label">Nodes Checked</div>
+          <div class="cr-stat-value">${this._rows.length}</div>
         </div>
-
-        ${this._rows.map(row => {
-          const items = row.report?.items ?? []
-          const diff = this._diffs.find(d => d.nodeId === row.node.nodeId)
-          const diffServices = diff?.services ?? []
-          const hasDriftItems = items.length > 0
-          const hasServiceDiff = diffServices.some(s => s.action !== 'ok')
-          if (!hasDriftItems && !hasServiceDiff) return ''
-
-          const nh = this._nodeHealths.find(h => h.nodeId === row.node.nodeId)
-          const hasHashMismatch = items.some(i => i.category === STATE_HASH_MISMATCH)
-          const nodeCanPriv = nh?.canApplyPrivileged ?? true
-          return `
-          <div class="md-panel">
-            <div class="md-panel-header">
-              <span>${row.node.hostname || row.node.nodeId}</span>
-              <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}${diffServices.filter(s => s.action !== 'ok').length > 0 ? ` · ${diffServices.filter(s => s.action !== 'ok').length} service action${diffServices.filter(s => s.action !== 'ok').length !== 1 ? 's' : ''}` : ''}${!nodeCanPriv ? ' · <span style="color:#f97316">unprivileged</span>' : ''}</span>
-            </div>
-            ${nh ? `
-            <div style="padding:6px 14px;font-size:.75rem;display:flex;gap:14px;flex-wrap:wrap;color:var(--secondary-text-color);border-bottom:1px solid var(--border-subtle-color)">
-              <span>Desired hash: <code class="cr-mono">${nh.desiredServicesHash?.slice(0, 12) || '—'}…</code></span>
-              <span>Applied hash: <code class="cr-mono">${nh.appliedServicesHash?.slice(0, 12) || '—'}…</code></span>
-              <span>Plan phase: <code class="cr-mono">${nh.currentPlanPhase || '—'}</code></span>
-              <span>Privileged: ${nodeCanPriv ? '✓' : '<span style="color:#f97316">✕</span>'}</span>
-            </div>` : ''}
-
-            ${diffServices.length > 0 ? `
-            <div class="cr-section-label">Service Versions</div>
-            <table class="md-table">
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Desired</th>
-                  <th>Installed</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${diffServices.map(s => `
-                <tr class="cr-svc-row" data-service="${s.serviceId}" data-node="${row.node.nodeId}" data-hostname="${row.node.hostname || ''}" style="cursor:pointer" title="Click to view workflow">
-                  <td class="cr-mono">${s.serviceId}</td>
-                  <td class="cr-mono" style="color:var(--success-color)">${(s.desired || '—') + (s.desiredBuildNumber ? '+b' + s.desiredBuildNumber : '')}</td>
-                  <td class="cr-mono" style="color:${s.action === 'ok' ? 'var(--on-surface-color)' : actionColor(s.action)}">${(s.installed || '—') + (s.installedBuildNumber ? '+b' + s.installedBuildNumber : '')}</td>
-                  <td>${badge(s.action.toUpperCase(), actionColor(s.action))}</td>
-                </tr>`).join('')}
-              </tbody>
-            </table>` : ''}
-
-            ${items.length > 0 ? `
-            <div class="cr-section-label">Drift Items</div>
-            <table class="md-table">
-              <thead>
-                <tr>
-                  <th>Category</th>
-                  <th>Entity</th>
-                  <th>Desired</th>
-                  <th>Actual</th>
-                </tr>
-              </thead>
-              <tbody class="md-interactive">
-                ${items.map((item: DriftItem) => {
-                  const color = driftCategoryColor(item.category)
-                  const label = driftCategoryLabel(item.category)
-                  return `
-                  <tr>
-                    <td>${badge(label, color)}</td>
-                    <td class="cr-mono">${item.entityRef || '—'}</td>
-                    <td class="cr-mono" style="color:var(--success-color)">${item.desired || '—'}</td>
-                    <td class="cr-mono" style="color:${color}">${item.actual || '—'}</td>
-                  </tr>`
-                }).join('')}
-              </tbody>
-            </table>` : ''}
-
-            ${hasHashMismatch && !nodeCanPriv ? `
-            <div class="md-banner-warn" style="margin:8px 14px 14px;font-size:.82rem">
-              <strong>Awaiting privileged apply</strong> — this node cannot apply privileged operations (systemd unit installation).
-              Run on the target node:<br>
-              <span class="cr-cmd-wrap">
-                <code>globular services apply-desired</code>
-                <button class="cr-copy-btn" data-copy="globular services apply-desired" title="Copy to clipboard">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                </button>
-              </span>
-            </div>` : ''}
-          </div>`
-        }).join('')}
-
-        ${!this._loading && this._rows.every(r => !r.report || r.report.items.length === 0) && !this._diffs.some(d => d.hasDrift) ? `
-        <div class="md-panel">
-          <p class="cr-empty">✓ No drift detected — all nodes are in the desired state.</p>
+        <div class="cr-stat-card">
+          <div class="cr-stat-label">Total Drift Items</div>
+          <div class="cr-stat-value" style="color:${totalDrift > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${totalDrift}</div>
         </div>
-        ` : ''}
-        ` : ''}
+        <div class="cr-stat-card">
+          <div class="cr-stat-label">Critical Items</div>
+          <div class="cr-stat-value" style="color:${criticalCount > 0 ? 'var(--error-color)' : 'var(--secondary-text-color)'}">${criticalCount}</div>
+        </div>
+        <div class="cr-stat-card">
+          <div class="cr-stat-label">Needs Privileged Apply</div>
+          <div class="cr-stat-value" style="color:${needsPrivApplyCount > 0 ? '#f97316' : 'var(--secondary-text-color)'}">${needsPrivApplyCount}</div>
+        </div>
       </div>
-    `
+    `)
 
-    this.querySelector('#btnRefresh')?.addEventListener('click', () => this.load())
+    // Node panels
+    const nodePanels = this._rows.map(row => {
+      const items = row.report?.items ?? []
+      const diff = this._diffs.find(d => d.nodeId === row.node.nodeId)
+      const diffServices = diff?.services ?? []
+      const hasDriftItems = items.length > 0
+      const hasServiceDiff = diffServices.some(s => s.action !== 'ok')
+      if (!hasDriftItems && !hasServiceDiff) return ''
 
+      const nh = this._nodeHealths.find(h => h.nodeId === row.node.nodeId)
+      const hasHashMismatch = items.some(i => i.category === STATE_HASH_MISMATCH)
+      const nodeCanPriv = nh?.canApplyPrivileged ?? true
+      return `
+        <div class="md-panel">
+          <div class="md-panel-header">
+            <span>${row.node.hostname || row.node.nodeId}</span>
+            <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}${diffServices.filter(s => s.action !== 'ok').length > 0 ? ` · ${diffServices.filter(s => s.action !== 'ok').length} service action${diffServices.filter(s => s.action !== 'ok').length !== 1 ? 's' : ''}` : ''}${!nodeCanPriv ? ' · <span style="color:#f97316">unprivileged</span>' : ''}</span>
+          </div>
+          ${nh ? `
+          <div style="padding:6px 14px;font-size:.75rem;display:flex;gap:14px;flex-wrap:wrap;color:var(--secondary-text-color);border-bottom:1px solid var(--border-subtle-color)">
+            <span>Desired hash: <code class="cr-mono">${nh.desiredServicesHash?.slice(0, 12) || '—'}…</code></span>
+            <span>Applied hash: <code class="cr-mono">${nh.appliedServicesHash?.slice(0, 12) || '—'}…</code></span>
+            <span>Plan phase: <code class="cr-mono">${nh.currentPlanPhase || '—'}</code></span>
+            <span>Privileged: ${nodeCanPriv ? '✓' : '<span style="color:#f97316">✕</span>'}</span>
+          </div>` : ''}
+
+          ${diffServices.length > 0 ? `
+          <div class="cr-section-label">Service Versions</div>
+          <table class="md-table">
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Desired</th>
+                <th>Installed</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${diffServices.map(s => `
+              <tr class="cr-svc-row" data-service="${s.serviceId}" data-node="${row.node.nodeId}" data-hostname="${row.node.hostname || ''}" style="cursor:pointer" title="Click to view workflow">
+                <td class="cr-mono">${s.serviceId}</td>
+                <td class="cr-mono" style="color:var(--success-color)">${(s.desired || '—') + (s.desiredBuildNumber ? '+b' + s.desiredBuildNumber : '')}</td>
+                <td class="cr-mono" style="color:${s.action === 'ok' ? 'var(--on-surface-color)' : actionColor(s.action)}">${(s.installed || '—') + (s.installedBuildNumber ? '+b' + s.installedBuildNumber : '')}</td>
+                <td>${badge(s.action.toUpperCase(), actionColor(s.action))}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : ''}
+
+          ${items.length > 0 ? `
+          <div class="cr-section-label">Drift Items</div>
+          <table class="md-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Entity</th>
+                <th>Desired</th>
+                <th>Actual</th>
+              </tr>
+            </thead>
+            <tbody class="md-interactive">
+              ${items.map((item: DriftItem) => {
+                const color = driftCategoryColor(item.category)
+                const label = driftCategoryLabel(item.category)
+                return `
+                <tr>
+                  <td>${badge(label, color)}</td>
+                  <td class="cr-mono">${item.entityRef || '—'}</td>
+                  <td class="cr-mono" style="color:var(--success-color)">${item.desired || '—'}</td>
+                  <td class="cr-mono" style="color:${color}">${item.actual || '—'}</td>
+                </tr>`
+              }).join('')}
+            </tbody>
+          </table>` : ''}
+
+          ${hasHashMismatch && !nodeCanPriv ? `
+          <div class="md-banner-warn" style="margin:8px 14px 14px;font-size:.82rem">
+            <strong>Awaiting privileged apply</strong> — this node cannot apply privileged operations (systemd unit installation).
+            Run on the target node:<br>
+            <span class="cr-cmd-wrap">
+              <code>globular services apply-desired</code>
+              <button class="cr-copy-btn" data-copy="globular services apply-desired" title="Copy to clipboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </span>
+          </div>` : ''}
+        </div>`
+    }).join('')
+
+    const allClean = this._rows.every(r => !r.report || r.report.items.length === 0) && !this._diffs.some(d => d.hasDrift)
+    this._set('nodes', nodePanels + (allClean ? `
+      <div class="md-panel">
+        <p class="cr-empty">✓ No drift detected — all nodes are in the desired state.</p>
+      </div>
+    ` : ''))
+
+    this._bindDataEvents()
+  }
+
+  private _bindDataEvents() {
     // Service row click → open workflow detail
     this.querySelectorAll<HTMLElement>('.cr-svc-row').forEach(row => {
       row.addEventListener('click', () => {

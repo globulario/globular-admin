@@ -49,8 +49,22 @@ class PageInfrastructureDns extends HTMLElement {
   private _providerHelpOpen = false
   private _domainHelpOpen = false
 
+  private _built = false
+
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    this._load()
+    this._timer = window.setInterval(() => this._load(), POLL)
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>${INFRA_STYLES}${PAGE_STYLES}</style>
       <section class="wrap">
@@ -67,20 +81,14 @@ class PageInfrastructureDns extends HTMLElement {
         <div id="dnsBody"></div>
       </section>
     `
-    this.querySelector('#dnsRefresh')?.addEventListener('click', () => this.load())
-    this.load()
-    this._timer = window.setInterval(() => this.load(), POLL)
-  }
-
-  disconnectedCallback() {
-    if (this._timer) clearInterval(this._timer)
+    this.querySelector('#dnsRefresh')?.addEventListener('click', () => this._load())
   }
 
   // ─── Data ───────────────────────────────────────────────────────────────────
 
-  private async load() {
+  private async _load() {
     this._loading = true
-    this.render()
+    this._pushData()
 
     const [svcR, clR, domR] = await Promise.allSettled([
       fetchAdminServices(),
@@ -131,7 +139,7 @@ class PageInfrastructureDns extends HTMLElement {
 
     this._lastUpdated = new Date()
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
   private buildNames(domain: string): string[] {
@@ -162,7 +170,7 @@ class PageInfrastructureDns extends HTMLElement {
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
-  private render() {
+  private _pushData() {
     const tsEl = this.querySelector('#dnsTimestamp') as HTMLElement
     if (tsEl && this._lastUpdated) tsEl.textContent = `Last updated: ${fmtTime(this._lastUpdated)}`
     const freshEl = this.querySelector('#dnsFreshness') as HTMLElement
@@ -218,7 +226,7 @@ class PageInfrastructureDns extends HTMLElement {
       body.querySelectorAll('.infra-tab').forEach(btn => {
         btn.addEventListener('click', () => {
           this._tab = (btn as HTMLElement).dataset.tab as DnsTab
-          this.render()
+          this._pushData()
         })
       })
       content = body.querySelector('#dnsTabContent') as HTMLElement
@@ -504,11 +512,11 @@ class PageInfrastructureDns extends HTMLElement {
     // Event handlers
     el.querySelector('#dnsTypeFilter')?.addEventListener('change', (e) => {
       this._filterType = (e.target as HTMLSelectElement).value
-      this.render()
+      this._pushData()
     })
     el.querySelector('#dnsSearch')?.addEventListener('input', (e) => {
       this._filterText = (e.target as HTMLInputElement).value
-      this.render()
+      this._pushData()
     })
     el.querySelectorAll('.dns-sortable').forEach(th => {
       th.addEventListener('click', () => {
@@ -519,7 +527,7 @@ class PageInfrastructureDns extends HTMLElement {
           this._sortCol = col
           this._sortAsc = true
         }
-        this.render()
+        this._pushData()
       })
     })
   }
@@ -649,7 +657,7 @@ class PageInfrastructureDns extends HTMLElement {
           this.load()
         } catch (e: any) {
           this._extError = e?.message ?? 'Failed to delete provider'
-          this.render()
+          this._pushData()
         }
       })
     })
@@ -673,7 +681,7 @@ class PageInfrastructureDns extends HTMLElement {
           this.load()
         } catch (e: any) {
           this._extError = e?.message ?? 'Failed to delete domain'
-          this.render()
+          this._pushData()
         }
       })
     })
@@ -828,7 +836,7 @@ class PageInfrastructureDns extends HTMLElement {
         this.load()
       } catch (e: any) {
         this._extError = e?.message ?? 'Failed to save provider'
-        this.render()
+        this._pushData()
       }
     })
   }
@@ -944,7 +952,7 @@ class PageInfrastructureDns extends HTMLElement {
         this.load()
       } catch (e: any) {
         this._extError = e?.message ?? 'Failed to save domain'
-        this.render()
+        this._pushData()
       }
     })
   }

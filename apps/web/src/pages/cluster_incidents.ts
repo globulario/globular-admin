@@ -173,6 +173,7 @@ function renderIncidentCard(inc: Incident): string {
 // ─── Page component ─────────────────────────────────────────────────────────
 
 class PageClusterIncidents extends HTMLElement {
+  private _built = false
   private _incidents: Incident[] = []
   private _loading = true
   private _error = ''
@@ -181,18 +182,46 @@ class PageClusterIncidents extends HTMLElement {
   private _filterStatus: number = 0 // 0=all, 1=OPEN, 3=RESOLVED
 
   connectedCallback() {
-    this.render()
-    this.load()
-    this._pollT = setInterval(() => this.load(), 30_000)
-    this.addEventListener('click', this.onClick)
+    this._buildShell()
+    this._load()
+    this._pollT = setInterval(() => this._load(), 30_000)
+    this.addEventListener('click', this._onClick)
   }
 
   disconnectedCallback() {
     if (this._pollT) clearInterval(this._pollT)
-    this.removeEventListener('click', this.onClick)
+    this.removeEventListener('click', this._onClick)
   }
 
-  private onClick = async (evt: Event) => {
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
+    this.innerHTML = `
+      <div style="padding:20px;max-width:1100px;margin:0 auto">
+        <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:16px">
+          <h2 style="margin:0">Incidents</h2>
+          <span style="font-size:.78rem;color:var(--secondary-text-color)">Operator surface · aggregated from workflow telemetry + doctor findings + AI proposals</span>
+        </div>
+
+        <div data-bind="pills" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"></div>
+
+        <div data-bind="error" style="display:none;padding:10px;background:rgba(220,38,38,.1);border:1px solid ${SEV_COLOR.ERROR};border-radius:4px;color:${SEV_COLOR.ERROR};margin-bottom:12px;font-size:.8rem"></div>
+
+        <div data-bind="body"></div>
+      </div>`
+  }
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector(`[data-bind="${bind}"]`) as HTMLElement | null
+    if (el) el.innerHTML = html
+  }
+
+  private _showError(msg: string) {
+    const el = this.querySelector('[data-bind="error"]') as HTMLElement | null
+    if (el) { el.textContent = msg; el.style.display = msg ? '' : 'none' }
+  }
+
+  private _onClick = async (evt: Event) => {
     const t = evt.target as HTMLElement
     const btn = t.closest('button[data-action]') as HTMLButtonElement | null
     if (!btn) {
@@ -200,7 +229,7 @@ class PageClusterIncidents extends HTMLElement {
       const pill = t.closest('[data-filter]') as HTMLElement | null
       if (pill) {
         this._filterStatus = Number(pill.dataset.filter)
-        this.load()
+        this._load()
       }
       return
     }
@@ -211,31 +240,27 @@ class PageClusterIncidents extends HTMLElement {
     btn.disabled = true
     try {
       await applyIncidentAction(incidentId, action, 'operator', fixId, '')
-      await this.load()
+      await this._load()
     } catch (e) {
-      this._error = `Action ${action} failed: ${String((e as any)?.message || e)}`
-      this.render()
+      this._showError(`Action ${action} failed: ${String((e as any)?.message || e)}`)
     } finally {
       btn.disabled = false
     }
   }
 
-  private async load() {
+  private async _load() {
     this._error = ''
     try {
       this._incidents = await listIncidents(this._clusterId, this._filterStatus, 100)
+      this._showError('')
     } catch (e: any) {
-      this._error = `Failed to load incidents: ${e?.message || e}`
+      this._showError(`Failed to load incidents: ${e?.message || e}`)
     }
     this._loading = false
-    this.render()
+    this._pushData()
   }
 
-  private render() {
-    if (this._loading) {
-      this.innerHTML = '<div style="padding:24px;color:var(--secondary-text-color)">Loading incidents…</div>'
-      return
-    }
+  private _pushData() {
     const open = this._incidents.filter(i => i.status === 'OPEN').length
     const resolving = this._incidents.filter(i => i.status === 'RESOLVING').length
     const acked = this._incidents.filter(i => i.status === 'ACKED').length
@@ -246,31 +271,28 @@ class PageClusterIncidents extends HTMLElement {
         ${label} <span style="opacity:.7">${count}</span>
       </span>`
 
+    this._set('pills', `
+      ${pill('All', open + resolving + acked + resolved, 0, '#6b7280')}
+      ${pill('OPEN', open, 1, SEV_COLOR.ERROR)}
+      ${pill('RESOLVING', resolving, 2, SEV_COLOR.WARN)}
+      ${pill('RESOLVED', resolved, 3, '#16a34a')}
+      ${pill('ACKED', acked, 4, '#2563eb')}
+    `)
+
+    if (this._loading) {
+      this._set('body', '<div style="padding:24px;color:var(--secondary-text-color)">Loading incidents…</div>')
+      return
+    }
+
     const emptyMsg = this._filterStatus === 0
       ? 'No incidents. System is converging. 🟢'
       : `No ${STATUS_LABEL[['UNKNOWN','OPEN','RESOLVING','RESOLVED','ACKED'][this._filterStatus] as IncidentStatus]} incidents.`
 
-    this.innerHTML = `
-      <div style="padding:20px;max-width:1100px;margin:0 auto">
-        <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:16px">
-          <h2 style="margin:0">Incidents</h2>
-          <span style="font-size:.78rem;color:var(--secondary-text-color)">Operator surface · aggregated from workflow telemetry + doctor findings + AI proposals</span>
-        </div>
-
-        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-          ${pill('All', open + resolving + acked + resolved, 0, '#6b7280')}
-          ${pill('OPEN', open, 1, SEV_COLOR.ERROR)}
-          ${pill('RESOLVING', resolving, 2, SEV_COLOR.WARN)}
-          ${pill('RESOLVED', resolved, 3, '#16a34a')}
-          ${pill('ACKED', acked, 4, '#2563eb')}
-        </div>
-
-        ${this._error ? `<div style="padding:10px;background:rgba(220,38,38,.1);border:1px solid ${SEV_COLOR.ERROR};border-radius:4px;color:${SEV_COLOR.ERROR};margin-bottom:12px;font-size:.8rem">${esc(this._error)}</div>` : ''}
-
-        ${this._incidents.length === 0
-          ? `<div style="padding:36px;text-align:center;color:var(--secondary-text-color);border:1px dashed var(--border-subtle-color);border-radius:6px">${emptyMsg}</div>`
-          : this._incidents.map(renderIncidentCard).join('')}
-      </div>`
+    this._set('body',
+      this._incidents.length === 0
+        ? `<div style="padding:36px;text-align:center;color:var(--secondary-text-color);border:1px dashed var(--border-subtle-color);border-radius:6px">${emptyMsg}</div>`
+        : this._incidents.map(renderIncidentCard).join('')
+    )
   }
 }
 
