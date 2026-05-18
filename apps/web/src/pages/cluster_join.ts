@@ -34,6 +34,10 @@ function statusBadge(status: string): string {
   }
 }
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+const _cache: { data: JoinRequest[] | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageClusterJoin extends HTMLElement {
@@ -57,6 +61,12 @@ class PageClusterJoin extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount
+    if (_cache.data !== null) {
+      this._requests = _cache.data
+      this._loading = false
+      this._pushData()
+    }
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -318,6 +328,8 @@ the cluster default. Common values:
     try {
       this._requests = await listJoinRequests()
       this._loadError = ''
+      _cache.data = this._requests
+      _cache.fetchedAt = Date.now()
     } catch (e: any) {
       this._loadError = e?.message || 'ClusterController unavailable'
     }

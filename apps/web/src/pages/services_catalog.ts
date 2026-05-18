@@ -275,6 +275,12 @@ function rolloutCell(row: CatalogRow, ccAvailable: boolean): string {
     </div>`
 }
 
+// ─── Module-level cache ────────────────────────────────────────────────────────
+
+const _catalogCache: { rows: CatalogRow[]; catalog: CatalogItem[]; fetchedAt: number } = {
+  rows: [], catalog: [], fetchedAt: 0,
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageServicesCatalog extends HTMLElement {
@@ -315,6 +321,13 @@ class PageServicesCatalog extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately on remount
+    if (_catalogCache.rows.length > 0 || _catalogCache.catalog.length > 0) {
+      this._rows = _catalogCache.rows
+      this._catalog = _catalogCache.catalog
+      this._loading = false
+      this._pushData()
+    }
     this.load()
     this._refreshTimer = window.setInterval(() => this.load(), 30_000)
   }
@@ -783,9 +796,13 @@ class PageServicesCatalog extends HTMLElement {
       this._rows = Array.from(rowMap.values())
         .sort((a, b) => a.name.localeCompare(b.name))
 
+      _catalogCache.rows = this._rows
+      _catalogCache.catalog = this._catalog
+      _catalogCache.fetchedAt = Date.now()
       this._loadError = ''
     } catch (e: unknown) {
       this._loadError = normalizeError(e).message
+      // Keep cached rows/catalog visible — do not clear this._rows or this._catalog
     }
     this._loading = false
     this._pushData()

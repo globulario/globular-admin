@@ -89,6 +89,11 @@ const STYLES = `
   .sd-status { font-size: .72rem; color: var(--secondary-text-color); margin-top: 8px; }
 `
 
+// ─── Module-level cache ──────────────────────────────────────────────────────
+// Keyed by service name so multiple instances don't share state.
+
+const _detailCache: Map<string, { service: import('@globular/sdk').ServiceDesc | null; fetchedAt: number }> = new Map()
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 class PageServicesDetail extends HTMLElement {
@@ -106,6 +111,13 @@ class PageServicesDetail extends HTMLElement {
     this.style.display = 'block'
     this._name = this.getAttribute('service-name') || ''
     this._buildShell()
+    // Show cached data immediately on remount
+    const cached = _detailCache.get(this._name)
+    if (cached) {
+      this._service = cached.service
+      this._loading = false
+      this._pushConfig()
+    }
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -179,9 +191,11 @@ class PageServicesDetail extends HTMLElement {
           }
         }
       }
+      _detailCache.set(this._name, { service: this._service, fetchedAt: Date.now() })
       this._loadError = ''
     } catch (e: any) {
       this._loadError = e?.message || 'Could not reach gateway /config'
+      // Keep cached service visible — do not clear this._service
     }
     this._loading = false
     if (loadingEl) loadingEl.style.display = 'none'

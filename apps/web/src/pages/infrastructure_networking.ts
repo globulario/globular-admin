@@ -12,6 +12,8 @@ import {
 
 const POLL = 15_000
 
+const _cache: { data: EnvoyResponse | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 class PageInfrastructureNetworking extends HTMLElement {
   private _timer: number | null = null
   private _lastUpdated: Date | null = null
@@ -21,6 +23,13 @@ class PageInfrastructureNetworking extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount — zero loading flicker
+    if (_cache.data !== null) {
+      this._envoy = _cache.data
+      this._lastUpdated = new Date(_cache.fetchedAt)
+      this._pushData()
+    }
+    // Background refresh always runs
     this._load()
     this._timer = window.setInterval(() => this._load(), POLL)
   }
@@ -59,8 +68,10 @@ class PageInfrastructureNetworking extends HTMLElement {
   private async _load() {
     try {
       this._envoy = await fetchAdminEnvoy()
+      _cache.data = this._envoy
+      _cache.fetchedAt = Date.now()
     } catch {
-      this._envoy = null
+      if (_cache.data === null) this._envoy = null
     }
     this._lastUpdated = new Date()
     this._pushData()

@@ -374,6 +374,14 @@ function renderCertCard(
   `
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+const _certsCache: {
+  data: CertData | null
+  clusterData: ClusterCertOverview | null
+  fetchedAt: number
+} = { data: null, clusterData: null, fetchedAt: 0 }
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 class PageSecurityCertificates extends HTMLElement {
@@ -397,6 +405,13 @@ class PageSecurityCertificates extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately on remount
+    if (_certsCache.fetchedAt > 0) {
+      this._data        = _certsCache.data
+      this._clusterData = _certsCache.clusterData
+      this._loading     = false
+      this._pushData()
+    }
     this._load()
     this._timer = window.setInterval(() => this._load(), POLL)
   }
@@ -430,22 +445,31 @@ class PageSecurityCertificates extends HTMLElement {
   // ─── Data ───────────────────────────────────────────────────────────────────
 
   private async _load() {
-    this._loading = true
-    this._pushData()
+    // Only show loading spinner when there is no cached data to display
+    if (this._mode === 'cluster' ? !this._clusterData : !this._data) {
+      this._loading = true
+      this._pushData()
+    }
 
     try {
       if (this._mode === 'cluster') {
         this._clusterData = await fetchClusterCertificates()
+        _certsCache.clusterData = this._clusterData
+        _certsCache.fetchedAt   = Date.now()
         this._clusterError = null
       } else {
         this._data = await fetchCertificates()
+        _certsCache.data      = this._data
+        _certsCache.fetchedAt = Date.now()
         this._error = null
       }
     } catch (e: any) {
       if (this._mode === 'cluster') {
         this._clusterError = e?.message ?? 'Failed to fetch cluster certificate data'
+        // Keep cached clusterData visible — do not clear this._clusterData
       } else {
         this._error = e?.message ?? 'Failed to fetch certificate data'
+        // Keep cached data visible — do not clear this._data
       }
     }
 

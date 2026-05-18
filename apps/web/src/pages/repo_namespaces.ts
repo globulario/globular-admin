@@ -22,6 +22,11 @@ interface NSRow {
   verified: boolean
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+interface _NamespacesCache { data: NSRow[] | null; fetchedAt: number }
+const _cache: _NamespacesCache = { data: null, fetchedAt: 0 }
+
 class PageRepoNamespaces extends HTMLElement {
   private _built = false
   private _timer: number | null = null
@@ -36,6 +41,13 @@ class PageRepoNamespaces extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately — zero flicker on back-navigation
+    if (_cache.data !== null) {
+      this._rows = _cache.data
+      this._loading = false
+      this._pushData()
+    }
+    // Always kick off a background refresh
     this._load()
     this._timer = window.setInterval(() => this._load(), 30_000)
   }
@@ -139,8 +151,11 @@ class PageRepoNamespaces extends HTMLElement {
       }
 
       this._rows = Array.from(nsMap.values()).sort((a, b) => a.id.localeCompare(b.id))
+      _cache.data = this._rows
+      _cache.fetchedAt = Date.now()
       this._error = ''
     } catch (e: any) {
+      // On error: keep showing cached data, only update error banner
       this._error = e?.message || 'Failed to load'
     }
     this._loading = false

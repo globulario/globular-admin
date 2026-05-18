@@ -16,6 +16,11 @@ function escHtml(s: string): string {
 // Internal transport events that should not clutter the UI
 const HIDDEN_EVENTS = new Set(['new_log_evt'])
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+interface _EventsCache { data: HistoricalEvent[] | null; latestSequence: number; fetchedAt: number }
+const _cache: _EventsCache = { data: null, latestSequence: 0, fetchedAt: 0 }
+
 function isControlPlaneEvent(name: string): boolean {
   return name.startsWith('plan_') || name.startsWith('service_apply_')
 }
@@ -40,6 +45,14 @@ class PageObservabilityEvents extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately — zero flicker on back-navigation
+    if (_cache.data !== null) {
+      this._events = _cache.data
+      this._latestSequence = _cache.latestSequence
+      this._loading = false
+      this._pushData()
+    }
+    // Always kick off a background refresh
     this.load()
     this._refreshTimer = window.setInterval(() => this._poll(), 10_000)
   }
@@ -220,11 +233,14 @@ class PageObservabilityEvents extends HTMLElement {
   private async load() {
     this._loading = true
     this._error = ''
-    this._set('status-area', '<p class="oe-empty">Loading events…</p>')
-    const tablePanel = this.querySelector<HTMLElement>('[data-bind="table-panel"]')
-    const emptyMsg = this.querySelector<HTMLElement>('[data-bind="empty-msg"]')
-    if (tablePanel) tablePanel.style.display = 'none'
-    if (emptyMsg) emptyMsg.style.display = 'none'
+    // Only show the loading spinner if we have no cached data to display
+    if (_cache.data === null) {
+      this._set('status-area', '<p class="oe-empty">Loading events…</p>')
+      const tablePanel = this.querySelector<HTMLElement>('[data-bind="table-panel"]')
+      const emptyMsg = this.querySelector<HTMLElement>('[data-bind="empty-msg"]')
+      if (tablePanel) tablePanel.style.display = 'none'
+      if (emptyMsg) emptyMsg.style.display = 'none'
+    }
 
     try {
       if (this._preset === 'control_plane') {
@@ -251,8 +267,12 @@ class PageObservabilityEvents extends HTMLElement {
         this._events = result.events.filter(e => !HIDDEN_EVENTS.has(e.name))
         this._latestSequence = result.latestSequence
       }
+      _cache.data = this._events
+      _cache.latestSequence = this._latestSequence
+      _cache.fetchedAt = Date.now()
       this._error = ''
     } catch (e: any) {
+      // On error: keep showing cached data, only update error banner
       this._error = e?.message || 'EventService unavailable'
     }
     this._loading = false
@@ -280,6 +300,9 @@ class PageObservabilityEvents extends HTMLElement {
         const filtered = newEvents.filter(e => !HIDDEN_EVENTS.has(e.name))
         if (filtered.length > 0) {
           this._events = [...this._events, ...filtered].slice(-500)
+          _cache.data = this._events
+          _cache.latestSequence = this._latestSequence
+          _cache.fetchedAt = Date.now()
           this._pushData()
         }
       } else {
@@ -292,6 +315,9 @@ class PageObservabilityEvents extends HTMLElement {
         if (filtered.length > 0) {
           this._events = [...this._events, ...filtered].slice(-500)
           this._latestSequence = result.latestSequence
+          _cache.data = this._events
+          _cache.latestSequence = this._latestSequence
+          _cache.fetchedAt = Date.now()
           this._pushData()
         } else if (result.latestSequence > this._latestSequence) {
           this._latestSequence = result.latestSequence
@@ -314,11 +340,15 @@ class PageObservabilityEvents extends HTMLElement {
           Could not load events — ${escHtml(this._error)}
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>event.EventService</code> is reachable.</span>
         </div>`)
-      const tablePanel = this.querySelector<HTMLElement>('[data-bind="table-panel"]')
-      const emptyMsg = this.querySelector<HTMLElement>('[data-bind="empty-msg"]')
-      if (tablePanel) tablePanel.style.display = 'none'
-      if (emptyMsg) emptyMsg.style.display = 'none'
-      return
+      // If we have cached events, keep them visible rather than hiding the table
+      if (this._events.length === 0) {
+        const tablePanel = this.querySelector<HTMLElement>('[data-bind="table-panel"]')
+        const emptyMsg = this.querySelector<HTMLElement>('[data-bind="empty-msg"]')
+        if (tablePanel) tablePanel.style.display = 'none'
+        if (emptyMsg) emptyMsg.style.display = 'none'
+        return
+      }
+      // Fall through to render cached events below the error banner
     }
 
     this._set('status-area', '')

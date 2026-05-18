@@ -170,6 +170,11 @@ function renderIncidentCard(inc: Incident): string {
     </div>`
 }
 
+// ─── Module-level cache ──────────────────────────────────────────────────────
+
+interface _IncidentsCache { data: Incident[] | null; fetchedAt: number }
+const _cache: _IncidentsCache = { data: null, fetchedAt: 0 }
+
 // ─── Page component ─────────────────────────────────────────────────────────
 
 class PageClusterIncidents extends HTMLElement {
@@ -183,6 +188,13 @@ class PageClusterIncidents extends HTMLElement {
 
   connectedCallback() {
     this._buildShell()
+    // Show cached data immediately — zero flicker on back-navigation
+    if (_cache.data !== null) {
+      this._incidents = _cache.data
+      this._loading = false
+      this._pushData()
+    }
+    // Always kick off a background refresh
     this._load()
     this._pollT = setInterval(() => this._load(), 30_000)
     this.addEventListener('click', this._onClick)
@@ -251,9 +263,13 @@ class PageClusterIncidents extends HTMLElement {
   private async _load() {
     this._error = ''
     try {
-      this._incidents = await listIncidents(this._clusterId, this._filterStatus, 100)
+      const fresh = await listIncidents(this._clusterId, this._filterStatus, 100)
+      this._incidents = fresh
+      _cache.data = fresh
+      _cache.fetchedAt = Date.now()
       this._showError('')
     } catch (e: any) {
+      // On error: keep showing cached data, only update error banner
       this._showError(`Failed to load incidents: ${e?.message || e}`)
     }
     this._loading = false

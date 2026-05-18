@@ -83,6 +83,18 @@ function driftCategoryLabel(cat: number): string {
   }
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+interface _TopologyCache {
+  data: {
+    nodes: ClusterNode[]
+    healthNodes: Map<string, NodeHealth>
+    driftByNode: Map<string, DriftItem[]>
+  } | null
+  fetchedAt: number
+}
+const _cache: _TopologyCache = { data: null, fetchedAt: 0 }
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 class PageClusterTopology extends HTMLElement {
@@ -98,6 +110,16 @@ class PageClusterTopology extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately — zero flicker on back-navigation
+    if (_cache.data !== null) {
+      const c = _cache.data
+      this._nodes = c.nodes
+      this._healthNodes = c.healthNodes
+      this._driftByNode = c.driftByNode
+      this._loading = false
+      this._pushData()
+    }
+    // Always kick off a background refresh
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -294,6 +316,9 @@ class PageClusterTopology extends HTMLElement {
       this._driftByNode = byNode
     }
 
+    _cache.data = { nodes: this._nodes, healthNodes: this._healthNodes, driftByNode: this._driftByNode }
+    _cache.fetchedAt = Date.now()
+
     this._loading = false
     this._pushData()
   }
@@ -394,9 +419,12 @@ class PageClusterTopology extends HTMLElement {
 
     if (this._nodesError) {
       this._set('error', `<div class="md-banner-warn">⚠ ${this._nodesError}</div>`)
-      this._set('stats', '')
-      this._set('nodes', '')
-      return
+      // If we have no cached nodes, blank the slots; otherwise fall through to show stale data
+      if (this._nodes.length === 0) {
+        this._set('stats', '')
+        this._set('nodes', '')
+        return
+      }
     }
 
     this._set('error', '')

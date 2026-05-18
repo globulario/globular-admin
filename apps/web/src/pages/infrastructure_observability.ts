@@ -12,6 +12,8 @@ import {
 
 const POLL = 30_000
 
+const _cache: { data: { prometheus: PrometheusScrapeHealth | null; services: ServicesResponse | null } | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 class PageInfrastructureObservability extends HTMLElement {
   private _timer: number | null = null
   private _lastUpdated: Date | null = null
@@ -22,6 +24,14 @@ class PageInfrastructureObservability extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount — zero loading flicker
+    if (_cache.data !== null) {
+      this._prometheus = _cache.data.prometheus
+      this._services = _cache.data.services
+      this._lastUpdated = new Date(_cache.fetchedAt)
+      this._pushData()
+    }
+    // Background refresh always runs
     this._load()
     this._timer = window.setInterval(() => this._load(), POLL)
   }
@@ -59,8 +69,13 @@ class PageInfrastructureObservability extends HTMLElement {
       getPrometheusScrapeHealth(),
       fetchAdminServices(),
     ])
-    this._prometheus = prR.status === 'fulfilled' ? prR.value : null
-    this._services   = svcR.status === 'fulfilled' ? svcR.value : null
+    const anySucceeded = prR.status === 'fulfilled' || svcR.status === 'fulfilled'
+    this._prometheus = prR.status === 'fulfilled' ? prR.value : (_cache.data?.prometheus ?? null)
+    this._services   = svcR.status === 'fulfilled' ? svcR.value : (_cache.data?.services ?? null)
+    if (anySucceeded) {
+      _cache.data = { prometheus: this._prometheus, services: this._services }
+      _cache.fetchedAt = Date.now()
+    }
     this._lastUpdated = new Date()
     this._pushData()
   }

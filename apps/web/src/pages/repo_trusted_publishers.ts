@@ -25,6 +25,11 @@ interface TrustedPublisherEntry {
   lastUsed: number
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+interface _TrustedPublishersCache { data: TrustedPublisherEntry[] | null; fetchedAt: number }
+const _cache: _TrustedPublishersCache = { data: null, fetchedAt: 0 }
+
 class PageRepoTrustedPublishers extends HTMLElement {
   private _built = false
   private _refreshTimer: number | null = null
@@ -35,6 +40,13 @@ class PageRepoTrustedPublishers extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately — zero flicker on back-navigation
+    if (_cache.data !== null) {
+      this._entries = _cache.data
+      this._loading = false
+      this._pushData()
+    }
+    // Always kick off a background refresh
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -130,8 +142,11 @@ class PageRepoTrustedPublishers extends HTMLElement {
       this._entries = Array.from(entryMap.values()).sort((a, b) =>
         b.lastUsed - a.lastUsed
       )
+      _cache.data = this._entries
+      _cache.fetchedAt = Date.now()
       this._error = ''
     } catch (e: any) {
+      // On error: keep showing cached data, only update error banner
       this._error = e?.message || 'Failed to load trusted publisher data'
     }
     this._loading = false
@@ -158,7 +173,9 @@ class PageRepoTrustedPublishers extends HTMLElement {
       this._set('error', '')
     }
 
-    if (this._loading || this._error) {
+    // When loading with no cache, hide content slots; when an error occurs but
+    // we have cached entries, fall through to render stale data below the banner.
+    if (this._loading || (this._error && this._entries.length === 0)) {
       this._set('stats', '')
       this._set('toolbar', '')
       this._set('table', '')

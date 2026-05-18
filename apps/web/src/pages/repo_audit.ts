@@ -26,6 +26,10 @@ interface AuditEvent {
   [key: string]: any
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+// Accumulates received events across navigation — remounting restores prior events.
+const _cache: { data: AuditEvent[] | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 class PageRepoAudit extends HTMLElement {
   private _events: AuditEvent[] = []
   private _loading = true
@@ -38,6 +42,16 @@ class PageRepoAudit extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Restore previously-received events immediately — no flicker on remount
+    if (_cache.data !== null && _cache.data.length > 0) {
+      this._events = [..._cache.data]
+      // Reveal stats area and hide the "connecting" message right away
+      const loadingArea = this.querySelector<HTMLElement>('[data-bind="loading-area"]')
+      if (loadingArea) loadingArea.style.display = 'none'
+      const statsArea = this.querySelector<HTMLElement>('[data-bind="stats-area"]')
+      if (statsArea) statsArea.style.display = ''
+      this._pushData()
+    }
     this.startListening()
     // No timer: formatDate() renders absolute timestamps — no re-render needed.
   }
@@ -215,6 +229,9 @@ class PageRepoAudit extends HTMLElement {
               if (data && typeof data === 'object') {
                 this._events.unshift(data as AuditEvent)
                 if (this._events.length > 500) this._events.length = 500
+                // Persist received events for remount restoration
+                _cache.data = [...this._events]
+                _cache.fetchedAt = Date.now()
                 // Push new data into slots without rebuilding the shell
                 this._pushData()
               }

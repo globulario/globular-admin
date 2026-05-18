@@ -15,6 +15,16 @@ import {
 
 const POLL = 30_000
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+interface ControlPlaneCacheData {
+  services: ServicesResponse | null
+  cluster: ClusterHealth | null
+  clusterV1: ClusterHealthV1Result | null
+  report: ClusterReport | null
+}
+const _cache: { data: ControlPlaneCacheData | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 const LOG_UNITS = [
   { value: 'globular-etcd.service',                 label: 'etcd' },
   { value: 'etcd.service',                          label: 'etcd (alt)' },
@@ -68,6 +78,14 @@ class PageInfrastructureControlPlane extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount
+    if (_cache.data !== null) {
+      this._services  = _cache.data.services
+      this._cluster   = _cache.data.cluster
+      this._clusterV1 = _cache.data.clusterV1
+      this._report    = _cache.data.report
+      this._pushData()
+    }
     this._load()
     this._timer = window.setInterval(() => this._load(), POLL)
   }
@@ -115,6 +133,11 @@ class PageInfrastructureControlPlane extends HTMLElement {
     this._clusterV1 = v1R.status  === 'fulfilled' ? v1R.value  : null
     this._report    = rpR.status  === 'fulfilled' ? rpR.value  : null
     this._lastUpdated = new Date()
+    _cache.data = {
+      services: this._services, cluster: this._cluster,
+      clusterV1: this._clusterV1, report: this._report,
+    }
+    _cache.fetchedAt = Date.now()
     this._pushData()
   }
 

@@ -219,6 +219,14 @@ const STYLES = `
   .ol-row-detail .ol-field-key { color: var(--secondary-text-color); }
 `
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+interface LogsOverviewCache {
+  fatals: LogEntry[]
+  errors: LogEntry[]
+}
+const _cache: { data: LogsOverviewCache | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 type Tab = 'overview' | 'tail' | 'search'
@@ -273,6 +281,12 @@ class PageObservabilityLogs extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._parseUrlParams()
+    // Show stale overview data immediately on remount (overview tab)
+    if (_cache.data !== null && this._tab === 'overview') {
+      this._overviewFatals = _cache.data.fatals
+      this._overviewErrors = _cache.data.errors
+      this._overviewLoading = false
+    }
     this.render()
     if (this._tab === 'overview') this._loadOverview()
   }
@@ -304,9 +318,10 @@ class PageObservabilityLogs extends HTMLElement {
     this._overviewError = ''
     // On initial load, render() builds the shell + patches content.
     // On timer-fired reloads, _patchTabContent() only replaces the content slot.
+    // Skip spinner patch if we have cached data to avoid blanking the display.
     if (!this._built) {
       this.render()
-    } else {
+    } else if (_cache.data === null) {
       this._patchTabContent()
     }
     try {
@@ -317,6 +332,8 @@ class PageObservabilityLogs extends HTMLElement {
       this._overviewFatals = fatals.status === 'fulfilled' ? fatals.value : []
       this._overviewErrors = errors.status === 'fulfilled' ? errors.value : []
       this._overviewError = ''
+      _cache.data = { fatals: this._overviewFatals, errors: this._overviewErrors }
+      _cache.fetchedAt = Date.now()
     } catch (e: any) {
       this._overviewError = e?.message || 'LogService unavailable'
     }
@@ -363,16 +380,21 @@ class PageObservabilityLogs extends HTMLElement {
   }
 
   private _renderOverview(): string {
-    if (this._overviewLoading && this._overviewFatals.length === 0) {
+    if (this._overviewLoading && _cache.data === null) {
       return `<p class="ol-empty">Loading overview…</p>`
     }
-    if (this._overviewError) {
+    if (this._overviewError && _cache.data === null) {
       return `
         <div class="md-banner-warn">
           Could not load logs — ${escHtml(this._overviewError)}
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>log.LogService</code> is reachable.</span>
         </div>`
     }
+    // When error with cache present, fall through to render stale data with a banner prepended
+    const errorBanner = this._overviewError ? `
+      <div class="md-banner-warn" style="margin-bottom:10px">
+        Could not refresh logs — ${escHtml(this._overviewError)}
+      </div>` : ''
 
     // Aggregate errors by application
     const errorsByApp = new Map<string, number>()
@@ -383,6 +405,7 @@ class PageObservabilityLogs extends HTMLElement {
     const topErrors = [...errorsByApp.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)
 
     return `
+      ${errorBanner}
       <div class="ol-info">
         Logs retention: 7 days. Persisted levels: ERROR, FATAL. Other levels available only via Live Tail.
       </div>

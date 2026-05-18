@@ -574,6 +574,10 @@ function runDuration(run: WorkflowRun): string {
   return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+// Cache the runs list — defs are already memoized in the per-instance _defCache Map.
+const _cache: { data: WorkflowRun[] | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 class PageClusterWorkflows extends HTMLElement {
@@ -595,6 +599,11 @@ class PageClusterWorkflows extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
+    // Show stale runs immediately on remount — zero loading flicker for the table
+    if (_cache.data !== null) {
+      this._runs = _cache.data
+      this._loading = false
+    }
     this.render()
     this.loadDefinitions()
     this._listT = window.setInterval(() => this.silentLoad(), 30_000)
@@ -648,9 +657,16 @@ class PageClusterWorkflows extends HTMLElement {
       const all = await listWorkflowRuns('globular.internal', { limit: 50 })
       // Client-side filter as fallback for old servers / legacy runs
       this._runs = all.filter(r => this.matchesDef(r))
+      _cache.data = this._runs
+      _cache.fetchedAt = Date.now()
       this._error = ''
     }
-    catch (e: any) { this._error = e?.message || 'Workflow service unreachable'; this._runs = [] }
+    catch (e: any) {
+      this._error = e?.message || 'Workflow service unreachable'
+      // Preserve stale runs on error so the table stays populated
+      if (_cache.data !== null) this._runs = _cache.data
+      else this._runs = []
+    }
     this._loading = false; this.render()
   }
   private async silentLoad() {
@@ -661,6 +677,8 @@ class PageClusterWorkflows extends HTMLElement {
       const changed = newRuns.length !== this._runs.length ||
         newRuns.some((r, i) => r.id !== this._runs[i]?.id || r.status !== this._runs[i]?.status)
       this._runs = newRuns
+      _cache.data = newRuns
+      _cache.fetchedAt = Date.now()
       if (!this._runs.some(r => this.isActive(r.status)) && this._listT) { clearInterval(this._listT); this._listT = window.setInterval(() => this.silentLoad(), 30_000) }
       if (changed) this.updateTable()
     } catch {}

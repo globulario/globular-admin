@@ -14,6 +14,16 @@ import {
 
 const POLL = 30_000
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+interface StorageCacheData {
+  storage: StorageResponse | null
+  services: ServicesResponse | null
+  minio: MinioMetrics | null
+  scylla: ScyllaMetrics | null
+}
+const _cache: { data: StorageCacheData | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 function appStatus(a: ApplicationPath): HealthState {
   if (!a.exists) return 'critical'
   if (!a.writable) return 'degraded'
@@ -79,6 +89,14 @@ class PageInfrastructureStorage extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount
+    if (_cache.data !== null) {
+      this._storage  = _cache.data.storage
+      this._services = _cache.data.services
+      this._minio    = _cache.data.minio
+      this._scylla   = _cache.data.scylla
+      this._pushData()
+    }
     this._load()
     this._timer = window.setInterval(() => this._load(), POLL)
   }
@@ -143,6 +161,11 @@ class PageInfrastructureStorage extends HTMLElement {
     this._minio = minioResult.status === 'fulfilled' ? minioResult.value : null
     this._scylla = scyllaResult.status === 'fulfilled' ? scyllaResult.value : null
 
+    _cache.data = {
+      storage: this._storage, services: this._services,
+      minio: this._minio, scylla: this._scylla,
+    }
+    _cache.fetchedAt = Date.now()
     this._pushData()
   }
 

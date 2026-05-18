@@ -18,6 +18,18 @@ import {
 
 const POLL = 30_000
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+interface DnsCacheData {
+  services: ServicesResponse | null
+  cluster: ClusterHealth | null
+  domains: string[]
+  records: DnsRecord[]
+  providers: DNSProviderConfig[]
+  extDomains: DomainSpecWithStatus[]
+}
+const _cache: { data: DnsCacheData | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 type DnsTab = 'overview' | 'records' | 'external'
 type DnsState = 'no-zones' | 'error' | 'ready'
 type SortCol = 'name' | 'type' | 'value'
@@ -54,6 +66,17 @@ class PageInfrastructureDns extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount
+    if (_cache.data !== null) {
+      this._services    = _cache.data.services
+      this._cluster     = _cache.data.cluster
+      this._domains     = _cache.data.domains
+      this._records     = _cache.data.records
+      this._providers   = _cache.data.providers
+      this._extDomains  = _cache.data.extDomains
+      this._lastUpdated = new Date(_cache.fetchedAt)
+      this._pushData()
+    }
     this._load()
     this._timer = window.setInterval(() => this._load(), POLL)
   }
@@ -139,6 +162,12 @@ class PageInfrastructureDns extends HTMLElement {
 
     this._lastUpdated = new Date()
     this._loading = false
+    _cache.data = {
+      services: this._services, cluster: this._cluster,
+      domains: this._domains, records: this._records,
+      providers: this._providers, extDomains: this._extDomains,
+    }
+    _cache.fetchedAt = Date.now()
     this._pushData()
   }
 

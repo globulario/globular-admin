@@ -121,6 +121,14 @@ function activeFindings(findings: Finding[]): Finding[] {
   return findings.filter(f => isActiveInvariant(Number(f.invariantStatus ?? 0)))
 }
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+interface DiagnosticsCacheData {
+  report: ClusterReport | null
+  drift: DriftReport | null
+}
+const _cache: { data: DiagnosticsCacheData | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageAdminDiagnostics extends HTMLElement {
@@ -138,9 +146,31 @@ class PageAdminDiagnostics extends HTMLElement {
   private _nodeError = ''
   private _lastUpdated: Date | null = null
   private _refreshTimer: number | null = null
+  private _built = false
 
   connectedCallback() {
     this.style.display = 'block'
+    this._buildShell()
+    // Show stale data immediately on remount
+    if (_cache.data !== null) {
+      this._report = _cache.data.report
+      this._drift  = _cache.data.drift
+      this._loading = false
+      this._lastUpdated = new Date(_cache.fetchedAt)
+      this.renderTimestamp()
+      this.renderBanners()
+      this.renderSummary()
+      this.renderFindings()
+      this.renderDrift()
+    }
+    this.renderDocs()
+    this.load()
+    this._refreshTimer = window.setInterval(() => this.load(), POLL_INTERVAL)
+  }
+
+  private _buildShell() {
+    if (this._built) return
+    this._built = true
     this.innerHTML = `
       <style>
         .dx-header {
@@ -291,9 +321,6 @@ class PageAdminDiagnostics extends HTMLElement {
     this.querySelector('#dxInfoBtn')?.addEventListener('click', () => {
       (this.querySelector('#dxInfoPanel') as any)?.toggle()
     })
-    this.renderDocs()
-    this.load()
-    this._refreshTimer = window.setInterval(() => this.load(), POLL_INTERVAL)
   }
 
   disconnectedCallback() {
@@ -308,7 +335,7 @@ class PageAdminDiagnostics extends HTMLElement {
     this.renderExplain()
 
     const el = this.querySelector('#dxSummary') as HTMLElement
-    if (this._loading && el) {
+    if (this._loading && _cache.data === null && el) {
       el.innerHTML = `<p style="color:var(--secondary-text-color);font-size:.85rem">Loading diagnostics…</p>`
     }
 
@@ -325,6 +352,10 @@ class PageAdminDiagnostics extends HTMLElement {
 
     this._loading = false
     this._lastUpdated = new Date()
+    if (!this._error) {
+      _cache.data = { report: this._report, drift: this._drift }
+      _cache.fetchedAt = Date.now()
+    }
 
     this.renderTimestamp()
     this.renderBanners()

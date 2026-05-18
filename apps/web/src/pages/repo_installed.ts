@@ -97,6 +97,14 @@ function esc(s: string): string {
   return s.replace(/"/g, '&quot;')
 }
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+interface RepoInstalledCacheData {
+  installed: InstalledPackage[]
+  artifacts: ArtifactManifest[]
+}
+const _cache: { data: RepoInstalledCacheData | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 class PageRepoInstalled extends HTMLElement {
@@ -119,6 +127,22 @@ class PageRepoInstalled extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount
+    if (_cache.data !== null) {
+      this._installed = _cache.data.installed
+      this._artifacts = _cache.data.artifacts
+      this._loading = false
+      // Rebuild latest version map from cached artifacts
+      this._latestMap = new Map()
+      for (const a of this._artifacts) {
+        const name = a.ref?.name || ''
+        if (!name) continue
+        const existing = this._latestMap.get(name)
+        const ver = a.ref?.version || ''
+        if (!existing || ver > existing) this._latestMap.set(name, ver)
+      }
+      this._pushData()
+    }
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -270,6 +294,8 @@ class PageRepoInstalled extends HTMLElement {
       }
 
       this._error = ''
+      _cache.data = { installed: this._installed, artifacts: this._artifacts }
+      _cache.fetchedAt = Date.now()
     } catch (e: any) {
       this._error = e?.message || 'Failed to load installed packages'
     }
@@ -361,7 +387,7 @@ class PageRepoInstalled extends HTMLElement {
   // ── Push data into slots ───────────────────────────────────────────────
 
   private _pushData() {
-    this._set('loading', this._loading ? '<div class="loading-msg">Loading installed packages...</div>' : '')
+    this._set('loading', (this._loading && _cache.data === null) ? '<div class="loading-msg">Loading installed packages...</div>' : '')
 
     if (this._error) {
       this._set('error', `
@@ -380,7 +406,8 @@ class PageRepoInstalled extends HTMLElement {
       this._set('error', '')
     }
 
-    if (this._loading || this._error) {
+    // If loading (no cache) or error with no cache, skip rendering data slots
+    if ((this._loading && _cache.data === null) || (this._error && _cache.data === null)) {
       this._set('stats', '')
       this._set('toolbar', '')
       this._set('table', '')

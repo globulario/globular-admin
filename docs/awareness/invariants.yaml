@@ -237,6 +237,80 @@ invariants:
           - forbidden.full_render_on_refresh
           - forbidden.wipe_slot_on_refresh
 
+    - id: ui.page_data_cache
+      title: Pages that display live data must cache their last fetch and show it immediately on remount
+      severity: high
+      status: active
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Every page component that fetches remote data (cluster state, node lists, packages,
+          workflow runs, metrics, etc.) must implement a stale-while-revalidate cache so that
+          navigating back to a page shows data immediately — no blank screen, no loading spinner —
+          while a background refresh brings in the latest values.
+
+          The pattern (module-level cache + background refresh):
+
+          ```typescript
+          // Module-level — survives component unmount/remount from navigation
+          interface _PageCache<T> { data: T | null; fetchedAt: number }
+          const _cache: _PageCache<MyData[]> = { data: null, fetchedAt: 0 }
+
+          class PageFoo extends HTMLElement {
+            private _built = false
+            private _data: MyData[] = []
+
+            connectedCallback() {
+              this._buildShell()
+              // 1. Show cached data immediately (zero flicker on back-navigation)
+              if (_cache.data !== null) {
+                this._data = _cache.data
+                this._pushData()
+              }
+              // 2. Always refresh in background regardless of cache state
+              this._load()
+              this._timer = setInterval(() => this._load(), 30_000)
+            }
+
+            async _load() {
+              try {
+                const fresh = await fetchData()
+                this._data = fresh
+                _cache.data = fresh          // update module-level cache
+                _cache.fetchedAt = Date.now()
+                this._showError('')
+                this._pushData()             // push to data-bind slots
+              } catch (e: any) {
+                this._showError(e?.message || 'Load failed')
+              }
+            }
+          }
+          ```
+
+          Rules:
+          1. Cache is module-level (declared with `const _cache = ...` at file scope),
+             NOT instance-level (`this._cache`). Instance-level caches are wiped on
+             every navigation because the component is destroyed and recreated.
+          2. On `connectedCallback`, check the cache first. If non-null, call `_pushData()`
+             immediately with cached data before the first network round-trip.
+          3. Always call `_load()` after pushing cached data — cached data is stale by
+             definition; the background fetch brings in the latest.
+          4. Do NOT show a loading spinner or blank slot when cached data is available.
+             A subtle "↻ refreshing" indicator in the page header is acceptable.
+          5. Cache must be populated on every successful fetch, not just the first one.
+          6. On fetch error when cache is non-empty: keep showing cached data, surface
+             the error in the error-banner slot (do not clear the data slots).
+
+      enforcement: |
+          Before adding a new page component that fetches remote data:
+          (a) Declare `const _cache: { data: T | null; fetchedAt: number } = { data: null, fetchedAt: 0 }` at module scope.
+          (b) In `connectedCallback`, push `_cache.data` to slots before calling `_load()`.
+          (c) In `_load()`, write `_cache.data = fresh; _cache.fetchedAt = Date.now()` after
+              a successful fetch.
+          (d) Never show a loading spinner when `_cache.data !== null`.
+      forbidden_fixes:
+          - forbidden.instance_level_page_cache
+          - forbidden.spinner_over_cached_data
+
     - id: ui.no_hardcoded_backend_addresses
       title: Backend addresses must come from localStorage config, not hardcoded
       severity: high

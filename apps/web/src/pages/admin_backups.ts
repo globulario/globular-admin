@@ -106,6 +106,20 @@ function providerBadges(results: ProviderResult[]): string {
   }).join(' ')
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+interface BackupsSnapshot {
+  jobs: BackupJob[]
+  jobsTotal: number
+  backups: BackupArtifact[]
+  backupsTotal: number
+  recentJobs: BackupJob[]
+  latestBackup: BackupArtifact | null
+  retention: RetentionStatus | null
+}
+
+const _cache: { data: BackupsSnapshot | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageAdminBackups extends HTMLElement {
@@ -161,6 +175,17 @@ class PageAdminBackups extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Restore stale data immediately so the first render isn't a blank "Loading..."
+    if (_cache.data !== null) {
+      const d = _cache.data
+      this._jobs = d.jobs
+      this._jobsTotal = d.jobsTotal
+      this._backups = d.backups
+      this._backupsTotal = d.backupsTotal
+      this._recentJobs = d.recentJobs
+      this._latestBackup = d.latestBackup
+      this._retention = d.retention
+    }
     this.loadTab()
   }
 
@@ -359,7 +384,9 @@ class PageAdminBackups extends HTMLElement {
 
   private async loadTab() {
     this._error = ''
-    this._loading = true
+    // Only show loading spinner when there is no stale data to display
+    const hasCache = _cache.data !== null
+    this._loading = !hasCache
     this.renderContent()
     try {
       switch (this._tab) {
@@ -384,9 +411,10 @@ class PageAdminBackups extends HTMLElement {
       listBackups({ limit: 1, mode: 2 }),
       getRetentionStatus(),
     ])
-    this._recentJobs = jobsRes.status === 'fulfilled' ? jobsRes.value.jobs : []
-    this._latestBackup = backupsRes.status === 'fulfilled' ? (backupsRes.value.backups[0] ?? null) : null
-    this._retention = retRes.status === 'fulfilled' ? retRes.value : null
+    this._recentJobs = jobsRes.status === 'fulfilled' ? jobsRes.value.jobs : (_cache.data?.recentJobs ?? [])
+    this._latestBackup = backupsRes.status === 'fulfilled' ? (backupsRes.value.backups[0] ?? null) : (_cache.data?.latestBackup ?? null)
+    this._retention = retRes.status === 'fulfilled' ? retRes.value : (_cache.data?.retention ?? null)
+    this._saveCache()
   }
 
   private renderOverview() {
@@ -514,6 +542,7 @@ class PageAdminBackups extends HTMLElement {
     this._selectedJob = null
     // Keep overview in sync so stale jobs don't reappear when switching tabs
     this._recentJobs = res.jobs
+    this._saveCache()
     // Auto-poll the list if any job is still active
     if (this._jobs.some(j => j.state === 1 || j.state === 2)) {
       this.startJobsListPoll()
@@ -772,6 +801,7 @@ class PageAdminBackups extends HTMLElement {
     this._backupsTotal = res.total
     this._selectedBackup = null
     this._validateResult = null
+    this._saveCache()
   }
 
   private renderBackups() {
@@ -2543,6 +2573,21 @@ class PageAdminBackups extends HTMLElement {
     })
 
     document.body.appendChild(overlay)
+  }
+
+  // ─── Cache helpers ─────────────────────────────────────────────────────────
+
+  private _saveCache() {
+    _cache.data = {
+      jobs: this._jobs,
+      jobsTotal: this._jobsTotal,
+      backups: this._backups,
+      backupsTotal: this._backupsTotal,
+      recentJobs: this._recentJobs,
+      latestBackup: this._latestBackup,
+      retention: this._retention,
+    }
+    _cache.fetchedAt = Date.now()
   }
 
   // ─── Main content router ───────────────────────────────────────────────────

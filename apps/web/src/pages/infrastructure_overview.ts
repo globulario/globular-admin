@@ -17,6 +17,19 @@ import {
 
 const POLL = 30_000
 
+interface OverviewSnapshot {
+  services: ServicesResponse | null
+  storage: StorageResponse | null
+  envoy: EnvoyResponse | null
+  cluster: ClusterHealth | null
+  prometheus: PrometheusScrapeHealth | null
+  clusterV1: ClusterHealthV1Result | null
+  report: ClusterReport | null
+  minioReqRate: number | null
+}
+
+const _cache: { data: OverviewSnapshot | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 class PageInfrastructureOverview extends HTMLElement {
   private _timer: number | null = null
   private _lastUpdated: Date | null = null
@@ -33,6 +46,21 @@ class PageInfrastructureOverview extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount — zero loading flicker
+    if (_cache.data !== null) {
+      const d = _cache.data
+      this._services = d.services
+      this._storage = d.storage
+      this._envoy = d.envoy
+      this._cluster = d.cluster
+      this._prometheus = d.prometheus
+      this._clusterV1 = d.clusterV1
+      this._report = d.report
+      this._minioReqRate = d.minioReqRate
+      this._lastUpdated = new Date(_cache.fetchedAt)
+      this._pushData()
+    }
+    // Background refresh always runs
     this._load()
     this._timer = window.setInterval(() => this._load(), POLL)
   }
@@ -75,19 +103,26 @@ class PageInfrastructureOverview extends HTMLElement {
       getClusterReport(),
     ])
 
-    this._services   = svcR.status === 'fulfilled' ? svcR.value : null
-    this._storage    = stR.status  === 'fulfilled' ? stR.value  : null
-    this._envoy      = envR.status === 'fulfilled' ? envR.value  : null
-    this._cluster    = clR.status  === 'fulfilled' ? clR.value  : null
-    this._prometheus = prR.status  === 'fulfilled' ? prR.value  : null
-    this._clusterV1  = v1R.status  === 'fulfilled' ? v1R.value  : null
-    this._report     = rpR.status  === 'fulfilled' ? rpR.value  : null
+    this._services   = svcR.status === 'fulfilled' ? svcR.value : (_cache.data?.services ?? null)
+    this._storage    = stR.status  === 'fulfilled' ? stR.value  : (_cache.data?.storage ?? null)
+    this._envoy      = envR.status === 'fulfilled' ? envR.value : (_cache.data?.envoy ?? null)
+    this._cluster    = clR.status  === 'fulfilled' ? clR.value  : (_cache.data?.cluster ?? null)
+    this._prometheus = prR.status  === 'fulfilled' ? prR.value  : (_cache.data?.prometheus ?? null)
+    this._clusterV1  = v1R.status  === 'fulfilled' ? v1R.value  : (_cache.data?.clusterV1 ?? null)
+    this._report     = rpR.status  === 'fulfilled' ? rpR.value  : (_cache.data?.report ?? null)
 
     // Quick MinIO request rate for storage card
     try {
       const mr = await queryPrometheus('sum(rate(minio_s3_requests_total[5m]))')
       this._minioReqRate = mr?.result?.[0] ? parseFloat(mr.result[0].value[1]) || 0 : null
-    } catch { this._minioReqRate = null }
+    } catch { this._minioReqRate = _cache.data?.minioReqRate ?? null }
+
+    _cache.data = {
+      services: this._services, storage: this._storage, envoy: this._envoy,
+      cluster: this._cluster, prometheus: this._prometheus, clusterV1: this._clusterV1,
+      report: this._report, minioReqRate: this._minioReqRate,
+    }
+    _cache.fetchedAt = Date.now()
 
     this._lastUpdated = new Date()
 

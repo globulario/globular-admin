@@ -156,3 +156,41 @@ forbidden_fixes:
           Query each layer from its own authority. If the runtime health authority is
           unavailable, show the state as unknown for that layer — do not substitute a
           value from a different layer.
+
+    - id: forbidden.instance_level_page_cache
+      title: Storing page data cache as an instance property (this._cache) instead of module-level
+      # origin: { type: principle, confidence: high }
+      summary: |
+          Declaring the data cache as a property on the component class:
+          `private _cachedData: T[] = []` or `private _lastFetch = 0`.
+      why_wrong: |
+          Web component instances are destroyed when the user navigates away from a page
+          and recreated when they navigate back. An instance-level cache is wiped on every
+          navigation — exactly the scenario it is supposed to avoid. The next page visit
+          shows a blank screen / loading spinner just like if there were no cache.
+          Module-level variables (`const _cache = ...` at file scope) survive the component
+          lifecycle and provide the intended zero-flicker back-navigation behaviour.
+      correct_fix: |
+          Declare the cache at module scope:
+          `const _cache: { data: T | null; fetchedAt: number } = { data: null, fetchedAt: 0 }`
+          Reference it from the component as `_cache.data` (no `this.`).
+
+    - id: forbidden.spinner_over_cached_data
+      title: Showing a loading spinner or blank slot when the module-level cache is non-null
+      # origin: { type: principle, confidence: high }
+      summary: |
+          After a page component mounts, showing a loading indicator (spinner, "Loading…",
+          empty tbody) in data slots even though `_cache.data !== null` — i.e., replacing
+          visible cached data with a loading state before the fresh fetch completes.
+      why_wrong: |
+          This pattern defeats the purpose of the cache. The operator sees a flash of content
+          (cached data), then a blank/loading screen, then content again — three state
+          transitions instead of one. It is worse than no cache at all because it is more
+          visually disruptive. The invariant rule is: old data stays visible until new data
+          explicitly replaces it. A background fetch should be invisible to the operator
+          unless it fails.
+      correct_fix: |
+          On mount: push `_cache.data` to slots immediately (no loading state). Then call
+          `_load()` silently in the background. Only show a loading state if `_cache.data`
+          is null (first-ever visit). A subtle spinner icon in the page header or refresh
+          button is acceptable to signal that a background refresh is in progress.

@@ -521,6 +521,18 @@ function statusToSeverity(status: string): Severity {
   }
 }
 
+// ── Module-level stale-while-revalidate cache ────────────────────────────────
+
+interface MetricsCacheData {
+  health: ClusterHealth | null
+  nodes: ClusterNode[]
+  adminServices: ServicesResponse | null
+  adminStorage: StorageResponse | null
+  v1: ClusterHealthV1Result | null
+  envoy: EnvoyResponse | null
+}
+const _cache: { data: MetricsCacheData | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 class PageObservabilityMetrics extends HTMLElement {
@@ -565,6 +577,17 @@ class PageObservabilityMetrics extends HTMLElement {
 
   connectedCallback() {
     this.style.display = 'block'
+    // Show stale data immediately on remount
+    if (_cache.data !== null) {
+      this._health        = _cache.data.health
+      this._nodes         = _cache.data.nodes
+      this._adminServices = _cache.data.adminServices
+      this._adminStorage  = _cache.data.adminStorage
+      this._v1            = _cache.data.v1
+      this._envoy         = _cache.data.envoy
+      this._loading       = false
+      this._lastUpdated   = _cache.fetchedAt
+    }
     this._render()
     this._pollCards()
     this._pollStats()
@@ -621,6 +644,14 @@ class PageObservabilityMetrics extends HTMLElement {
     if (results[8].status === 'fulfilled') this._adminStorage = results[8].value
     if (results[9].status === 'fulfilled') this._envoy = results[9].value
     if (results[10].status === 'fulfilled') this._nodeMetrics = results[10].value
+
+    // Update module cache with primary data
+    _cache.data = {
+      health: this._health, nodes: this._nodes,
+      adminServices: this._adminServices, adminStorage: this._adminStorage,
+      v1: this._v1, envoy: this._envoy,
+    }
+    _cache.fetchedAt = Date.now()
 
     const wasLoading = this._loading
     this._loading = false

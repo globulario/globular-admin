@@ -85,6 +85,20 @@ function badge(label: string, color: string): string {
   return `<span class="md-badge" style="--badge-color:${color}">${label}</span>`
 }
 
+// ─── Module-level cache ────────────────────────────────────────────────────────
+
+interface _OverviewCache {
+  data: {
+    report: ClusterReport | null
+    health: ClusterHealth | null
+    drift: DriftReport | null
+    nodeHealths: NodeHealthV1[]
+    incompleteNodes: number
+  } | null
+  fetchedAt: number
+}
+const _cache: _OverviewCache = { data: null, fetchedAt: 0 }
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageClusterOverview extends HTMLElement {
@@ -111,6 +125,18 @@ class PageClusterOverview extends HTMLElement {
     this.style.display = 'block'
     this._buildShell()
     this.renderDocs()
+    // Show cached data immediately — zero flicker on back-navigation
+    if (_cache.data !== null) {
+      const c = _cache.data
+      this._report = c.report
+      this._health = c.health
+      this._drift = c.drift
+      this._nodeHealths = c.nodeHealths
+      this._incompleteNodes = c.incompleteNodes
+      this._loading = false
+      this.renderDoctor()
+    }
+    // Always kick off a background refresh
     this.load()
     this._refreshTimer = window.setInterval(() => this.load(), 60_000)
   }
@@ -190,6 +216,18 @@ class PageClusterOverview extends HTMLElement {
 
     this._nodeHealths = (healthV1Res.status === 'fulfilled' && healthV1Res.value)
       ? healthV1Res.value.nodeHealths : []
+
+    // Update module-level cache on successful fetch
+    if (reportRes.status === 'fulfilled' || healthRes.status === 'fulfilled') {
+      _cache.data = {
+        report: this._report,
+        health: this._health,
+        drift: this._drift,
+        nodeHealths: this._nodeHealths,
+        incompleteNodes: this._incompleteNodes,
+      }
+      _cache.fetchedAt = Date.now()
+    }
 
     this._loading = false
     this.renderDoctor()

@@ -274,6 +274,15 @@ function credRow(
   </div>`
 }
 
+// ── Module-level cache ───────────────────────────────────────────────────────
+
+const _secretsCache: {
+  providers: DNSProviderConfig[]
+  backup: BackupConfig | null
+  tokens: { name: string; preview: string }[]
+  fetchedAt: number
+} = { providers: [], backup: null, tokens: [], fetchedAt: 0 }
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 class PageSecuritySecrets extends HTMLElement {
@@ -297,6 +306,14 @@ class PageSecuritySecrets extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately on remount
+    if (_secretsCache.fetchedAt > 0) {
+      this._providers = _secretsCache.providers
+      this._backup    = _secretsCache.backup
+      this._tokens    = _secretsCache.tokens
+      this._loading   = false
+      this._pushData()
+    }
     this.load()
     this._timer = window.setInterval(() => this.load(), POLL)
   }
@@ -341,10 +358,18 @@ class PageSecuritySecrets extends HTMLElement {
       this.loadTokens(),
     ])
 
-    this._providers = provR.status === 'fulfilled' ? provR.value : []
-    this._backup    = bkR.status  === 'fulfilled' ? bkR.value    : null
-    this._tokens    = tokR.status === 'fulfilled' ? tokR.value   : []
-    this._error     = null
+    if (provR.status === 'fulfilled') this._providers = provR.value
+    // else keep existing this._providers (show cached data)
+    if (bkR.status  === 'fulfilled') this._backup    = bkR.value
+    // else keep existing this._backup
+    if (tokR.status === 'fulfilled') this._tokens    = tokR.value
+    // else keep existing this._tokens
+    this._error = null
+
+    _secretsCache.providers  = this._providers
+    _secretsCache.backup     = this._backup
+    _secretsCache.tokens     = this._tokens
+    _secretsCache.fetchedAt  = Date.now()
 
     this._lastUpdated = new Date()
     this._loading = false

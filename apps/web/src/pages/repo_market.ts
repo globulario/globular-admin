@@ -180,6 +180,12 @@ function groupArtifacts(artifacts: ArtifactManifest[]): PackageGroup[] {
   return groups.sort((a, b) => a.key.localeCompare(b.key))
 }
 
+// ── Module-level cache ───────────────────────────────────────────────────────
+
+const _repoCache: { artifacts: ArtifactManifest[]; fetchedAt: number } = {
+  artifacts: [], fetchedAt: 0,
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 class PageRepository extends HTMLElement {
@@ -198,6 +204,12 @@ class PageRepository extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately on remount
+    if (_repoCache.artifacts.length > 0) {
+      this._artifacts = _repoCache.artifacts
+      this._loading = false
+      this._pushData()
+    }
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -316,9 +328,12 @@ class PageRepository extends HTMLElement {
   private async _load() {
     try {
       this._artifacts = await listArtifacts()
+      _repoCache.artifacts = this._artifacts
+      _repoCache.fetchedAt = Date.now()
       this._error = ''
     } catch (e: any) {
       this._error = e?.message || 'Failed to load packages from repository'
+      // Keep cached artifacts visible — do not clear this._artifacts
     }
     this._loading = false
     this._pushData()
@@ -418,7 +433,9 @@ class PageRepository extends HTMLElement {
       this._set('error', '')
     }
 
-    if (this._loading || this._error) {
+    // Clear content only when loading with no cache or when an error occurred
+    // with no cached artifacts to show.
+    if (this._loading || (this._error && this._artifacts.length === 0)) {
       this._set('content', '')
       return
     }

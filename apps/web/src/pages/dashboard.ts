@@ -38,6 +38,14 @@ function relativeTime(epochSeconds: number): string {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+const _dashCache: {
+  health: import('@globular/sdk').ClusterHealth | null
+  nodes: import('@globular/sdk').ClusterNode[]
+  fetchedAt: number
+} = { health: null, nodes: [], fetchedAt: 0 }
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 class PageDashboard extends HTMLElement {
@@ -61,6 +69,13 @@ class PageDashboard extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately on remount
+    if (_dashCache.health !== null || _dashCache.nodes.length > 0) {
+      this._health = _dashCache.health
+      this._nodes = _dashCache.nodes
+      this._loading = false
+      this._pushData()
+    }
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
     this.subscribeEvents()
@@ -311,15 +326,21 @@ class PageDashboard extends HTMLElement {
     if (healthResult.status === 'fulfilled') {
       this._health = healthResult.value
       this._healthError = ''
+      _dashCache.health = healthResult.value
+      _dashCache.fetchedAt = Date.now()
     } else {
       this._healthError = (healthResult.reason as any)?.message || 'ClusterController unavailable'
+      // Keep cached health visible — do not clear this._health
     }
 
     if (nodesResult.status === 'fulfilled') {
       this._nodes = nodesResult.value
       this._nodesError = ''
+      _dashCache.nodes = nodesResult.value
+      _dashCache.fetchedAt = Date.now()
     } else {
       this._nodesError = (nodesResult.reason as any)?.message || 'Could not list nodes'
+      // Keep cached nodes visible — do not clear this._nodes
     }
 
     // Load recent control-plane events from history (survives page refresh).

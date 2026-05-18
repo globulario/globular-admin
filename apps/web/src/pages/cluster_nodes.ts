@@ -101,6 +101,10 @@ function statusBadge(status: string): string {
   return badge(status.toUpperCase(), color)
 }
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+
+const _cache: { data: ClusterNode[] | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface NodeRow {
@@ -125,6 +129,11 @@ class PageClusterNodes extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show stale data immediately on remount — zero loading flicker
+    if (_cache.data !== null) {
+      this._syncRows(_cache.data)
+    }
+    // Background refresh always runs
     this._fetchData()
     this._refreshTimer = window.setInterval(() => this._fetchData(), 30_000)
   }
@@ -212,9 +221,12 @@ class PageClusterNodes extends HTMLElement {
     let nodes: ClusterNode[]
     try {
       nodes = await listClusterNodes()
+      _cache.data = nodes
+      _cache.fetchedAt = Date.now()
       this._hideError()
     } catch (e: any) {
       this._showError(e?.message || 'ClusterController unavailable')
+      // Preserve stale data in the table — don't wipe rows on transient error
       return
     }
 

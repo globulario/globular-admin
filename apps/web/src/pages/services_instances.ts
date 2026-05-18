@@ -83,6 +83,14 @@ const INFRA_SERVICES = new Set([
   'keepalived', 'scylla-manager', 'scylla-manager-agent',
 ])
 
+// ─── Module-level cache ────────────────────────────────────────────────────────
+
+const _instancesCache: {
+  groups: ServiceGroup[]
+  cpGroups: ServiceGroup[]
+  fetchedAt: number
+} = { groups: [], cpGroups: [], fetchedAt: 0 }
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 class PageServicesInstances extends HTMLElement {
@@ -97,6 +105,13 @@ class PageServicesInstances extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately on remount
+    if (_instancesCache.groups.length > 0 || _instancesCache.cpGroups.length > 0) {
+      this._groups = _instancesCache.groups
+      this._cpGroups = _instancesCache.cpGroups
+      this._loading = false
+      this._pushData()
+    }
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -224,9 +239,13 @@ class PageServicesInstances extends HTMLElement {
       ])
 
       this.buildGroups(nodes, healthResult, cfg)
+      _instancesCache.groups = this._groups
+      _instancesCache.cpGroups = this._cpGroups
+      _instancesCache.fetchedAt = Date.now()
       this._loadError = ''
     } catch (e: any) {
       this._loadError = e?.message || 'Could not load cluster data'
+      // Keep cached groups visible — do not clear this._groups or this._cpGroups
     }
     this._loading = false
     this._pushData()
@@ -344,7 +363,8 @@ class PageServicesInstances extends HTMLElement {
     this._set('loading', this._loading ? `<p style="padding:14px;font-style:italic;color:var(--secondary-text-color)">Loading…</p>` : '')
     this._set('error', this._loadError ? `<div class="md-banner-warn">⚠ ${this._loadError}</div>` : '')
 
-    if (this._loading || this._loadError) {
+    // Clear content only when loading with no cache or when errored with no data to show.
+    if (this._loading || (this._loadError && this._groups.length === 0 && this._cpGroups.length === 0)) {
       this._set('content', '')
       return
     }

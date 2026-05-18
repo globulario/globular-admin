@@ -65,13 +65,25 @@ function actionColor(action: ServiceDiffEntry['action']): string {
   }
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Module-level cache ────────────────────────────────────────────────────────
 
 interface NodeDrift {
   node: ClusterNode
   report: DriftReport | null
   error: string
 }
+
+interface _ReconciliationCache {
+  data: {
+    rows: NodeDrift[]
+    nodeHealths: NodeHealthV1[]
+    diffs: NodeReconciliationDiff[]
+  } | null
+  fetchedAt: number
+}
+const _cache: _ReconciliationCache = { data: null, fetchedAt: 0 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 class PageClusterReconciliation extends HTMLElement {
   private _rows: NodeDrift[] = []
@@ -85,6 +97,16 @@ class PageClusterReconciliation extends HTMLElement {
   connectedCallback() {
     this.style.display = 'block'
     this._buildShell()
+    // Show cached data immediately — zero flicker on back-navigation
+    if (_cache.data !== null) {
+      const c = _cache.data
+      this._rows = c.rows
+      this._nodeHealths = c.nodeHealths
+      this._diffs = c.diffs
+      this._loading = false
+      this._pushData()
+    }
+    // Always kick off a background refresh
     this._load()
     this._refreshTimer = window.setInterval(() => this._load(), 30_000)
   }
@@ -217,6 +239,9 @@ class PageClusterReconciliation extends HTMLElement {
       }
     })
 
+    _cache.data = { rows: this._rows, nodeHealths: this._nodeHealths, diffs: this._diffs }
+    _cache.fetchedAt = Date.now()
+
     this._loading = false
     this._pushData()
   }
@@ -237,9 +262,12 @@ class PageClusterReconciliation extends HTMLElement {
           <br><span style="font-size:.8em;opacity:.8">Ensure <code>cluster_controller.ClusterControllerService</code> is reachable.</span>
         </div>
       `)
-      this._set('stats', '')
-      this._set('nodes', '')
-      return
+      // If we have no cached rows, blank the slots; otherwise fall through to show stale data
+      if (this._rows.length === 0) {
+        this._set('stats', '')
+        this._set('nodes', '')
+        return
+      }
     }
 
     this._set('status', '')
