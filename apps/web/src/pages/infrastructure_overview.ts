@@ -205,7 +205,7 @@ class PageInfrastructureOverview extends HTMLElement {
   private storageCard(): { name: string; state: HealthState; metrics: string; route: string } {
     const s = this._storage
     if (!s) return { name: 'Storage', state: 'unknown', metrics: 'Data unavailable', route: '#/infrastructure/storage' }
-    const state: HealthState = s.derived_status === 'healthy' ? 'healthy' : s.derived_status === 'degraded' ? 'degraded' : 'critical'
+    const state: HealthState = s.derived_status === 'healthy' ? 'healthy' : s.derived_status === 'degraded' ? 'degraded' : s.derived_status === 'critical' ? 'critical' : 'unknown'
     const totalDisk = s.mounts.reduce((a, m) => a + m.total_bytes, 0)
     const usedDisk = s.mounts.reduce((a, m) => a + m.used_bytes, 0)
     const healthyApps = s.applications.filter(a => a.exists && a.writable).length

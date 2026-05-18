@@ -352,7 +352,7 @@ class PageInfrastructureStorage extends HTMLElement {
     const usedDisk = s.mounts.reduce((a, m) => a + m.used_bytes, 0)
     const usedPct = totalDisk > 0 ? (usedDisk / totalDisk) * 100 : 0
     const healthyApps = s.applications.filter(a => a.exists && a.writable).length
-    const overallState: HealthState = s.derived_status === 'healthy' ? 'healthy' : s.derived_status === 'degraded' ? 'degraded' : 'critical'
+    const overallState: HealthState = s.derived_status === 'healthy' ? 'healthy' : s.derived_status === 'degraded' ? 'degraded' : s.derived_status === 'critical' ? 'critical' : 'unknown'
 
     const infra = this._services?.infra ?? {}
     const host = externalHost()

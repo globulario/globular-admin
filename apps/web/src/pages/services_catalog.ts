@@ -248,11 +248,7 @@ function desiredCell(row: CatalogRow, ccAvailable: boolean, ccHasPlan: boolean):
 function installedCell(row: CatalogRow): string {
   if (!row.installedVersion) return `<span class="sc-muted">—</span>`
   const state = (row.installedState ?? '').toLowerCase()
-  // Green when running/active, or when state is unknown but version matches
-  // desired (the service is converged — it's running even if /config doesn't
-  // report state for infrastructure daemons).
-  const converged = row.desiredVersion !== undefined && row.installedVersion === row.desiredVersion
-  const color = state === 'running' || state === 'active' || (converged && !state)
+  const color = state === 'running' || state === 'active'
     ? 'var(--success-color)' : state === 'stopped' || state === 'closed'
     ? 'var(--error-color)' : 'var(--secondary-text-color)'
   return badge(row.installedVersion, color)

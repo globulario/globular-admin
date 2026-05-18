@@ -1665,7 +1665,7 @@ class PageObservabilityMetrics extends HTMLElement {
     ` : ''
 
     const sev = statusToSeverity(st.derived_status)
-    const label = st.derived_status === 'critical' ? 'CRITICAL' : st.derived_status === 'degraded' ? 'WARNING' : 'HEALTHY'
+    const label = st.derived_status === 'critical' ? 'CRITICAL' : st.derived_status === 'degraded' ? 'WARNING' : st.derived_status === 'healthy' ? 'HEALTHY' : 'UNKNOWN'
     const reasonText = st.reasons?.length ? st.reasons.join('; ') : ''
 
     // Object store check (still from /health/objectstore)

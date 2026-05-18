@@ -27,7 +27,7 @@ export function deriveStatus(ok: boolean, reason?: string): HealthStatus {
 
 /** Merge multiple statuses — worst state wins. */
 export function mergeStatuses(...statuses: HealthStatus[]): HealthStatus {
-  const order: Record<HealthState, number> = { healthy: 0, degraded: 1, critical: 2, unknown: 3 }
+  const order: Record<HealthState, number> = { healthy: 0, degraded: 1, unknown: 2, critical: 3 }
   let worst: HealthStatus = { state: 'healthy', lastUpdated: Date.now() }
   for (const s of statuses) {
     if ((order[s.state] ?? 0) > (order[worst.state] ?? 0)) worst = s
