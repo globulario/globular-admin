@@ -224,6 +224,7 @@ export interface RDSRoute {
 // ─── Fetch functions ────────────────────────────────────────────────────────
 
 import { getBaseUrl } from "../core/endpoints"
+import { metadata } from "../core/auth"
 
 const _statusRank: Record<string, number> = { critical: 0, degraded: 1, unknown: 2, healthy: 3 }
 
@@ -293,7 +294,7 @@ export async function fetchAdminServices(
   const remoteResults = await Promise.allSettled(
     remoteHosts.map(async (hostname) => {
       const resp = await fetch(`https://${hostname}/admin/metrics/services`, {
-        headers: { Authorization: (localResp.headers.get('Authorization') ?? '') },
+        headers: { ...metadata() },
       })
       if (!resp.ok) throw new Error(`${hostname}: ${resp.status}`)
       const d: ServicesResponse = await resp.json()
