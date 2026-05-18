@@ -1240,8 +1240,9 @@ class PageObservabilityMetrics extends HTMLElement {
     const s = this._ring.latest()?.stats
     const rows = this._nodes.map(n => {
       const caps = n.capabilities
-      const cpuVal = s ? fmtPct(s.cpu.usagePct) : '--'
-      const memVal = s ? fmtPct(s.memory.usedPct) : '--'
+      const nodeRes = n.ips?.map(ip => this._nodeMetrics.get(ip)).find(m => m)
+      const cpuVal = nodeRes ? fmtPct(nodeRes.cpuPct) : (s ? fmtPct(s.cpu.usagePct) : '--')
+      const memVal = nodeRes ? fmtPct(nodeRes.memPct) : (s ? fmtPct(s.memory.usedPct) : '--')
       const diskPct = caps && caps.diskBytes > 0 ? ((caps.diskBytes - caps.diskFreeBytes) / caps.diskBytes) * 100 : 0
       const nClr = ['HEALTHY', 'ACTIVE', 'READY'].includes(n.status.toUpperCase()) ? 'ok' as Severity : n.status.toUpperCase() === 'DEGRADED' || n.status.toUpperCase() === 'CONVERGING' ? 'warning' as Severity : 'critical' as Severity
       const selected = this._selectedNode === n.hostname
