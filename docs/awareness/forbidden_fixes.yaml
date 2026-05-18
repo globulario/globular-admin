@@ -194,3 +194,18 @@ forbidden_fixes:
           `_load()` silently in the background. Only show a loading state if `_cache.data`
           is null (first-ever visit). A subtle spinner icon in the page header or refresh
           button is acceptable to signal that a background refresh is in progress.
+
+    - id: forbidden.render_from_async_callback
+      title: Calling this.render() or this.innerHTML = ... from a timer or RPC response handler
+      # origin: { type: principle, confidence: very_high }
+      summary: |
+          After initial mount, calling this.render() or this.innerHTML = <template> from
+          any setInterval callback, setTimeout callback, or async RPC response handler.
+      why_wrong: |
+          Every full rebuild resets scroll position, loses selected rows, clears input focus,
+          and causes a visible flash. On a 30-second poll this makes the page unusable for
+          active monitoring. The operator loses their place every cycle.
+      correct_fix: |
+          Use targeted slot writes: querySelector('[data-bind="key"]').innerHTML = newValue.
+          Build the shell once in connectedCallback. Push data to slots from async callbacks.
+          Never call this.render() or this.innerHTML = ... after first mount.

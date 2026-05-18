@@ -328,3 +328,34 @@ invariants:
           must use the SDK's config-resolved base URL, not a literal string.
       forbidden_fixes:
           - forbidden.hardcoded_backend_address
+
+    - id: ui.no_blind_page_reload
+      title: Pages must be built once; data updates must use targeted DOM mutations, never full rebuilds
+      severity: critical
+      status: active
+      # origin: { type: principle, confidence: very_high }
+      summary: |
+          Every page component must build its DOM shell exactly once (in connectedCallback
+          or first load). After that, ALL data updates — whether from polling timers, RPC
+          responses, or async callbacks — must write to specific [data-bind] slots using
+          targeted DOM mutations. Full page rebuilds (this.innerHTML = ... from a timer or
+          RPC handler, calling render() from any async callback) are strictly forbidden.
+
+          The correct pattern:
+          1. Build shell once: `if (!this._built) { this._buildShell(); this._built = true }`
+          2. Data arrives → push to slots: `el.innerHTML = newHtml` on `[data-bind="slot"]` elements
+          3. Timer callbacks call `_pushData()` / `_silentLoad()`, never `render()`
+          4. RPC response handlers call targeted patchers (`_patchRunView()`, `_pushDefs()`),
+             never `this.render()` or `this.innerHTML = ...`
+
+          Why: Full rebuilds destroy operator context (scroll position, selection, focus),
+          cause visible flicker, reset interaction state, and make the UI feel unstable.
+          A page that rebuilds every 30 seconds is unusable for active monitoring.
+      enforcement: |
+          Before adding any async callback (timer, RPC response, error handler) to a page,
+          verify it does NOT call this.render() or assign to this.innerHTML.
+          The only permitted caller of this.innerHTML = ... is _buildShell() / connectedCallback
+          on first mount.
+      forbidden_fixes:
+          - forbidden.full_render_on_refresh
+          - forbidden.wipe_slot_on_refresh

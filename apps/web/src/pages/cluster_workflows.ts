@@ -575,7 +575,6 @@ function runDuration(run: WorkflowRun): string {
 }
 
 // ─── Module-level cache ───────────────────────────────────────────────────────
-// Cache the runs list — defs are already memoized in the per-instance _defCache Map.
 const _cache: { data: WorkflowRun[] | null; fetchedAt: number } = { data: null, fetchedAt: 0 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -591,30 +590,146 @@ class PageClusterWorkflows extends HTMLElement {
   private _selStepDef: StepDef | null = null
   private _selStepRt: WorkflowStep | null = null
   private _diag: DiagnoseResult | null = null
-  private _loading = true
+  private _built = false
   private _loadingRun = false
-  private _error = ''
   private _pollT: number | null = null
   private _listT: number | null = null
 
   connectedCallback() {
     this.style.display = 'block'
-    // Show stale runs immediately on remount — zero loading flicker for the table
+    if (!this._built) { this._buildShell(); this._built = true }
     if (_cache.data !== null) {
       this._runs = _cache.data
-      this._loading = false
+      this._pushRuns()
     }
-    this.render()
     this.loadDefinitions()
-    this._listT = window.setInterval(() => this.silentLoad(), 30_000)
+    this._listT = window.setInterval(() => this._silentLoad(), 30_000)
   }
-  disconnectedCallback() { if (this._pollT) clearInterval(this._pollT); if (this._listT) clearInterval(this._listT) }
 
-  /** Fetch workflow definitions from MinIO (single source of truth) */
+  disconnectedCallback() {
+    if (this._pollT) clearInterval(this._pollT)
+    if (this._listT) clearInterval(this._listT)
+  }
+
+  // ─── Shell (built once) ───────────────────────────────────────────────────
+
+  private _buildShell() {
+    this.innerHTML = `
+      <style>
+        .cw { padding:12px; height:calc(100vh - 64px); display:flex; flex-direction:column; overflow:hidden }
+        .cw-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; flex-shrink:0 }
+        .cw-bar h2 { margin:0; font:var(--md-typescale-headline-small) }
+        .cw-bar select { background:var(--md-surface-container-low); border:1px solid var(--border-subtle-color); border-radius:var(--md-shape-sm); color:var(--on-surface-color); padding:4px 8px; font-size:.82rem; font-family:inherit }
+        .cw-bar select:focus { outline:1px solid var(--accent-color) }
+        .cw-lbl { font-size:.7rem; font-weight:600; color:var(--secondary-text-color) }
+        .cw-chip { padding:2px 8px; border-radius:10px; font-size:.68rem; font-weight:600 }
+        .cw-ref { border:1px solid var(--border-subtle-color); background:0; color:var(--on-surface-color); border-radius:var(--md-shape-sm); padding:4px 10px; cursor:pointer; font-size:.76rem; margin-left:auto }
+        .cw-ref:hover { background:var(--md-state-hover) }
+        .cw-desc { margin:0 0 6px; font-size:.78rem; color:var(--secondary-text-color); flex-shrink:0 }
+        .cw-body { flex:1; display:flex; flex-direction:column; min-height:0; border:1px solid var(--border-subtle-color); border-radius:var(--md-shape-md); overflow:hidden }
+        .cw-svg { overflow:auto; background:var(--md-surface-container-lowest,#111); flex:0 1 auto; max-height:50%; min-height:140px }
+        .cw-svg svg { display:block }
+        .cw-svg svg .wf-step-g:hover rect:first-child { filter:brightness(1.3) }
+        .cw-svg-hdr { display:flex; align-items:center; gap:8px; padding:5px 10px; background:var(--md-surface-container); border-bottom:1px solid var(--border-subtle-color); font-size:.76rem; flex-shrink:0 }
+        .cw-badge { padding:2px 7px; border-radius:4px; font-size:.62rem; font-weight:700; text-transform:uppercase; color:#fff }
+        .cw-step-bar { display:flex; gap:12px; padding:6px 10px; font-size:.75rem; background:var(--md-surface-container); border-bottom:1px solid var(--border-subtle-color); flex-shrink:0; flex-wrap:wrap; align-items:center; min-height:28px }
+        .cw-step-bar .k { font-weight:600; color:var(--secondary-text-color); font-size:.68rem }
+        .cw-step-bar .v { font-size:.75rem }
+        .cw-step-bar .err { color:var(--error-color) }
+        .cw-act-btn { padding:3px 8px; border-radius:4px; font-size:.68rem; font-weight:600; cursor:pointer; border:0 }
+        .cw-act-btn:hover { filter:brightness(1.15) }
+        .cw-tbl-wrap { flex:1; overflow:auto }
+        .cw-tbl { width:100%; border-collapse:collapse; font-size:.78rem }
+        .cw-tbl thead { position:sticky; top:0; z-index:1 }
+        .cw-tbl th { background:var(--md-surface-container); border-bottom:1px solid var(--border-subtle-color); padding:6px 8px; text-align:left; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--secondary-text-color); white-space:nowrap }
+        .cw-tbl td { padding:5px 8px; border-bottom:1px solid var(--border-subtle-color,#222); white-space:nowrap }
+        .cw-tbl tbody tr { cursor:pointer; transition:background .1s }
+        .cw-tbl tbody tr:hover { background:var(--md-state-hover) }
+        .cw-tbl tbody tr.sel { background:rgba(99,102,241,.12) }
+        .cw-m { font-family:monospace; font-size:.72rem }
+        .cw-pulse { animation:cwp 1.5s ease-in-out infinite }
+        @keyframes cwp { 0%,100%{opacity:1} 50%{opacity:.5} }
+        .cw-empty { padding:20px; text-align:center; color:var(--secondary-text-color); font-size:.82rem }
+        .cw-err { padding:8px 12px; color:var(--error-color); font-size:.78rem; background:var(--md-surface-container-low); border-bottom:1px solid var(--border-subtle-color) }
+      </style>
+      <div class="cw">
+        <div class="cw-bar">
+          <h2>Workflows</h2>
+          <span class="cw-lbl">Definition</span>
+          <select id="selDef" data-bind="def-select"></select>
+          <button class="cw-ref" id="btnR">↻</button>
+        </div>
+        <p class="cw-desc" data-bind="desc">Loading workflow definitions…</p>
+        <div class="cw-body">
+          <div data-bind="error-banner" class="cw-err" style="display:none"></div>
+          <div class="cw-svg-hdr" data-bind="svg-hdr" style="display:none"></div>
+          <div class="cw-svg" data-bind="svg-container">
+            <div data-bind="svg-wrap">
+              <div class="cw-empty" style="font-style:italic">Select a run to view its diagram</div>
+            </div>
+          </div>
+          <div data-bind="step-bar">
+            <div class="cw-step-bar"><span style="color:var(--secondary-text-color);font-style:italic;font-size:.72rem">Select a run, then click a step</span></div>
+          </div>
+          <div class="cw-tbl-wrap">
+            <table class="cw-tbl">
+              <thead><tr>
+                <th>Status</th><th>Service</th><th>Node</th><th>Trigger</th><th>Started</th><th>Duration</th><th>ID</th>
+              </tr></thead>
+              <tbody data-bind="tbl-body">
+                <tr><td colspan="7" class="cw-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>`
+    this._bindEvents()
+  }
+
+  // ─── Slot helpers ─────────────────────────────────────────────────────────
+
+  private _set(bind: string, html: string) {
+    const el = this.querySelector<HTMLElement>(`[data-bind="${bind}"]`)
+    if (el) el.innerHTML = html
+  }
+
+  private _setError(msg: string) {
+    const el = this.querySelector<HTMLElement>('[data-bind="error-banner"]')
+    if (!el) return
+    if (msg) { el.textContent = msg; el.style.display = '' }
+    else el.style.display = 'none'
+  }
+
+  // ─── Data pushers ─────────────────────────────────────────────────────────
+
+  private _pushDefs() {
+    const sel = this.querySelector<HTMLSelectElement>('[data-bind="def-select"]')
+    if (sel) sel.innerHTML = this._defs.map(d => `<option value="${d.name}" ${d.name === this._def?.name ? 'selected' : ''}>${d.displayName}</option>`).join('')
+    const desc = this.querySelector<HTMLElement>('[data-bind="desc"]')
+    if (desc) desc.textContent = this._def?.description ?? (this._defs.length === 0 ? 'No workflow definitions found' : '')
+  }
+
+  private _pushRuns() {
+    const tbody = this.querySelector<HTMLElement>('tbody[data-bind="tbl-body"]')
+    if (!tbody) return
+    if (this._runs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="cw-empty">No workflow runs</td></tr>'
+    } else {
+      tbody.innerHTML = this._buildTableRows()
+      this.querySelectorAll<HTMLElement>('[data-rid]').forEach(r =>
+        r.addEventListener('click', () => {
+          const run = this._runs.find(x => x.id === r.dataset.rid)
+          if (run) this._selectRun(run)
+        })
+      )
+    }
+  }
+
+  // ─── Data loading ─────────────────────────────────────────────────────────
+
   private async loadDefinitions() {
     try {
       const summaries = await listWorkflowDefinitions()
-      // Load full YAML for each definition and parse it
       const defs: WorkflowDef[] = []
       for (const s of summaries.sort((a, b) => a.name.localeCompare(b.name))) {
         const cached = this._defCache.get(s.name)
@@ -623,113 +738,103 @@ class PageClusterWorkflows extends HTMLElement {
           const yaml = await getWorkflowDefinition(s.name)
           const def = parseWorkflowYaml(yaml)
           if (def) { this._defCache.set(s.name, def); defs.push(def) }
-        } catch (e) {
-          console.error(`load definition ${s.name}:`, e)
-        }
+        } catch (e) { console.error(`load definition ${s.name}:`, e) }
       }
       this._defs = defs
       if (defs.length > 0 && !this._def) this._def = defs[0]
-      this._error = ''
+      this._setError('')
     } catch (e: any) {
-      this._error = `Failed to load workflow definitions: ${e?.message || e}`
+      this._setError(`Failed to load workflow definitions: ${e?.message || e}`)
+      if (`${e?.message}`.includes('not initialized') || `${e?.message}`.includes('unavailable')) {
+        setTimeout(() => { if (!this._def) this.loadDefinitions() }, 5000)
+      }
     }
-    this._loading = false
-    // Always load runs — definition is only needed for the SVG diagram, not the table
-    this.loadRuns()
-    // Auto-retry transient "not initialized" / "unavailable" errors
-    if (this._error && (this._error.includes('not initialized') || this._error.includes('unavailable'))) {
-      setTimeout(() => {
-        if (!this._def) this.loadDefinitions()
-      }, 5000)
-    }
+    this._pushDefs()
+    this._loadRuns()
   }
 
-  /** Client-side filter: match runs by workflowName or fall back to runFilter heuristics */
-  private matchesDef(r: WorkflowRun): boolean {
-    // Exact workflow_name match (set by new engine)
-    if (!this._def) return true // no definition loaded — show all runs
-    if (r.workflowName) return r.workflowName === this._def.name
-    // Legacy runs without workflow_name: use heuristic runFilter
-    const f = this._def.runFilter
-    if (!f) return false // no filter = only match by exact workflow_name
-    if (f.correlationPrefix && !r.correlationId?.startsWith(f.correlationPrefix)) return false
-    if (f.releaseKind && r.context?.releaseKind !== f.releaseKind) return false
-    if (f.triggerReason !== undefined && r.triggerReason !== f.triggerReason) return false
-    return true
-  }
-
-  private async loadRuns() {
+  private async _loadRuns() {
     try {
       const all = await listWorkflowRuns('globular.internal', { limit: 50 })
-      // Client-side filter as fallback for old servers / legacy runs
-      this._runs = all.filter(r => this.matchesDef(r))
+      this._runs = all.filter(r => this._matchesDef(r))
       _cache.data = this._runs
       _cache.fetchedAt = Date.now()
-      this._error = ''
-    }
-    catch (e: any) {
-      this._error = e?.message || 'Workflow service unreachable'
-      // Preserve stale runs on error so the table stays populated
+    } catch (e: any) {
+      this._setError(e?.message || 'Workflow service unreachable')
       if (_cache.data !== null) this._runs = _cache.data
       else this._runs = []
     }
-    this._loading = false; this.render()
+    this._pushRuns()
   }
-  private async silentLoad() {
+
+  private async _silentLoad() {
     try {
       const all = await listWorkflowRuns('globular.internal', { limit: 50 })
-      const newRuns = all.filter(r => this.matchesDef(r))
-      // Only re-render if the run list actually changed (avoid resetting UI state)
+      const newRuns = all.filter(r => this._matchesDef(r))
       const changed = newRuns.length !== this._runs.length ||
         newRuns.some((r, i) => r.id !== this._runs[i]?.id || r.status !== this._runs[i]?.status)
       this._runs = newRuns
       _cache.data = newRuns
       _cache.fetchedAt = Date.now()
-      if (!this._runs.some(r => this.isActive(r.status)) && this._listT) { clearInterval(this._listT); this._listT = window.setInterval(() => this.silentLoad(), 30_000) }
-      if (changed) this.updateTable()
+      if (!this._runs.some(r => this._isActive(r.status)) && this._listT) {
+        clearInterval(this._listT)
+        this._listT = window.setInterval(() => this._silentLoad(), 30_000)
+      }
+      if (changed) this._pushRuns()
     } catch {}
   }
-  /** Update just the table body rows without rebuilding the entire page */
-  private updateTable() {
-    const tbody = this.querySelector<HTMLElement>('tbody[data-bind="tbl-body"]')
-    if (!tbody) return
-    tbody.innerHTML = this._buildTableRows()
-    // Re-bind table row clicks
-    this.querySelectorAll<HTMLElement>('[data-rid]').forEach(r => r.addEventListener('click', () => { const run = this._runs.find(x => x.id === r.dataset.rid); if (run) this.selectRun(run) }))
-  }
-  private async selectRun(run: WorkflowRun) {
-    this._run = run; this._selStepId = ''; this._selStepDef = null; this._selStepRt = null; this._diag = null; this._loadingRun = true; this.render()
+
+  // ─── Run selection ────────────────────────────────────────────────────────
+
+  private async _selectRun(run: WorkflowRun) {
+    this._run = run
+    this._selStepId = ''
+    this._selStepDef = null
+    this._selStepRt = null
+    this._diag = null
+    this._loadingRun = true
+    this._patchRunView()
     try {
       const d = await getWorkflowRun('globular.internal', run.id)
-      this._run = d.run; this._rtMap = buildRtMap(d.steps, this._def!, d.run.status)
-      if (d.run.status === 9 || d.run.status === 11) { try { this._diag = await diagnoseWorkflowRun('globular.internal', run.id) } catch {} }
-      this.stopPoll()
-      if (d.run && this.isActive(d.run.status)) {
-        this._pollT = window.setInterval(() => this.refreshRun(), 3000)
-        if (this._listT) clearInterval(this._listT); this._listT = window.setInterval(() => this.silentLoad(), 3000)
+      this._run = d.run
+      this._rtMap = this._def ? buildRtMap(d.steps, this._def, d.run.status) : new Map()
+      if (d.run.status === 9 || d.run.status === 11) {
+        try { this._diag = await diagnoseWorkflowRun('globular.internal', run.id) } catch {}
+      }
+      this._stopPoll()
+      if (d.run && this._isActive(d.run.status)) {
+        this._pollT = window.setInterval(() => this._refreshRun(), 3000)
+        if (this._listT) clearInterval(this._listT)
+        this._listT = window.setInterval(() => this._silentLoad(), 3000)
       }
     } catch { this._rtMap = new Map() }
-    this._loadingRun = false; this.render()
+    this._loadingRun = false
+    this._patchRunView()
   }
-  private async refreshRun() {
+
+  private async _refreshRun() {
     if (!this._run) return
     try {
-      const d = await getWorkflowRun('globular.internal', this._run.id); this._run = d.run
+      const d = await getWorkflowRun('globular.internal', this._run.id)
+      this._run = d.run
       this._rtMap = this._def ? buildRtMap(d.steps, this._def, d.run.status) : new Map()
-      if (d.run && !this.isActive(d.run.status)) {
-        this.stopPoll()
-        if (d.run.status === 9 || d.run.status === 11) { try { this._diag = await diagnoseWorkflowRun('globular.internal', d.run.id) } catch {} }
-        if (this._listT) clearInterval(this._listT); this._listT = window.setInterval(() => this.silentLoad(), 30_000)
+      if (d.run && !this._isActive(d.run.status)) {
+        this._stopPoll()
+        if (d.run.status === 9 || d.run.status === 11) {
+          try { this._diag = await diagnoseWorkflowRun('globular.internal', d.run.id) } catch {}
+        }
+        if (this._listT) clearInterval(this._listT)
+        this._listT = window.setInterval(() => this._silentLoad(), 30_000)
       }
       this._patchRunView()
     } catch {}
   }
 
-  /** Patch only the run-specific slots without rebuilding the full shell. */
+  // ─── Targeted DOM patchers ────────────────────────────────────────────────
+
   private _patchRunView() {
     const run = this._run
 
-    // Patch SVG header [data-bind="svg-hdr"]
     const hdr = this.querySelector<HTMLElement>('[data-bind="svg-hdr"]')
     if (hdr) {
       if (run) {
@@ -744,134 +849,98 @@ class PageClusterWorkflows extends HTMLElement {
       }
     }
 
-    // Patch SVG [data-bind="svg-wrap"]
+    const svgContainer = this.querySelector<HTMLElement>('[data-bind="svg-container"]')
+    if (svgContainer) svgContainer.style.opacity = this._loadingRun ? '0.5' : ''
+
     const svgWrap = this.querySelector<HTMLElement>('[data-bind="svg-wrap"]')
-    if (svgWrap && this._def) {
-      const { svg, width, height } = buildHorizontalSvg(this._def, this._rtMap, this._selStepId)
-      svgWrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svg}</svg>`
-      // Re-bind step click handlers on new SVG elements
-      svgWrap.querySelectorAll<HTMLElement>('[data-step-id]').forEach(el => el.addEventListener('click', (e) => {
-        e.stopPropagation(); const id = el.dataset.stepId ?? ''
-        this._selStepId = id; this._selStepDef = this.findStep(id); this._selStepRt = this._rtMap.get(id) ?? (this._selStepDef ? this._rtMap.get(this._selStepDef.title) : null) ?? null
-        this._patchStepBar()
-        // Re-highlight selection in SVG
-        this._patchRunView()
-      }))
+    if (svgWrap) {
+      if (this._def) {
+        const { svg, width, height } = buildHorizontalSvg(this._def, this._rtMap, this._selStepId)
+        svgWrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svg}</svg>`
+        svgWrap.querySelectorAll<HTMLElement>('[data-step-id]').forEach(el => el.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const id = el.dataset.stepId ?? ''
+          this._selStepId = id
+          this._selStepDef = this._findStep(id)
+          this._selStepRt = this._rtMap.get(id) ?? (this._selStepDef ? this._rtMap.get(this._selStepDef.title) : null) ?? null
+          this._patchStepBar()
+          this._patchRunView()
+        }))
+      } else if (!run) {
+        svgWrap.innerHTML = '<div class="cw-empty" style="font-style:italic">Select a run to view its diagram</div>'
+      } else {
+        svgWrap.innerHTML = '<div class="cw-empty" style="font-style:italic">Workflow diagram unavailable — run history shown below</div>'
+      }
     }
 
-    // Patch step bar [data-bind="step-bar"]
     this._patchStepBar()
-
-    // Also refresh table row status badges
-    this.updateTable()
+    this._pushRuns()
   }
 
   private _patchStepBar() {
     const wrapper = this.querySelector<HTMLElement>('[data-bind="step-bar"]')
     if (!wrapper) return
-    wrapper.innerHTML = this.renderStepBar()
+    wrapper.innerHTML = this._renderStepBar()
     this._bindStepBarButtons()
   }
 
   private _bindStepBarButtons() {
-    this.querySelector('#btnRetry')?.addEventListener('click', async () => { if (!this._run) return; try { const r = await retryWorkflowRun('globular.internal', this._run.id); this.selectRun(r); this.loadRuns() } catch (e: any) { this._error = `Retry: ${e?.message}`; this.render() } })
-    this.querySelector('#btnAck')?.addEventListener('click', async () => { if (!this._run) return; try { await acknowledgeWorkflowRun('globular.internal', this._run.id, 'admin-ui'); this._run.acknowledged = true; this._patchStepBar() } catch (e: any) { this._error = `Ack: ${e?.message}`; this.render() } })
-    this.querySelector('#btnDiag')?.addEventListener('click', async () => { if (!this._run) return; try { this._diag = await diagnoseWorkflowRun('globular.internal', this._run.id); this.render() } catch (e: any) { this._error = `Diag: ${e?.message}`; this.render() } })
+    this.querySelector('#btnRetry')?.addEventListener('click', async () => {
+      if (!this._run) return
+      try { const r = await retryWorkflowRun('globular.internal', this._run.id); this._selectRun(r); this._loadRuns() }
+      catch (e: any) { this._setError(`Retry: ${e?.message}`) }
+    })
+    this.querySelector('#btnAck')?.addEventListener('click', async () => {
+      if (!this._run) return
+      try { await acknowledgeWorkflowRun('globular.internal', this._run.id, 'admin-ui'); this._run.acknowledged = true; this._patchStepBar() }
+      catch (e: any) { this._setError(`Ack: ${e?.message}`) }
+    })
+    this.querySelector('#btnDiag')?.addEventListener('click', async () => {
+      if (!this._run) return
+      try { this._diag = await diagnoseWorkflowRun('globular.internal', this._run.id); this._patchStepBar() }
+      catch (e: any) { this._setError(`Diag: ${e?.message}`) }
+    })
   }
-  private isActive(s: number) { return s >= 1 && s <= 7 }
-  private stopPoll() { if (this._pollT) { clearInterval(this._pollT); this._pollT = null } }
-  private findStep(id: string, steps?: StepDef[]): StepDef | null {
-    for (const s of steps ?? this._def?.steps ?? []) { if (s.id === id) return s; if (s.steps) { const f = this.findStep(id, s.steps); if (f) return f } }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private _matchesDef(r: WorkflowRun): boolean {
+    if (!this._def) return true
+    if (r.workflowName) return r.workflowName === this._def.name
+    const f = this._def.runFilter
+    if (!f) return false
+    if (f.correlationPrefix && !r.correlationId?.startsWith(f.correlationPrefix)) return false
+    if (f.releaseKind && r.context?.releaseKind !== f.releaseKind) return false
+    if (f.triggerReason !== undefined && r.triggerReason !== f.triggerReason) return false
+    return true
+  }
+
+  private _isActive(s: number) { return s >= 1 && s <= 7 }
+  private _stopPoll() { if (this._pollT) { clearInterval(this._pollT); this._pollT = null } }
+  private _findStep(id: string, steps?: StepDef[]): StepDef | null {
+    for (const s of steps ?? this._def?.steps ?? []) {
+      if (s.id === id) return s
+      if (s.steps) { const f = this._findStep(id, s.steps); if (f) return f }
+    }
     return null
   }
 
-  private render() {
-    const run = this._run
-    const { svg, width, height } = this._def
-      ? buildHorizontalSvg(this._def, this._rtMap, this._selStepId)
-      : { svg: '', width: 100, height: 100 }
-
-    this.innerHTML = `
-      <style>
-        .cw { padding:12px; height:calc(100vh - 64px); display:flex; flex-direction:column; overflow:hidden }
-        .cw-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; flex-shrink:0 }
-        .cw-bar h2 { margin:0; font:var(--md-typescale-headline-small) }
-        .cw-bar select { background:var(--md-surface-container-low); border:1px solid var(--border-subtle-color); border-radius:var(--md-shape-sm); color:var(--on-surface-color); padding:4px 8px; font-size:.82rem; font-family:inherit }
-        .cw-bar select:focus { outline:1px solid var(--accent-color) }
-        .cw-lbl { font-size:.7rem; font-weight:600; color:var(--secondary-text-color) }
-        .cw-chip { padding:2px 8px; border-radius:10px; font-size:.68rem; font-weight:600 }
-        .cw-ref { border:1px solid var(--border-subtle-color); background:0; color:var(--on-surface-color); border-radius:var(--md-shape-sm); padding:4px 10px; cursor:pointer; font-size:.76rem; margin-left:auto }
-        .cw-ref:hover { background:var(--md-state-hover) }
-        .cw-desc { margin:0 0 6px; font-size:.78rem; color:var(--secondary-text-color); flex-shrink:0 }
-
-        .cw-body { flex:1; display:flex; flex-direction:column; min-height:0; border:1px solid var(--border-subtle-color); border-radius:var(--md-shape-md); overflow:hidden }
-
-        /* SVG area */
-        .cw-svg { overflow:auto; background:var(--md-surface-container-lowest,#111); flex:0 1 auto; max-height:50%; min-height:140px }
-        .cw-svg svg { display:block }
-        .cw-svg svg .wf-step-g:hover rect:first-child { filter:brightness(1.3) }
-        .cw-svg-hdr { display:flex; align-items:center; gap:8px; padding:5px 10px; background:var(--md-surface-container); border-bottom:1px solid var(--border-subtle-color); font-size:.76rem; flex-shrink:0 }
-        .cw-badge { padding:2px 7px; border-radius:4px; font-size:.62rem; font-weight:700; text-transform:uppercase; color:#fff }
-
-        /* Step detail bar (replaces sidebar) */
-        .cw-step-bar { display:flex; gap:12px; padding:6px 10px; font-size:.75rem; background:var(--md-surface-container); border-bottom:1px solid var(--border-subtle-color); flex-shrink:0; flex-wrap:wrap; align-items:center; min-height:28px }
-        .cw-step-bar .k { font-weight:600; color:var(--secondary-text-color); font-size:.68rem }
-        .cw-step-bar .v { font-size:.75rem }
-        .cw-step-bar .err { color:var(--error-color) }
-        .cw-act-btn { padding:3px 8px; border-radius:4px; font-size:.68rem; font-weight:600; cursor:pointer; border:0 }
-        .cw-act-btn:hover { filter:brightness(1.15) }
-
-        /* Table */
-        .cw-tbl-wrap { flex:1; overflow:auto }
-        .cw-tbl { width:100%; border-collapse:collapse; font-size:.78rem }
-        .cw-tbl thead { position:sticky; top:0; z-index:1 }
-        .cw-tbl th { background:var(--md-surface-container); border-bottom:1px solid var(--border-subtle-color); padding:6px 8px; text-align:left; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--secondary-text-color); white-space:nowrap }
-        .cw-tbl td { padding:5px 8px; border-bottom:1px solid var(--border-subtle-color,#222); white-space:nowrap }
-        .cw-tbl tbody tr { cursor:pointer; transition:background .1s }
-        .cw-tbl tbody tr:hover { background:var(--md-state-hover) }
-        .cw-tbl tbody tr.sel { background:rgba(99,102,241,.12) }
-        .cw-m { font-family:monospace; font-size:.72rem }
-        .cw-pulse { animation:cwp 1.5s ease-in-out infinite }
-        @keyframes cwp { 0%,100%{opacity:1} 50%{opacity:.5} }
-        .cw-empty { padding:20px; text-align:center; color:var(--secondary-text-color); font-size:.82rem }
-        .cw-err { padding:12px; color:var(--error-color); font-size:.82rem }
-      </style>
-
-      <div class="cw">
-        <div class="cw-bar">
-          <h2>Workflows</h2>
-          <span class="cw-lbl">Definition</span>
-          <select id="selDef">${this._defs.map(d => `<option value="${d.name}" ${d.name === this._def?.name ? 'selected' : ''}>${d.displayName}</option>`).join('')}</select>
-          <button class="cw-ref" id="btnR">↻</button>
-        </div>
-        <p class="cw-desc">${this._def?.description ?? (this._error ? '' : this._loading ? 'Loading workflow definitions…' : 'No workflow definitions found')}</p>
-
-        ${this._loading ? '<div class="cw-empty">Loading…</div>' : ''}
-
-        ${!this._loading ? `
-        <div class="cw-body">
-          ${this._error ? `<div class="cw-err" style="flex-shrink:0">${this._error} — showing all run history</div>` : ''}
-          <div class="cw-svg-hdr" data-bind="svg-hdr"${run ? '' : ' style="display:none"'}>
-            ${run ? `
-            <strong style="font-weight:700">${run.context?.componentName || '—'}</strong>
-            <span class="cw-badge" style="background:${runStatusColor(run.status)}">${runStatusLabel(run.status)}</span>
-            <span style="color:var(--secondary-text-color);font-size:.7rem">${run.context?.nodeHostname || ''} · ${runDuration(run)} · <code style="font-size:.66rem">${run.id?.slice(0, 8)}</code></span>
-            ` : ''}
-          </div>
-          <div class="cw-svg" ${this._loadingRun ? 'style="opacity:.5"' : ''}>
-            <div data-bind="svg-wrap">
-              ${this._def ? `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svg}</svg>` : '<div class="cw-empty" style="font-style:italic">Workflow diagram unavailable — run history is shown below</div>'}
-            </div>
-          </div>
-          <div data-bind="step-bar">${this.renderStepBar()}</div>
-          <div class="cw-tbl-wrap">${this.renderTable()}</div>
-        </div>
-        ` : ''}
-      </div>`
-    this.bindEvents()
+  private _buildTableRows(): string {
+    return this._runs.map(r => {
+      const c = r.context, sel = this._run?.id === r.id, act = this._isActive(r.status)
+      return `<tr class="${sel ? 'sel' : ''}" data-rid="${r.id}">
+        <td><span class="cw-badge ${act ? 'cw-pulse' : ''}" style="background:${runStatusColor(r.status)}">${runStatusLabel(r.status)}</span></td>
+        <td class="cw-m">${c?.componentName || '—'}</td>
+        <td>${c?.nodeHostname || c?.nodeId?.slice(0, 8) || '—'}</td>
+        <td style="color:${triggerReasonColor(r.triggerReason)};font-size:.72rem">${triggerReasonLabel(r.triggerReason)}</td>
+        <td style="font-size:.72rem">${fmtDateTime(r.startedAt)}</td>
+        <td style="font-size:.72rem">${runDuration(r)}</td>
+        <td class="cw-m" style="font-size:.66rem;color:var(--secondary-text-color)">${r.id?.slice(0, 8)}</td>
+      </tr>`
+    }).join('')
   }
 
-  private renderStepBar(): string {
+  private _renderStepBar(): string {
     const s = this._selStepDef
     const rt = this._selStepRt
     const run = this._run
@@ -883,7 +952,6 @@ class PageClusterWorkflows extends HTMLElement {
         <button class="cw-act-btn" id="btnDiag" style="background:#8b5cf6;color:#fff">Diagnose</button>
       </span>
     </div>`
-
     const pairs: string[] = []
     pairs.push(`<span class="k">Step</span><span class="v">${s!.title}</span>`)
     pairs.push(`<span class="k">Action</span><span class="v cw-m">${s!.action || 'foreach'}</span>`)
@@ -904,44 +972,21 @@ class PageClusterWorkflows extends HTMLElement {
     return `<div class="cw-step-bar">${pairs.join('')}</div>`
   }
 
-  private _buildTableRows(): string {
-    return this._runs.map(r => {
-      const c = r.context, sel = this._run?.id === r.id, act = this.isActive(r.status)
-      return `<tr class="${sel ? 'sel' : ''}" data-rid="${r.id}">
-        <td><span class="cw-badge ${act ? 'cw-pulse' : ''}" style="background:${runStatusColor(r.status)}">${runStatusLabel(r.status)}</span></td>
-        <td class="cw-m">${c?.componentName || '—'}</td>
-        <td>${c?.nodeHostname || c?.nodeId?.slice(0, 8) || '—'}</td>
-        <td style="color:${triggerReasonColor(r.triggerReason)};font-size:.72rem">${triggerReasonLabel(r.triggerReason)}</td>
-        <td style="font-size:.72rem">${fmtDateTime(r.startedAt)}</td>
-        <td style="font-size:.72rem">${runDuration(r)}</td>
-        <td class="cw-m" style="font-size:.66rem;color:var(--secondary-text-color)">${r.id?.slice(0, 8)}</td>
-      </tr>`
-    }).join('')
-  }
-
-  private renderTable(): string {
-    if (this._runs.length === 0) return '<div class="cw-empty">No workflow runs</div>'
-    return `<table class="cw-tbl"><thead><tr>
-      <th>Status</th><th>Service</th><th>Node</th><th>Trigger</th><th>Started</th><th>Duration</th><th>ID</th>
-    </tr></thead><tbody data-bind="tbl-body">
-      ${this._buildTableRows()}
-    </tbody></table>`
-  }
-
-  private bindEvents() {
+  private _bindEvents() {
     this.querySelector('#selDef')?.addEventListener('change', (e) => {
       const d = this._defs.find(w => w.name === (e.target as HTMLSelectElement).value)
-      if (d) { this._def = d; this._run = null; this._rtMap = new Map(); this._selStepId = ''; this._selStepDef = null; this._selStepRt = null; this._loading = true; this.render(); this.loadRuns() }
+      if (d) {
+        this._def = d; this._run = null; this._rtMap = new Map()
+        this._selStepId = ''; this._selStepDef = null; this._selStepRt = null
+        this._pushDefs()
+        this._loadRuns()
+      }
     })
-    this.querySelector('#btnR')?.addEventListener('click', () => { this._loading = true; this.render(); this.loadRuns() })
-    this.querySelectorAll<HTMLElement>('[data-rid]').forEach(r => r.addEventListener('click', () => { const run = this._runs.find(x => x.id === r.dataset.rid); if (run) this.selectRun(run) }))
-    this.querySelectorAll<HTMLElement>('[data-step-id]').forEach(el => el.addEventListener('click', (e) => {
-      e.stopPropagation(); const id = el.dataset.stepId ?? ''
-      this._selStepId = id; this._selStepDef = this.findStep(id); this._selStepRt = this._rtMap.get(id) ?? (this._selStepDef ? this._rtMap.get(this._selStepDef.title) : null) ?? null
-      this._patchStepBar()
-      this._patchRunView()
-    }))
-    this._bindStepBarButtons()
+    this.querySelector('#btnR')?.addEventListener('click', () => {
+      const desc = this.querySelector<HTMLElement>('[data-bind="desc"]')
+      if (desc) desc.textContent = 'Refreshing…'
+      this.loadDefinitions()
+    })
   }
 }
 
