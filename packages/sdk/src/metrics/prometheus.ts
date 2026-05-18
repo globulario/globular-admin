@@ -312,20 +312,42 @@ export async function fetchOverviewHistory(
       : '(1 - sum(node_filesystem_avail_bytes{mountpoint="/"}) / sum(node_filesystem_size_bytes{mountpoint="/"})) * 100',
   }
 
-  const [cpuRes, memRes, rxRes, txRes, diskRes] = await Promise.allSettled([
-    queryPrometheusRange(queries.cpu,       start, now, stepMs, connId),
-    queryPrometheusRange(queries.memory,    start, now, stepMs, connId),
-    queryPrometheusRange(queries.networkRx, start, now, stepMs, connId),
-    queryPrometheusRange(queries.networkTx, start, now, stepMs, connId),
-    queryPrometheusRange(queries.disk,      start, now, stepMs, connId),
-  ])
+  // For remote connections, concurrent streaming QueryRange calls on the same
+  // connId cause later queries to hang until timeout. Serialize them.
+  // For local queries (no connId) the direct HTTP path is used, so parallel is fine.
+  let cpuVal: PromRangeResponse | null
+  let memVal: PromRangeResponse | null
+  let rxVal:  PromRangeResponse | null
+  let txVal:  PromRangeResponse | null
+  let diskVal: PromRangeResponse | null
+
+  if (connId) {
+    cpuVal  = await queryPrometheusRange(queries.cpu,       start, now, stepMs, connId).catch(() => null)
+    memVal  = await queryPrometheusRange(queries.memory,    start, now, stepMs, connId).catch(() => null)
+    rxVal   = await queryPrometheusRange(queries.networkRx, start, now, stepMs, connId).catch(() => null)
+    txVal   = await queryPrometheusRange(queries.networkTx, start, now, stepMs, connId).catch(() => null)
+    diskVal = await queryPrometheusRange(queries.disk,      start, now, stepMs, connId).catch(() => null)
+  } else {
+    const [cpuRes, memRes, rxRes, txRes, diskRes] = await Promise.allSettled([
+      queryPrometheusRange(queries.cpu,       start, now, stepMs),
+      queryPrometheusRange(queries.memory,    start, now, stepMs),
+      queryPrometheusRange(queries.networkRx, start, now, stepMs),
+      queryPrometheusRange(queries.networkTx, start, now, stepMs),
+      queryPrometheusRange(queries.disk,      start, now, stepMs),
+    ])
+    cpuVal  = cpuRes.status  === 'fulfilled' ? cpuRes.value  : null
+    memVal  = memRes.status  === 'fulfilled' ? memRes.value  : null
+    rxVal   = rxRes.status   === 'fulfilled' ? rxRes.value   : null
+    txVal   = txRes.status   === 'fulfilled' ? txRes.value   : null
+    diskVal = diskRes.status === 'fulfilled' ? diskRes.value : null
+  }
 
   return {
-    cpu:       cpuRes.status  === 'fulfilled' ? rangeToSeries(cpuRes.value)  : null,
-    memory:    memRes.status  === 'fulfilled' ? rangeToSeries(memRes.value)  : null,
-    networkRx: rxRes.status   === 'fulfilled' ? rangeToSeries(rxRes.value)   : null,
-    networkTx: txRes.status   === 'fulfilled' ? rangeToSeries(txRes.value)   : null,
-    disk:      diskRes.status === 'fulfilled' ? rangeToSeries(diskRes.value) : null,
+    cpu:       rangeToSeries(cpuVal),
+    memory:    rangeToSeries(memVal),
+    networkRx: rangeToSeries(rxVal),
+    networkTx: rangeToSeries(txVal),
+    disk:      rangeToSeries(diskVal),
   }
 }
 
