@@ -19,6 +19,42 @@ const PROMETHEUS_PORT = 9090
 let _connReady: Promise<boolean> | null = null
 let _connOk = false
 
+// Per-node remote connections: ip → connection-ready promise
+const _nodeConnPromises = new Map<string, Promise<string>>()
+
+/** Return the stable connection ID for a node IP. */
+function nodeConnId(nodeIp: string): string {
+  return `prom_${nodeIp.replace(/\./g, '_')}`
+}
+
+/**
+ * Ensure a monitoring connection to a remote node's Prometheus exists.
+ * Returns the connectionId to use in subsequent queries.
+ */
+export async function ensureNodeConnection(nodeIp: string): Promise<string> {
+  const connId = nodeConnId(nodeIp)
+  if (!_nodeConnPromises.has(nodeIp)) {
+    _nodeConnPromises.set(nodeIp, (async () => {
+      try {
+        const rq = new monPb.CreateConnectionRqst()
+        const conn = new monPb.Connection()
+        conn.setId(connId)
+        conn.setHost(nodeIp)
+        conn.setPort(PROMETHEUS_PORT)
+        conn.setStore(monPb.StoreType.PROMETHEUS)
+        rq.setConnection(conn)
+        await unary<monPb.CreateConnectionRqst, monPb.CreateConnectionRsp>(
+          client, 'createConnection', rq, undefined, metadata(),
+        )
+      } catch {
+        // Connection may already exist — fine, proceed
+      }
+      return connId
+    })())
+  }
+  return _nodeConnPromises.get(nodeIp)!
+}
+
 function client(): monGrpc.MonitoringServiceClient {
   return new monGrpc.MonitoringServiceClient(grpcWebHostUrl(), null, { withCredentials: false })
 }
@@ -134,25 +170,27 @@ export async function queryPrometheusRange(
   startSec: number,
   endSec: number,
   stepMs: number,
+  connId?: string,  // If provided, use this remote connection (gRPC only; skips HTTP path)
 ): Promise<PromRangeResponse | null> {
-  // Try direct HTTP first — same approach as queryPrometheus instant queries.
-  // More reliable than gRPC streaming which suffers from connection contention.
-  // Prometheus HTTP API expects step in seconds; stepMs is in milliseconds.
-  try {
-    const stepSec = Math.max(1, Math.round(stepMs / 1000))
-    const url = `/prometheus/api/v1/query_range?query=${encodeURIComponent(query)}&start=${startSec}&end=${endSec}&step=${stepSec}`
-    const resp = await fetch(url)
-    if (resp.ok) {
-      const json = await resp.json()
-      if (json.status === 'success' && json.data) return json.data
-    }
-  } catch { /* fall through to gRPC */ }
+  // For local queries: try direct HTTP first — more reliable than gRPC streaming.
+  // For remote connections: must go via gRPC (HTTP proxy only reaches local Prometheus).
+  if (!connId) {
+    try {
+      const stepSec = Math.max(1, Math.round(stepMs / 1000))
+      const url = `/prometheus/api/v1/query_range?query=${encodeURIComponent(query)}&start=${startSec}&end=${endSec}&step=${stepSec}`
+      const resp = await fetch(url)
+      if (resp.ok) {
+        const json = await resp.json()
+        if (json.status === 'success' && json.data) return json.data
+      }
+    } catch { /* fall through to gRPC */ }
+  }
 
-  // Fallback: gRPC monitoring service (streaming)
+  // gRPC monitoring service (streaming) — used as fallback for local, primary for remote
   try {
-    await ensureConnection()
+    if (!connId) await ensureConnection()
     const rq = new monPb.QueryRangeRequest()
-    rq.setConnectionid(DEFAULT_CONN_ID)
+    rq.setConnectionid(connId ?? DEFAULT_CONN_ID)
     rq.setQuery(query)
     rq.setStarttime(startSec)
     rq.setEndtime(endSec)
@@ -208,36 +246,48 @@ export interface OverviewHistory {
 /**
  * Fetch historical time-series for the overview charts via Prometheus range queries.
  * rangeSec: how far back to look (e.g. 300 = 5m, 900 = 15m, 3600 = 1h).
- * instance: optional hostname to filter to a single node (regex-matched with .*).
+ * instance: optional IP to filter to a single node on the local Prometheus.
+ * remoteNodeIp: optional IP of a remote node — creates/reuses a monitoring
+ *   connection to that node's Prometheus and queries it without instance filter.
+ *   Takes precedence over instance when provided.
  * Returns null for each metric that isn't available.
  */
-export async function fetchOverviewHistory(rangeSec: number, instance?: string): Promise<OverviewHistory> {
+export async function fetchOverviewHistory(
+  rangeSec: number,
+  instance?: string,
+  remoteNodeIp?: string,
+): Promise<OverviewHistory> {
   const now = Math.floor(Date.now() / 1000)
   const start = now - rangeSec
-  // Choose step: aim for ~60-120 data points
+  // Choose step: aim for ~100 data points
   const stepMs = Math.max(Math.floor((rangeSec / 100) * 1000), 5000)
 
-  const inst = instance ? `instance=~"${instance}.*"` : ''
+  // For remote nodes: connect to their own Prometheus — no instance filter needed
+  // since that Prometheus only has data for its own node.
+  let connId: string | undefined
+  if (remoteNodeIp) {
+    connId = await ensureNodeConnection(remoteNodeIp)
+  }
+
+  const inst = (!remoteNodeIp && instance) ? `instance=~"${instance}.*"` : ''
   const queries = {
     cpu: `100 - (avg(rate(node_cpu_seconds_total{mode="idle"${inst ? ', ' + inst : ''}}[1m])) * 100)`,
     memory: inst
       ? `(1 - node_memory_MemAvailable_bytes{${inst}} / node_memory_MemTotal_bytes{${inst}}) * 100`
-      // Cluster-wide: total memory used / total memory (weighted) so a big node doesn't distort the avg.
       : '(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100',
     networkRx: `sum(rate(node_network_receive_bytes_total{device!="lo"${inst ? ', ' + inst : ''}}[1m]))`,
     networkTx: `sum(rate(node_network_transmit_bytes_total{device!="lo"${inst ? ', ' + inst : ''}}[1m]))`,
     disk: inst
       ? `(1 - node_filesystem_avail_bytes{mountpoint="/", ${inst}} / node_filesystem_size_bytes{mountpoint="/", ${inst}}) * 100`
-      // Cluster-wide: total disk used / total disk capacity (weighted) so a big disk doesn't distort the avg.
       : '(1 - sum(node_filesystem_avail_bytes{mountpoint="/"}) / sum(node_filesystem_size_bytes{mountpoint="/"})) * 100',
   }
 
   const [cpuRes, memRes, rxRes, txRes, diskRes] = await Promise.allSettled([
-    queryPrometheusRange(queries.cpu, start, now, stepMs),
-    queryPrometheusRange(queries.memory, start, now, stepMs),
-    queryPrometheusRange(queries.networkRx, start, now, stepMs),
-    queryPrometheusRange(queries.networkTx, start, now, stepMs),
-    queryPrometheusRange(queries.disk, start, now, stepMs),
+    queryPrometheusRange(queries.cpu,       start, now, stepMs, connId),
+    queryPrometheusRange(queries.memory,    start, now, stepMs, connId),
+    queryPrometheusRange(queries.networkRx, start, now, stepMs, connId),
+    queryPrometheusRange(queries.networkTx, start, now, stepMs, connId),
+    queryPrometheusRange(queries.disk,      start, now, stepMs, connId),
   ])
 
   return {

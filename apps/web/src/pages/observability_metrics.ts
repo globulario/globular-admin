@@ -31,6 +31,7 @@ import {
   fetchServiceProcessMetrics,
   getPrometheusScrapeHealth,
   fetchOverviewHistory,
+  ensureNodeConnection,
   fetchGatewayHistory,
   fetchEnvoyHistory,
   type ServiceProcessMetrics,
@@ -701,18 +702,26 @@ class PageObservabilityMetrics extends HTMLElement {
     if (this._historyLoading) return
     this._historyLoading = true
     try {
-      // Prometheus instance labels are "IP:9100", not hostnames.
-      // Only apply a node filter when the selected node is the local node;
-      // remote nodes have no data in this Prometheus instance.
+      // Resolve which Prometheus to query for the selected node.
+      // - Local node (or no selection): use local Prometheus with IP instance filter.
+      // - Remote node: connect to that node's own Prometheus via monitoring gRPC service.
       const localHostname = this._ring.latest()?.stats.hostname ?? ''
       const isRemoteNode = !!this._selectedNode && !!localHostname && this._selectedNode !== localHostname
       let nodeFilter: string | undefined
-      if (this._selectedNode && !isRemoteNode) {
+      let remoteNodeIp: string | undefined
+      if (this._selectedNode) {
         const n = this._nodes.find(n => n.hostname === this._selectedNode)
-        nodeFilter = n?.ips?.[0] ?? this._selectedNode
+        const ip = n?.ips?.[0]
+        if (isRemoteNode && ip) {
+          remoteNodeIp = ip
+          // Pre-establish the connection in the background so the first query is fast.
+          ensureNodeConnection(ip).catch(() => {})
+        } else if (!isRemoteNode && ip) {
+          nodeFilter = ip
+        }
       }
       const [oh, gh, eh] = await Promise.allSettled([
-        fetchOverviewHistory(this._range, nodeFilter),
+        fetchOverviewHistory(this._range, nodeFilter, remoteNodeIp),
         fetchGatewayHistory(this._range),
         fetchEnvoyHistory(this._range),
       ])
@@ -1160,52 +1169,8 @@ class PageObservabilityMetrics extends HTMLElement {
     const s = snap?.stats ?? null
     const hm = computeClusterHealth(this._health, s)
     const nodeSelected = !!this._selectedNode
-    const localHostname = s?.hostname ?? ''
-    const isRemoteNode = nodeSelected && !!localHostname && this._selectedNode !== localHostname
     const cpuT = !nodeSelected && s ? computeTrend(this._ring, (x: GatewayStats) => x.cpu.usagePct) : null
     const memT = !nodeSelected && s ? computeTrend(this._ring, (x: GatewayStats) => x.memory.usedPct) : null
-
-    const chartArea = isRemoteNode
-      ? `<div class="om-remote-node-notice">
-          <strong>&#8505; Per-node historical charts not available here</strong><br>
-          Each Globular node runs its own Prometheus that only scrapes local targets.
-          This dashboard connects to <strong>${esc(localHostname)}</strong>&rsquo;s Prometheus,
-          which has no historical data for <strong>${esc(this._selectedNode)}</strong>.<br>
-          <span style="opacity:.7;font-size:.85em">The node table below still shows live status for all nodes. Open the admin panel on ${esc(this._selectedNode)} to see its charts.</span>
-        </div>`
-      : `<div class="om-chart-grid">
-          <div class="om-chart-panel">
-            <div class="om-chart-header">
-              <span class="om-chart-title" style="color:${COLOR.cpu};">CPU</span>
-              <span class="om-chart-value" data-live="cpu-val">${nodeSelected ? '--' : (s ? fmtPct(s.cpu.usagePct) + (cpuT ? trendHtml(cpuT) : '') : '--')}</span>
-            </div>
-            <div class="om-chart-wrap" data-chart="cpu"></div>
-          </div>
-          <div class="om-chart-panel">
-            <div class="om-chart-header">
-              <span class="om-chart-title" style="color:${COLOR.memory};">Memory</span>
-              <span class="om-chart-value" data-live="mem-val">${nodeSelected ? '--' : (s ? fmtPct(s.memory.usedPct) + (memT ? trendHtml(memT) : '') : '--')}</span>
-            </div>
-            <div class="om-chart-wrap" data-chart="mem"></div>
-          </div>
-          <div class="om-chart-panel">
-            <div class="om-chart-header">
-              <span class="om-chart-title" style="color:${COLOR.network};">Network</span>
-              <span class="om-chart-value" style="font:var(--md-typescale-label-large);color:${COLOR.network};">RX / TX bytes/s</span>
-            </div>
-            <div class="om-chart-wrap" data-chart="net"></div>
-          </div>
-          <div class="om-chart-panel">
-            <div class="om-chart-header">
-              <span class="om-chart-title" style="color:${COLOR.disk};">Disk</span>
-              <span class="om-chart-value" data-live="disk-val" style="color:${nodeSelected ? COLOR.disk : (s ? diskUsedColor(100 - s.disk.freePct) : COLOR.disk)};">${nodeSelected ? '--' : (s ? fmtPct(100 - s.disk.freePct) : '--')}</span>
-            </div>
-            ${!nodeSelected && s ? `<div class="om-stat-sub" style="margin-bottom:4px;">
-              ${fmtBytes(s.disk.usedBytes)} used of ${fmtBytes(s.disk.totalBytes)} &middot; ${fmtBytes(s.disk.totalBytes - s.disk.usedBytes)} free
-            </div>` : ''}
-            <div class="om-chart-wrap" data-chart="disk"></div>
-          </div>
-        </div>`
 
     return `
       <div class="om-stat-grid">
@@ -1232,7 +1197,39 @@ class PageObservabilityMetrics extends HTMLElement {
 
       ${this._renderRangePicker()}
 
-      ${chartArea}
+      <div class="om-chart-grid">
+        <div class="om-chart-panel">
+          <div class="om-chart-header">
+            <span class="om-chart-title" style="color:${COLOR.cpu};">CPU</span>
+            <span class="om-chart-value" data-live="cpu-val">${nodeSelected ? '--' : (s ? fmtPct(s.cpu.usagePct) + (cpuT ? trendHtml(cpuT) : '') : '--')}</span>
+          </div>
+          <div class="om-chart-wrap" data-chart="cpu"></div>
+        </div>
+        <div class="om-chart-panel">
+          <div class="om-chart-header">
+            <span class="om-chart-title" style="color:${COLOR.memory};">Memory</span>
+            <span class="om-chart-value" data-live="mem-val">${nodeSelected ? '--' : (s ? fmtPct(s.memory.usedPct) + (memT ? trendHtml(memT) : '') : '--')}</span>
+          </div>
+          <div class="om-chart-wrap" data-chart="mem"></div>
+        </div>
+        <div class="om-chart-panel">
+          <div class="om-chart-header">
+            <span class="om-chart-title" style="color:${COLOR.network};">Network</span>
+            <span class="om-chart-value" style="font:var(--md-typescale-label-large);color:${COLOR.network};">RX / TX bytes/s</span>
+          </div>
+          <div class="om-chart-wrap" data-chart="net"></div>
+        </div>
+        <div class="om-chart-panel">
+          <div class="om-chart-header">
+            <span class="om-chart-title" style="color:${COLOR.disk};">Disk</span>
+            <span class="om-chart-value" data-live="disk-val" style="color:${nodeSelected ? COLOR.disk : (s ? diskUsedColor(100 - s.disk.freePct) : COLOR.disk)};">${nodeSelected ? '--' : (s ? fmtPct(100 - s.disk.freePct) : '--')}</span>
+          </div>
+          ${!nodeSelected && s ? `<div class="om-stat-sub" style="margin-bottom:4px;">
+            ${fmtBytes(s.disk.usedBytes)} used of ${fmtBytes(s.disk.totalBytes)} &middot; ${fmtBytes(s.disk.totalBytes - s.disk.usedBytes)} free
+          </div>` : ''}
+          <div class="om-chart-wrap" data-chart="disk"></div>
+        </div>
+      </div>
 
       ${this._renderNodeTable()}
     `
