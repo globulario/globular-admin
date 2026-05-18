@@ -223,11 +223,42 @@ export interface RDSRoute {
 
 import { getBaseUrl } from "../core/endpoints"
 
+const _statusRank: Record<string, number> = { critical: 0, degraded: 1, unknown: 2, healthy: 3 }
+
 export async function fetchAdminServices(base?: string): Promise<ServicesResponse> {
   if (base == null) base = getBaseUrl() || ''
   const resp = await fetch(`${base}/admin/metrics/services`)
   if (!resp.ok) throw new Error(`admin/metrics/services: ${resp.status}`)
-  return resp.json()
+  const data: ServicesResponse = await resp.json()
+
+  // The gateway currently fans-out across all cluster nodes and returns each
+  // service once per node — deduplicate within each group by service name,
+  // keeping the entry with the worst derived_status.
+  for (const g of data.groups) {
+    const best = new Map<string, ServiceInstance>()
+    for (const s of g.services) {
+      const prev = best.get(s.name)
+      if (!prev || (_statusRank[s.derived_status] ?? 2) < (_statusRank[prev.derived_status] ?? 2)) {
+        best.set(s.name, s)
+      }
+    }
+    g.services = [...best.values()]
+  }
+
+  // Recompute summary to match the deduplicated list.
+  let total = 0, healthy = 0, degraded = 0, critical = 0, unknown = 0
+  for (const g of data.groups) {
+    for (const s of g.services) {
+      total++
+      if (s.derived_status === 'healthy') healthy++
+      else if (s.derived_status === 'degraded') degraded++
+      else if (s.derived_status === 'critical') critical++
+      else unknown++
+    }
+  }
+  data.summary = { total, healthy, degraded, critical, unknown }
+
+  return data
 }
 
 export async function fetchAdminStorage(base?: string): Promise<StorageResponse> {
