@@ -93,25 +93,31 @@ class PageInfrastructureOverview extends HTMLElement {
   }
 
   private async _load() {
-    const [svcR, stR, envR, clR, prR, v1R, rpR] = await Promise.allSettled([
-      fetchAdminServices(),
-      fetchAdminStorage(),
-      fetchAdminEnvoy(),
-      getClusterHealth(),
-      getPrometheusScrapeHealth(),
-      getClusterHealthV1Full(),
-      getClusterReport(),
-    ])
+    // Start all RPCs in parallel. Each card-critical call triggers an
+    // immediate partial render as soon as it resolves — no waiting for
+    // the slow calls (clusterV1, report, prometheus query).
+    const svcP = fetchAdminServices()
+    const stP  = fetchAdminStorage()
+    const envP = fetchAdminEnvoy()
+    const clP  = getClusterHealth()
+    const prP  = getPrometheusScrapeHealth()
+    const v1P  = getClusterHealthV1Full()
+    const rpP  = getClusterReport()
 
-    this._services   = svcR.status === 'fulfilled' ? svcR.value : (_cache.data?.services ?? null)
-    this._storage    = stR.status  === 'fulfilled' ? stR.value  : (_cache.data?.storage ?? null)
-    this._envoy      = envR.status === 'fulfilled' ? envR.value : (_cache.data?.envoy ?? null)
-    this._cluster    = clR.status  === 'fulfilled' ? clR.value  : (_cache.data?.cluster ?? null)
-    this._prometheus = prR.status  === 'fulfilled' ? prR.value  : (_cache.data?.prometheus ?? null)
-    this._clusterV1  = v1R.status  === 'fulfilled' ? v1R.value  : (_cache.data?.clusterV1 ?? null)
-    this._report     = rpR.status  === 'fulfilled' ? rpR.value  : (_cache.data?.report ?? null)
+    // Render a card as soon as its data lands.
+    clP .then(v => { this._cluster    = v; this._pushData() }).catch(() => {})
+    envP.then(v => { this._envoy      = v; this._pushData() }).catch(() => {})
+    stP .then(v => { this._storage    = v; this._pushData() }).catch(() => {})
+    prP .then(v => { this._prometheus = v; this._pushData() }).catch(() => {})
 
-    // Quick MinIO request rate for storage card
+    // Issues-only calls — no intermediate render needed.
+    svcP.then(v => { this._services  = v }).catch(() => {})
+    v1P .then(v => { this._clusterV1 = v }).catch(() => {})
+    rpP .then(v => { this._report    = v }).catch(() => {})
+
+    await Promise.allSettled([svcP, stP, envP, clP, prP, v1P, rpP])
+
+    // MinIO request rate — enrich storage card after the rest is done.
     try {
       const mr = await queryPrometheus('sum(rate(minio_s3_requests_total[5m]))')
       this._minioReqRate = mr?.result?.[0] ? parseFloat(mr.result[0].value[1]) || 0 : null
@@ -123,9 +129,7 @@ class PageInfrastructureOverview extends HTMLElement {
       report: this._report, minioReqRate: this._minioReqRate,
     }
     _cache.fetchedAt = Date.now()
-
     this._lastUpdated = new Date()
-
     this._pushData()
   }
 
