@@ -310,39 +310,69 @@ export interface NodeResourceMetrics {
 /**
  * Fetch current CPU and memory usage per node from Prometheus.
  * Returns a map keyed by IP address (e.g. "10.0.0.8").
+ *
+ * When nodeIps is provided each node's own Prometheus is queried via
+ * ensureNodeConnection — necessary because each node's Prometheus only
+ * scrapes its own node_exporter (not federated).
+ * When nodeIps is omitted the local Prometheus is queried (works for
+ * single-node or federated setups).
  */
-export async function fetchPerNodeMetrics(): Promise<Map<string, NodeResourceMetrics>> {
+export async function fetchPerNodeMetrics(nodeIps?: string[]): Promise<Map<string, NodeResourceMetrics>> {
   const map = new Map<string, NodeResourceMetrics>()
 
+  if (nodeIps?.length) {
+    // Each node runs its own Prometheus — query them in parallel.
+    const now = Math.floor(Date.now() / 1000)
+    const start = now - 120  // 2-minute window to get a recent sample
+    const stepMs = 15000
+
+    const lastVal = (res: PromiseSettledResult<PromRangeResponse | null>): number => {
+      if (res.status !== 'fulfilled' || !res.value?.result?.[0]?.values?.length) return 0
+      const vals = res.value.result[0].values
+      return parseFloat(vals[vals.length - 1][1]) || 0
+    }
+
+    await Promise.allSettled(nodeIps.map(async (ip) => {
+      try {
+        const connId = await ensureNodeConnection(ip)
+        const [cpuRes, memRes] = await Promise.allSettled([
+          queryPrometheusRange(
+            '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)',
+            start, now, stepMs, connId,
+          ),
+          queryPrometheusRange(
+            '(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100',
+            start, now, stepMs, connId,
+          ),
+        ])
+        map.set(ip, { cpuPct: lastVal(cpuRes), memPct: lastVal(memRes) })
+      } catch { /* node unreachable */ }
+    }))
+
+    return map
+  }
+
+  // Fallback: query local Prometheus (single-node or federated setup)
   const [cpuRes, memRes] = await Promise.allSettled([
     queryPrometheus('100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)'),
     queryPrometheus('(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100'),
   ])
 
-  // Parse CPU results — instance label is "IP:9100"
   if (cpuRes.status === 'fulfilled' && cpuRes.value?.result) {
     for (const r of cpuRes.value.result) {
-      const inst = r.metric?.instance ?? ''
-      const ip = inst.split(':')[0]
+      const ip = (r.metric?.instance ?? '').split(':')[0]
       if (!ip) continue
-      const val = parseFloat(r.value?.[1] ?? '0')
-      map.set(ip, { cpuPct: val, memPct: 0 })
+      map.set(ip, { cpuPct: parseFloat(r.value?.[1] ?? '0'), memPct: 0 })
     }
   }
-
-  // Parse memory results
   if (memRes.status === 'fulfilled' && memRes.value?.result) {
     for (const r of memRes.value.result) {
-      const inst = r.metric?.instance ?? ''
-      const ip = inst.split(':')[0]
+      const ip = (r.metric?.instance ?? '').split(':')[0]
       if (!ip) continue
       const val = parseFloat(r.value?.[1] ?? '0')
       const existing = map.get(ip)
-      if (existing) {
-        existing.memPct = val
-      } else {
-        map.set(ip, { cpuPct: 0, memPct: val })
-      }
+      if (existing) existing.memPct = val
+      else map.set(ip, { cpuPct: 0, memPct: val })
     }
   }
 

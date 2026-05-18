@@ -642,7 +642,6 @@ class PageObservabilityMetrics extends HTMLElement {
       fetchAdminServices(),
       this._fetchStorageForNode(),
       fetchAdminEnvoy(),
-      fetchPerNodeMetrics(),
     ])
 
     if (results[0].status === 'fulfilled') this._health = results[0].value
@@ -655,7 +654,12 @@ class PageObservabilityMetrics extends HTMLElement {
     if (results[7].status === 'fulfilled') this._adminServices = results[7].value
     if (results[8].status === 'fulfilled') this._adminStorage = results[8].value
     if (results[9].status === 'fulfilled') this._envoy = results[9].value
-    if (results[10].status === 'fulfilled') this._nodeMetrics = results[10].value
+
+    // Fetch per-node CPU/memory after nodes are resolved so we have IPs.
+    // Each node runs its own Prometheus (not federated) so we must query
+    // each one individually via ensureNodeConnection.
+    const nodeIps = this._nodes.flatMap(n => n.ips ?? []).filter(ip => ip)
+    fetchPerNodeMetrics(nodeIps).then(m => { this._nodeMetrics = m; this._render() }).catch(() => {})
 
     // Update module cache with primary data
     _cache.data = {
