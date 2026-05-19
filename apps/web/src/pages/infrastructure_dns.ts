@@ -60,6 +60,7 @@ class PageInfrastructureDns extends HTMLElement {
   private _editingDomain: DomainSpecWithStatus | null = null
   private _providerHelpOpen = false
   private _domainHelpOpen = false
+  private _acmeNotice: string | null = null   // transient notice after ACME-enabled domain save
 
   private _built = false
 
@@ -631,6 +632,7 @@ class PageInfrastructureDns extends HTMLElement {
           " id="extDomainDocs"></globular-markdown>
         </iron-collapse>
         <div id="extDomainForm"></div>
+        ${this._acmeNotice ? `<div class="infra-notice" style="margin:8px 0;padding:10px 14px;background:var(--primary-color,#1976d2);color:#fff;border-radius:4px;font-size:.85rem">${this._acmeNotice}</div>` : ''}
         <div id="extDomainList">${this.renderDomainList()}</div>
       </div>
     `
@@ -975,9 +977,16 @@ class PageInfrastructureDns extends HTMLElement {
           }
           spec.provider_ref = derivedLocalName
         }
+        const isNew = !this._editingDomain
         await saveDomainSpec(spec)
         this._showDomainForm = false
         this._editingDomain = null
+        // Show a transient notice if ACME is enabled and this is a new domain
+        // (cert issuance is triggered immediately via the reconciler etcd watcher)
+        if (isNew && spec.acme?.enabled) {
+          this._acmeNotice = `Certificate issuance started for ${spec.fqdn} — this may take a few minutes.`
+          setTimeout(() => { this._acmeNotice = null; this._pushData() }, 30000)
+        }
         this._load()
       } catch (e: any) {
         this._extError = e?.message ?? 'Failed to save domain'
