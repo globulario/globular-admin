@@ -234,7 +234,14 @@ class PageAdminAiConsole extends HTMLElement {
   private async loadNodes() {
     try {
       this._nodes = await listClusterNodes()
-    } catch {
+    } catch (e: any) {
+      const sel = this.querySelector<HTMLSelectElement>('#nodeSelect')
+      if (sel) {
+        const opt = document.createElement('option')
+        opt.textContent = `⚠ Failed to load nodes: ${e?.message ?? 'unknown error'}`
+        opt.disabled = true
+        sel.appendChild(opt)
+      }
       return
     }
     const sel = this.querySelector<HTMLSelectElement>('#nodeSelect')

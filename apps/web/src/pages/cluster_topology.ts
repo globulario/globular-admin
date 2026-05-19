@@ -104,6 +104,8 @@ class PageClusterTopology extends HTMLElement {
   private _driftByNode = new Map<string, DriftItem[]>()
   private _loading = true
   private _nodesError = ''
+  private _healthError = false
+  private _driftError = false
   private _expandedNode: string | null = null
   private _built = false
 
@@ -308,8 +310,11 @@ class PageClusterTopology extends HTMLElement {
     try {
       const h = await healthPromise
       this._healthNodes = new Map(h.nodes.map(n => [n.nodeId, n]))
+      this._healthError = false
       this._pushData()
-    } catch {}
+    } catch {
+      this._healthError = true
+    }
 
     // Drift is slowest — add drift counts last.
     try {
@@ -321,7 +326,10 @@ class PageClusterTopology extends HTMLElement {
         byNode.set(item.nodeId, list)
       }
       this._driftByNode = byNode
-    } catch {}
+      this._driftError = false
+    } catch {
+      this._driftError = true
+    }
 
     _cache.data = { nodes: this._nodes, healthNodes: this._healthNodes, driftByNode: this._driftByNode }
     _cache.fetchedAt = Date.now()
@@ -430,9 +438,16 @@ class PageClusterTopology extends HTMLElement {
         this._set('nodes', '')
         return
       }
+    } else {
+      const partial: string[] = []
+      if (this._healthError) partial.push('health badges')
+      if (this._driftError) partial.push('drift counts')
+      if (partial.length > 0) {
+        this._set('error', `<div style="font-size:.75rem;color:var(--secondary-text-color);margin-bottom:8px">⚠ Partial data — ${partial.join(' and ')} temporarily unavailable.</div>`)
+      } else {
+        this._set('error', '')
+      }
     }
-
-    this._set('error', '')
 
     const totalDrift = [...this._driftByNode.values()].reduce((s, items) => s + items.length, 0)
     const healthyCount = this._nodes.filter(n => {

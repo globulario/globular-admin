@@ -49,6 +49,7 @@ class PageClusterJoin extends HTMLElement {
   private _actionMode: 'approve' | 'reject' = 'approve'
   private _actionError = ''
   private _actionPending = false
+  private _approvedNodeId = ''
 
   private _token = ''
   private _tokenExpiry = ''
@@ -349,9 +350,10 @@ the cluster default. Common values:
     this._pushData()
 
     try {
-      await approveJoin(requestId, profiles)
+      const nodeId = await approveJoin(requestId, profiles)
       this._expandedId = ''
       this._actionPending = false
+      this._approvedNodeId = nodeId
       await this._load()
     } catch (e: any) {
       this._actionError = e?.message || 'Approval failed'
@@ -409,6 +411,10 @@ the cluster default. Common values:
 
     el.innerHTML = `
       ${this._loadError ? `<div class="md-banner-warn">⚠ ${this._loadError}</div>` : ''}
+      ${this._approvedNodeId ? `<div style="background:color-mix(in srgb,#22c55e 12%,transparent);border:1px solid color-mix(in srgb,#22c55e 30%,transparent);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:#22c55e">
+        ✓ Join workflow started for node <code style="font-family:monospace">${this._approvedNodeId}</code>.
+        Monitor progress in <a href="#/cluster/workflows" style="color:inherit;font-weight:600">Cluster → Workflows</a>.
+      </div>` : ''}
 
       <!-- Pending requests -->
       <div class="md-panel">
