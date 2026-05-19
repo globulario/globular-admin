@@ -151,7 +151,7 @@ class PageLogin extends HTMLElement {
                 const token = await login(username, password)
                 setToken(token)
 
-                try { localStorage.setItem('current_user', username) } catch { }
+                try { localStorage.setItem('current_user', username) } catch { /* non-critical hint — ignore */ }
                 window.dispatchEvent(new CustomEvent('auth:changed'))
 
                 displaySuccess(`Welcome, ${username}!`)

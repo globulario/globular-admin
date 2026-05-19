@@ -31,7 +31,7 @@ function newRq(names: readonly string[]): any {
 function tryCall<T = any>(obj: any, method: string): T | undefined {
   try {
     if (obj && typeof obj[method] === "function") return obj[method]();
-  } catch {}
+  } catch { /* proto reflection — ignore missing method */ }
   return undefined;
 }
 
@@ -139,8 +139,8 @@ export async function searchDocumentsStream(
 
       let doc: any | undefined;
       let snippet: SearchDocumentSnippetVM | undefined;
-      try { doc = JSON.parse(dataJson); } catch {}
-      try { snippet = JSON.parse(snippetJson); } catch {}
+      try { doc = JSON.parse(dataJson); } catch { /* malformed JSON — leave undefined */ }
+      try { snippet = JSON.parse(snippetJson); } catch { /* malformed JSON — leave undefined */ }
 
       return { rank, dataJson, snippetJson, doc, snippet };
     });

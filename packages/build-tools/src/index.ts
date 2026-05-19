@@ -33,7 +33,7 @@ export function fixProtoExternals(protoDir: string): Plugin {
             const candidate = path.join(protoDir, sub, basename)
             if (fs.existsSync(candidate)) return candidate
           }
-        } catch {}
+        } catch { /* proto dir may not exist yet — return null */ }
       }
       return null
     },

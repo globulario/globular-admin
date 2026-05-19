@@ -6,7 +6,7 @@ export function getStoredTheme(): Theme {
 }
 
 export function setStoredTheme(t: Theme) {
-  try { localStorage.setItem(KEY, t); } catch {}
+  try { localStorage.setItem(KEY, t); } catch { /* storage unavailable */ }
 }
 
 export function resolveTheme(t: Theme): "light" | "dark" {

@@ -286,7 +286,7 @@ export class WorkflowDetailPanel extends HTMLElement {
       const d = await getWorkflowRun(this._clusterId, runId)
       this._run = d.run; this._steps = d.steps; this._artifacts = d.artifacts
       if (this._run.status === 9 || this._run.status === 11) {
-        try { this._diagnosis = await diagnoseWorkflowRun(this._clusterId, runId) } catch {}
+        try { this._diagnosis = await diagnoseWorkflowRun(this._clusterId, runId) } catch { /* diagnosis is optional enrichment */ }
       }
       // Auto-poll active runs every 3s for live updates.
       this.stopPoll()
@@ -306,7 +306,7 @@ export class WorkflowDetailPanel extends HTMLElement {
       if (this._run && !this.isActive(this._run.status)) {
         this.stopPoll()
         if (this._run.status === 9 || this._run.status === 11) {
-          try { this._diagnosis = await diagnoseWorkflowRun(this._clusterId, runId) } catch {}
+          try { this._diagnosis = await diagnoseWorkflowRun(this._clusterId, runId) } catch { /* diagnosis is optional enrichment */ }
         }
       }
       // Targeted patch: update only the status badge, SVG flowchart, and sidebar.

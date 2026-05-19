@@ -23,7 +23,7 @@ function readBase(): string | null {
     if (typeof localStorage !== "undefined") {
       return localStorage.getItem(BASE_KEY);
     }
-  } catch {}
+  } catch { /* storage unavailable — fall back to memory */ }
   return memoryBase;
 }
 
@@ -34,7 +34,7 @@ function writeBase(url: string | null) {
       else localStorage.setItem(BASE_KEY, url);
       return;
     }
-  } catch {}
+  } catch { /* storage unavailable — fall back to memory */ }
   memoryBase = url;
 }
 
@@ -43,7 +43,7 @@ function readConfigBase(): string | null {
     if (typeof localStorage !== "undefined") {
       return localStorage.getItem(CONFIG_BASE_KEY);
     }
-  } catch {}
+  } catch { /* storage unavailable — fall back to memory */ }
   return memoryConfigBase;
 }
 
@@ -54,7 +54,7 @@ function writeConfigBase(url: string | null) {
       else localStorage.setItem(CONFIG_BASE_KEY, url);
       return;
     }
-  } catch {}
+  } catch { /* storage unavailable — fall back to memory */ }
   memoryConfigBase = url;
 }
 
@@ -64,7 +64,7 @@ function readRouting(): RoutingMode | null {
       const v = localStorage.getItem(ROUTING_KEY);
       if (v === "path" || v === "subdomain") return v;
     }
-  } catch {}
+  } catch { /* storage unavailable — fall back to memory */ }
   return memoryRouting;
 }
 
@@ -74,7 +74,7 @@ function writeRouting(mode: RoutingMode) {
       localStorage.setItem(ROUTING_KEY, mode);
       return;
     }
-  } catch {}
+  } catch { /* storage unavailable — fall back to memory */ }
   memoryRouting = mode;
 }
 

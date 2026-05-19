@@ -71,8 +71,8 @@ export function isTokenTimeValid(skewSec = 60): boolean {
 
 export function logout() {
   authLogout()
-  try { localStorage.removeItem('access_token') } catch {}
-  try { localStorage.removeItem('current_user') } catch {}
-  try { window.dispatchEvent(new CustomEvent('auth:changed')) } catch {}
+  try { localStorage.removeItem('access_token') } catch { /* no-op */ }
+  try { localStorage.removeItem('current_user') } catch { /* no-op */ }
+  try { window.dispatchEvent(new CustomEvent('auth:changed')) } catch { /* no-op */ }
   navigateTo('#/login')
 }

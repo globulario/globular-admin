@@ -24,7 +24,7 @@ function g<T>(obj: any, names: string[], fallback?: T): T | undefined {
   for (const n of names) {
     const fn = obj?.[n];
     if (typeof fn === "function") {
-      try { return fn.call(obj) as T; } catch {}
+      try { return fn.call(obj) as T; } catch { /* proto reflection — ignore missing method */ }
     }
   }
   return fallback;
@@ -32,7 +32,7 @@ function g<T>(obj: any, names: string[], fallback?: T): T | undefined {
 function s(obj: any, names: string[], v: any) {
   for (const n of names) {
     const fn = obj?.[n];
-    if (typeof fn === "function") { try { fn.call(obj, v); return; } catch {} }
+    if (typeof fn === "function") { try { fn.call(obj, v); return; } catch { /* proto reflection — ignore missing setter */ } }
   }
 }
 

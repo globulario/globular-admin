@@ -116,7 +116,7 @@ export function setToken(t?: string) {
   safeClearTimer();
 
   if (t) {
-    try { sessionStorage.setItem(TOKEN_KEY, t); } catch {}
+    try { sessionStorage.setItem(TOKEN_KEY, t); } catch { /* storage unavailable */ }
     scheduleRefresh(t);
     // Notify listeners (e.g. video player) so they can apply the fresh token
     // without polling. Only fire when the token actually changed.
@@ -126,7 +126,7 @@ export function setToken(t?: string) {
       } catch { /* ignore */ }
     }
   } else {
-    try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ }
   }
 }
 
@@ -241,7 +241,7 @@ export async function forceRefresh(): Promise<string> {
 
 export function restoreSession() {
   let token: string | null = null;
-  try { token = sessionStorage.getItem(TOKEN_KEY); } catch {}
+  try { token = sessionStorage.getItem(TOKEN_KEY); } catch { /* storage unavailable */ }
   if (token) {
     setToken(token);           // ✅ keep local cache in sync
   }
@@ -253,12 +253,12 @@ export function clearToken(): void {
 
 export function logout() {
   clearToken();
-  try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
-  try { localStorage.removeItem('access_token'); } catch {}
-  try { localStorage.removeItem('current_user'); } catch {}
-  try { window.dispatchEvent(new CustomEvent("auth:changed")); } catch {}
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ }
+  try { localStorage.removeItem('access_token'); } catch { /* storage unavailable */ }
+  try { localStorage.removeItem('current_user'); } catch { /* storage unavailable */ }
+  try { window.dispatchEvent(new CustomEvent("auth:changed")); } catch { /* no-op */ }
   // Navigate to login page with a logout flag for the goodbye message.
-  try { window.location.hash = '#/login?logout=1'; } catch {}
+  try { window.location.hash = '#/login?logout=1'; } catch { /* non-browser env */ }
 }
 
 /* --------------------------------------------------------------------

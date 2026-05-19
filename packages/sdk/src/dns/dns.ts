@@ -52,7 +52,7 @@ export async function getDnsDomains(): Promise<string[]> {
 
   // If token is stale/missing at first poll tick, try a just-in-time refresh.
   if (!md.authorization && !md.token) {
-    try { await getFreshToken(0) } catch {}
+    try { await getFreshToken(0) } catch { /* best-effort refresh — proceed with stale/missing token */ }
     md = metadata()
   }
 
@@ -67,7 +67,7 @@ export async function getDnsDomains(): Promise<string[]> {
     if (!authLike) throw e
 
     // One retry after forced token refresh.
-    try { await getFreshToken(0) } catch {}
+    try { await getFreshToken(0) } catch { /* best-effort refresh — proceed with stale/missing token */ }
     const md2 = metadata()
     if (!md2.authorization && !md2.token) throw e
     const rsp2 = await unary<dns.GetDomainsRequest, dns.GetDomainsResponse>(

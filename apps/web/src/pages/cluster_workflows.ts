@@ -783,7 +783,7 @@ class PageClusterWorkflows extends HTMLElement {
         this._listT = window.setInterval(() => this._silentLoad(), 30_000)
       }
       if (changed) this._pushRuns()
-    } catch {}
+    } catch { /* background poll — silently ignored */ }
   }
 
   // ─── Run selection ────────────────────────────────────────────────────────
@@ -801,7 +801,7 @@ class PageClusterWorkflows extends HTMLElement {
       this._run = d.run
       this._rtMap = this._def ? buildRtMap(d.steps, this._def, d.run.status) : new Map()
       if (d.run.status === 9 || d.run.status === 11) {
-        try { this._diag = await diagnoseWorkflowRun('globular.internal', run.id) } catch {}
+        try { this._diag = await diagnoseWorkflowRun('globular.internal', run.id) } catch { /* diagnosis is optional enrichment */ }
       }
       this._stopPoll()
       if (d.run && this._isActive(d.run.status)) {
@@ -809,7 +809,7 @@ class PageClusterWorkflows extends HTMLElement {
         if (this._listT) clearInterval(this._listT)
         this._listT = window.setInterval(() => this._silentLoad(), 3000)
       }
-    } catch { this._rtMap = new Map() }
+    } catch (e: any) { this._rtMap = new Map(); this._setError(e?.message || 'Failed to load run details') }
     this._loadingRun = false
     this._patchRunView()
   }
@@ -823,13 +823,13 @@ class PageClusterWorkflows extends HTMLElement {
       if (d.run && !this._isActive(d.run.status)) {
         this._stopPoll()
         if (d.run.status === 9 || d.run.status === 11) {
-          try { this._diag = await diagnoseWorkflowRun('globular.internal', d.run.id) } catch {}
+          try { this._diag = await diagnoseWorkflowRun('globular.internal', d.run.id) } catch { /* diagnosis is optional enrichment */ }
         }
         if (this._listT) clearInterval(this._listT)
         this._listT = window.setInterval(() => this._silentLoad(), 30_000)
       }
       this._patchRunView()
-    } catch {}
+    } catch { /* background poll — will retry next tick */ }
   }
 
   // ─── Targeted DOM patchers ────────────────────────────────────────────────

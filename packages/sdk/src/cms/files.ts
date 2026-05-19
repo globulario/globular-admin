@@ -155,7 +155,7 @@ export class FileVM {
         (typeof info.getFilesList === "function" && info.getFilesList()) ||
         (Array.isArray(info.files) ? info.files : []);
       if (Array.isArray(list)) files = list.map(FileVM.fromProto);
-    } catch { }
+    } catch { /* proto reflection — list method may not exist on all server versions */ }
 
     // legacy extras that sometimes exist on servers
     const mtimeMs = getNum(info, ["getMtime", "getMTime", "mtime", "modTime"]) || 0;
@@ -386,7 +386,7 @@ function boolUndef(obj: any, getters: string[]): boolean | undefined {
 function tryCall(obj: any, method: string): any {
   try {
     if (obj && typeof obj[method] === 'function') return obj[method]();
-  } catch { }
+  } catch { /* proto reflection — method may not exist on all server versions */ }
   return undefined;
 }
 function callList(obj: any, methods: string[]): any[] | undefined {
@@ -399,7 +399,7 @@ function callList(obj: any, methods: string[]): any[] | undefined {
       } else if (Array.isArray((obj as any)[m])) {
         return (obj as any)[m];
       }
-    } catch { }
+    } catch { /* proto reflection — method may not exist on all server versions */ }
   }
   return undefined;
 }
@@ -1101,8 +1101,8 @@ async function apiDownloadFileHttp(url: string, fileName: string, complete: () =
         link.click();
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
-      } catch { }
-      try { complete?.(); } catch { }
+      } catch { /* blob URL creation may fail (e.g. in test env) */ }
+      try { complete?.(); } catch { /* callback errors ignored */ }
       resolve();
     };
     req.onerror = () => reject('download failed');
@@ -1209,16 +1209,16 @@ export function buildFileUrl(rawPath: string): { url: string, headers: Record<st
   try {
     const t = sessionStorage.getItem('__globular_token__');
     if (t) headers['token'] = t;
-  } catch { }
+  } catch { /* storage unavailable */ }
   return { url, headers };
 }
 
 export function markAsPublic(node: any): void {
-  try { (node as any).__isPublic = true; } catch { }
+  try { (node as any).__isPublic = true; } catch { /* read-only node — ignore */ }
 }
 
 export function markAsShare(node: any): void {
-  try { (node as any).__isShared = true; } catch { }
+  try { (node as any).__isShared = true; } catch { /* read-only node — ignore */ }
 }
 
 /**
@@ -1381,7 +1381,7 @@ export async function getThumbnails(
     const raw = msg?.getData?.() ?? msg?.data;
     const data = raw instanceof Uint8Array ? raw : new Uint8Array(raw ?? []);
     let text: string | undefined;
-    try { text = new TextDecoder().decode(data); } catch { }
+    try { text = new TextDecoder().decode(data); } catch { /* binary data — text decode optional */ }
     onChunk?.({ data, text });
   }, "file.FileService", { md });
 }
