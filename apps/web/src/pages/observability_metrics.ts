@@ -793,10 +793,16 @@ class PageObservabilityMetrics extends HTMLElement {
       }
       if (h?.cpu) { this._charts[0].setData(h.cpu); resetY(this._charts[0], h.cpu[1]) }
       if (h?.memory) { this._charts[1].setData(h.memory); resetY(this._charts[1], h.memory[1]) }
-      if (h?.networkRx && h?.networkTx) {
-        const netData = [h.networkRx[0], h.networkRx[1], h.networkTx[1]] as any
+      if (h?.networkRx || h?.networkTx) {
+        // Use whichever series arrived; fill the missing one with zeros so the
+        // chart renders immediately rather than waiting for both to be non-null.
+        const base = h.networkRx ?? h.networkTx!
+        const zeros = new Array(base[0].length).fill(0)
+        const rx = h.networkRx?.[1] ?? zeros
+        const tx = h.networkTx?.[1] ?? zeros
+        const netData = [base[0], rx, tx] as any
         this._charts[2].setData(netData)
-        const netMax = [...h.networkRx[1], ...h.networkTx[1]].reduce((a, b) => Math.max(a, b), 0)
+        const netMax = [...rx, ...tx].reduce((a, b) => Math.max(a, b), 0)
         this._charts[2].setScale('y', { min: 0, max: Math.max(netMax * 1.1, 1) })
       }
       if (h?.disk) { this._charts[3].setData(h.disk); resetY(this._charts[3], h.disk[1]) }
@@ -2440,11 +2446,9 @@ Each cluster is an upstream service backend. Shows health status, active connect
     if (cpu) this._mkChart(cpu, h?.cpu ?? empty, 'CPU %', COLOR.cpu, 150)
     if (mem) this._mkChart(mem, h?.memory ?? empty, 'Mem %', COLOR.memory, 150)
     if (net) {
-      if (h?.networkRx && h?.networkTx) {
-        this._mkNetChartFromHistory(net, h.networkRx, h.networkTx, 150)
-      } else {
-        this._mkNetChartFromHistory(net, empty, empty, 150)
-      }
+      const base = h?.networkRx ?? h?.networkTx ?? empty
+      const zeros: [number[], number[]] = [base[0], new Array(base[0].length).fill(0)]
+      this._mkNetChartFromHistory(net, h?.networkRx ?? zeros, h?.networkTx ?? zeros, 150)
     }
     if (disk) this._mkChart(disk, h?.disk ?? empty, 'Disk %', COLOR.disk, 150)
   }
