@@ -738,7 +738,20 @@ class PageObservabilityMetrics extends HTMLElement {
         fetchGatewayHistory(this._range),
         fetchEnvoyHistory(this._range),
       ])
-      if (oh.status === 'fulfilled') this._overviewHistory = oh.value
+      if (oh.status === 'fulfilled') {
+        // Merge rather than replace — keep previously-good series if the new
+        // fetch returned null for a given metric (Prometheus scrape gap).
+        const n = oh.value
+        if (!this._overviewHistory) {
+          this._overviewHistory = n
+        } else {
+          if (n.cpu)       this._overviewHistory.cpu       = n.cpu
+          if (n.memory)    this._overviewHistory.memory    = n.memory
+          if (n.networkRx) this._overviewHistory.networkRx = n.networkRx
+          if (n.networkTx) this._overviewHistory.networkTx = n.networkTx
+          if (n.disk)      this._overviewHistory.disk      = n.disk
+        }
+      }
       if (gh.status === 'fulfilled') this._gatewayHistory = gh.value
       if (eh.status === 'fulfilled') this._envoyHistoryProm = eh.value
     } catch {
@@ -770,12 +783,23 @@ class PageObservabilityMetrics extends HTMLElement {
 
     if (this._tab === 'overview' && this._charts.length >= 4) {
       const h = this._overviewHistory
-      if (h?.cpu) this._charts[0].setData(h.cpu)
-      if (h?.memory) this._charts[1].setData(h.memory)
-      if (h?.networkRx && h?.networkTx) {
-        this._charts[2].setData([h.networkRx[0], h.networkRx[1], h.networkTx[1]] as any)
+      // uPlot 1.6.x does not recompute the Y-scale range on setData when the
+      // chart was initially mounted with empty data — the scale stays stuck at
+      // its creation-time default [0, 1]. Explicitly reset the Y scale after
+      // setData so the chart auto-sizes to the actual data range.
+      const resetY = (chart: uPlot, vals: number[]) => {
+        const mx = vals.reduce((a, b) => Math.max(a, b), 0)
+        chart.setScale('y', { min: 0, max: Math.max(mx * 1.1, 1) })
       }
-      if (h?.disk) this._charts[3].setData(h.disk)
+      if (h?.cpu) { this._charts[0].setData(h.cpu); resetY(this._charts[0], h.cpu[1]) }
+      if (h?.memory) { this._charts[1].setData(h.memory); resetY(this._charts[1], h.memory[1]) }
+      if (h?.networkRx && h?.networkTx) {
+        const netData = [h.networkRx[0], h.networkRx[1], h.networkTx[1]] as any
+        this._charts[2].setData(netData)
+        const netMax = [...h.networkRx[1], ...h.networkTx[1]].reduce((a, b) => Math.max(a, b), 0)
+        this._charts[2].setScale('y', { min: 0, max: Math.max(netMax * 1.1, 1) })
+      }
+      if (h?.disk) { this._charts[3].setData(h.disk); resetY(this._charts[3], h.disk[1]) }
       return true
     }
     if (this._tab === 'gateway' && this._charts.length > 0) {
