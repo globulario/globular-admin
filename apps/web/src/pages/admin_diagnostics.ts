@@ -1,7 +1,7 @@
 // src/pages/admin_diagnostics.ts
 import "@globular/components/markdown.js"
 import {
-  getClusterReport, type ClusterReport,
+  getClusterReport, type ClusterReport, type ReportFetchOptions,
   getNodeReport, type NodeReport,
   getDriftReport, type DriftReport,
   explainFinding, type FindingExplanation, type Finding, type DriftItem,
@@ -139,7 +139,9 @@ class PageAdminDiagnostics extends HTMLElement {
   private _selectedFindingId = ''
   private _selectedNodeId = ''
   private _loading = true
+  private _refreshing = false
   private _error = ''
+  private _driftError = ''
   private _explainLoading = false
   private _explainError = ''
   private _nodeLoading = false
@@ -317,7 +319,7 @@ class PageAdminDiagnostics extends HTMLElement {
       </section>
     `
 
-    this.querySelector('#dxRefresh')?.addEventListener('click', () => this.load())
+    this.querySelector('#dxRefresh')?.addEventListener('click', () => this.load(true))
     this.querySelector('#dxInfoBtn')?.addEventListener('click', () => {
       (this.querySelector('#dxInfoPanel') as any)?.toggle()
     })
@@ -329,19 +331,31 @@ class PageAdminDiagnostics extends HTMLElement {
 
   // ─── Data loading ───────────────────────────────────────────────────────────
 
-  private async load() {
-    this._selectedFindingId = ''
-    this._explanation = null
-    this.renderExplain()
+  private async load(userTriggered = false) {
+    // Only reset the user's active selection on a manual refresh — auto-polls
+    // must not discard state the operator is actively reading (awareness:
+    // workflow state must survive background polls).
+    if (userTriggered) {
+      this._selectedFindingId = ''
+      this._explanation = null
+      this.renderExplain()
+    }
 
     const el = this.querySelector('#dxSummary') as HTMLElement
     if (this._loading && _cache.data === null && el) {
       el.innerHTML = `<p style="color:var(--secondary-text-color);font-size:.85rem">Loading diagnostics…</p>`
     }
 
+    // Manual refresh bypasses the server's snapshot cache so the operator
+    // sees authoritative data immediately after a remediation.
+    const opts: ReportFetchOptions = userTriggered ? { fresh: true } : {}
+
+    this._refreshing = true
+    this._renderRefreshBtn()
+
     const [reportRes, driftRes] = await Promise.allSettled([
-      getClusterReport(),
-      getDriftReport(),
+      getClusterReport(opts),
+      getDriftReport(undefined, opts),
     ])
 
     this._report = reportRes.status === 'fulfilled' ? reportRes.value : null
@@ -349,24 +363,35 @@ class PageAdminDiagnostics extends HTMLElement {
       ? ((reportRes.reason as any)?.message || 'ClusterDoctor unavailable') : ''
 
     this._drift = driftRes.status === 'fulfilled' ? driftRes.value : null
+    this._driftError = driftRes.status === 'rejected'
+      ? ((driftRes.reason as any)?.message || 'Drift report unavailable') : ''
 
     this._loading = false
+    this._refreshing = false
     this._lastUpdated = new Date()
     if (!this._error) {
       _cache.data = { report: this._report, drift: this._drift }
       _cache.fetchedAt = Date.now()
     }
 
+    this._renderRefreshBtn()
     this.renderTimestamp()
     this.renderBanners()
     this.renderSummary()
     this.renderFindings()
     this.renderDrift()
 
-    // If a node was selected, refresh it too
+    // If a node was selected, refresh it silently (preserve drill-down state).
     if (this._selectedNodeId) {
       this.fetchNodeReport(this._selectedNodeId)
     }
+  }
+
+  private _renderRefreshBtn() {
+    const btn = this.querySelector<HTMLButtonElement>('#dxRefresh')
+    if (!btn) return
+    btn.disabled = this._refreshing
+    btn.textContent = this._refreshing ? '↻ Refreshing…' : '↻ Refresh'
   }
 
   // ─── Timestamp ──────────────────────────────────────────────────────────────
@@ -374,7 +399,15 @@ class PageAdminDiagnostics extends HTMLElement {
   private renderTimestamp() {
     const el = this.querySelector('#dxTimestamp') as HTMLElement
     if (!el) return
-    el.textContent = this._lastUpdated ? `Last updated: ${fmtTime(this._lastUpdated)}` : ''
+    if (!this._lastUpdated) { el.textContent = ''; return }
+    const h = this._report?.header
+    let text = `Updated: ${fmtTime(this._lastUpdated)}`
+    if (h) {
+      text += h.cacheHit
+        ? ` · snapshot ${h.ageSeconds.toFixed(0)}s old (cached)`
+        : ` · fresh snapshot`
+    }
+    el.textContent = text
   }
 
   // ─── Banners ────────────────────────────────────────────────────────────────
@@ -743,10 +776,14 @@ class PageAdminDiagnostics extends HTMLElement {
     if (!el) return
 
     const d = this._drift
-    if (!d || d.items.length === 0) {
-      el.innerHTML = d
-        ? `<div class="md-panel"><div class="md-panel-header"><span>Drift Analysis</span></div><p class="dx-empty">&#10003; No drift detected.</p></div>`
+    if (!d) {
+      el.innerHTML = this._driftError
+        ? `<div class="md-banner-warn" style="margin-bottom:8px">&#9888; Drift report — ${esc(this._driftError)}</div>`
         : ''
+      return
+    }
+    if (d.items.length === 0) {
+      el.innerHTML = `<div class="md-panel"><div class="md-panel-header"><span>Drift Analysis</span></div><p class="dx-empty">&#10003; No drift detected.</p></div>`
       return
     }
 
