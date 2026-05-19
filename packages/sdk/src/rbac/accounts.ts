@@ -1,4 +1,6 @@
 // src/backend/rbac/accounts.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 import { metadata, TOKEN_KEY } from '../core/auth'
@@ -362,6 +364,7 @@ export async function updateAccount(id: string, patch: UpdateAccountInput): Prom
   return toAccountVM(acc)
 }
 
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 export async function deleteAccount(id: string): Promise<void> {
   const md = metadata()
   const rq = newRq(SERVICE_METHODS.delete.rq)

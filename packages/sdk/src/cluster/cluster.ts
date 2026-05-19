@@ -1,4 +1,7 @@
-// packages/backend/src/cluster/cluster.ts
+// packages/sdk/src/cluster/cluster.ts
+//
+// globular: protects ui.join_approval_starts_workflow_not_completes_join
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 //
 // Generated stubs in ../generated/cluster_controller/ are built from the local
 // cluster_controller.proto and include RPCs not yet in globular-web-client@1.2.17.
@@ -171,6 +174,7 @@ export async function listJoinRequests(): Promise<JoinRequest[]> {
   })
 }
 
+// globular: protects ui.join_approval_starts_workflow_not_completes_join
 export async function approveJoin(requestId: string, profiles: string[]): Promise<string> {
   const md = metadata()
   const rq = new cc.ApproveJoinRequest()
@@ -182,6 +186,7 @@ export async function approveJoin(requestId: string, profiles: string[]): Promis
   return rsp.getNodeId?.() ?? ''
 }
 
+// globular: protects ui.join_approval_starts_workflow_not_completes_join
 export async function rejectJoin(requestId: string, reason: string): Promise<void> {
   const md = metadata()
   const rq = new cc.RejectJoinRequest()
@@ -371,6 +376,7 @@ export async function upsertDesiredService(serviceId: string, version: string): 
   return (rsp.getServicesList?.() ?? []).map(toDesiredEntry)
 }
 
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 /** Remove a service from the desired-state plan. */
 export async function removeDesiredService(serviceId: string): Promise<DesiredEntry[]> {
   const md = metadata()
@@ -397,6 +403,7 @@ export async function seedDesiredState(
   return (rsp.getServicesList?.() ?? []).map(toDesiredEntry)
 }
 
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 /** Trigger reconciliation on all known nodes.
  *  Throws an error listing every per-node failure so callers can surface them in the UI.
  */

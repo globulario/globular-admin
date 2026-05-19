@@ -1,4 +1,6 @@
 // backend/rbac/groups.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 // Groups backend in the same style as src/backend/rbac/accounts.ts
 
 import { unary, stream } from "../core/rpc"
@@ -343,6 +345,7 @@ export async function updateGroup(id: string, patch: UpdateGroupInput): Promise<
   await unary(clientFactory, method, rq, undefined, md)
 }
 
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 /** Delete a group */
 export async function deleteGroup(id: string): Promise<void> {
   const md = metadata()

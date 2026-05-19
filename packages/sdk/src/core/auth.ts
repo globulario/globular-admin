@@ -1,3 +1,6 @@
+// packages/sdk/src/core/auth.ts
+//
+// globular: enforces ui.token_storage_sessionStorage_only
 import * as authGrpc from "globular-web-client/authentication/authentication_grpc_web_pb";
 import * as authpb from "globular-web-client/authentication/authentication_pb";
 import { unary } from "./rpc";
@@ -106,6 +109,7 @@ export function enableVisibilityAutoRefresh(padMs = 120_000) {
 // ---------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------
+// globular: enforces ui.token_storage_sessionStorage_only
 export function setToken(t?: string) {
   const prev = _token;
   _token = t;

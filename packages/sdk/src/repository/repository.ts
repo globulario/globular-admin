@@ -1,3 +1,6 @@
+// packages/sdk/src/repository/repository.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 // repository.ts — gRPC-web client for the Repository PackageRepository service.
 //
 // Wraps ListArtifacts and GetArtifactManifest so the catalog page can browse
@@ -141,6 +144,7 @@ export async function getArtifactVersions(
   return rsp.getVersionsList().map((m: repoPb.ArtifactManifest) => m.toObject())
 }
 
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 /**
  * Delete a specific artifact version from the repository catalog.
  * Set force=true to delete even if nodes still have it installed.

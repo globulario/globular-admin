@@ -1,4 +1,6 @@
 // /backend/rbac/organizations.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 import { metadata } from "../core/auth";
@@ -294,6 +296,7 @@ export async function updateOrganization(orgId: string, patch: UpdateOrgInput): 
   await unary(clientFactory, method, rq, undefined, md);
 }
 
+// globular: protects ui.destructive_action_requires_explicit_confirmation
 export async function deleteOrganization(orgId: string): Promise<void> {
   const md = metadata();
   const rq = newRq(SERVICE_METHODS.delete.rq);
