@@ -216,6 +216,7 @@ class PageRepoPackageDetail extends HTMLElement {
   private _versionsLoaded = false
   private _installedLoaded = false
   private _built = false
+  private _nodeNames: Record<string, string> = {}  // nodeId → hostname
 
   connectedCallback() {
     this.style.display = 'block'
@@ -390,9 +391,13 @@ class PageRepoPackageDetail extends HTMLElement {
     if (this._installedLoaded) return
     try {
       if (!fetchInstalledPackages) throw new Error('fetchInstalledPackages not available')
-      const all: InstalledPackage[] = await fetchInstalledPackages()
+      const [all, nodes] = await Promise.all([
+        fetchInstalledPackages(),
+        listClusterNodes().catch(() => []),
+      ])
+      this._nodeNames = Object.fromEntries(nodes.map((n: any) => [n.nodeId, n.hostname || n.nodeId]))
       console.log('[installed] total packages:', all.length, 'filtering by name:', this._pkgName)
-      this._installed = all.filter((p: InstalledPackage) => p.name === this._pkgName)
+      this._installed = (all as InstalledPackage[]).filter((p: InstalledPackage) => p.name === this._pkgName)
       console.log('[installed] matched:', this._installed.length, this._installed)
       this._installedLoaded = true
     } catch (e) {
@@ -781,7 +786,7 @@ class PageRepoPackageDetail extends HTMLElement {
           <tbody>
             ${this._installed.map(p => `
             <tr>
-              <td style="font-weight:600">${escHtml(p.nodeId || '--')}</td>
+              <td style="font-weight:600">${escHtml(this._nodeNames[p.nodeId] || p.nodeId || '--')}</td>
               <td>${escHtml(p.version || '--')}</td>
               <td>${statusChip(p.kind || 'installed')}</td>
               <td>${integrityChip(p.version ? 'ok' : '')}</td>
