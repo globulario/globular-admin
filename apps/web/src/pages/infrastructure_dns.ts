@@ -683,7 +683,7 @@ class PageInfrastructureDns extends HTMLElement {
         if (!confirm(`Delete provider "${name}"?`)) return
         try {
           await deleteProvider(name)
-          this.load()
+          this._load()
         } catch (e: any) {
           this._extError = e?.message ?? 'Failed to delete provider'
           this._pushData()
@@ -707,7 +707,7 @@ class PageInfrastructureDns extends HTMLElement {
         if (!confirm(`Delete domain "${fqdn}"? This will stop reconciliation.`)) return
         try {
           await deleteDomainSpec(fqdn)
-          this.load()
+          this._load()
         } catch (e: any) {
           this._extError = e?.message ?? 'Failed to delete domain'
           this._pushData()
@@ -862,7 +862,7 @@ class PageInfrastructureDns extends HTMLElement {
         await saveProvider({ type, zone, credentials, default_ttl: ttl })
         this._showProviderForm = false
         this._editingProvider = null
-        this.load()
+        this._load()
       } catch (e: any) {
         this._extError = e?.message ?? 'Failed to save provider'
         this._pushData()
@@ -978,7 +978,7 @@ class PageInfrastructureDns extends HTMLElement {
         await saveDomainSpec(spec)
         this._showDomainForm = false
         this._editingDomain = null
-        this.load()
+        this._load()
       } catch (e: any) {
         this._extError = e?.message ?? 'Failed to save domain'
         this._pushData()
