@@ -102,10 +102,19 @@ export async function getAAAARecords(name: string): Promise<string[]> {
   const md = metadata()
   const rq = new dns.GetAAAARequest()
   rq.setDomain(name)
-  const rsp = await unary<dns.GetAAAARequest, dns.GetAAAAResponse>(
-    dnsClient, 'getAAAA', rq, undefined, md,
-  )
-  return rsp.getAaaaList?.() ?? []
+  try {
+    const rsp = await unary<dns.GetAAAARequest, dns.GetAAAAResponse>(
+      dnsClient, 'getAAAA', rq, undefined, md,
+    )
+    return rsp.getAaaaList?.() ?? []
+  } catch (e: any) {
+    // 503 means the backend doesn't support AAAA — treat as no records.
+    const msg = String(e?.message ?? e ?? '').toLowerCase()
+    if (msg.includes('503') || msg.includes('unavailable') || msg.includes('unimplemented')) {
+      return []
+    }
+    throw e
+  }
 }
 
 export async function getCNameRecord(name: string): Promise<string | null> {
