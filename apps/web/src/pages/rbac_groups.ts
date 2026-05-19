@@ -1,4 +1,8 @@
 // src/pages/rbac_groups.ts
+//
+// globular: enforces ui.view_data_separation
+// globular: enforces ui.no_blind_page_reload
+// globular: enforces ui.refresh_must_not_disrupt_view
 import "../widgets/groups_manager";          // <globular-groups-manager>
 import "@globular/components/markdown.js";             // optional info panel
 

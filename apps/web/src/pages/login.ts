@@ -1,4 +1,7 @@
 // src/pages/login.ts
+//
+// globular: enforces ui.token_storage_sessionStorage_only
+// globular: enforces ui.no_hardcoded_backend_addresses
 import {
   setToken,
   login,

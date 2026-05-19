@@ -1,6 +1,9 @@
 // apps/web/src/utils/infra_health.ts
 //
 // Shared health model for all Infrastructure pages.
+//
+// globular: enforces ui.unknown_state_must_not_appear_healthy
+// globular: enforces ui.state_authority_binding
 
 import type {
   ClusterHealth, ClusterHealthV1Result,

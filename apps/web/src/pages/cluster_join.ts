@@ -1,4 +1,8 @@
 // src/pages/cluster_join.ts
+//
+// globular: enforces ui.join_approval_starts_workflow_not_completes_join
+// globular: enforces ui.destructive_action_requires_explicit_confirmation
+// globular: enforces ui.workflow_completion_requires_terminal_state_poll
 import "@globular/components/markdown.js"
 import {
   listJoinRequests, approveJoin, rejectJoin, createJoinToken,

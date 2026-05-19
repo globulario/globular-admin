@@ -1,4 +1,8 @@
 // src/pages/infrastructure_networking.ts
+//
+// globular: enforces ui.view_data_separation
+// globular: enforces ui.no_blind_page_reload
+// globular: enforces ui.refresh_must_not_disrupt_view
 import {
   fetchAdminEnvoy,
   type EnvoyResponse, type EnvoyCluster, type EnvoyListener,

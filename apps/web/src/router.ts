@@ -2,6 +2,9 @@
 //
 // Each page is loaded on-demand via dynamic import().
 // Vite automatically creates separate chunks for each route.
+//
+// globular: enforces ui.token_storage_sessionStorage_only
+// globular: enforces ui.no_hardcoded_backend_addresses
 
 type RouteHandler = () => Promise<HTMLElement> | HTMLElement
 

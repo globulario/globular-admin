@@ -1,5 +1,9 @@
 // src/pages/security_secrets.ts
 //
+// globular: enforces ui.view_data_separation
+// globular: enforces ui.no_blind_page_reload
+// globular: enforces ui.refresh_must_not_disrupt_view
+//
 // Unified secrets management: DNS provider credentials, MinIO keys,
 // backup/restic credentials, ScyllaDB config, and platform tokens.
 

@@ -1,4 +1,8 @@
 // src/pages/cluster_peers.ts
+//
+// globular: enforces ui.view_data_separation
+// globular: enforces ui.no_blind_page_reload
+// globular: enforces ui.refresh_must_not_disrupt_view
 import '../widgets/peer_discovery'            // registers <peer-discovery>
 import "@globular/components/markdown.js";                  // registers <globular-markdown>
 
