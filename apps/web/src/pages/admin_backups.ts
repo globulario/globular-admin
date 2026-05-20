@@ -161,7 +161,7 @@ class PageAdminBackups extends HTMLElement {
     ScyllaCluster: string; ScyllaLocation: string; ScyllaManagerAPI: string;
     RcloneRemote: string; RcloneSource: string;
     EtcdEndpoints: string; ResticRepo: string; ResticPaths: string;
-  } = { ScyllaCluster: '', ScyllaLocation: '', ScyllaManagerAPI: 'http://127.0.0.1:5080', RcloneRemote: '', RcloneSource: '', EtcdEndpoints: '127.0.0.1:2379', ResticRepo: '/var/lib/globular/backups/restic', ResticPaths: '/var/lib/globular' }
+  } = { ScyllaCluster: '', ScyllaLocation: '', ScyllaManagerAPI: '', RcloneRemote: '', RcloneSource: '', EtcdEndpoints: '', ResticRepo: '/var/lib/globular/backups/restic', ResticPaths: '/var/lib/globular' }
 
   private _minioBuckets: MinioBucketInfo[] = []
   private _minioEndpoint = ''
@@ -1805,12 +1805,15 @@ class PageAdminBackups extends HTMLElement {
         this._destinations = [{ Name: 'local', Type: 'local', Path: '/var/lib/globular/backups', Options: {}, Primary: true }]
       }
 
-      // Provider config
+      // Provider config — leave host-bound URLs empty so the backend can
+      // auto-detect from scylla-manager.yaml / etcd. Hardcoded 127.0.0.1
+      // defaults bite us when admin connects to a remote node whose services
+      // bind to a LAN IP. Detected values are pre-filled below from preflight.
       this._providerConfig = {
         ScyllaCluster: svc.ScyllaCluster || '', ScyllaLocation: svc.ScyllaLocation || '',
-        ScyllaManagerAPI: svc.ScyllaManagerAPI || 'http://127.0.0.1:5080',
+        ScyllaManagerAPI: svc.ScyllaManagerAPI || '',
         RcloneRemote: svc.RcloneRemote || '', RcloneSource: svc.RcloneSource || '',
-        EtcdEndpoints: svc.EtcdEndpoints || '127.0.0.1:2379',
+        EtcdEndpoints: svc.EtcdEndpoints || '',
         ResticRepo: svc.ResticRepo || '/var/lib/globular/backups/restic',
         ResticPaths: svc.ResticPaths || '/var/lib/globular',
       }
@@ -1860,6 +1863,11 @@ class PageAdminBackups extends HTMLElement {
       this.populateScopeUI()
       this.clearDirty()
 
+      // Pre-fill any empty host-bound fields from preflight auto-detection.
+      // This is the fix for the recurring "127.0.0.1 default leaks into etcd
+      // when admin connects to a remote node" trap.
+      this.prefillFromPreflight().catch(() => { /* best-effort */ })
+
       // Also load retention status
       try {
         this._retention = await getRetentionStatus()
@@ -1875,6 +1883,51 @@ class PageAdminBackups extends HTMLElement {
     for (const [key, val] of Object.entries(this._scopeConfig)) {
       const cb = this.querySelector(`[data-scope="${key}"]`) as HTMLInputElement
       if (cb) cb.checked = val
+    }
+  }
+
+  // Pre-fill empty host-bound fields (ScyllaManagerAPI, EtcdEndpoints) from
+  // backend-side auto-detection surfaced via preflight. Also corrects the
+  // legacy buggy default (http://127.0.0.1:5080) saved by older UI versions —
+  // when detected, it's swapped for the real URL and the form is marked dirty
+  // so the user can see the proposed correction and Save it.
+  private async prefillFromPreflight() {
+    const c = this._providerConfig
+    const isLegacyScyllaDefault = (u: string) => {
+      const v = (u || '').trim().replace(/\/+$/, '')
+      return v === 'http://127.0.0.1:5080' || v === 'http://localhost:5080'
+        || v === 'http://127.0.0.1:5080/api/v1' || v === 'http://localhost:5080/api/v1'
+    }
+    let pf = this._preflight
+    if (!pf) {
+      try { pf = await preflightCheck(); this._preflight = pf } catch { return }
+    }
+    let prefilled = false
+    let corrected = false
+    const detectedScylla = pf.tools.find(x => x.name === 'scylla_manager_api_url' && x.available)?.version || ''
+    const detectedEtcd = pf.tools.find(x => x.name === 'etcd_endpoints' && x.available)?.version || ''
+    if (!c.ScyllaManagerAPI && detectedScylla) {
+      c.ScyllaManagerAPI = detectedScylla; prefilled = true
+    } else if (detectedScylla && isLegacyScyllaDefault(c.ScyllaManagerAPI) && detectedScylla !== c.ScyllaManagerAPI) {
+      c.ScyllaManagerAPI = detectedScylla; corrected = true
+    }
+    if (!c.EtcdEndpoints && detectedEtcd) {
+      c.EtcdEndpoints = detectedEtcd; prefilled = true
+    }
+    if (prefilled || corrected) {
+      // Update the input fields to reflect the detected/corrected values.
+      this.querySelectorAll<HTMLInputElement>('.bk-prov-field').forEach(inp => {
+        const k = inp.dataset.key as keyof typeof c
+        if (k && c[k]) inp.value = String(c[k])
+      })
+    }
+    if (corrected) {
+      // Surface the swap so the user can review + Save.
+      const msg = this.querySelector('#bkScyllaTestResult') as HTMLElement
+      if (msg) {
+        msg.innerHTML = `<div style="font-size:.82rem;color:#f59e0b">Replaced legacy default <code>http://127.0.0.1:5080</code> with detected <code>${esc(detectedScylla)}</code>. Click <strong>Save All</strong> to persist.</div>`
+      }
+      this.markDirty()
     }
   }
 
@@ -2238,7 +2291,7 @@ class PageAdminBackups extends HTMLElement {
             : `<span style="color:#f59e0b">Not set &mdash; create a MinIO bucket above and check "Use for ScyllaDB".</span>`}
         </div>
         ${field('Scylla Location', 'ScyllaLocation', c.ScyllaLocation, 's3:scylla-backups', 'S3 bucket for ScyllaDB backups (e.g. s3:my-bucket). Set automatically when creating a MinIO bucket with "Use for ScyllaDB".')}
-        ${field('Manager API', 'ScyllaManagerAPI', c.ScyllaManagerAPI, 'http://127.0.0.1:5080', 'Scylla-manager HTTP endpoint.')}
+        ${field('Manager API', 'ScyllaManagerAPI', c.ScyllaManagerAPI, 'auto-detect from scylla-manager.yaml', 'Scylla-manager HTTP/HTTPS endpoint. Leave empty to auto-detect from /var/lib/globular/scylla-manager/scylla-manager.yaml on the node.')}
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle-color)">
           <button class="bk-btn-primary" id="bkTestScyllaConn" style="white-space:nowrap">Test Connection</button>
           <div id="bkScyllaTestResult" style="margin-top:10px"></div>
@@ -2250,7 +2303,7 @@ class PageAdminBackups extends HTMLElement {
         ${field('Rclone Source', 'RcloneSource', c.RcloneSource, '/var/lib/globular/minio/data', 'Local MinIO data directory.')}
       `) +
       section('etcd', `
-        ${field('Endpoints', 'EtcdEndpoints', c.EtcdEndpoints, '127.0.0.1:2379', 'Comma-separated. TLS auto-detected.')}
+        ${field('Endpoints', 'EtcdEndpoints', c.EtcdEndpoints, 'auto-detect from node config', 'Comma-separated etcd endpoints. Leave empty to use the node\'s configured endpoint. TLS auto-detected.')}
       `)
 
     el.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.bk-prov-field').forEach(inp => {
