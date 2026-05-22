@@ -212,46 +212,55 @@ export async function getSoaRecords(name: string): Promise<SoaRecord[]> {
 /**
  * Query A/AAAA/CNAME/TXT for each name and flatten into a single DnsRecord[].
  * Errors on individual names are silently skipped (name may not have all types).
+ *
+ * Per-name queries are issued sequentially. The DNS service rejects with
+ * "server overloaded: too many concurrent requests" when more than a handful
+ * of gRPC-web calls land at the same instant, and the rejection is silently
+ * dropped by Promise.allSettled below — producing missing records (most often
+ * the wildcard A) and false DRIFT DETECTED states. Walking names serially
+ * keeps in-flight calls capped at 4 per name (plus the parallel NS/SOA pair),
+ * which the server handles comfortably.
  */
 export async function fetchZoneRecords(zone: string, names: string[]): Promise<DnsRecord[]> {
   const records: DnsRecord[] = []
   const hardErrors: string[] = []
 
-  const jobs = names.map(async (name) => {
-    const results = await Promise.allSettled([
-      getARecords(name),
-      getAAAARecords(name),
-      getCNameRecord(name),
-      getTxtRecords(name),
-    ])
-    const [aR, aaaaR, cnameR, txtR] = results
+  const nameJob = (async () => {
+    for (const name of names) {
+      const [aR, aaaaR, cnameR, txtR] = await Promise.allSettled([
+        getARecords(name),
+        getAAAARecords(name),
+        getCNameRecord(name),
+        getTxtRecords(name),
+      ])
 
-    if (aR.status === 'fulfilled') {
-      for (const v of aR.value) records.push({ name, type: 'A', value: v })
-    }
-    if (aaaaR.status === 'fulfilled') {
-      for (const v of aaaaR.value) records.push({ name, type: 'AAAA', value: v })
-    }
-    if (cnameR.status === 'fulfilled' && cnameR.value) {
-      records.push({ name, type: 'CNAME', value: cnameR.value })
-    }
-    if (txtR.status === 'fulfilled') {
-      for (const v of txtR.value) records.push({ name, type: 'TXT', value: v })
-    }
+      if (aR.status === 'fulfilled') {
+        for (const v of aR.value) records.push({ name, type: 'A', value: v })
+      }
+      if (aaaaR.status === 'fulfilled') {
+        for (const v of aaaaR.value) records.push({ name, type: 'AAAA', value: v })
+      }
+      if (cnameR.status === 'fulfilled' && cnameR.value) {
+        records.push({ name, type: 'CNAME', value: cnameR.value })
+      }
+      if (txtR.status === 'fulfilled') {
+        for (const v of txtR.value) records.push({ name, type: 'TXT', value: v })
+      }
 
-    if (
-      aR.status === 'rejected' &&
-      aaaaR.status === 'rejected' &&
-      cnameR.status === 'rejected' &&
-      txtR.status === 'rejected'
-    ) {
-      const err = (aR.reason?.message || aaaaR.reason?.message || cnameR.reason?.message || txtR.reason?.message || '').toString()
-      hardErrors.push(`record query failed for ${name}: ${err || 'unknown error'}`)
+      if (
+        aR.status === 'rejected' &&
+        aaaaR.status === 'rejected' &&
+        cnameR.status === 'rejected' &&
+        txtR.status === 'rejected'
+      ) {
+        const err = (aR.reason?.message || aaaaR.reason?.message || cnameR.reason?.message || txtR.reason?.message || '').toString()
+        hardErrors.push(`record query failed for ${name}: ${err || 'unknown error'}`)
+      }
     }
-  })
+  })()
 
-  // Also fetch NS and SOA for the zone root
-  jobs.push((async () => {
+  // NS and SOA for the zone root run alongside the per-name loop.
+  const zoneJob = (async () => {
     const [nsR, soaR] = await Promise.allSettled([
       getNsRecords(zone),
       getSoaRecords(zone),
@@ -268,9 +277,9 @@ export async function fetchZoneRecords(zone: string, names: string[]): Promise<D
       const err = (nsR.reason?.message || soaR.reason?.message || '').toString()
       hardErrors.push(`zone metadata query failed for ${zone}: ${err || 'unknown error'}`)
     }
-  })())
+  })()
 
-  await Promise.allSettled(jobs)
+  await Promise.allSettled([nameJob, zoneJob])
   if (records.length === 0 && hardErrors.length > 0) {
     throw new Error(hardErrors[0])
   }

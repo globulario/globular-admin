@@ -49,6 +49,12 @@ class PageInfrastructureDns extends HTMLElement {
   private _helpOpen = false
   private _loading = false
   private _error: string | null = null
+  // Concurrent-load guard. Rapid Refresh clicks (or a Refresh that overlaps the
+  // 30s poll timer) used to fire ~30 parallel gRPC-web calls twice, and the
+  // resulting transport contention caused single record queries to silently
+  // reject — most visibly the wildcard A record, which would then render as
+  // MISSING. Dedupe overlapping calls onto a single in-flight load.
+  private _inflight: Promise<void> | null = null
 
   // External domains state
   private _providers: DNSProviderConfig[] = []
@@ -110,7 +116,13 @@ class PageInfrastructureDns extends HTMLElement {
 
   // ─── Data ───────────────────────────────────────────────────────────────────
 
-  private async _load() {
+  private _load(): Promise<void> {
+    if (this._inflight) return this._inflight
+    this._inflight = this._doLoad().finally(() => { this._inflight = null })
+    return this._inflight
+  }
+
+  private async _doLoad() {
     this._loading = true
     this._pushData()
 
