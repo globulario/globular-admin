@@ -2348,13 +2348,24 @@ class PageAdminBackups extends HTMLElement {
             resultEl.innerHTML = `<span style="font-size:.82rem;color:#f59e0b">No ScyllaDB detected locally. Verify ScyllaDB is running.</span>`
           }
         } else {
-          // Native detected but registration failed — show manual command
+          // Native detected but registration failed — show manual command.
+          // Build a snippet that actually works: bare `sctool cluster add`
+          // falls back to http://127.0.0.1:5080 (sctool's compiled-in default)
+          // which never matches our HTTPS-on-:5443 manager, and skips the
+          // agent's --port + --auth-token. The hint must include them or
+          // copy-paste lands the operator right back at the same 401 / refused
+          // error they came here to diagnose.
           const native = detected.find(d => d.version.startsWith('native:'))
           const hostEntry = detected.find(d => d.version.startsWith('scylla_host:'))
           const nativeName = native ? native.version.replace('native:', '') : 'unknown'
           const scyllaHost = hostEntry ? hostEntry.version.replace('scylla_host:', '') : '127.0.0.1'
+          const apiURL = pf.tools.find(x => x.name === 'scylla_manager_api_url' && x.available)?.version || ''
+          const apiFlag = apiURL ? ` --api-url ${apiURL.replace(/\/+$/, '')}` : ''
+          // Agent HTTPS port is fixed by node_agent reconciler (scyllaAgentHTTPSPort).
+          // Token lives in the agent yaml, only readable by scylla:globular.
+          const cmd = `sctool cluster add${apiFlag} --host ${scyllaHost} --port 5612 --name "${nativeName}" --auth-token "$(sudo awk '/^auth_token:/{print $2}' /var/lib/globular/scylla-manager-agent/scylla-manager-agent.yaml)"`
           resultEl.innerHTML = `<span style="font-size:.82rem;color:#f59e0b">ScyllaDB detected on <strong>${esc(scyllaHost)}</strong> but auto-registration failed.<br>
-            Register manually: <code>sctool cluster add --host ${esc(scyllaHost)} --name "${esc(nativeName)}"</code></span>`
+            Register manually: <code>${esc(cmd)}</code></span>`
         }
       } catch (e: any) {
         if (resultEl) resultEl.innerHTML = `<span style="font-size:.82rem;color:var(--error-color)">Detection failed: ${esc(e?.message ?? '')}</span>`
