@@ -1,4 +1,6 @@
 // src/backend/core/network.ts
+//
+// globular: enforces ui.no_hardcoded_backend_addresses (all URLs from endpoints)
 import { getConfig, requireBaseUrl, grpcWebHostUrl } from './endpoints'
 import { unary } from './rpc'
 import { metadata } from './auth'

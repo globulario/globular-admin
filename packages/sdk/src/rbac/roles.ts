@@ -1,4 +1,7 @@
 // /backend/rbac/roles.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation (deleteRole)
+// globular: enforces ui.rbac_is_server_enforced_not_ui (role data is for display, not security gates)
 import { grpcWebHostUrl } from "../core/endpoints";
 import { unary, stream } from "../core/rpc";
 import { metadata } from "../core/auth";

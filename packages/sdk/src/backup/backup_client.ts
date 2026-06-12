@@ -1,4 +1,7 @@
 // packages/backend/src/backup/backup_client.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation (deleteBackup, deleteBackupJob, deleteMinioBucket, restoreBackup)
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator (errors propagate to caller)
 import { unary } from '../core/rpc'
 import { grpcWebHostUrl } from '../core/endpoints'
 import { metadata } from '../core/auth'

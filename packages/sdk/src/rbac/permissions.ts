@@ -1,4 +1,6 @@
 // src/backend/rbac/permissions.ts
+//
+// globular: enforces ui.rbac_is_server_enforced_not_ui (permission data is for display, not security gates)
 import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 import { metadata } from '../core/auth'

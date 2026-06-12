@@ -4,9 +4,13 @@
  * CRUD operations for:
  *   - DNS providers    (GET/POST/DELETE /api/domains/providers)
  *   - Domain specs     (GET/POST/DELETE /api/domains/specs)
+ *
+ * globular: protects ui.destructive_action_requires_explicit_confirmation (deleteProvider, deleteDomainSpec)
+ * globular: enforces ui.no_hardcoded_backend_addresses (all URLs from requireBaseUrl)
  */
 
 import { requireBaseUrl } from './endpoints'
+import { getStoredTokenSync } from './auth'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,9 +90,10 @@ export async function fetchProvider(name: string): Promise<DNSProviderConfig> {
 /** POST /api/domains/providers — create or update a provider. */
 export async function saveProvider(cfg: DNSProviderConfig): Promise<{ ok: boolean; name: string }> {
   const base = requireBaseUrl()
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(`${base}/api/domains/providers`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { token } : {}) },
     body: JSON.stringify(cfg),
   })
   if (!res.ok) {
@@ -101,8 +106,10 @@ export async function saveProvider(cfg: DNSProviderConfig): Promise<{ ok: boolea
 /** DELETE /api/domains/providers?name=<ref> — remove a provider. */
 export async function deleteProvider(name: string): Promise<void> {
   const base = requireBaseUrl()
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(`${base}/api/domains/providers?name=${encodeURIComponent(name)}`, {
     method: 'DELETE',
+    headers: token ? { token } : {},
   })
   if (!res.ok) throw new Error(`DELETE /api/domains/providers failed: ${res.status}`)
 }
@@ -128,9 +135,10 @@ export async function fetchDomainSpec(fqdn: string): Promise<{ spec: ExternalDom
 /** POST /api/domains/specs — create or update a domain spec. */
 export async function saveDomainSpec(spec: ExternalDomainSpec): Promise<{ ok: boolean; fqdn: string }> {
   const base = requireBaseUrl()
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(`${base}/api/domains/specs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { token } : {}) },
     body: JSON.stringify(spec),
   })
   if (!res.ok) {
@@ -143,8 +151,10 @@ export async function saveDomainSpec(spec: ExternalDomainSpec): Promise<{ ok: bo
 /** DELETE /api/domains/specs?fqdn=<fqdn> — remove a domain spec. */
 export async function deleteDomainSpec(fqdn: string): Promise<void> {
   const base = requireBaseUrl()
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(`${base}/api/domains/specs?fqdn=${encodeURIComponent(fqdn)}`, {
     method: 'DELETE',
+    headers: token ? { token } : {},
   })
   if (!res.ok) throw new Error(`DELETE /api/domains/specs failed: ${res.status}`)
 }

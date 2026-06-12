@@ -1,0 +1,158 @@
+# sdk_annotations.yaml — globular-admin
+#
+# Maps SDK source files to the invariants they enforce or protect.
+# Used by AWG to answer briefing/impact queries for SDK changes.
+#
+# Convention:
+#   enforces: the file is the implementation of the invariant
+#   protects:  the file exposes an API whose callers must respect the invariant
+
+sdk_files:
+
+  - file: packages/sdk/src/core/auth.ts
+    enforces:
+      - ui.token_storage_sessionStorage_only
+    notes: |
+      Single source of truth for token storage. setToken() writes to sessionStorage
+      only. _token module-level var is a read cache, not a separate store.
+      refresh() coalesces concurrent refreshes. scheduleRefresh() fires 2 min early.
+      logout() cleans up legacy localStorage keys (access_token, current_user).
+
+  - file: packages/sdk/src/core/rpc.ts
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+      - ui.token_storage_sessionStorage_only
+    notes: |
+      Central gRPC-web call wrapper. Proactively refreshes token before each call.
+      Retries once on expiry/unauthenticated errors. Normalizes errors via errors.ts.
+      All RPC errors propagate to callers — never silently swallowed.
+
+  - file: packages/sdk/src/core/session.ts
+    enforces:
+      - ui.token_storage_sessionStorage_only
+      - ui.super_admin_detection_is_display_only
+    notes: |
+      Session utilities. getToken() delegates to auth.getStoredTokenSync().
+      isSa() checks username === 'sa' — this is a display hint, NOT an auth gate.
+      getUsername() falls back to localStorage 'current_user' for display only.
+
+  - file: packages/sdk/src/core/endpoints.ts
+    enforces:
+      - ui.no_hardcoded_backend_addresses
+      - ui.token_storage_sessionStorage_only
+    notes: |
+      All backend URLs derived from localStorage config (globular.baseUrl).
+      grpcWebHostUrl() strips paths and forces port 443 for Envoy.
+      saveServiceConfig() uses dynamic import of auth to avoid circular deps.
+
+  - file: packages/sdk/src/core/errors.ts
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      Normalizes gRPC-web errors for UI display. Detects token/signature errors
+      and returns user-friendly re-login messages.
+
+  - file: packages/sdk/src/core/cors.ts
+    enforces:
+      - ui.no_hardcoded_backend_addresses
+      - ui.token_storage_sessionStorage_only
+    notes: |
+      CORS policy management via REST endpoints. All URLs from requireBaseUrl().
+      Token read via getStoredTokenSync() for authenticated POST requests.
+
+  - file: packages/sdk/src/core/domains.ts
+    enforces:
+      - ui.no_hardcoded_backend_addresses
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    notes: |
+      DNS provider and domain spec CRUD. deleteProvider() and deleteDomainSpec()
+      are destructive — callers must show confirmation dialogs.
+      BUG FIXED (2026-06-12): mutating REST calls were missing auth token headers.
+
+  - file: packages/sdk/src/core/network.ts
+    enforces:
+      - ui.no_hardcoded_backend_addresses
+    notes: |
+      Network summary and DNS server configuration via ClusterController RPCs.
+      All URLs from endpoints module.
+
+  - file: packages/sdk/src/cluster/cluster.ts
+    protects:
+      - ui.join_approval_starts_workflow_not_completes_join
+      - ui.destructive_action_requires_explicit_confirmation
+    enforces:
+      - ui.state_authority_binding
+    notes: |
+      Cluster operations: join approval, node profiles, desired-state CRUD,
+      reconciliation, validation. approveJoin() starts a workflow — callers must
+      poll for terminal state. removeDesiredService() and triggerReconcileAll()
+      are destructive — callers must show confirmation.
+      computeReconciliationDiff() correctly separates desired vs installed layers.
+
+  - file: packages/sdk/src/workflow/workflow.ts
+    enforces:
+      - ui.workflow_completion_requires_terminal_state_poll
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      Workflow run/step/graph queries. Exposes run status (PENDING through FAILED)
+      so callers can poll for terminal state. retryWorkflowRun() and
+      acknowledgeWorkflowRun() are operator actions.
+
+  - file: packages/sdk/src/repository/repository.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    notes: |
+      Repository artifact CRUD. deleteArtifact() is destructive — callers must
+      confirm. setArtifactState() can quarantine/revoke artifacts.
+
+  - file: packages/sdk/src/rbac/accounts.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    notes: |
+      Account CRUD via ResourceService. deleteAccount() is destructive.
+      getCurrentAccount() reads from sessionStorage token (correct authority).
+
+  - file: packages/sdk/src/rbac/roles.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    enforces:
+      - ui.rbac_is_server_enforced_not_ui
+    notes: |
+      Role CRUD via ResourceService. deleteRole() is destructive.
+      Role data is for display only — server enforces via interceptor chain.
+
+  - file: packages/sdk/src/rbac/permissions.ts
+    enforces:
+      - ui.rbac_is_server_enforced_not_ui
+    notes: |
+      Permission queries via RbacService. Permission data displayed in UI
+      is informational — the server interceptor chain is the actual enforcer.
+
+  - file: packages/sdk/src/dns/dns.ts
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+      - ui.no_hardcoded_backend_addresses
+    notes: |
+      DNS record queries and zone management. Errors propagate to callers.
+      getDnsDomains() has manual retry on UNAUTHENTICATED (token refresh edge case).
+
+  - file: packages/sdk/src/backup/backup_client.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      Backup management: run, list, validate, restore, delete.
+      deleteBackup(), deleteBackupJob(), deleteMinioBucket(), restoreBackup()
+      are destructive — callers must show confirmation.
+
+  - file: packages/sdk/src/backend.ts
+    notes: |
+      Singleton Backend class with static EventHub. No invariant enforcement —
+      purely an event bus wrapper.
+
+  - file: packages/sdk/src/core/proto_fix.ts
+    notes: |
+      Workaround for Vite CJS→ESM proto namespace breakage. Injects exported
+      classes into globalThis.proto.<pkg>. No invariant relevance.

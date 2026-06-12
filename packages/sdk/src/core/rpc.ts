@@ -1,3 +1,5 @@
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator (normalizes + propagates errors)
+// globular: enforces ui.token_storage_sessionStorage_only (reads token via metadata/ensureFreshToken)
 import { metadata, ensureFreshToken } from "./auth";
 import { serviceHost, grpcWebHostUrl } from "./endpoints";
 import { normalizeError } from "./errors";

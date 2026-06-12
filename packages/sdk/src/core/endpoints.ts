@@ -1,4 +1,7 @@
 // endpoints.ts
+//
+// globular: enforces ui.no_hardcoded_backend_addresses (all URLs from localStorage config)
+// globular: enforces ui.token_storage_sessionStorage_only (reads token via getStoredTokenSync)
 type JSONValue = string | number | boolean | null | JSONObject | JSONArray;
 interface JSONObject { [k: string]: JSONValue }
 interface JSONArray extends Array<JSONValue> {}
@@ -246,7 +249,8 @@ export async function saveServiceConfig(
   patch: Partial<ServiceDesc> & { Id: string },
   base = requireBaseUrl(),
 ): Promise<void> {
-  const token = sessionStorage.getItem("__globular_token__") ?? "";
+  const { getStoredTokenSync } = await import('./auth')
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(safeJoin(base, "/api/save-service-config"), {
     method:  "POST",
     headers: { "Content-Type": "application/json", token },

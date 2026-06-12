@@ -1,3 +1,4 @@
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator (normalizes errors for UI display)
 export type GrpcWebError = Error & { code?: number; metadata?: any }
 export function normalizeError(err: unknown): Error {
   const e = err as GrpcWebError

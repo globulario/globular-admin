@@ -1,3 +1,5 @@
+// globular: enforces ui.token_storage_sessionStorage_only (delegates to auth.ts)
+// globular: enforces ui.super_admin_detection_is_display_only (isSa is display hint, not auth gate)
 import { logout as authLogout, getStoredTokenSync } from './auth'
 
 let navigateHandler: ((path: string) => void) | null = null;

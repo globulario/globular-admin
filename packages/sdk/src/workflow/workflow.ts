@@ -2,6 +2,9 @@
 //
 // Client-side API for the Workflow Trace service.
 // Provides functions to fetch workflow runs, steps, and graphs for the admin UI.
+//
+// globular: enforces ui.workflow_completion_requires_terminal_state_poll (exposes run status for polling)
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator (errors propagate to caller)
 
 import { unary } from '../core/rpc'
 import { grpcWebHostUrl } from '../core/endpoints'

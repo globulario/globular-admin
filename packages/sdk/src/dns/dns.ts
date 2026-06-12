@@ -2,6 +2,9 @@
 //
 // gRPC-web wrapper for the DNS service.
 // Follows the same pattern as cluster.ts — unary() + metadata().
+//
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator (errors propagate to caller)
+// globular: enforces ui.no_hardcoded_backend_addresses (all URLs from endpoints)
 
 import { unary } from '../core/rpc'
 import { grpcWebHostUrl } from '../core/endpoints'

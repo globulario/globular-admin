@@ -3,9 +3,13 @@
  *
  * v2 (structured): GET/POST /api/cors-policy, /api/services-cors-policy, etc.
  * v1 (legacy):     GET /api/services-cors, POST /api/service-cors — kept for compat.
+ *
+ * globular: enforces ui.no_hardcoded_backend_addresses (all URLs from requireBaseUrl)
+ * globular: enforces ui.token_storage_sessionStorage_only (reads token via getStoredTokenSync)
  */
 
 import { requireBaseUrl } from './endpoints'
+import { getStoredTokenSync } from './auth'
 
 // ── Structured CORS types (v2) ──────────────────────────────────────────────
 
@@ -43,7 +47,7 @@ export async function fetchStructuredGatewayCorsPolicy(): Promise<CorsPolicy> {
 /** POST /api/set-cors-policy — save structured gateway CORS policy. */
 export async function saveStructuredGatewayCorsPolicy(policy: CorsPolicy): Promise<{ saved?: boolean; warnings?: string[] }> {
   const base = requireBaseUrl()
-  const token = sessionStorage.getItem('__globular_token__') ?? ''
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(`${base}/api/set-cors-policy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', token },
@@ -73,7 +77,7 @@ export async function fetchStructuredServicesCorsPolicy(): Promise<ServiceCorsPo
 /** POST /api/set-service-cors-policy?id=... — save per-service CORS policy. */
 export async function saveStructuredServiceCorsPolicy(id: string, policy: CorsPolicy): Promise<void> {
   const base = requireBaseUrl()
-  const token = sessionStorage.getItem('__globular_token__') ?? ''
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(`${base}/api/set-service-cors-policy?id=${encodeURIComponent(id)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', token },
@@ -145,7 +149,7 @@ export async function saveServiceCorsPolicy(
   allowedOrigins: string
 ): Promise<void> {
   const base = requireBaseUrl()
-  const token = sessionStorage.getItem('__globular_token__') ?? ''
+  const token = getStoredTokenSync() ?? ''
   const res = await fetch(`${base}/api/service-cors`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', token },
@@ -186,7 +190,7 @@ export async function saveGatewayCorsPolicy(
   allowedOrigins: string
 ): Promise<void> {
   const base = requireBaseUrl()
-  const token = sessionStorage.getItem('__globular_token__') ?? ''
+  const token = getStoredTokenSync() ?? ''
 
   const origins: string[] = allowAllOrigins
     ? ['*']
