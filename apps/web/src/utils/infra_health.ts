@@ -48,10 +48,10 @@ export function isFresh(lastUpdated: number, maxAgeMs: number): boolean {
 
 export function stateColor(s: HealthState): string {
   switch (s) {
-    case 'healthy':  return '#22c55e'
-    case 'degraded': return '#f59e0b'
-    case 'critical': return 'var(--error-color)'
-    default:         return 'var(--secondary-text-color)'
+    case 'healthy':  return 'var(--health-ok)'
+    case 'degraded': return 'var(--health-warn)'
+    case 'critical': return 'var(--health-critical)'
+    default:         return 'var(--health-unknown)'
   }
 }
 

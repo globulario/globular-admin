@@ -1,0 +1,191 @@
+# meta_principle_findings.yaml — globular-admin
+#
+# Findings from the UI meta-principle audit (2026-06-12).
+# These are architectural patterns, not individual bugs.
+# Each finding maps to a meta.ui.* principle from the services CLAUDE.md.
+
+findings:
+
+  # ── Systemic: Color semantic contract ──────────────────────────────────────
+
+  - id: mpf.raw_hex_colors
+    principle: meta.ui.theme_tokens_must_encode_roles_not_preferences
+    severity: high
+    status: partially_fixed
+    summary: |
+      ~70+ instances of raw hex colors (#22c55e, #f59e0b, #3b82f6, #8b5cf6,
+      #f97316, #dc2626, etc.) scattered across page and widget files instead
+      of CSS custom properties.
+    root_cause: |
+      The theme.css only defined --error-color and --success-color but had
+      NO --warning-color token. Infrastructure pages used #22c55e (a different
+      green than --success-color #10b981) as a de facto "ok" color.
+    fix_applied: |
+      Added --warning-color and --health-ok/warn/critical/unknown tokens to
+      theme.css (light + dark). Updated infra_health.ts stateColor() to use
+      CSS tokens instead of raw hex.
+    remaining_work: |
+      Migrate all remaining raw hex colors in page files to use the new
+      CSS tokens. Affected files (by count of raw hex instances):
+        - infrastructure_dns.ts (~12)
+        - infrastructure_storage.ts (~10)
+        - services_catalog.ts (~8)
+        - infrastructure_networking.ts (~6)
+        - infrastructure_control_plane.ts (~5)
+        - infrastructure_observability.ts (~5)
+        - cluster_workflows.ts (~8)
+        - workflow_detail.ts (~15)
+        - cluster_topology.ts (~5)
+        - cluster_incidents.ts (~4)
+        - services_detail.ts (~4)
+        - services_instances.ts (~3)
+        - dashboard.ts (~2)
+
+  - id: mpf.inconsistent_green
+    principle: meta.ui.color_must_have_semantic_contract
+    severity: medium
+    status: identified
+    summary: |
+      Two different greens used for "ok/healthy": #22c55e (in pages) vs
+      --success-color (#10b981 light / #34d399 dark). These render as
+      visibly different colors, breaking the semantic contract that
+      "green = confirmed healthy".
+    fix: |
+      Replace all #22c55e with var(--health-ok) which resolves to
+      var(--success-color). The stateColor() utility now returns
+      var(--health-ok) instead of #22c55e.
+
+  - id: mpf.planned_vs_progressing_same_color
+    principle: meta.ui.state_certainty_must_be_visually_distinct
+    severity: medium
+    status: identified
+    file: apps/web/src/pages/services_catalog.ts
+    summary: |
+      "Planned" (desired set, not yet installed) and "Progressing" (actively
+      rolling out) both render as #f59e0b amber. These are fundamentally
+      different states — planned is static/waiting, progressing is active.
+    fix: |
+      Assign distinct colors: planned = purple (#8b5cf6), progressing = amber.
+
+  # ── Systemic: State certainty ──────────────────────────────────────────────
+
+  - id: mpf.cached_data_looks_live
+    principle: meta.ui.state_certainty_must_be_visually_distinct
+    severity: high
+    status: identified
+    summary: |
+      Module-level cache data rendered on remount looks identical to freshly
+      fetched data. The freshnessBadge() in page headers shows LIVE/STALE/
+      DISCONNECTED, but individual data cards and table cells have no
+      staleness indicator. An operator can't tell if a "HEALTHY" badge
+      is from a probe 3 seconds ago or cached data from 2 minutes ago.
+    affected_files:
+      - apps/web/src/pages/dashboard.ts
+      - apps/web/src/pages/infrastructure_overview.ts
+      - apps/web/src/pages/infrastructure_storage.ts
+      - apps/web/src/pages/cluster_nodes.ts
+    fix: |
+      Add per-card age indicators or subtle opacity fade for stale data.
+      Pattern: if data age > poll interval, append "(stale)" or reduce
+      card opacity to 0.7.
+
+  - id: mpf.unknown_vs_loading_indistinct
+    principle: meta.ui.state_certainty_must_be_visually_distinct
+    severity: medium
+    status: identified
+    summary: |
+      "Unknown" state (no data available) and "loading" state (data in
+      flight) both render as grey/secondary-text-color. An operator can't
+      distinguish "we haven't checked yet" from "we checked and got no
+      answer" from "we're currently checking".
+    fix: |
+      Add a loading spinner for in-flight state. Keep grey for confirmed
+      unknown. Add "(loading...)" text for in-flight.
+
+  # ── Systemic: Provenance ───────────────────────────────────────────────────
+
+  - id: mpf.status_without_provenance
+    principle: meta.ui.provenance_over_recall
+    severity: medium
+    status: identified
+    summary: |
+      Status badges across all pages say "HEALTHY", "DEGRADED", "UNREACHABLE"
+      but don't show:
+        - Which node the data came from
+        - When the data was sampled (as-of-when)
+        - Which version/generation of the data
+      The header timestamp shows global "last updated" but individual cards
+      lack per-datum provenance.
+    affected_files:
+      - apps/web/src/pages/cluster_nodes.ts
+      - apps/web/src/pages/cluster_topology.ts
+      - apps/web/src/pages/infrastructure_storage.ts
+      - apps/web/src/pages/infrastructure_control_plane.ts
+    fix: |
+      Add "as of Xs ago" or "(node-0)" provenance labels to status badges.
+      Highlight stale data (lastSeen > 5 minutes) in amber.
+
+  # ── Systemic: Workflow closure ─────────────────────────────────────────────
+
+  - id: mpf.no_action_receipt
+    principle: meta.ui.workflow_must_yield_closure
+    severity: medium
+    status: identified
+    summary: |
+      Several async actions complete without explicit success receipts:
+        - Reconcile cluster (dashboard.ts) — button says "Reconciling..."
+          then just reloads data, no "Reconciliation completed: N nodes
+          converged" message
+        - Retry workflow (cluster_workflows.ts) — no toast after retry
+        - Approve join (cluster_join.ts) — shows link to workflows (good)
+          but no ETA or progress inline
+    fix: |
+      Add displaySuccess() toasts after async actions with structured
+      result summaries.
+
+  # ── AWG gaps observed during this audit ────────────────────────────────────
+
+  - id: mpf.awg_gap_no_meta_principle_nodes
+    principle: (AWG improvement)
+    severity: info
+    status: identified
+    summary: |
+      The AWG graph has invariant nodes but NOT meta-principle nodes.
+      When briefing a file, the graph can report "this file enforces
+      ui.token_storage_sessionStorage_only" but cannot report "this file
+      touches meta.ui.color_must_have_semantic_contract".
+    fix: |
+      Add meta-principle nodes to the graph schema. Link source files to
+      meta-principles via the // globular: annotations (same pattern as
+      invariants but with meta.ui.* prefix).
+
+  - id: mpf.awg_gap_no_color_contract_enforcement
+    principle: (AWG improvement)
+    severity: info
+    status: identified
+    summary: |
+      AWG cannot detect raw hex colors in source files or enforce the
+      color semantic contract. A grep for #[0-9a-f]{6} in .ts files
+      would catch violations, but this requires a new enforcement rule
+      type in the graph (regex-based source scan).
+    fix: |
+      Add a new rule type to AWG: "source_pattern" rules that match
+      regex patterns against source files and report violations.
+      Example: { pattern: "#[0-9a-fA-F]{6}", except: ["theme.css"],
+      message: "Use CSS custom property instead of raw hex color" }
+
+  - id: mpf.awg_gap_no_cross_file_consistency
+    principle: (AWG improvement)
+    severity: info
+    status: identified
+    summary: |
+      AWG checks invariants per-file but cannot enforce cross-file
+      consistency. The same operational state (e.g., "node unreachable")
+      may render differently across dashboard.ts, cluster_nodes.ts, and
+      infrastructure_overview.ts. AWG has no "consistency group" concept
+      to detect this.
+    fix: |
+      Add "rendering_contract" nodes to the graph that declare:
+      "HealthState.unknown must always render as var(--health-unknown)
+      with label UNKNOWN". Link all files that render health state to
+      this contract node.

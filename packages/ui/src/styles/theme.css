@@ -87,7 +87,14 @@
 
   /* ── Semantic colours ─────────────────────────────────────────────────── */
   --error-color:   #ef4444;
+  --warning-color: #f59e0b;
   --success-color: #10b981;
+
+  /* ── Health state colours (bind to meta.ui.color_must_have_semantic_contract) ── */
+  --health-ok:       var(--success-color);
+  --health-warn:     var(--warning-color);
+  --health-critical: var(--error-color);
+  --health-unknown:  var(--secondary-text-color);
 
   /* ── Derived palette aliases (used by legacy components) ──────────────── */
   --primary-light-color:  color-mix(in srgb, var(--primary-color) 80%, #ffffff 20%);
@@ -159,7 +166,13 @@
   --primary-dark-color:  color-mix(in srgb, var(--primary-color) 80%, #020617 20%);
 
   --error-color:   #f87171;
+  --warning-color: #fbbf24;
   --success-color: #34d399;
+
+  --health-ok:       var(--success-color);
+  --health-warn:     var(--warning-color);
+  --health-critical: var(--error-color);
+  --health-unknown:  var(--secondary-text-color);
 
   /* Borders are slightly stronger in dark for edge visibility */
   --border-subtle-color: color-mix(in srgb, var(--on-surface-color) 18%, transparent);
