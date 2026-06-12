@@ -1,0 +1,331 @@
+# web_annotations.yaml — globular-admin
+#
+# Maps apps/web/src/ files to the invariants they enforce or protect.
+# Used by AWG to answer briefing/impact queries for frontend changes.
+
+# ── Core files ────────────────────────────────────────────────────────────────
+
+core_files:
+
+  - file: apps/web/src/router.ts
+    enforces:
+      - ui.token_storage_sessionStorage_only
+      - ui.no_hardcoded_backend_addresses
+    notes: |
+      SPA router. Auth gate via hasToken() reads from sessionStorage.
+      isSuperAdmin() checks username==='sa' — display-only, not a security gate.
+      All routes are hash-based (#/...), no backend URLs in routing.
+
+  - file: apps/web/src/main.ts
+    notes: |
+      Entry point. Initializes UI framework and starts router. No invariant surface.
+
+  - file: apps/web/src/utils/confirm_dialog.ts
+    enforces:
+      - ui.destructive_action_requires_explicit_confirmation
+    notes: |
+      Shared confirmation dialog. Used by pages/widgets for destructive actions.
+      Non-default confirm button (Cancel is default via focus management).
+
+  - file: apps/web/src/utils/infra_health.ts
+    enforces:
+      - ui.unknown_state_must_not_appear_healthy
+      - ui.state_authority_binding
+    notes: |
+      Shared health model. HealthState includes 'unknown' as explicit state.
+      stateColor('unknown') returns grey, never green. mergeStatuses() treats
+      unknown as worse than healthy.
+
+# ── Cluster pages ─────────────────────────────────────────────────────────────
+
+cluster_pages:
+
+  - file: apps/web/src/pages/cluster_nodes.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/cluster_join.ts
+    enforces:
+      - ui.join_approval_starts_workflow_not_completes_join
+      - ui.destructive_action_requires_explicit_confirmation
+      - ui.workflow_completion_requires_terminal_state_poll
+
+  - file: apps/web/src/pages/cluster_topology.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/cluster_workflows.ts
+    enforces:
+      - ui.workflow_completion_requires_terminal_state_poll
+      - ui.view_data_separation
+      - ui.refresh_must_not_disrupt_view
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/cluster_incidents.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.page_data_cache
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      Dismiss action now requires confirmation (fixed 2026-06-12).
+
+  - file: apps/web/src/pages/cluster_overview.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.refresh_must_not_disrupt_view
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/cluster_peers.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+
+# ── Infrastructure pages ──────────────────────────────────────────────────────
+
+infrastructure_pages:
+
+  - file: apps/web/src/pages/infrastructure_overview.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+
+  - file: apps/web/src/pages/infrastructure_storage.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+
+  - file: apps/web/src/pages/infrastructure_dns.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+
+  - file: apps/web/src/pages/infrastructure_networking.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+
+  - file: apps/web/src/pages/infrastructure_control_plane.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+
+  - file: apps/web/src/pages/infrastructure_observability.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.no_blind_page_reload
+
+# ── Services pages ────────────────────────────────────────────────────────────
+
+services_pages:
+
+  - file: apps/web/src/pages/services_catalog.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.unknown_state_must_not_appear_healthy
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+
+  - file: apps/web/src/pages/services_detail.ts
+    enforces:
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/services_instances.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.unknown_state_must_not_appear_healthy
+
+# ── Security pages ────────────────────────────────────────────────────────────
+
+security_pages:
+
+  - file: apps/web/src/pages/security_certificates.ts
+    enforces:
+      - ui.destructive_action_requires_explicit_confirmation
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/security_cors.ts
+    enforces:
+      - ui.view_data_separation
+
+  - file: apps/web/src/pages/security_secrets.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+      - ui.destructive_action_requires_explicit_confirmation
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/login.ts
+    enforces:
+      - ui.token_storage_sessionStorage_only
+      - ui.no_hardcoded_backend_addresses
+      - ui.grpc_web_errors_must_surface_to_operator
+
+# ── RBAC pages ────────────────────────────────────────────────────────────────
+
+rbac_pages:
+
+  - file: apps/web/src/pages/rbac_accounts.ts
+    enforces:
+      - ui.rbac_is_server_enforced_not_ui
+    notes: Delegates to users_manager widget.
+
+  - file: apps/web/src/pages/rbac_groups.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.no_blind_page_reload
+      - ui.refresh_must_not_disrupt_view
+    notes: Delegates to groups_manager widget.
+
+  - file: apps/web/src/pages/rbac_orgs.ts
+    enforces:
+      - ui.view_data_separation
+    notes: Delegates to organizations_manager widget.
+
+  - file: apps/web/src/pages/rbac_roles.ts
+    enforces:
+      - ui.view_data_separation
+    notes: Delegates to roles_manager widget.
+
+# ── Repository pages ──────────────────────────────────────────────────────────
+
+repository_pages:
+
+  - file: apps/web/src/pages/repo_market.ts
+    enforces:
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/repo_installed.ts
+    enforces:
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/repo_namespaces.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.destructive_action_requires_explicit_confirmation
+
+  - file: apps/web/src/pages/repo_package_detail.ts
+    enforces:
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/repo_audit.ts
+    enforces:
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/repo_trusted_publishers.ts
+    enforces:
+      - ui.page_data_cache
+
+# ── Admin pages ───────────────────────────────────────────────────────────────
+
+admin_pages:
+
+  - file: apps/web/src/pages/admin_diagnostics.ts
+    enforces:
+      - ui.view_data_separation
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/admin_ai_console.ts
+    enforces:
+      - ui.view_data_separation
+
+  - file: apps/web/src/pages/admin_backups.ts
+    enforces:
+      - ui.destructive_action_requires_explicit_confirmation
+      - ui.view_data_separation
+      - ui.page_data_cache
+
+# ── Workflow/observability pages ──────────────────────────────────────────────
+
+workflow_pages:
+
+  - file: apps/web/src/pages/workflow_detail.ts
+    enforces:
+      - ui.workflow_completion_requires_terminal_state_poll
+      - ui.no_blind_page_reload
+
+  - file: apps/web/src/pages/workflow_defs.ts
+    enforces:
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/observability_metrics.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.no_blind_page_reload
+
+  - file: apps/web/src/pages/observability_logs.ts
+    enforces:
+      - ui.page_data_cache
+
+  - file: apps/web/src/pages/observability_events.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.no_blind_page_reload
+
+  - file: apps/web/src/pages/dashboard.ts
+    enforces:
+      - ui.page_data_cache
+      - ui.no_blind_page_reload
+      - ui.unknown_state_must_not_appear_healthy
+
+# ── Widget files ──────────────────────────────────────────────────────────────
+
+widgets:
+
+  - file: apps/web/src/widgets/avatar_changer.ts
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      Error from updateAccount() now surfaced via displayError() (fixed 2026-06-12).
+
+  - file: apps/web/src/widgets/groups_manager.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      deleteGroup() has confirmation dialog. refresh() error now surfaced (fixed 2026-06-12).
+
+  - file: apps/web/src/widgets/organizations_manager.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      deleteOrganization() has confirmation dialog. refresh() error now surfaced (fixed 2026-06-12).
+
+  - file: apps/web/src/widgets/roles_manager.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+      - ui.rbac_is_server_enforced_not_ui
+    notes: |
+      deleteRole() has confirmation dialog. refresh() error now surfaced (fixed 2026-06-12).
+      Bug fix: this.role -> this._role in role-updated event dispatch.
+
+  - file: apps/web/src/widgets/users_manager.ts
+    protects:
+      - ui.destructive_action_requires_explicit_confirmation
+    enforces:
+      - ui.grpc_web_errors_must_surface_to_operator
+    notes: |
+      deleteAccount() has confirmation dialog. refresh() error now surfaced (fixed 2026-06-12).
+      getRoleBinding() .catch() now shows '(unavailable)' instead of hanging on '(loading...)'.

@@ -1,5 +1,7 @@
 // src/utils/confirm_dialog.ts
 // Lightweight confirm/alert modal that matches the admin Material theme.
+//
+// globular: enforces ui.destructive_action_requires_explicit_confirmation
 
 const DIALOG_STYLES = `
   .confirm-overlay {

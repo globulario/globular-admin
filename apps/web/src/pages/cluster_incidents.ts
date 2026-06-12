@@ -3,6 +3,10 @@
 // Incident view — operator surface for the self-correcting control plane.
 // See services/docs/incidents-design.md for the data model & semantics.
 //
+// globular: enforces ui.view_data_separation
+// globular: enforces ui.page_data_cache
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator
+//
 // Layered disclosure per incident:
 //   1. Headline (severity + entity + summary)
 //   2. Evidence (Observed / Correlated)
@@ -249,6 +253,11 @@ class PageClusterIncidents extends HTMLElement {
     const incidentId = btn.dataset.incident || ''
     const fixId = btn.dataset.fix || ''
     if (!incidentId || !action) return
+    // Dismiss is a destructive action — require confirmation
+    if (action === 'dismiss') {
+      const ok = confirm(`Dismiss this incident? It will no longer appear in the active list.`)
+      if (!ok) return
+    }
     btn.disabled = true
     try {
       await applyIncidentAction(incidentId, action, 'operator', fixId, '')

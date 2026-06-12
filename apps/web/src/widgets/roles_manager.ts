@@ -1,4 +1,7 @@
 // /widgets/roles_manager.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation (deleteRole)
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator
 import {
   listRoles,
   createRole,
@@ -637,7 +640,7 @@ class RoleInlineEditor extends HTMLElement {
         await this._renderActionsPanes();
 
         displaySuccess(isNew ? "Role created." : "Role updated.");
-        this.dispatchEvent(new CustomEvent(isNew ? "role-created" : "role-updated", { bubbles: true, detail: this.role }));
+        this.dispatchEvent(new CustomEvent(isNew ? "role-created" : "role-updated", { bubbles: true, detail: this._role }));
       } catch (e: any) {
         console.error(e);
         displayError(e?.message || "Failed to save role.");
@@ -745,6 +748,7 @@ export class RolesManager extends HTMLElement {
       this.table.setData(data);
     } catch (e: any) {
       console.error(e);
+      displayError(e?.message || "Failed to load roles.");
       this.table.setData([]);
     }
   }

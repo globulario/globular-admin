@@ -1,5 +1,7 @@
 // src/components/avatar-changer.ts
-import { updateAccount } from "@globular/sdk";
+//
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator
+import { updateAccount, displayError } from "@globular/sdk";
 
 // TypeScript declaration for Vite's import.meta.glob
 interface ImportMeta {
@@ -95,8 +97,8 @@ export class AvatarChanger extends HTMLElement {
           await updateAccount(this.accountId, {
             profilePicture: decodeURIComponent(item.src),
           });
-        } catch (err) {
-          console.error("updateAccount(profilePicture) failed:", err);
+        } catch (err: any) {
+          displayError(err?.message || "Failed to save avatar.");
         }
       }
     });

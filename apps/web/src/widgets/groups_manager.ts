@@ -1,4 +1,7 @@
 // src/widgets/groups_manager.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation (deleteGroup)
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator
 import {
   listGroups,
   createGroup,
@@ -493,6 +496,7 @@ export class GroupsManager extends HTMLElement {
       this.table.setData(data);
     } catch (e: any) {
       console.error(e);
+      displayError(e?.message || "Failed to load groups.");
       this.table.setData([]);
     }
   }

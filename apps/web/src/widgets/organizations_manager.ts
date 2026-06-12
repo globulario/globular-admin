@@ -1,4 +1,7 @@
 // /widgets/organizations_manager.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation (deleteOrganization)
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator
 import {
   listOrganizations,
   createOrganization,
@@ -567,6 +570,7 @@ export class OrganizationsManager extends HTMLElement {
       this.table.setData(data);
     } catch (e: any) {
       console.error(e);
+      displayError(e?.message || "Failed to load organizations.");
       this.table.setData([]);
     }
   }

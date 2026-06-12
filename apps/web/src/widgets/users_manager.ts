@@ -1,4 +1,7 @@
 // src/widgets/users_manager.ts
+//
+// globular: protects ui.destructive_action_requires_explicit_confirmation (deleteAccount)
+// globular: enforces ui.grpc_web_errors_must_surface_to_operator
 import {
   listAccounts,
   createAccount,
@@ -457,6 +460,8 @@ class UsersInlineEditor extends HTMLElement {
       if (acc.id) {
         getRoleBinding(acc.id).then(roles => {
           rolesEl.textContent = roles.length > 0 ? roles.join(', ') : '(none)'
+        }).catch(() => {
+          rolesEl.textContent = '(unavailable)'
         })
       } else {
         rolesEl.textContent = '(new account)'
@@ -645,6 +650,7 @@ export class UsersManager extends HTMLElement {
       this.table.setData(data)
     } catch (e: any) {
       console.error(e)
+      displayError(e?.message || 'Failed to load accounts.')
       this.table.setData([])
     }
   }
