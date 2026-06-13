@@ -366,6 +366,8 @@ invariants:
       title: Page components must build their DOM shell exactly once, guarded by a _built flag
       severity: high
       status: active
+      # origin: { type: structural_audit, confidence: high }
+      # evidence: 10 pages found missing _built guard during 2026-06-12 audit
       summary: |
           Every page component that renders backend data must follow this structure:
           1. Declare `private _built = false` on the class
@@ -384,6 +386,8 @@ invariants:
       title: Components with setInterval must clean up in disconnectedCallback
       severity: high
       status: active
+      # origin: { type: structural_audit, confidence: high }
+      # evidence: 4 pages with timers but no disconnectedCallback found 2026-06-12
       summary: |
           Any component that creates a timer (setInterval or recurring setTimeout) MUST
           implement disconnectedCallback() to clear it. Failure to do so causes memory
@@ -396,6 +400,8 @@ invariants:
       title: Pages with live data must use module-level cache for stale-while-revalidate
       severity: high
       status: active
+      # origin: { type: structural_audit, confidence: high }
+      # evidence: 20 pages missing module-level cache found 2026-06-12
       summary: |
           Every page that fetches remote data must declare a module-level cache:
           `const _cache: { data: T | null; fetchedAt: number } = { data: null, fetchedAt: 0 }`
@@ -413,6 +419,8 @@ invariants:
       title: Pages must have a persistent error slot for surfacing fetch failures
       severity: medium
       status: active
+      # origin: { type: structural_audit, confidence: high }
+      # evidence: 18 pages missing error banner slot found 2026-06-12
       summary: |
           Every page shell must include an error banner element (id="error-banner"
           or data-bind="error-area"). When a fetch fails, show the error in the
@@ -426,6 +434,8 @@ invariants:
       title: SDK proto helpers (getStr, getArr, newRq, pickMethod) must not be duplicated
       severity: medium
       status: active
+      # origin: { type: code_audit, confidence: high }
+      # evidence: 6 SDK rbac files had identical copies of 4 functions (fixed commit bb71f17)
       summary: |
           The SDK rbac/ modules share identical utility functions for proto message
           access. These must be defined once in a shared module and imported.
@@ -437,6 +447,8 @@ invariants:
       title: Every interactive or data-driven DOM element must have a stable, unique identifier
       severity: high
       status: active
+      # origin: { type: visual_audit, confidence: high }
+      # evidence: anonymous spans in incidents page filter pills discovered via screenshot 2026-06-12
       summary: |
           Every DOM element that is:
           (a) clickable / interactive (buttons, pills, tabs, links),
@@ -474,6 +486,8 @@ invariants:
       title: Filter pill counts must show totals across the full dataset, not the filtered subset
       severity: high
       status: active
+      # origin: { type: visual_audit_incident, confidence: very_high }
+      # evidence: cluster_incidents.ts showed RESOLVED 0 when 13 existed (fixed commit 1d1fa3d)
       summary: |
           When a page displays filter pills (e.g., All / OPEN / RESOLVED / ACKED),
           the count shown on each pill must reflect the TOTAL number of items in that
