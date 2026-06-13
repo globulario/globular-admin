@@ -359,3 +359,76 @@ invariants:
       forbidden_fixes:
           - forbidden.full_render_on_refresh
           - forbidden.wipe_slot_on_refresh
+
+    # ── Structural invariants (component pattern) ─────────────────────────────
+
+    - id: ui.component_shell_built_once
+      title: Page components must build their DOM shell exactly once, guarded by a _built flag
+      severity: high
+      status: active
+      summary: |
+          Every page component that renders backend data must follow this structure:
+          1. Declare `private _built = false` on the class
+          2. In connectedCallback(), call `_buildShell()` which checks `if (this._built) return`
+          3. `_buildShell()` sets `this._built = true` then assigns `this.innerHTML` ONCE
+          4. All subsequent updates call `_pushData()` or `_patchTabContent()` — targeted slot writes
+
+          Exempt: thin wrappers delegating to widgets (rbac pages), static pages (login),
+          and pages with no polling/refresh cycle.
+      enforcement: |
+          Before adding a new page component, verify it declares _built and _buildShell().
+      forbidden_fixes:
+          - forbidden.full_render_on_refresh
+
+    - id: ui.component_timer_cleanup
+      title: Components with setInterval must clean up in disconnectedCallback
+      severity: high
+      status: active
+      summary: |
+          Any component that creates a timer (setInterval or recurring setTimeout) MUST
+          implement disconnectedCallback() to clear it. Failure to do so causes memory
+          leaks, ghost fetches, and console errors from detached DOM operations.
+      enforcement: |
+          Before adding setInterval to a component, verify disconnectedCallback exists
+          and clears the timer.
+
+    - id: ui.module_level_cache_required
+      title: Pages with live data must use module-level cache for stale-while-revalidate
+      severity: high
+      status: active
+      summary: |
+          Every page that fetches remote data must declare a module-level cache:
+          `const _cache: { data: T | null; fetchedAt: number } = { data: null, fetchedAt: 0 }`
+          This cache survives component destroy/recreate from navigation. On remount,
+          push cached data to slots before calling _load(). Instance-level caches
+          (this._cache) are destroyed on navigation — forbidden.
+      enforcement: |
+          Verify a module-level const _cache exists at file scope. Verify
+          connectedCallback pushes _cache.data before _load().
+      forbidden_fixes:
+          - forbidden.instance_level_page_cache
+          - forbidden.spinner_over_cached_data
+
+    - id: ui.error_banner_slot_required
+      title: Pages must have a persistent error slot for surfacing fetch failures
+      severity: medium
+      status: active
+      summary: |
+          Every page shell must include an error banner element (id="error-banner"
+          or data-bind="error-area"). When a fetch fails, show the error in the
+          banner slot and keep cached data visible. Never wipe data slots to show
+          an error — use the dedicated error slot.
+      enforcement: |
+          Verify the shell HTML includes an error banner element and the _load()
+          error handler writes to the error slot without clearing data slots.
+
+    - id: ui.sdk_utilities_not_duplicated
+      title: SDK proto helpers (getStr, getArr, newRq, pickMethod) must not be duplicated
+      severity: medium
+      status: active
+      summary: |
+          The SDK rbac/ modules share identical utility functions for proto message
+          access. These must be defined once in a shared module and imported.
+          Duplicated utilities cause inconsistent behavior and missed bug fixes.
+      enforcement: |
+          Import from packages/sdk/src/rbac/proto_helpers.ts. Do not define local copies.

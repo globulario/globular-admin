@@ -10,6 +10,9 @@ import { grpcWebHostUrl } from "../core/endpoints"
 // ---- Generated stubs (adjust paths if needed) ----
 import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb"
 import * as resource from "globular-web-client/resource/resource_pb"
+import { newRq as newRqIn, pickMethod, getStr, getArr } from './proto_helpers'
+
+function newRq(names: readonly string[]): any { return newRqIn(resource, names) }
 
 // Also use accounts API to hydrate member IDs → Account objects
 import { getAccountsByIds, type Account } from "./accounts"
@@ -79,40 +82,6 @@ const SERVICE_METHODS = {
 function clientFactory(): resourceGrpc.ResourceServiceClient {
   const base = grpcWebHostUrl()
   return new resourceGrpc.ResourceServiceClient(base, null, { withCredentials: true })
-}
-
-/** Try multiple names for a request class; fall back to plain object */
-function newRq(names: readonly string[]): any {
-  for (const n of names) {
-    const Ctor: any = (resource as any)[n]
-    if (typeof Ctor === "function") return new Ctor()
-  }
-  return {}
-}
-
-/** Pick the first method that exists on the client. */
-function pickMethod(c: any, names: readonly string[]): string {
-  for (const n of names) if (typeof (c as any)[n] === "function") return n
-  return names[0]
-}
-
-/** Safe getters similar to accounts.ts */
-const getStr = (obj: any, names: string[], alt?: any) => {
-  for (const n of names) {
-    const fn = obj?.[n]
-    if (typeof fn === "function") return String(fn.call(obj))
-    if (n in (obj || {})) return String(obj[n])
-  }
-  return alt === undefined ? "" : String(alt)
-}
-
-const getArr = (obj: any, names: string[]): string[] => {
-  for (const n of names) {
-    const fn = obj?.[n]
-    const v = typeof fn === "function" ? fn.call(obj) : obj?.[n]
-    if (Array.isArray(v)) return v.map(String)
-  }
-  return []
 }
 
 /** Map proto Group → GroupVM */

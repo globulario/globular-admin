@@ -2,6 +2,7 @@
 import { grpcWebHostUrl } from '../core/endpoints'
 import { unary, stream } from '../core/rpc'
 import { metadata } from '../core/auth'
+import { newRq as newRqShared, pickMethod, getStr, getArr } from './proto_helpers'
 
 // ---- Generated stubs (adjust import paths if needed) ----
 import * as resourceGrpc from "globular-web-client/resource/resource_grpc_web_pb"
@@ -62,40 +63,8 @@ function repositoryClient(): repoGrpc.PackageRepositoryClient {
 
 
 // ------------------------------ utils ------------------------------
-/** Try multiple names for a request class in a given namespace; fallback to {} if not found */
-function newRqIn(ns: any, names: readonly string[]): any {
-  for (const n of names) {
-    const Ctor: any = ns?.[n]
-    if (typeof Ctor === 'function') return new Ctor()
-  }
-  return {}
-}
-/** Try multiple names for a request class; fallback to {} if not found (resource namespace default) */
-function newRq(names: readonly string[]): any { return newRqIn(resource, names) }
-
-/** Pick the first method that exists on the client. */
-function pickMethod(c: any, names: readonly string[]): string {
-  for (const n of names) if (typeof c[n] === 'function') return n
-  return names[0]
-}
-
-const getStr = (obj: any, names: string[], alt?: any) => {
-  for (const n of names) {
-    const fn = obj?.[n]
-    if (typeof fn === 'function') return String(fn.call(obj))
-    if (n in (obj || {})) return String(obj[n])
-  }
-  return alt === undefined ? '' : String(alt)
-}
-
-const getArr = (obj: any, names: string[]): string[] => {
-  for (const n of names) {
-    const fn = obj?.[n]
-    const v = typeof fn === 'function' ? fn.call(obj) : obj?.[n]
-    if (Array.isArray(v)) return v.map(String)
-  }
-  return []
-}
+function newRqIn(ns: any, names: readonly string[]): any { return newRqShared(ns, names) }
+function newRq(names: readonly string[]): any { return newRqShared(resource, names) }
 
 const getNum = (obj: any, names: string[], alt = 0) => {
   const s = getStr(obj, names, '')

@@ -20,39 +20,7 @@ function clientFactory(): rbacGrpc.RbacServiceClient {
 
 
 // ------------------------------ utils ------------------------------
-/** Try multiple names for a request class; fallback to {} if not found */
-function newRq(ns: any, names: readonly string[]): any {
-  for (const n of names) {
-    const Ctor: any = ns?.[n]
-    if (typeof Ctor === 'function') return new Ctor()
-  }
-  return {}
-}
-
-/** Pick the first method that exists on the client. */
-function pickMethod(c: any, names: readonly string[]): string {
-  for (const n of names) if (typeof c[n] === 'function') return n
-  return names[0]
-}
-
-// Small field helpers (robust to generator diffs)
-const getStr = (obj: any, names: string[], alt?: any) => {
-  for (const n of names) {
-    const fn = obj?.[n]
-    if (typeof fn === 'function') return String(fn.call(obj))
-    if (n in (obj || {})) return String(obj[n])
-  }
-  return alt === undefined ? '' : String(alt)
-}
-
-const getArr = (obj: any, names: string[]): string[] => {
-  for (const n of names) {
-    const fn = obj?.[n]
-    const v = typeof fn === 'function' ? fn.call(obj) : obj?.[n]
-    if (Array.isArray(v)) return v.map(String)
-  }
-  return []
-}
+import { newRq, pickMethod, getStr, getArr } from './proto_helpers'
 
 // ------------------------------ service map ------------------------------
 const SERVICE_NAME = 'rbac.RbacService' as const
