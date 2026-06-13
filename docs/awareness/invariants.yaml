@@ -432,3 +432,63 @@ invariants:
           Duplicated utilities cause inconsistent behavior and missed bug fixes.
       enforcement: |
           Import from packages/sdk/src/rbac/proto_helpers.ts. Do not define local copies.
+
+    - id: ui.interactive_element_must_have_stable_identity
+      title: Every interactive or data-driven DOM element must have a stable, unique identifier
+      severity: high
+      status: active
+      summary: |
+          Every DOM element that is:
+          (a) clickable / interactive (buttons, pills, tabs, links),
+          (b) a data slot that receives updates (badges, counts, status indicators), or
+          (c) a container whose content is replaced by _pushData / _set
+
+          MUST have a stable identifier via one of:
+          - `id="unique-name"` — for singleton elements (one per page)
+          - `data-bind="slot-name"` — for data slots targeted by _set()
+          - `data-filter="N"` / `data-action="X"` — for event-delegated interactive elements
+          - `data-id="entity-id"` — for list items bound to a backend entity
+
+          Why:
+          1. Testability — automated tests and screenshot-based audits need stable selectors
+          2. Debuggability — DevTools inspection requires named anchors
+          3. Accessibility — screen readers need labeled elements
+          4. AWG enforcement — structural audits can verify element identity via DOM queries
+          5. Identity principle — every element that carries operational meaning must be
+             individually addressable, not anonymous
+
+          Anonymous `<span>` elements with inline styles are particularly dangerous because:
+          - They can't be targeted by CSS-only theme overrides
+          - They can't be tested without fragile nth-child selectors
+          - They carry no semantic signal to assistive technology
+
+          The identity must be STABLE across renders — it must not change when data changes.
+          Use the entity's domain ID (incident ID, node ID, service name) as the basis
+          for data-id, not array indices or generated UUIDs.
+      enforcement: |
+          Before adding an interactive or data-driven element, assign it one of:
+          id, data-bind, data-action, data-filter, or data-id.
+          Anonymous styled spans that carry operational meaning are a violation.
+
+    - id: ui.filter_counts_must_reflect_total_not_filtered
+      title: Filter pill counts must show totals across the full dataset, not the filtered subset
+      severity: high
+      status: active
+      summary: |
+          When a page displays filter pills (e.g., All / OPEN / RESOLVED / ACKED),
+          the count shown on each pill must reflect the TOTAL number of items in that
+          status across the entire dataset — not just the items visible in the current
+          filter view.
+
+          Showing filtered counts creates a false impression:
+          - "RESOLVED 0" when 13 incidents are actually resolved but hidden by the OPEN filter
+          - "All 3" when the total is actually 16 but only OPEN incidents were fetched
+
+          The correct pattern:
+          1. Always fetch the full dataset (status=0 / no filter) from the backend
+          2. Compute pill counts from the full dataset
+          3. Apply the filter client-side for display
+          4. Clicking a filter pill re-applies the filter without re-fetching
+      enforcement: |
+          Pill count variables must be computed from _allItems (unfiltered),
+          not _items (filtered). The _load() method must fetch with status=0.

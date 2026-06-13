@@ -183,7 +183,8 @@ const _cache: _IncidentsCache = { data: null, fetchedAt: 0 }
 
 class PageClusterIncidents extends HTMLElement {
   private _built = false
-  private _incidents: Incident[] = []
+  private _allIncidents: Incident[] = []  // unfiltered — used for pill counts
+  private _incidents: Incident[] = []      // filtered — used for display
   private _loading = true
   private _error = ''
   private _clusterId = 'globular.internal'
@@ -194,7 +195,8 @@ class PageClusterIncidents extends HTMLElement {
     this._buildShell()
     // Show cached data immediately — zero flicker on back-navigation
     if (_cache.data !== null) {
-      this._incidents = _cache.data
+      this._allIncidents = _cache.data
+      this._applyFilter()
       this._loading = false
       this._pushData()
     }
@@ -241,11 +243,12 @@ class PageClusterIncidents extends HTMLElement {
     const t = evt.target as HTMLElement
     const btn = t.closest('button[data-action]') as HTMLButtonElement | null
     if (!btn) {
-      // filter pill click
+      // filter pill click — re-apply filter to existing data, no re-fetch
       const pill = t.closest('[data-filter]') as HTMLElement | null
       if (pill) {
         this._filterStatus = Number(pill.dataset.filter)
-        this._load()
+        this._applyFilter()
+        this._pushData()
       }
       return
     }
@@ -272,10 +275,12 @@ class PageClusterIncidents extends HTMLElement {
   private async _load() {
     this._error = ''
     try {
-      const fresh = await listIncidents(this._clusterId, this._filterStatus, 100)
-      this._incidents = fresh
+      // Always fetch ALL incidents so pill counts are accurate across statuses
+      const fresh = await listIncidents(this._clusterId, 0, 100)
+      this._allIncidents = fresh
       _cache.data = fresh
       _cache.fetchedAt = Date.now()
+      this._applyFilter()
       this._showError('')
     } catch (e: any) {
       // On error: keep showing cached data, only update error banner
@@ -285,11 +290,23 @@ class PageClusterIncidents extends HTMLElement {
     this._pushData()
   }
 
+  /** Apply the current filter to the full dataset for display */
+  private _applyFilter() {
+    const STATUS_MAP: Record<number, IncidentStatus> = { 1: 'OPEN', 2: 'RESOLVING', 3: 'RESOLVED', 4: 'ACKED' }
+    if (this._filterStatus === 0) {
+      this._incidents = this._allIncidents
+    } else {
+      const target = STATUS_MAP[this._filterStatus]
+      this._incidents = this._allIncidents.filter(i => i.status === target)
+    }
+  }
+
   private _pushData() {
-    const open = this._incidents.filter(i => i.status === 'OPEN').length
-    const resolving = this._incidents.filter(i => i.status === 'RESOLVING').length
-    const acked = this._incidents.filter(i => i.status === 'ACKED').length
-    const resolved = this._incidents.filter(i => i.status === 'RESOLVED').length
+    // Pill counts from ALL incidents (unfiltered), not the displayed subset
+    const open = this._allIncidents.filter(i => i.status === 'OPEN').length
+    const resolving = this._allIncidents.filter(i => i.status === 'RESOLVING').length
+    const acked = this._allIncidents.filter(i => i.status === 'ACKED').length
+    const resolved = this._allIncidents.filter(i => i.status === 'RESOLVED').length
 
     const pill = (label: string, count: number, filter: number, color: string) => `
       <span data-filter="${filter}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:14px;border:1px solid ${this._filterStatus === filter ? color : 'var(--border-subtle-color)'};color:${this._filterStatus === filter ? 'white' : color};background:${this._filterStatus === filter ? color : 'transparent'};font-size:.72rem;font-weight:600;cursor:pointer">

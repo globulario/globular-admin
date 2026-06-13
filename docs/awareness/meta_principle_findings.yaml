@@ -145,6 +145,40 @@ findings:
 
   # ── AWG gaps observed during this audit ────────────────────────────────────
 
+  - id: mpf.anonymous_ui_elements
+    principle: meta.ui.interactive_element_must_have_stable_identity
+    severity: high
+    status: identified
+    summary: |
+      Many UI elements (filter pills, status badges, count spans) are rendered
+      as anonymous <span> elements with inline styles but no id, data-bind,
+      or data-* attribute. This violates the identity principle: every element
+      that carries operational meaning must be individually addressable.
+      Discovered on the incidents page where filter pills use data-filter
+      but count spans inside them have no identity.
+    fix: |
+      Add data-bind, data-id, or id attributes to all interactive and data-driven
+      elements. Anonymous styled spans that carry counts or status must be
+      wrapped in or replaced with identified elements.
+
+  - id: mpf.filter_counts_wrong
+    principle: meta.ui.screen_claim_must_bind_to_authority
+    severity: high
+    status: fixed
+    summary: |
+      Incidents page filter pills showed counts computed from the FILTERED
+      dataset (e.g., when viewing OPEN incidents, RESOLVED count showed 0).
+      The pill claims "RESOLVED 0" but the truth is "13 resolved incidents
+      exist, they're just hidden by the current filter."
+    root_cause: |
+      _load() passed _filterStatus to listIncidents() backend RPC, so the
+      response only contained incidents of that status. Pill counts were
+      computed from this filtered subset.
+    fix_applied: |
+      Changed _load() to always fetch with status=0 (all). Added _allIncidents
+      for full dataset and _applyFilter() for client-side filtering. Pill
+      counts computed from _allIncidents, display from _incidents (filtered).
+
   - id: mpf.awg_gap_no_meta_principle_nodes
     principle: (AWG improvement)
     severity: info
