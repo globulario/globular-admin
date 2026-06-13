@@ -1,0 +1,61 @@
+# rendering_groups.yaml — globular-admin
+#
+# Groups of files that render the same operational concept.
+# All files in a group must use the same visual language for that concept.
+# AWG surfaces group membership in briefings so agents check consistency.
+
+rendering_groups:
+
+  - id: rg.health_status
+    concept: "Node/service health state (healthy, degraded, critical, unknown)"
+    files:
+      - apps/web/src/pages/dashboard.ts
+      - apps/web/src/pages/cluster_nodes.ts
+      - apps/web/src/pages/cluster_topology.ts
+      - apps/web/src/pages/infrastructure_overview.ts
+      - apps/web/src/pages/infrastructure_storage.ts
+      - apps/web/src/pages/infrastructure_networking.ts
+      - apps/web/src/pages/infrastructure_control_plane.ts
+      - apps/web/src/pages/infrastructure_observability.ts
+      - apps/web/src/pages/services_instances.ts
+      - apps/web/src/utils/infra_health.ts
+    contract: |
+      Must use stateColor() from infra_health.ts for all health badges.
+      Green (var(--health-ok)) = confirmed healthy from runtime probe only.
+      Amber (var(--warning-color)) = degraded or warning.
+      Red (var(--health-critical)) = critical or unreachable.
+      Grey (var(--health-unknown)) = unknown, not yet polled, or data unavailable.
+      Never use green for desired/optimistic/cached state.
+
+  - id: rg.service_rollout_status
+    concept: "Service convergence status (installed, planned, progressing, drifted, available)"
+    files:
+      - apps/web/src/pages/services_catalog.ts
+      - apps/web/src/pages/services_instances.ts
+      - apps/web/src/pages/cluster_topology.ts
+    contract: |
+      Status labels and colors must be consistent across all three pages.
+      Installed = green. Planned = distinct from progressing. Drifted = error.
+      Available = accent/blue. Missing in repo = error.
+
+  - id: rg.workflow_state
+    concept: "Workflow run status (pending, executing, succeeded, failed, canceled)"
+    files:
+      - apps/web/src/pages/cluster_workflows.ts
+      - apps/web/src/pages/workflow_detail.ts
+      - apps/web/src/pages/dashboard.ts
+    contract: |
+      Must use runStatusColor()/runStatusLabel() from SDK for all workflow badges.
+      Green = SUCCEEDED only. Red = FAILED. Blue = EXECUTING. Amber = PENDING/active.
+      Never show green for dispatched-but-not-terminal.
+
+  - id: rg.incident_severity
+    concept: "Incident severity display (critical, error, warn, info, unknown)"
+    files:
+      - apps/web/src/pages/cluster_incidents.ts
+      - apps/web/src/pages/dashboard.ts
+      - apps/web/src/pages/admin_diagnostics.ts
+    contract: |
+      Severity colors must match across all incident/finding displays.
+      CRITICAL = var(--error-color). WARN = var(--warning-color).
+      INFO = var(--accent-color). UNKNOWN = var(--secondary-text-color).

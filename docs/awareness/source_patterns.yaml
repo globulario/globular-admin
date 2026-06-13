@@ -1,0 +1,59 @@
+# source_patterns.yaml — globular-admin
+#
+# Regex-based structural rules that AWG can check against source files.
+# Each pattern defines what MUST or MUST NOT appear in files matching a scope.
+
+source_patterns:
+
+  - id: sp.timer_without_cleanup
+    pattern: "setInterval"
+    scope: class
+    except: []
+    message: "Component creates setInterval but has no disconnectedCallback — timer will leak on navigation"
+    related_invariants:
+      - ui.component_timer_cleanup
+
+  - id: sp.raw_hex_color_in_js
+    pattern: "'#[0-9a-fA-F]{6}'"
+    scope: file
+    except:
+      - packages/ui/src/styles/theme.css
+      - "*.svg"
+    message: "Raw hex color in JS string — use CSS custom property (var(--health-ok), var(--warning-color), etc.)"
+    related_invariants:
+      - ui.theme_tokens_must_encode_roles
+
+  - id: sp.token_in_url_query
+    pattern: "searchParams.set.*token"
+    scope: file
+    except: []
+    message: "JWT appended to URL query param — use fetch with Authorization header instead"
+    related_invariants:
+      - ui.token_storage_sessionStorage_only
+
+  - id: sp.innerhtml_without_built_guard
+    pattern: "this\\.innerHTML\\s*="
+    scope: class
+    except:
+      - "_buildShell"
+      - "connectedCallback"
+    message: "this.innerHTML assigned outside _buildShell — may rebuild DOM on refresh"
+    related_invariants:
+      - ui.no_blind_page_reload
+      - ui.component_shell_built_once
+
+  - id: sp.localstorage_token
+    pattern: "localStorage\\.(setItem|getItem).*token"
+    scope: file
+    except: []
+    message: "Token accessed via localStorage — must use sessionStorage only"
+    related_invariants:
+      - ui.token_storage_sessionStorage_only
+
+  - id: sp.instance_cache
+    pattern: "this\\._cache"
+    scope: class
+    except: []
+    message: "Instance-level cache (this._cache) destroyed on navigation — use module-level const _cache"
+    related_invariants:
+      - ui.module_level_cache_required
