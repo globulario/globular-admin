@@ -246,8 +246,8 @@ export class AppLayout extends HTMLElement {
             display: flex;
             align-items: center;
             cursor: pointer;
-            background: var(--surface-color);
-            color: var(--on-surface-color);
+            background: transparent;
+            color: var(--on-primary-color);
           }
 
           #overflow-menu[hidden] {
