@@ -6,6 +6,24 @@ import domtoimage from 'dom-to-image';
 import { getFile as getFileMeta, buildFileUrl } from '@globular/sdk';
 import { displayError, displayMessage } from '@globular/sdk';
 
+// globular: enforces ui.token_storage_sessionStorage_only
+// Token-safe image loading: fetch with Authorization header, render via blob URL.
+// Never append token to image src as a query parameter.
+async function loadAuthenticatedImage(src, imgEl) {
+  try {
+    const token = sessionStorage.getItem("__globular_token__") || "";
+    const res = await fetch(src, {
+      headers: token ? { token } : undefined,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    imgEl.src = URL.createObjectURL(blob);
+  } catch (e) {
+    // Fallback: load without auth (public images still work)
+    imgEl.src = src;
+  }
+}
+
 /**
  * Custom Web Component for an image cropper.
  * Allows users to upload an image, crop it and get the cropped image.
@@ -322,11 +340,8 @@ export class ImageCropper extends HTMLElement {
     }
 
     if (this.croppedImage != null) {
-      let src = this.croppedImage
-      let token = sessionStorage.getItem("__globular_token__");
-      const rawUrl = new URL(src);
-      rawUrl.searchParams.set("token", token);
-      this.shadowRoot.querySelector('.imageCropped').src = rawUrl.toString();
+      const imgEl = this.shadowRoot.querySelector('.imageCropped');
+      loadAuthenticatedImage(this.croppedImage, imgEl);
     }
 
     this.dragElement(this.shadowRoot.querySelector(".resize-container"));
@@ -447,11 +462,7 @@ export class PanZoomCanvas extends HTMLElement {
     };
 
     if (this.hasAttribute("src")) {
-      let src = this.getAttribute("src");
-      let token = sessionStorage.getItem("__globular_token__");
-      const rawUrl = new URL(src);
-      rawUrl.searchParams.set("token", token);
-      this.image.src = rawUrl.toString();
+      loadAuthenticatedImage(this.getAttribute("src"), this.image);
     }
 
     // Re-fit on container resize to keep ratio correct.
@@ -473,7 +484,7 @@ export class PanZoomCanvas extends HTMLElement {
 
   static get observedAttributes() { return ["src"]; }
   attributeChangedCallback(name, _old, value) {
-    if (name === "src") this.image.src = value;
+    if (name === "src" && value) loadAuthenticatedImage(value, this.image);
   }
 
   setExpectedDimensions(width, height) {

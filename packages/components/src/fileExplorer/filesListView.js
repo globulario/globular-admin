@@ -225,7 +225,7 @@ export class FilesListView extends FilesView {
       }
 
       .file-icon[icon="icons:folder"] {
-        --iron-icon-fill-color: #e2a652;
+        --iron-icon-fill-color: var(--folder-icon-color, #e2a652);
       }
 
       .file-thumbnail {

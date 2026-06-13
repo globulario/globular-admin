@@ -213,8 +213,8 @@ export class FileIconView extends HTMLElement {
       }
       /* Warm amber tint for folder icons */
       :host([data-kind="directory"]) .icon-display iron-icon {
-        fill: #e2a652;
-        --iron-icon-fill-color: #e2a652;
+        fill: var(--folder-icon-color, #e2a652);
+        --iron-icon-fill-color: var(--folder-icon-color, #e2a652);
       }
       .icon-display img {
         display: block;

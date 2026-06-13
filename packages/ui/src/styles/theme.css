@@ -96,6 +96,9 @@
   --health-critical: var(--error-color);
   --health-unknown:  var(--secondary-text-color);
 
+  /* ── Component tokens ───────────────────────────────────────────────── */
+  --folder-icon-color: #e2a652;
+
   /* ── Derived palette aliases (used by legacy components) ──────────────── */
   --primary-light-color:  color-mix(in srgb, var(--primary-color) 80%, #ffffff 20%);
   --primary-dark-color:   color-mix(in srgb, var(--primary-color) 80%, #000000 20%);

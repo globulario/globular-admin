@@ -222,8 +222,8 @@ export class FileNavigator extends HTMLElement {
         margin-right: 4px;
         width: 16px;
         height: 16px;
-        fill: #e2a652;
-        --iron-icon-fill-color: #e2a652;
+        fill: var(--folder-icon-color, #e2a652);
+        --iron-icon-fill-color: var(--folder-icon-color, #e2a652);
       }
 
       .directory-lnk {
