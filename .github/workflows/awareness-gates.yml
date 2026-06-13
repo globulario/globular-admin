@@ -1,0 +1,23 @@
+name: awareness-gates
+
+# Mechanical enforcement of AWG perception principles against the admin
+# frontend. Lightweight by design — these are bash/grep ratchets, no build,
+# so they run fast and reliably on a clean runner.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  theme-tokens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Theme-token ratchet (meta.ui.theme_tokens_must_encode_roles_not_preferences)
+        # Raw color literals outside the semantic-token files may only
+        # decrease. A new hardcoded color fails the build. See
+        # docs/awareness/meta_principle_findings.yaml and
+        # scripts/check-theme-tokens.sh.
+        run: bash scripts/check-theme-tokens.sh
