@@ -36,9 +36,9 @@
   border: 1px solid color-mix(in srgb, var(--badge-color, var(--accent-color)) 40%, var(--surface-color, #fff));
 }
 [data-theme="dark"] .md-badge {
-  background: color-mix(in srgb, var(--badge-color, var(--accent-color)) 20%, #1e1e2e);
-  color: color-mix(in srgb, var(--badge-color, var(--accent-color)) 80%, #fff);
-  border-color: color-mix(in srgb, var(--badge-color, var(--accent-color)) 30%, #1e1e2e);
+  background: color-mix(in srgb, var(--badge-color, var(--accent-color)) 20%, var(--md-surface-container-lowest, #0a0d10));
+  color: color-mix(in srgb, var(--badge-color, var(--accent-color)) 80%, var(--on-surface-color, #e5e7eb));
+  border-color: color-mix(in srgb, var(--badge-color, var(--accent-color)) 30%, var(--md-surface-container-lowest, #0a0d10));
 }
 
 
@@ -80,9 +80,9 @@
   border: 1px solid color-mix(in srgb, var(--error-color) 30%, transparent);
 }
 .md-chip-warn {
-  background: color-mix(in srgb, #f59e0b 15%, transparent);
-  color:       #f59e0b;
-  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  background: color-mix(in srgb, var(--warning-color) 15%, transparent);
+  color:       var(--warning-color);
+  border: 1px solid color-mix(in srgb, var(--warning-color) 30%, transparent);
 }
 .md-chip-neutral {
   background: color-mix(in srgb, var(--on-surface-color) 10%, transparent);
@@ -258,16 +258,16 @@
 /* ─── Banner ──────────────────────────────────────────────────────────────── */
 /* MD3-style informational banner strips */
 .md-banner-warn {
-  background:    color-mix(in srgb, #f59e0b 12%, transparent);
-  border:        1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+  background:    color-mix(in srgb, var(--warning-color) 12%, transparent);
+  border:        1px solid color-mix(in srgb, var(--warning-color) 35%, transparent);
   border-radius: var(--md-shape-sm);
   padding:       12px 16px;
   font:          var(--md-typescale-body-small);
-  color:         #92400e;
+  color:         color-mix(in srgb, var(--warning-color) 70%, #000);
   line-height:   1.6;
   margin-bottom: 16px;
 }
-[data-theme="dark"] .md-banner-warn { color: #fbbf24; }
+[data-theme="dark"] .md-banner-warn { color: var(--warning-color); }
 
 .md-banner-error {
   background:    color-mix(in srgb, var(--error-color) 10%, transparent);
