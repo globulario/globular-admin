@@ -209,7 +209,7 @@ class PageRepoInstalled extends HTMLElement {
           padding:10px 12px !important; border-bottom:1px solid var(--border-subtle-color);
         }
         .ver-match { color:var(--success-color); }
-        .ver-mismatch { color:#f59e0b; font-weight:600; }
+        .ver-mismatch { color:var(--warning-color); font-weight:600; }
 
         /* empty / loading / error */
         .empty-state { text-align:center; padding:48px 16px; }
@@ -433,7 +433,7 @@ class PageRepoInstalled extends HTMLElement {
         </div>
         <div class="stat-mini${this._statusFilter === 'drifted' ? ' active' : ''}" data-status="drifted">
           <div class="label">Drifted</div>
-          <div class="value" style="color:#f59e0b">${this.updateAvailableCount}</div>
+          <div class="value" style="color:var(--warning-color)">${this.updateAvailableCount}</div>
         </div>
         <div class="stat-mini${this._statusFilter === 'failed' ? ' active' : ''}" data-status="failed">
           <div class="label">Failed</div>

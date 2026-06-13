@@ -28,7 +28,7 @@ function isControlPlaneEvent(name: string): boolean {
 function severityColor(sev?: string): string {
   const s = (sev || '').toUpperCase()
   if (s === 'ERROR') return 'var(--error-color)'
-  if (s === 'WARN') return '#f59e0b'
+  if (s === 'WARN') return 'var(--warning-color)'
   return 'var(--secondary-text-color)'
 }
 

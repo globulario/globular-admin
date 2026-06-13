@@ -52,8 +52,8 @@ const SEV_CRITICAL = 4
 
 function sevColor(s: number): string {
   if (s >= SEV_CRITICAL) return 'var(--error-color)'
-  if (s >= SEV_ERROR)    return '#f59e0b'
-  if (s >= SEV_WARN)     return '#f59e0b'
+  if (s >= SEV_ERROR)    return 'var(--warning-color)'
+  if (s >= SEV_WARN)     return 'var(--warning-color)'
   return 'var(--secondary-text-color)'
 }
 
@@ -94,8 +94,8 @@ function activeFindings(findings: Finding[]): Finding[] {
 function statusBadge(status: string): string {
   const color =
     status === 'ready'      ? 'var(--success-color)' :
-    status === 'converging' ? '#f59e0b' :
-    status === 'degraded'   ? '#f97316' :
+    status === 'converging' ? 'var(--warning-color)' :
+    status === 'degraded'   ? 'var(--warning-color)' :
     status === 'unhealthy'  ? 'var(--error-color)' :
                               'var(--secondary-text-color)'
   return badge(status.toUpperCase(), color)
@@ -428,7 +428,7 @@ class PageClusterNodes extends HTMLElement {
         : hd ? `
            <div class="cn-section-label">
              Health Checks — ${statusBadge(hd.overallStatus)}
-             ${hd.inventoryComplete ? '' : '<span style="color:#f59e0b;font-size:.72rem;font-weight:400"> (inventory incomplete)</span>'}
+             ${hd.inventoryComplete ? '' : '<span style="color:var(--warning-color);font-size:.72rem;font-weight:400"> (inventory incomplete)</span>'}
            </div>
            <table class="md-table"><thead><tr><th></th><th>Subsystem</th><th>Status</th><th>Reason</th></tr></thead>
            <tbody>

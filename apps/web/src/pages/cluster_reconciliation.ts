@@ -44,7 +44,7 @@ function driftCategoryColor(c: number): string {
     case STATE_HASH_MISMATCH:
     case VERSION_MISMATCH:
     case INVENTORY_INCOMPLETE:
-    case ENDPOINT_MISSING:     return '#f59e0b'
+    case ENDPOINT_MISSING:     return 'var(--warning-color)'
     case UNIT_DISABLED:        return 'var(--secondary-text-color)'
     default:                   return 'var(--secondary-text-color)'
   }
@@ -58,8 +58,8 @@ function actionColor(action: ServiceDiffEntry['action']): string {
   switch (action) {
     case 'install':   return 'var(--error-color)'
     case 'upgrade':
-    case 'downgrade': return '#f59e0b'
-    case 'remove':    return '#f97316'
+    case 'downgrade': return 'var(--warning-color)'
+    case 'remove':    return 'var(--warning-color)'
     case 'ok':        return 'color-mix(in srgb, var(--success-color) 70%, transparent)'
     default:          return 'var(--secondary-text-color)'
   }
@@ -296,7 +296,7 @@ class PageClusterReconciliation extends HTMLElement {
         </div>
         <div class="cr-stat-card">
           <div class="cr-stat-label">Total Drift Items</div>
-          <div class="cr-stat-value" style="color:${totalDrift > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${totalDrift}</div>
+          <div class="cr-stat-value" style="color:${totalDrift > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${totalDrift}</div>
         </div>
         <div class="cr-stat-card">
           <div class="cr-stat-label">Critical Items</div>
@@ -304,7 +304,7 @@ class PageClusterReconciliation extends HTMLElement {
         </div>
         <div class="cr-stat-card">
           <div class="cr-stat-label">Needs Privileged Apply</div>
-          <div class="cr-stat-value" style="color:${needsPrivApplyCount > 0 ? '#f97316' : 'var(--secondary-text-color)'}">${needsPrivApplyCount}</div>
+          <div class="cr-stat-value" style="color:${needsPrivApplyCount > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${needsPrivApplyCount}</div>
         </div>
       </div>
     `)
@@ -325,14 +325,14 @@ class PageClusterReconciliation extends HTMLElement {
         <div class="md-panel">
           <div class="md-panel-header">
             <span>${row.node.hostname || row.node.nodeId}</span>
-            <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}${diffServices.filter(s => s.action !== 'ok').length > 0 ? ` · ${diffServices.filter(s => s.action !== 'ok').length} service action${diffServices.filter(s => s.action !== 'ok').length !== 1 ? 's' : ''}` : ''}${!nodeCanPriv ? ' · <span style="color:#f97316">unprivileged</span>' : ''}</span>
+            <span style="font-weight:400">${items.length} drift item${items.length !== 1 ? 's' : ''}${diffServices.filter(s => s.action !== 'ok').length > 0 ? ` · ${diffServices.filter(s => s.action !== 'ok').length} service action${diffServices.filter(s => s.action !== 'ok').length !== 1 ? 's' : ''}` : ''}${!nodeCanPriv ? ' · <span style="color:var(--warning-color)">unprivileged</span>' : ''}</span>
           </div>
           ${nh ? `
           <div style="padding:6px 14px;font-size:.75rem;display:flex;gap:14px;flex-wrap:wrap;color:var(--secondary-text-color);border-bottom:1px solid var(--border-subtle-color)">
             <span>Desired hash: <code class="cr-mono">${nh.desiredServicesHash?.slice(0, 12) || '—'}…</code></span>
             <span>Applied hash: <code class="cr-mono">${nh.appliedServicesHash?.slice(0, 12) || '—'}…</code></span>
             <span>Plan phase: <code class="cr-mono">${nh.currentPlanPhase || '—'}</code></span>
-            <span>Privileged: ${nodeCanPriv ? '✓' : '<span style="color:#f97316">✕</span>'}</span>
+            <span>Privileged: ${nodeCanPriv ? '✓' : '<span style="color:var(--warning-color)">✕</span>'}</span>
           </div>` : ''}
 
           ${diffServices.length > 0 ? `

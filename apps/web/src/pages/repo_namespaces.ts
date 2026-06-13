@@ -203,8 +203,8 @@ class PageRepoNamespaces extends HTMLElement {
     this._set('stats', `
       <div class="stat-row">
         <div class="stat-pill"><div class="label">Total</div><div class="value">${total}</div></div>
-        <div class="stat-pill"><div class="label">Claimed</div><div class="value" style="color:#16a34a">${claimed}</div></div>
-        <div class="stat-pill"><div class="label">Unclaimed</div><div class="value" style="color:#ca8a04">${total - claimed}</div></div>
+        <div class="stat-pill"><div class="label">Claimed</div><div class="value" style="color:var(--health-ok)">${claimed}</div></div>
+        <div class="stat-pill"><div class="label">Unclaimed</div><div class="value" style="color:var(--warning-color)">${total - claimed}</div></div>
       </div>
     `)
 

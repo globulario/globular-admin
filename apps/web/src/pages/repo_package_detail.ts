@@ -163,12 +163,12 @@ function publishStateLabel(state: number): string {
 
 function publishStateColor(state: number): string {
   switch (state) {
-    case 3:  return '#16a34a'
-    case 6:  return '#ca8a04'
+    case 3:  return 'var(--health-ok)'
+    case 6:  return 'var(--warning-color)'
     case 7:  return '#ea580c'
-    case 8:  return '#dc2626'
+    case 8:  return 'var(--error-color)'
     case 9:  return '#7f1d1d'
-    default: return '#6b7280'
+    default: return 'var(--secondary-text-color)'
   }
 }
 
@@ -185,7 +185,7 @@ function trustBadgeHtml(labels: string[]): string {
     badges.push('<span style="display:inline-block;font-size:.65rem;font-weight:700;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af">Trusted CI</span>')
   }
   if (labels.includes('machine_published') && !labels.includes('trusted_ci')) {
-    badges.push('<span style="display:inline-block;font-size:.65rem;font-weight:700;padding:2px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280">Bot</span>')
+    badges.push('<span style="display:inline-block;font-size:.65rem;font-weight:700;padding:2px 6px;border-radius:4px;background:#f3f4f6;color:var(--secondary-text-color)">Bot</span>')
   }
   if (labels.includes('unclaimed_namespace')) {
     badges.push('<span style="display:inline-block;font-size:.65rem;font-weight:700;padding:2px 6px;border-radius:4px;background:#fef3c7;color:#92400e">Unclaimed</span>')

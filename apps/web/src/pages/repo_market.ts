@@ -91,12 +91,12 @@ function stateLabel(state: number): string {
 
 function stateColor(state: number): string {
   switch (state) {
-    case PS_PUBLISHED:   return '#16a34a'
-    case PS_DEPRECATED:  return '#ca8a04'
+    case PS_PUBLISHED:   return 'var(--health-ok)'
+    case PS_DEPRECATED:  return 'var(--warning-color)'
     case PS_YANKED:      return '#ea580c'
-    case PS_QUARANTINED: return '#dc2626'
+    case PS_QUARANTINED: return 'var(--error-color)'
     case PS_REVOKED:     return '#7f1d1d'
-    default:             return '#6b7280'
+    default:             return 'var(--secondary-text-color)'
   }
 }
 
@@ -239,7 +239,7 @@ class PageRepository extends HTMLElement {
         }
         .trust-verified { background:#dcfce7; color:#166534; }
         .trust-ci { background:#dbeafe; color:#1e40af; }
-        .trust-machine { background:#f3f4f6; color:#6b7280; }
+        .trust-machine { background:#f3f4f6; color:var(--secondary-text-color); }
         .trust-unclaimed { background:#fef3c7; color:#92400e; }
         .trust-quarantined { background:#fee2e2; color:#991b1b; }
 
@@ -485,7 +485,7 @@ class PageRepository extends HTMLElement {
       <div class="stat-grid">
         <div class="stat-card" data-trust="verified" style="cursor:pointer">
           <div class="label">Verified Publishers</div>
-          <div class="value" style="color:#16a34a">${verifiedCount}</div>
+          <div class="value" style="color:var(--health-ok)">${verifiedCount}</div>
           <div class="sub">owned namespaces</div>
         </div>
         <div class="stat-card" data-trust="trusted_ci" style="cursor:pointer">
@@ -495,12 +495,12 @@ class PageRepository extends HTMLElement {
         </div>
         <div class="stat-card" data-state="${PS_DEPRECATED}" style="cursor:pointer">
           <div class="label">Deprecated</div>
-          <div class="value" style="color:#ca8a04">${deprecatedCount}</div>
+          <div class="value" style="color:var(--warning-color)">${deprecatedCount}</div>
           <div class="sub">end-of-life</div>
         </div>
         <div class="stat-card" data-state="${PS_QUARANTINED}" style="cursor:pointer">
           <div class="label">Quarantined</div>
-          <div class="value" style="color:#dc2626">${quarantinedCount}</div>
+          <div class="value" style="color:var(--error-color)">${quarantinedCount}</div>
           <div class="sub">security review</div>
         </div>
       </div>

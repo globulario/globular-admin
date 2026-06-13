@@ -19,7 +19,7 @@ function triggerReasonLabel(t: number): string {
   return labels[t] ?? 'UNKNOWN'
 }
 function triggerReasonColor(t: number): string {
-  switch (t) { case 2: return '#8b5cf6'; case 7: return '#f59e0b'; case 1: return '#3b82f6'; case 6: return '#10b981'; case 3: return '#f97316'; default: return 'var(--secondary-text-color)' }
+  switch (t) { case 2: return '#8b5cf6'; case 7: return 'var(--warning-color)'; case 1: return 'var(--accent-color)'; case 6: return 'var(--success-color)'; case 3: return 'var(--warning-color)'; default: return 'var(--secondary-text-color)' }
 }
 
 import { type WorkflowDef, type StepDef } from './workflow_defs'
@@ -29,11 +29,11 @@ import { parseWorkflowYaml } from './workflow_yaml_parser'
 // ─── Actor colors ───────────────────────────────────────────────────────────
 
 const ACTOR_COLORS: Record<string, string> = {
-  'cluster-controller': '#6366f1', 'repository': '#8b5cf6', 'node-agent': '#3b82f6',
-  'installer': '#10b981', 'runtime': '#f59e0b', 'operator': '#ec4899',
-  'workflow-service': '#a855f7', 'ai-diagnoser': '#14b8a6', 'ai-executor': '#f97316',
+  'cluster-controller': '#6366f1', 'repository': '#8b5cf6', 'node-agent': 'var(--accent-color)',
+  'installer': 'var(--success-color)', 'runtime': 'var(--warning-color)', 'operator': '#ec4899',
+  'workflow-service': '#a855f7', 'ai-diagnoser': '#14b8a6', 'ai-executor': 'var(--warning-color)',
 }
-function actorColor(a: string): string { return ACTOR_COLORS[a] ?? '#6b7280' }
+function actorColor(a: string): string { return ACTOR_COLORS[a] ?? 'var(--secondary-text-color)' }
 
 // ─── Horizontal DAG layout ─────────────────────────────────────────────────
 // Pools = horizontal rows (one per actor). Steps flow left-to-right.
@@ -432,7 +432,7 @@ function buildHorizontalSvg(
         // Fan-out: T-junction from source to multiple targets
         const depStep = def.steps.find(x => x.id === sp.id)
         const rtS = depStep ? rtLookup(rtMap, depStep)?.status : undefined
-        const color = rtS === 3 ? '#10b981' : rtS === 4 ? '#ef4444' : '#555'
+        const color = rtS === 3 ? 'var(--success-color)' : rtS === 4 ? 'var(--error-color)' : '#555'
         const mid = rtS === 3 ? 'a-ok' : rtS === 4 ? 'a-err' : 'a'
         const tys = tgtPositions.map(p => p.cy)
         const forkX2 = sp.x + sp.w + 12
@@ -489,7 +489,7 @@ function placeStep(
   const isSelected = step.id === selectedId
   // Border color: green if succeeded, red if failed, blue if running, default gray
   const borderColor = hasRt
-    ? (rt!.status === 3 ? '#10b981' : rt!.status === 4 ? '#ef4444' : rt!.status === 2 ? '#3b82f6' : '#4b5563')
+    ? (rt!.status === 3 ? 'var(--success-color)' : rt!.status === 4 ? 'var(--error-color)' : rt!.status === 2 ? 'var(--accent-color)' : '#4b5563')
     : '#4b5563'
   const fillColor = hasRt
     ? (rt!.status === 3 ? '#10b98130' : rt!.status === 4 ? '#ef444430' : rt!.status === 2 ? '#3b82f630' : 'var(--md-surface-container-low, #6b728010)')
@@ -510,7 +510,7 @@ function placeStep(
     <div xmlns="http://www.w3.org/1999/xhtml" style="padding:5px 8px;height:${BOX_H}px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;font-family:system-ui;overflow:hidden">
       <div style="font-size:10px;font-weight:600;color:var(--on-surface-color,#e0e0e0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3">${step.title}</div>
       <div style="font-size:8px;color:var(--secondary-text-color,#999);margin-top:2px;display:flex;gap:4px;align-items:center;white-space:nowrap;overflow:hidden">
-        ${hasWhen ? '<span style="color:#f59e0b" title="conditional">◇</span>' : ''}
+        ${hasWhen ? '<span style="color:var(--warning-color)" title="conditional">◇</span>' : ''}
         ${hasRetry ? '<span title="retryable">↻' + step.retry!.maxAttempts + '</span>' : ''}
         ${durStr ? `<span>${durStr}</span>` : ''}
         ${statusIcon ? `<span style="color:${borderColor};font-weight:700">${statusIcon}</span>` : ''}
@@ -540,7 +540,7 @@ function drawHArrowDashed(parts: string[], src: Pos, tgt: Pos, color: string, ma
 }
 
 function drawHArrow(parts: string[], src: Pos, tgt: Pos, srcStatus?: number) {
-  const color = srcStatus === 3 ? '#10b981' : srcStatus === 4 ? '#ef4444' : '#555'
+  const color = srcStatus === 3 ? 'var(--success-color)' : srcStatus === 4 ? 'var(--error-color)' : '#555'
   const mid = srcStatus === 3 ? 'a-ok' : srcStatus === 4 ? 'a-err' : 'a'
   const fx = src.x + src.w
   const fy = src.cy
@@ -949,8 +949,8 @@ class PageClusterWorkflows extends HTMLElement {
     if (!s && !run) return '<div class="cw-step-bar"><span style="color:var(--secondary-text-color);font-style:italic;font-size:.72rem">Select a run, then click a step</span></div>'
     if (!s && run) return `<div class="cw-step-bar"><span style="font-style:italic;font-size:.72rem;color:var(--secondary-text-color)">Click a step in the diagram</span>
       <span style="margin-left:auto;display:flex;gap:6px">
-        ${run.status === 9 || run.status === 11 ? '<button class="cw-act-btn" id="btnRetry" style="background:#10b981;color:#fff">↻ Retry</button>' : ''}
-        ${!run.acknowledged ? '<button class="cw-act-btn" id="btnAck" style="background:#3b82f6;color:#fff">✓ Ack</button>' : ''}
+        ${run.status === 9 || run.status === 11 ? '<button class="cw-act-btn" id="btnRetry" style="background:var(--success-color);color:#fff">↻ Retry</button>' : ''}
+        ${!run.acknowledged ? '<button class="cw-act-btn" id="btnAck" style="background:var(--accent-color);color:#fff">✓ Ack</button>' : ''}
         <button class="cw-act-btn" id="btnDiag" style="background:#8b5cf6;color:#fff">Diagnose</button>
       </span>
     </div>`
@@ -966,8 +966,8 @@ class PageClusterWorkflows extends HTMLElement {
     }
     if (run) {
       pairs.push(`<span style="margin-left:auto;display:flex;gap:6px">
-        ${run.status === 9 || run.status === 11 ? '<button class="cw-act-btn" id="btnRetry" style="background:#10b981;color:#fff">↻ Retry</button>' : ''}
-        ${!run.acknowledged ? '<button class="cw-act-btn" id="btnAck" style="background:#3b82f6;color:#fff">✓ Ack</button>' : ''}
+        ${run.status === 9 || run.status === 11 ? '<button class="cw-act-btn" id="btnRetry" style="background:var(--success-color);color:#fff">↻ Retry</button>' : ''}
+        ${!run.acknowledged ? '<button class="cw-act-btn" id="btnAck" style="background:var(--accent-color);color:#fff">✓ Ack</button>' : ''}
         <button class="cw-act-btn" id="btnDiag" style="background:#8b5cf6;color:#fff">Diagnose</button>
       </span>`)
     }

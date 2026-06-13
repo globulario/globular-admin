@@ -13,7 +13,7 @@ import { alertDialog } from '../utils/confirm_dialog'
 function statusColor(s: string): string {
   const u = s.toUpperCase()
   if (u.includes('HEALTHY'))     return 'var(--success-color)'
-  if (u.includes('DEGRADED'))    return '#f59e0b'
+  if (u.includes('DEGRADED'))    return 'var(--warning-color)'
   if (u.includes('UNREACHABLE') || u.includes('UNKNOWN') || u.includes('ERROR')) return 'var(--error-color)'
   return 'var(--secondary-text-color)'
 }
@@ -244,9 +244,9 @@ class PageDashboard extends HTMLElement {
               </div>
               <div class="ev-filters" id="ev-filters">
                 <button class="ev-filter-btn active" data-filter="all">All</button>
-                <button class="ev-filter-btn" data-filter="error" style="--f-color:#ef4444"><span class="dot" style="background:#ef4444"></span> Critical</button>
-                <button class="ev-filter-btn" data-filter="warn" style="--f-color:#f59e0b"><span class="dot" style="background:#f59e0b"></span> Warning</button>
-                <button class="ev-filter-btn" data-filter="info" style="--f-color:#3b82f6"><span class="dot" style="background:#3b82f6"></span> Info</button>
+                <button class="ev-filter-btn" data-filter="error" style="--f-color:var(--error-color)"><span class="dot" style="background:var(--error-color)"></span> Critical</button>
+                <button class="ev-filter-btn" data-filter="warn" style="--f-color:var(--warning-color)"><span class="dot" style="background:var(--warning-color)"></span> Warning</button>
+                <button class="ev-filter-btn" data-filter="info" style="--f-color:var(--accent-color)"><span class="dot" style="background:var(--accent-color)"></span> Info</button>
               </div>
               <div class="ev-list" id="events-feed">
                 <p class="empty-msg">Waiting for cluster events…</p>
@@ -446,9 +446,9 @@ class PageDashboard extends HTMLElement {
 
   private severityColor(sev?: string): string {
     const s = (sev || '').toUpperCase()
-    if (s === 'ERROR') return '#ef4444'
-    if (s === 'WARN' || s === 'WARNING') return '#f59e0b'
-    if (s === 'INFO') return '#3b82f6'
+    if (s === 'ERROR') return 'var(--error-color)'
+    if (s === 'WARN' || s === 'WARNING') return 'var(--warning-color)'
+    if (s === 'INFO') return 'var(--accent-color)'
     return 'var(--secondary-text-color)'
   }
 
@@ -464,7 +464,7 @@ class PageDashboard extends HTMLElement {
         return {
           icon: '✅', label: 'Resolved',
           detail: p.message || this.formatAIDiagnosis(p),
-          color: '#22c55e', // green — no longer urgent
+          color: 'var(--health-ok)', // green — no longer urgent
         }
       case 'alert.incident.failed':
         return {
@@ -476,13 +476,13 @@ class PageDashboard extends HTMLElement {
         return {
           icon: '✋', label: 'Approval Required',
           detail: this.formatApprovalRequest(p),
-          color: '#ef4444',
+          color: 'var(--error-color)',
         }
       case 'alert.incident.expired':
         return {
           icon: '⏰', label: 'Approval Expired',
           detail: p.summary || 'Action expired before approval',
-          color: '#f59e0b',
+          color: 'var(--warning-color)',
         }
       case 'alert.incident.denied':
         return {
@@ -502,31 +502,31 @@ class PageDashboard extends HTMLElement {
         return {
           icon: '\u{1F6E1}', label: 'Auth Denied',
           detail: `${p.subject || 'unknown'} blocked from ${p.method || 'unknown method'} — ${p.reason || ''}`,
-          color: '#f59e0b',
+          color: 'var(--warning-color)',
         }
       case 'alert.auth.failed':
         return {
           icon: '\u{1F512}', label: 'Login Failed',
           detail: `Account "${p.account || 'unknown'}" — ${p.reason || 'invalid credentials'}`,
-          color: '#f59e0b',
+          color: 'var(--warning-color)',
         }
       case 'alert.dos.detected':
         return {
           icon: '⚠', label: 'DoS Detected',
           detail: p.message || 'Request flood from single source',
-          color: '#ef4444',
+          color: 'var(--error-color)',
         }
       case 'alert.error.spike':
         return {
           icon: '\u{1F4C8}', label: 'Error Spike',
           detail: p.message || 'High error rate across service',
-          color: '#ef4444',
+          color: 'var(--error-color)',
         }
       case 'alert.admin.notification':
         return {
           icon: '\u{1F4E3}', label: 'Admin Alert',
           detail: this.formatAdminNotification(p),
-          color: '#ef4444',
+          color: 'var(--error-color)',
         }
 
       // ── Plan Events ──
@@ -537,16 +537,16 @@ class PageDashboard extends HTMLElement {
       case 'plan_apply_succeeded':
         return { icon: '✅', label: 'Plan Succeeded', detail: p.message || 'Plan applied successfully', color }
       case 'plan_apply_failed':
-        return { icon: '❌', label: 'Plan Failed', detail: p.message || 'Plan execution failed', color: '#ef4444' }
+        return { icon: '❌', label: 'Plan Failed', detail: p.message || 'Plan execution failed', color: 'var(--error-color)' }
       case 'plan_blocked':
       case 'plan_blocked_privileged':
-        return { icon: '⏸', label: 'Plan Blocked', detail: p.message || 'Plan requires manual action', color: '#f59e0b' }
+        return { icon: '⏸', label: 'Plan Blocked', detail: p.message || 'Plan requires manual action', color: 'var(--warning-color)' }
       case 'service_apply_started':
         return { icon: '\u{1F504}', label: 'Service Update', detail: p.message || 'Service installation started', color }
       case 'service_apply_succeeded':
         return { icon: '✅', label: 'Service Installed', detail: p.message || 'Service installed successfully', color }
       case 'service_apply_failed':
-        return { icon: '❌', label: 'Service Failed', detail: p.message || 'Service installation failed', color: '#ef4444' }
+        return { icon: '❌', label: 'Service Failed', detail: p.message || 'Service installation failed', color: 'var(--error-color)' }
 
       default:
         return { icon: '•', label: e.name, detail: e.message || e.data || '', color }
@@ -640,7 +640,7 @@ class PageDashboard extends HTMLElement {
             border-color:color-mix(in srgb,${fmt.color} 25%,transparent);
           ">${fmt.icon} ${fmt.label}</div>
           <div class="ev-detail">
-            <span style="color:${e.severity === 'ERROR' ? '#ef4444' : 'var(--on-surface-color)'}">${fmt.detail}</span>
+            <span style="color:${e.severity === 'ERROR' ? 'var(--error-color)' : 'var(--on-surface-color)'}">${fmt.detail}</span>
             ${metaHtml}
           </div>
         </div>
@@ -697,7 +697,7 @@ class PageDashboard extends HTMLElement {
         </div>
         <div class="stat-card">
           <div class="label">Degraded</div>
-          <div class="value" style="color:#f59e0b">${h.unhealthyNodes}</div>
+          <div class="value" style="color:var(--warning-color)">${h.unhealthyNodes}</div>
           <div class="sub">need attention</div>
         </div>
         <div class="stat-card">
@@ -746,8 +746,8 @@ class PageDashboard extends HTMLElement {
 
     this._set('drift-panel', degraded.length > 0 || inventoryIssues.length > 0 ? `
       <div class="panel">
-        <div class="panel-header" style="color:#f59e0b;">
-          <span class="dot" style="background:#f59e0b"></span>
+        <div class="panel-header" style="color:var(--warning-color);">
+          <span class="dot" style="background:var(--warning-color)"></span>
           Drift &amp; Inventory Issues
         </div>
         <div class="panel-body no-pad">

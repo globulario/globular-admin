@@ -40,8 +40,8 @@ const DRIFT_LABELS: Record<number, string> = {
 
 function sevColor(s: number): string {
   if (s >= SEV_CRITICAL) return 'var(--error-color)'
-  if (s >= SEV_ERROR)    return '#f59e0b'
-  if (s >= SEV_WARN)     return '#f59e0b'
+  if (s >= SEV_ERROR)    return 'var(--warning-color)'
+  if (s >= SEV_WARN)     return 'var(--warning-color)'
   return 'var(--secondary-text-color)'
 }
 
@@ -55,7 +55,7 @@ function sevLabel(s: number): string {
 
 function statusColor(s: number): string {
   if (s === ST_CRITICAL) return 'var(--error-color)'
-  if (s === ST_DEGRADED) return '#f59e0b'
+  if (s === ST_DEGRADED) return 'var(--warning-color)'
   if (s === ST_HEALTHY)  return 'var(--success-color)'
   return 'var(--secondary-text-color)'
 }
@@ -69,7 +69,7 @@ function statusLabel(s: number): string {
 
 function planRiskColor(r: number): string {
   if (r === PLAN_DANGEROUS) return 'var(--error-color)'
-  if (r === PLAN_MODERATE)  return '#f59e0b'
+  if (r === PLAN_MODERATE)  return 'var(--warning-color)'
   if (r === PLAN_SAFE)      return 'var(--success-color)'
   return 'var(--secondary-text-color)'
 }
@@ -375,11 +375,11 @@ class PageClusterOverview extends HTMLElement {
         </div>
         <div class="ov-card">
           <div class="ov-card-label">Errors</div>
-          <div class="ov-card-value" style="color:${errorCount > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${errorCount}</div>
+          <div class="ov-card-value" style="color:${errorCount > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${errorCount}</div>
         </div>
         <div class="ov-card">
           <div class="ov-card-label">Warnings</div>
-          <div class="ov-card-value" style="color:${warnCount > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${warnCount}</div>
+          <div class="ov-card-value" style="color:${warnCount > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${warnCount}</div>
         </div>
       </div>
 
@@ -393,7 +393,7 @@ class PageClusterOverview extends HTMLElement {
         </div>
         <div class="ov-card">
           <div class="ov-card-label">Degraded</div>
-          <div class="ov-card-value" style="color:${h && h.unhealthyNodes > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${h ? h.unhealthyNodes : '—'}</div>
+          <div class="ov-card-value" style="color:${h && h.unhealthyNodes > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${h ? h.unhealthyNodes : '—'}</div>
         </div>
         <div class="ov-card">
           <div class="ov-card-label">Unknown</div>
@@ -401,7 +401,7 @@ class PageClusterOverview extends HTMLElement {
         </div>
         <div class="ov-card">
           <div class="ov-card-label">Inv. Incomplete</div>
-          <div class="ov-card-value" style="color:${this._incompleteNodes > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${this._incompleteNodes}</div>
+          <div class="ov-card-value" style="color:${this._incompleteNodes > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${this._incompleteNodes}</div>
           ${this._incompleteNodes > 0 ? `<div class="ov-incomplete-note">inventory pending</div>` : '<div class="ov-card-sub">all complete</div>'}
         </div>
       </div>
@@ -411,7 +411,7 @@ class PageClusterOverview extends HTMLElement {
       <div class="ov-row-drift" style="grid-template-columns:1fr 1fr 1fr">
         <div class="ov-card">
           <div class="ov-card-label">Total Drift Items</div>
-          <div class="ov-card-value" style="color:${d && d.totalDriftCount > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${d ? d.totalDriftCount : '—'}</div>
+          <div class="ov-card-value" style="color:${d && d.totalDriftCount > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${d ? d.totalDriftCount : '—'}</div>
           ${topCategories.length > 0 ? `
           <div class="ov-drift-cats">
             ${topCategories.map(([cat, cnt]) => `<span>${DRIFT_LABELS[Number(cat)] ?? cat} <strong>${cnt}</strong></span>`).join('')}
@@ -419,7 +419,7 @@ class PageClusterOverview extends HTMLElement {
         </div>
         <div class="ov-card">
           <div class="ov-card-label">Affected Nodes</div>
-          <div class="ov-card-value" style="color:${affectedNodes > 0 ? '#f59e0b' : 'var(--secondary-text-color)'}">${d ? affectedNodes : '—'}</div>
+          <div class="ov-card-value" style="color:${affectedNodes > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${d ? affectedNodes : '—'}</div>
           <div class="ov-card-sub">${d ? 'with drifted services' : 'unavailable'}</div>
         </div>
         ${(() => {
@@ -429,7 +429,7 @@ class PageClusterOverview extends HTMLElement {
           return `
           <div class="ov-card">
             <div class="ov-card-label">Needs Privileged Apply</div>
-            <div class="ov-card-value" style="color:${privCount > 0 ? '#f97316' : 'var(--secondary-text-color)'}">${privCount}</div>
+            <div class="ov-card-value" style="color:${privCount > 0 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">${privCount}</div>
             <div class="ov-card-sub">${privCount > 0 ? 'run apply-desired on node' : 'all nodes can self-apply'}</div>
           </div>`
         })()}

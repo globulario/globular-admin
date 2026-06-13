@@ -23,19 +23,19 @@ import {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const SEV_COLOR: Record<IncidentSeverity, string> = {
-  CRITICAL: '#dc2626',
+  CRITICAL: 'var(--error-color)',
   ERROR:    '#ea580c',
-  WARN:     '#ca8a04',
+  WARN:     'var(--warning-color)',
   INFO:     '#2563eb',
-  UNKNOWN:  '#6b7280',
+  UNKNOWN:  'var(--secondary-text-color)',
 }
 
 const PROV_META: Record<Provenance, { color: string; icon: string }> = {
-  OBSERVED:    { color: '#6b7280', icon: '👁' },
+  OBSERVED:    { color: 'var(--secondary-text-color)', icon: '👁' },
   CORRELATED:  { color: '#2563eb', icon: '🔗' },
-  DIAGNOSED:   { color: '#ca8a04', icon: '🔍' },
+  DIAGNOSED:   { color: 'var(--warning-color)', icon: '🔍' },
   AI_PROPOSED: { color: '#9333ea', icon: '🤖' },
-  UNKNOWN:     { color: '#6b7280', icon: '·' },
+  UNKNOWN:     { color: 'var(--secondary-text-color)', icon: '·' },
 }
 
 const STATUS_LABEL: Record<IncidentStatus, string> = {
@@ -71,8 +71,8 @@ function provenanceBadge(prov: Provenance): string {
 
 function confidenceBadge(conf: string): string {
   if (!conf) return ''
-  const colors: Record<string, string> = { high: '#16a34a', medium: '#ca8a04', low: '#6b7280' }
-  const color = colors[conf] || '#6b7280'
+  const colors: Record<string, string> = { high: 'var(--health-ok)', medium: 'var(--warning-color)', low: 'var(--secondary-text-color)' }
+  const color = colors[conf] || 'var(--secondary-text-color)'
   return `<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:${color};color:white;font-size:.65rem;font-weight:600">${conf.toUpperCase()}</span>`
 }
 
@@ -297,10 +297,10 @@ class PageClusterIncidents extends HTMLElement {
       </span>`
 
     this._set('pills', `
-      ${pill('All', open + resolving + acked + resolved, 0, '#6b7280')}
+      ${pill('All', open + resolving + acked + resolved, 0, 'var(--secondary-text-color)')}
       ${pill('OPEN', open, 1, SEV_COLOR.ERROR)}
       ${pill('RESOLVING', resolving, 2, SEV_COLOR.WARN)}
-      ${pill('RESOLVED', resolved, 3, '#16a34a')}
+      ${pill('RESOLVED', resolved, 3, 'var(--health-ok)')}
       ${pill('ACKED', acked, 4, '#2563eb')}
     `)
 

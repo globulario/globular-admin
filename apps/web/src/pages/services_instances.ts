@@ -25,7 +25,7 @@ function stateBadge(state: string): string {
   if (s === 'failed' || s === 'error' || s === 'unhealthy')
     return badge(state, 'var(--error-color)')
   if (s === 'starting' || s === 'stopping' || s === 'converging')
-    return badge(state, '#f59e0b')
+    return badge(state, 'var(--warning-color)')
   if (s === 'stopped' || s === 'missing')
     return badge(state, 'var(--secondary-text-color)')
   if (state)
@@ -174,7 +174,7 @@ class PageServicesInstances extends HTMLElement {
         }
         .si-node-dot.ready { background: var(--success-color); }
         .si-node-dot.unhealthy { background: var(--error-color); }
-        .si-node-dot.converging { background: #f59e0b; }
+        .si-node-dot.converging { background: var(--warning-color); }
         .si-node-dot.unknown { background: var(--secondary-text-color); }
         .si-count {
           display: inline-flex;
@@ -444,7 +444,7 @@ class PageServicesInstances extends HTMLElement {
     const allOk = g.instances.every(i => i.state === 'ready')
     const countColor = g.instances.length === 0
       ? 'var(--error-color)'
-      : allOk ? 'var(--success-color)' : '#f59e0b'
+      : allOk ? 'var(--success-color)' : 'var(--warning-color)'
     const fillPct = g.total > 0 ? (g.running / g.total) * 100 : 0
 
     const kindLabel = g.kind && g.kind !== 'SERVICE'

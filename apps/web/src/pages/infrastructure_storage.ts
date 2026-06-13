@@ -34,8 +34,8 @@ function appStatus(a: ApplicationPath): HealthState {
 
 function mountColor(m: MountInfo): string {
   if (m.status === 'critical') return 'var(--error-color)'
-  if (m.status === 'degraded') return '#f59e0b'
-  return '#22c55e'
+  if (m.status === 'degraded') return 'var(--warning-color)'
+  return 'var(--health-ok)'
 }
 
 interface MinioMetrics {
@@ -381,8 +381,8 @@ class PageInfrastructureStorage extends HTMLElement {
               </div>
               <div style="font-size:.78rem;color:var(--secondary-text-color);font-family:monospace;word-break:break-all">${esc(a.path)}</div>
               <div style="display:flex;gap:8px;margin-top:6px">
-                ${badge(a.exists ? 'EXISTS' : 'MISSING', a.exists ? '#22c55e' : 'var(--error-color)')}
-                ${a.exists ? badge(a.writable ? 'WRITABLE' : 'READ-ONLY', a.writable ? '#22c55e' : '#f59e0b') : ''}
+                ${badge(a.exists ? 'EXISTS' : 'MISSING', a.exists ? 'var(--health-ok)' : 'var(--error-color)')}
+                ${a.exists ? badge(a.writable ? 'WRITABLE' : 'READ-ONLY', a.writable ? 'var(--health-ok)' : 'var(--warning-color)') : ''}
                 ${a.size_bytes != null ? `<span style="font-size:.78rem;color:var(--secondary-text-color)">${fmtBytes(a.size_bytes)}</span>` : ''}
               </div>
               ${etcdInfo}
@@ -405,12 +405,12 @@ class PageInfrastructureStorage extends HTMLElement {
           <div class="infra-card-value">${fmtPct(usedPct)}</div>
           <div class="infra-card-sub">${fmtBytes(usedDisk)} / ${fmtBytes(totalDisk)}</div>
           <div class="infra-progress-bar" style="margin-top:6px">
-            <div class="infra-progress-fill" style="width:${usedPct.toFixed(1)}%;background:${usedPct > 90 ? 'var(--error-color)' : usedPct > 75 ? '#f59e0b' : '#22c55e'}"></div>
+            <div class="infra-progress-fill" style="width:${usedPct.toFixed(1)}%;background:${usedPct > 90 ? 'var(--error-color)' : usedPct > 75 ? 'var(--warning-color)' : 'var(--health-ok)'}"></div>
           </div>
         </div>
         <div class="infra-card">
           <div class="infra-card-label">App Paths</div>
-          <div class="infra-card-value" style="color:${healthyApps === s.applications.length ? '#22c55e' : 'var(--error-color)'}">${healthyApps}/${s.applications.length}</div>
+          <div class="infra-card-value" style="color:${healthyApps === s.applications.length ? 'var(--health-ok)' : 'var(--error-color)'}">${healthyApps}/${s.applications.length}</div>
           <div class="infra-card-sub">paths healthy</div>
         </div>
       </div>
@@ -423,11 +423,11 @@ class PageInfrastructureStorage extends HTMLElement {
     const m = this._minio
 
     const totalReqRate = m.s3RequestRate.reduce((a, r) => a + r.rate, 0)
-    const errColor = m.s3ErrorRate > 1 ? 'var(--error-color)' : m.s3ErrorRate > 0.1 ? '#f59e0b' : '#22c55e'
+    const errColor = m.s3ErrorRate > 1 ? 'var(--error-color)' : m.s3ErrorRate > 0.1 ? 'var(--warning-color)' : 'var(--health-ok)'
     const usedPct = m.capacityTotalBytes > 0 ? (m.usedBytes / m.capacityTotalBytes) * 100 : 0
-    const capColor = usedPct > 90 ? 'var(--error-color)' : usedPct > 75 ? '#f59e0b' : '#22c55e'
+    const capColor = usedPct > 90 ? 'var(--error-color)' : usedPct > 75 ? 'var(--warning-color)' : 'var(--health-ok)'
     const skErrRatio = m.sidekickRequests > 0 ? m.sidekickErrors / m.sidekickRequests : 0
-    const skColor = skErrRatio > 0.05 ? 'var(--error-color)' : skErrRatio > 0.01 ? '#f59e0b' : '#22c55e'
+    const skColor = skErrRatio > 0.05 ? 'var(--error-color)' : skErrRatio > 0.01 ? 'var(--warning-color)' : 'var(--health-ok)'
 
     const hasClusterMetrics = m.usedBytes > 0 || m.totalObjects > 0 || m.capacityTotalBytes > 0
 
@@ -501,18 +501,18 @@ class PageInfrastructureStorage extends HTMLElement {
 
     const cacheColor = s.cacheMissRatio === null ? 'var(--secondary-text-color)'
       : s.cacheMissRatio > 0.1 ? 'var(--error-color)'
-      : s.cacheMissRatio > 0.02 ? '#f59e0b' : '#22c55e'
+      : s.cacheMissRatio > 0.02 ? 'var(--warning-color)' : 'var(--health-ok)'
     const cachePct = s.cacheMissRatio !== null ? fmtPct(s.cacheMissRatio * 100) : '—'
 
     const imbalanceColor = s.shardImbalance === null ? 'var(--secondary-text-color)'
       : s.shardImbalance > 2 ? 'var(--error-color)'
-      : s.shardImbalance > 1.5 ? '#f59e0b' : '#22c55e'
+      : s.shardImbalance > 1.5 ? 'var(--warning-color)' : 'var(--health-ok)'
     const imbalanceLabel = s.shardImbalance !== null ? `${s.shardImbalance.toFixed(2)}x` : '—'
 
     const cacheUsedPct = s.cacheTotalBytes > 0 ? (s.cacheUsedBytes / s.cacheTotalBytes) * 100 : 0
     const memTotal = s.memAllocated + s.memFree
     const memUsedPct = memTotal > 0 ? (s.memAllocated / memTotal) * 100 : 0
-    const failColor = (v: number) => v > 1 ? 'var(--error-color)' : v > 0 ? '#f59e0b' : '#22c55e'
+    const failColor = (v: number) => v > 1 ? 'var(--error-color)' : v > 0 ? 'var(--warning-color)' : 'var(--health-ok)'
 
     const tableRow = (ks: string, tbl: string, val: string) =>
       `<tr><td style="font-family:monospace;font-size:.78rem">${esc(ks)}</td><td style="font-family:monospace;font-size:.78rem">${esc(tbl)}</td><td>${val}</td></tr>`
@@ -543,7 +543,7 @@ class PageInfrastructureStorage extends HTMLElement {
           <div class="infra-card-value">${fmtBytes(s.memAllocated)}</div>
           <div class="infra-card-sub">${fmtBytes(s.memAllocated)} / ${fmtBytes(memTotal)} (${fmtPct(memUsedPct)})</div>
           <div class="infra-progress-bar" style="margin-top:6px">
-            <div class="infra-progress-fill" style="width:${memUsedPct.toFixed(1)}%;background:${memUsedPct > 90 ? 'var(--error-color)' : memUsedPct > 75 ? '#f59e0b' : '#22c55e'}"></div>
+            <div class="infra-progress-fill" style="width:${memUsedPct.toFixed(1)}%;background:${memUsedPct > 90 ? 'var(--error-color)' : memUsedPct > 75 ? 'var(--warning-color)' : 'var(--health-ok)'}"></div>
           </div>
         </div>
         <div class="infra-card">

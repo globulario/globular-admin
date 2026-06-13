@@ -31,7 +31,7 @@ function badge(label: string, color: string): string {
 
 function statusBadge(status: string): string {
   switch (status.toLowerCase()) {
-    case 'pending':  return badge('PENDING',  '#f59e0b')
+    case 'pending':  return badge('PENDING',  'var(--warning-color)')
     case 'approved': return badge('APPROVED', 'var(--success-color)')
     case 'rejected': return badge('REJECTED', 'var(--error-color)')
     default:         return badge(status || 'UNKNOWN', 'var(--secondary-text-color)')
@@ -415,7 +415,7 @@ the cluster default. Common values:
 
     el.innerHTML = `
       ${this._loadError ? `<div class="md-banner-warn">⚠ ${this._loadError}</div>` : ''}
-      ${this._approvedNodeId ? `<div style="background:color-mix(in srgb,#22c55e 12%,transparent);border:1px solid color-mix(in srgb,#22c55e 30%,transparent);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:#22c55e">
+      ${this._approvedNodeId ? `<div style="background:color-mix(in srgb,#22c55e 12%,transparent);border:1px solid color-mix(in srgb,#22c55e 30%,transparent);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:var(--health-ok)">
         ✓ Join workflow started for node <code style="font-family:monospace">${this._approvedNodeId}</code>.
         Monitor progress in <a href="#/cluster/workflows" style="color:inherit;font-weight:600">Cluster → Workflows</a>.
       </div>` : ''}

@@ -109,7 +109,7 @@ class PageInfrastructureObservability extends HTMLElement {
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
           <span style="font-weight:700;font-size:.92rem">Prometheus</span>
           <div style="flex:1"></div>
-          ${p ? badge(p.connected ? 'CONNECTED' : 'DISCONNECTED', p.connected ? '#22c55e' : 'var(--error-color)') : badge('UNKNOWN', 'var(--secondary-text-color)')}
+          ${p ? badge(p.connected ? 'CONNECTED' : 'DISCONNECTED', p.connected ? 'var(--health-ok)' : 'var(--error-color)') : badge('UNKNOWN', 'var(--secondary-text-color)')}
         </div>
         ${p ? `
           <div class="infra-card-metric">
@@ -157,11 +157,11 @@ class PageInfrastructureObservability extends HTMLElement {
       <div class="infra-section-title">Target Health</div>
       <div class="infra-card">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:.85rem">
-          <span style="color:#22c55e">&#9679; ${upCount} up</span>
+          <span style="color:var(--health-ok)">&#9679; ${upCount} up</span>
           ${p.downTargets > 0 ? `<span style="color:var(--error-color)">&#9679; ${p.downTargets} down</span>` : ''}
         </div>
         <div class="infra-progress-bar" style="height:10px">
-          <div class="infra-progress-fill" style="width:${upPct.toFixed(1)}%;background:#22c55e"></div>
+          <div class="infra-progress-fill" style="width:${upPct.toFixed(1)}%;background:var(--health-ok)"></div>
         </div>
       </div>
     `

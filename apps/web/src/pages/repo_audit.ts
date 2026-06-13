@@ -333,17 +333,17 @@ class PageRepoAudit extends HTMLElement {
   }
 
   private _eventBadge(eventName: string): string {
-    let color = '#6b7280'
+    let color = 'var(--secondary-text-color)'
     if (eventName.includes('uploaded') || eventName.includes('created') || eventName.includes('claimed')) {
-      color = '#16a34a'
+      color = 'var(--health-ok)'
     } else if (eventName.includes('deleted') || eventName.includes('revoked') || eventName.includes('quarantined')) {
-      color = '#dc2626'
+      color = 'var(--error-color)'
     } else if (eventName.includes('promoted') || eventName.includes('granted')) {
       color = '#2563eb'
     } else if (eventName.includes('state_changed') || eventName.includes('deprecated')) {
-      color = '#ca8a04'
+      color = 'var(--warning-color)'
     } else if (eventName.includes('downloaded')) {
-      color = '#6b7280'
+      color = 'var(--secondary-text-color)'
     }
     const short = eventName.replace(/^pkg\./, '').replace(/^artifact\./, '').replace(/^namespace\./, 'ns.')
     return `<span class="md-badge" style="--badge-color:${color}">${short}</span>`

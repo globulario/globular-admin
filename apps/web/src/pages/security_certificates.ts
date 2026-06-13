@@ -227,8 +227,8 @@ async function fetchClusterCertificates(): Promise<ClusterCertOverview> {
 
 function statusColor(status: string): string {
   switch (status) {
-    case 'valid':   return '#22c55e'
-    case 'warning': return '#f59e0b'
+    case 'valid':   return 'var(--health-ok)'
+    case 'warning': return 'var(--warning-color)'
     case 'expired': return 'var(--error-color)'
     case 'missing': return 'var(--error-color)'
     case 'error':   return 'var(--error-color)'
@@ -238,7 +238,7 @@ function statusColor(status: string): string {
 
 function statusIcon(ok: boolean): string {
   return ok
-    ? '<span style="color:#22c55e;font-weight:700">&#10003;</span>'
+    ? '<span style="color:var(--health-ok);font-weight:700">&#10003;</span>'
     : '<span style="color:var(--error-color);font-weight:700">&#10005;</span>'
 }
 
@@ -258,8 +258,8 @@ function expiryText(cert: CertRecord): string {
 function severityColor(severity: string): string {
   switch (severity) {
     case 'critical': return 'var(--error-color)'
-    case 'warning':  return '#f59e0b'
-    case 'info':     return '#3b82f6'
+    case 'warning':  return 'var(--warning-color)'
+    case 'info':     return 'var(--accent-color)'
     default:         return 'var(--secondary-text-color)'
   }
 }
@@ -310,7 +310,7 @@ function renderChainBadges(cert: CertRecord | null, envoyUsage?: EnvoyTLSUsage[]
 function chainSegment(label: string, ok: boolean, gray = false): string {
   const color = gray
     ? 'var(--secondary-text-color)'
-    : ok ? '#22c55e' : 'var(--error-color)'
+    : ok ? 'var(--health-ok)' : 'var(--error-color)'
   const icon = gray ? '—' : (ok ? '&#10003;' : '&#10005;')
   return `
     <span class="chain-segment" style="--seg-color:${color}">
@@ -361,7 +361,7 @@ function renderCertCard(
           <div class="detail-row"><span class="label">SANs</span><span>${cert.sans.map(s => esc(s)).join(', ')}</span></div>
         ` : ''}
         <div class="detail-row"><span class="label">Not Before</span><span>${fmtDate(cert.notBefore)}</span></div>
-        <div class="detail-row"><span class="label">Expires</span><span style="color:${cert.daysUntilExpiry < 30 ? '#f59e0b' : 'inherit'}">${expiryText(cert)}</span></div>
+        <div class="detail-row"><span class="label">Expires</span><span style="color:${cert.daysUntilExpiry < 30 ? 'var(--warning-color)' : 'inherit'}">${expiryText(cert)}</span></div>
         <div class="detail-row"><span class="label">Fingerprint</span><span class="mono">${esc(cert.fingerprintSha256)}</span></div>
         <div class="detail-row"><span class="label">Path</span><span class="mono">${esc(cert.path)}</span></div>
         <div class="detail-row"><span class="label">Kind</span><span>${esc(cert.kind)}</span></div>
@@ -736,7 +736,7 @@ class PageSecurityCertificates extends HTMLElement {
       <div class="cert-domain-info infra-card" style="margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="font-weight:700;font-size:.92rem">Domain Configuration</span>
-          ${badge(pub.protocol.toUpperCase(), '#3b82f6')}
+          ${badge(pub.protocol.toUpperCase(), 'var(--accent-color)')}
         </div>
         <div class="infra-card-metric">
           Primary: <strong>${esc(pub.domain || '(none)')}</strong>
@@ -787,8 +787,8 @@ class PageSecurityCertificates extends HTMLElement {
     }
 
     const sdsLabel = envoy.sdsEnabled
-      ? badge('SDS ENABLED', '#22c55e')
-      : badge('SDS DISABLED', '#f59e0b')
+      ? badge('SDS ENABLED', 'var(--health-ok)')
+      : badge('SDS DISABLED', 'var(--warning-color)')
 
     el.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
@@ -821,7 +821,7 @@ class PageSecurityCertificates extends HTMLElement {
 
     const rows = listeners.map((l, i) => {
       const ok = l.status === 'ok'
-      const color = ok ? '#22c55e' : 'var(--error-color)'
+      const color = ok ? 'var(--health-ok)' : 'var(--error-color)'
       const modeColor = l.tlsMode === 'public' ? '#8b5cf6' : '#6366f1'
       return `
         <tr>
@@ -863,7 +863,7 @@ class PageSecurityCertificates extends HTMLElement {
 
     const rows = upstreams.map((u, i) => {
       const ok = u.status === 'ok' || u.status === 'no_tls'
-      const color = ok ? '#22c55e' : 'var(--error-color)'
+      const color = ok ? 'var(--health-ok)' : 'var(--error-color)'
       const modeColor = u.tlsMode === 'none' ? 'var(--secondary-text-color)' : '#6366f1'
       return `
         <tr>
@@ -903,7 +903,7 @@ class PageSecurityCertificates extends HTMLElement {
 
     const cards = secrets.map((s, i) => {
       const ok = s.status === 'ok'
-      const color = ok ? '#22c55e' : 'var(--error-color)'
+      const color = ok ? 'var(--health-ok)' : 'var(--error-color)'
       const typeColor = s.type === 'tls_certificate' ? '#8b5cf6' : '#0ea5e9'
       const consumers = (s.consumers ?? []).map(c => `<span class="pill">${esc(c)}</span>`).join(' ')
       return `
@@ -937,14 +937,14 @@ class PageSecurityCertificates extends HTMLElement {
     if (!xds) return ''
 
     const ok = xds.status === 'ok'
-    const color = ok ? '#22c55e' : 'var(--error-color)'
+    const color = ok ? 'var(--health-ok)' : 'var(--error-color)'
 
     return `
       <div class="infra-section-title">xDS Client TLS</div>
       <div class="infra-card" style="border-left:4px solid ${color};margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="font-weight:700;font-size:.88rem">Envoy xDS Client</span>
-          ${badge(xds.enabled ? 'ENABLED' : 'DISABLED', xds.enabled ? '#22c55e' : '#f59e0b')}
+          ${badge(xds.enabled ? 'ENABLED' : 'DISABLED', xds.enabled ? 'var(--health-ok)' : 'var(--warning-color)')}
           ${badge(xds.status.toUpperCase(), color)}
           ${statusIcon(xds.exists)}
         </div>
@@ -970,7 +970,7 @@ class PageSecurityCertificates extends HTMLElement {
       `
     }
     if (this._actionResult) {
-      const color = this._actionResult.ok ? '#22c55e' : 'var(--error-color)'
+      const color = this._actionResult.ok ? 'var(--health-ok)' : 'var(--error-color)'
       const icon = this._actionResult.ok ? '&#10003;' : '&#10005;'
       return `
         <div class="action-toast" style="border-left:4px solid ${color}">
@@ -1148,7 +1148,7 @@ class PageSecurityCertificates extends HTMLElement {
     return `
       <div class="drift-banner infra-card" style="border-left:4px solid #f59e0b;margin-bottom:16px;background:color-mix(in srgb, #f59e0b 6%, var(--md-surface-container-low))">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="color:#f59e0b;font-size:1.2rem;font-weight:700">&#9888;</span>
+          <span style="color:var(--warning-color);font-size:1.2rem;font-weight:700">&#9888;</span>
           <span style="font-weight:700;font-size:.92rem">Cluster Trust Drift Detected</span>
         </div>
         <ul style="margin:0;padding-left:20px;font-size:.85rem">
@@ -1165,7 +1165,7 @@ class PageSecurityCertificates extends HTMLElement {
 
   private renderClusterNodeRow(n: ClusterNodeCertStatus): string {
     const statusColors: Record<string, string> = {
-      healthy: '#22c55e', warning: '#f59e0b', error: 'var(--error-color)', unreachable: 'var(--secondary-text-color)'
+      healthy: 'var(--health-ok)', warning: 'var(--warning-color)', error: 'var(--error-color)', unreachable: 'var(--secondary-text-color)'
     }
     const color = statusColors[n.status] ?? 'var(--secondary-text-color)'
     const warnCount = (n.warnings ?? []).length
@@ -1174,8 +1174,8 @@ class PageSecurityCertificates extends HTMLElement {
     // PKI cell
     let pkiCell = '<span style="color:var(--secondary-text-color)">—</span>'
     if (n.internalPKI) {
-      const pkiColor = n.internalPKI.serviceCertStatus === 'valid' ? '#22c55e'
-        : n.internalPKI.serviceCertStatus === 'expiring' ? '#f59e0b' : 'var(--error-color)'
+      const pkiColor = n.internalPKI.serviceCertStatus === 'valid' ? 'var(--health-ok)'
+        : n.internalPKI.serviceCertStatus === 'expiring' ? 'var(--warning-color)' : 'var(--error-color)'
       const days = n.internalPKI.daysUntilExpiry != null ? ` (${n.internalPKI.daysUntilExpiry}d)` : ''
       pkiCell = `${badge(n.internalPKI.serviceCertStatus.toUpperCase(), pkiColor)}${days}`
     }
@@ -1186,8 +1186,8 @@ class PageSecurityCertificates extends HTMLElement {
       if (n.publicTLS.certStatus === 'not_applicable') {
         pubCell = `${badge('N/A', 'var(--secondary-text-color)')}`
       } else {
-        const pubColor = n.publicTLS.certStatus === 'valid' ? '#22c55e'
-          : n.publicTLS.certStatus === 'expiring' ? '#f59e0b' : 'var(--error-color)'
+        const pubColor = n.publicTLS.certStatus === 'valid' ? 'var(--health-ok)'
+          : n.publicTLS.certStatus === 'expiring' ? 'var(--warning-color)' : 'var(--error-color)'
         const days = n.publicTLS.daysUntilExpiry != null ? ` (${n.publicTLS.daysUntilExpiry}d)` : ''
         pubCell = `${badge(n.publicTLS.certStatus.toUpperCase(), pubColor)}${days}`
       }
@@ -1196,8 +1196,8 @@ class PageSecurityCertificates extends HTMLElement {
     // Envoy cell
     let envoyCell = '<span style="color:var(--secondary-text-color)">—</span>'
     if (n.envoy) {
-      const envoyColor = n.envoy.status === 'ok' ? '#22c55e'
-        : n.envoy.status === 'warning' ? '#f59e0b' : 'var(--error-color)'
+      const envoyColor = n.envoy.status === 'ok' ? 'var(--health-ok)'
+        : n.envoy.status === 'warning' ? 'var(--warning-color)' : 'var(--error-color)'
       const issues = n.envoy.listenerIssues + n.envoy.upstreamIssues
       envoyCell = `${badge(n.envoy.status.toUpperCase(), envoyColor)}${issues > 0 ? ` ${issues} issue${issues > 1 ? 's' : ''}` : ''}`
     }
@@ -1220,7 +1220,7 @@ class PageSecurityCertificates extends HTMLElement {
         <td>${pubCell}</td>
         <td>${envoyCell}</td>
         <td>${badge(n.status.toUpperCase(), color)}</td>
-        <td>${warnCount > 0 ? `<span style="color:#f59e0b;font-weight:600">${warnCount}</span>` : '<span style="color:var(--secondary-text-color)">0</span>'}</td>
+        <td>${warnCount > 0 ? `<span style="color:var(--warning-color);font-weight:600">${warnCount}</span>` : '<span style="color:var(--secondary-text-color)">0</span>'}</td>
         <td><button class="md-btn-text" data-toggle-node="${esc(n.nodeId)}">${expanded ? 'Hide' : 'Details'}</button></td>
       </tr>
       ${expandRow}

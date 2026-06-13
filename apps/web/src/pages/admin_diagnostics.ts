@@ -41,7 +41,7 @@ const POLL_INTERVAL = 15_000
 function sevColor(s: number): string {
   if (s >= SEV_CRITICAL) return 'var(--error-color)'
   if (s >= SEV_ERROR)    return 'var(--error-color)'
-  if (s >= SEV_WARN)     return '#f59e0b'
+  if (s >= SEV_WARN)     return 'var(--warning-color)'
   return 'var(--secondary-text-color)'
 }
 
@@ -55,7 +55,7 @@ function sevLabel(s: number): string {
 
 function statusColor(s: number): string {
   if (s === ST_CRITICAL) return 'var(--error-color)'
-  if (s === ST_DEGRADED) return '#f59e0b'
+  if (s === ST_DEGRADED) return 'var(--warning-color)'
   if (s === ST_HEALTHY)  return 'var(--success-color)'
   return 'var(--secondary-text-color)'
 }
@@ -69,7 +69,7 @@ function statusLabel(s: number): string {
 
 function planRiskColor(r: number): string {
   if (r === PLAN_DANGEROUS) return 'var(--error-color)'
-  if (r === PLAN_MODERATE)  return '#f59e0b'
+  if (r === PLAN_MODERATE)  return 'var(--warning-color)'
   if (r === PLAN_SAFE)      return 'var(--success-color)'
   return 'var(--secondary-text-color)'
 }
@@ -461,12 +461,12 @@ class PageAdminDiagnostics extends HTMLElement {
         </div>
         <div class="dx-card">
           <div class="dx-card-label">Nodes</div>
-          <div class="dx-card-value" style="color:${unreachableNodes.size > 0 ? '#f59e0b' : 'var(--success-color)'}">${totalNodes > 0 ? `${reachableNodes}/${totalNodes}` : '—'}</div>
+          <div class="dx-card-value" style="color:${unreachableNodes.size > 0 ? 'var(--warning-color)' : 'var(--success-color)'}">${totalNodes > 0 ? `${reachableNodes}/${totalNodes}` : '—'}</div>
           <div class="dx-card-sub">${totalNodes > 0 ? 'reachable' : 'no node findings'}</div>
         </div>
         <div class="dx-card">
           <div class="dx-card-label">Data Completeness</div>
-          <div class="dx-card-value" style="color:${r.dataIncomplete ? '#f59e0b' : 'var(--success-color)'}">${r.dataIncomplete ? '&#9888;' : '&#10003;'}</div>
+          <div class="dx-card-value" style="color:${r.dataIncomplete ? 'var(--warning-color)' : 'var(--success-color)'}">${r.dataIncomplete ? '&#9888;' : '&#10003;'}</div>
           <div class="dx-card-sub">${r.dataIncomplete ? 'partial data' : 'all sources OK'}</div>
         </div>
         <div class="dx-card">
@@ -474,7 +474,7 @@ class PageAdminDiagnostics extends HTMLElement {
           <div style="font-size:.85rem;line-height:1.7;margin-top:4px">
             ${critCount > 0 ? `<span style="color:var(--error-color);font-weight:700">${critCount} Critical</span><br>` : ''}
             ${errCount > 0 ? `<span style="color:var(--error-color)">${errCount} Error</span><br>` : ''}
-            ${warnCount > 0 ? `<span style="color:#f59e0b">${warnCount} Warning</span><br>` : ''}
+            ${warnCount > 0 ? `<span style="color:var(--warning-color)">${warnCount} Warning</span><br>` : ''}
             ${infoCount > 0 ? `<span style="color:var(--secondary-text-color)">${infoCount} Info</span>` : ''}
             ${active.length === 0 ? '<span style="color:var(--success-color)">None</span>' : ''}
           </div>
@@ -502,7 +502,7 @@ class PageAdminDiagnostics extends HTMLElement {
     const groups: { sev: number; label: string; color: string; findings: Finding[] }[] = [
       { sev: SEV_CRITICAL, label: 'Critical', color: 'var(--error-color)', findings: [] },
       { sev: SEV_ERROR,    label: 'Error',    color: 'var(--error-color)', findings: [] },
-      { sev: SEV_WARN,     label: 'Warning',  color: '#f59e0b',           findings: [] },
+      { sev: SEV_WARN,     label: 'Warning',  color: 'var(--warning-color)',           findings: [] },
       { sev: SEV_INFO,     label: 'Info',      color: 'var(--secondary-text-color)', findings: [] },
     ]
 

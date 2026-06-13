@@ -45,7 +45,7 @@ function capsCard(caps: NodeCapabilities | null): string {
 function statusColor(s: string): string {
   const u = (s || '').toUpperCase()
   if (u === 'HEALTHY' || u === 'READY' || u === 'CONVERGING') return 'var(--success-color)'
-  if (u === 'UNHEALTHY' || u === 'DEGRADED') return '#f59e0b'
+  if (u === 'UNHEALTHY' || u === 'DEGRADED') return 'var(--warning-color)'
   if (u === 'UNREACHABLE' || u.includes('ERROR')) return 'var(--error-color)'
   return 'var(--secondary-text-color)'
 }
@@ -199,7 +199,7 @@ class PageClusterTopology extends HTMLElement {
         .meta-value { color:var(--on-surface-color); }
         .meta-value.mono { font-family:monospace; font-size:.8rem; }
         .meta-value.ok  { color:var(--success-color); }
-        .meta-value.warn { color:#f59e0b; }
+        .meta-value.warn { color:var(--warning-color); }
         .meta-value.err  { color:var(--error-color); }
 
         /* drift section */
@@ -468,11 +468,11 @@ class PageClusterTopology extends HTMLElement {
         </div>
         <div class="stat-card">
           <div class="label">Degraded</div>
-          <div class="value" style="color:${degradedCount > 0 ? '#f59e0b' : 'inherit'}">${degradedCount}</div>
+          <div class="value" style="color:${degradedCount > 0 ? 'var(--warning-color)' : 'inherit'}">${degradedCount}</div>
         </div>
         <div class="stat-card">
           <div class="label">Drift Items</div>
-          <div class="value" style="color:${totalDrift > 0 ? '#f59e0b' : 'var(--success-color)'}">${totalDrift}</div>
+          <div class="value" style="color:${totalDrift > 0 ? 'var(--warning-color)' : 'var(--success-color)'}">${totalDrift}</div>
         </div>
       </div>
     `)

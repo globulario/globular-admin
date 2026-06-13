@@ -29,12 +29,12 @@ interface Lane { id: number; label: string; color: string }
 const ACTOR_CATALOG: Lane[] = [
   { id: 1, label: 'controller',       color: '#6366f1' },
   { id: 2, label: 'repository',       color: '#8b5cf6' },
-  { id: 3, label: 'node-agent',       color: '#3b82f6' },
-  { id: 4, label: 'installer',        color: '#10b981' },
-  { id: 5, label: 'runtime',          color: '#f59e0b' },
+  { id: 3, label: 'node-agent',       color: 'var(--accent-color)' },
+  { id: 4, label: 'installer',        color: 'var(--success-color)' },
+  { id: 5, label: 'runtime',          color: 'var(--warning-color)' },
   { id: 6, label: 'operator',         color: '#ec4899' },
   { id: 7, label: 'ai-diagnoser',     color: '#14b8a6' },
-  { id: 8, label: 'ai-executor',      color: '#f97316' },
+  { id: 8, label: 'ai-executor',      color: 'var(--warning-color)' },
   { id: 9, label: 'workflow-service', color: '#a855f7' },
 ]
 
@@ -86,10 +86,10 @@ function sFill(s: number): string {
   switch (s) { case 2: return '#10b98126'; case 3: return '#ef444426'; case 1: return '#3b82f626'; default: return '#6b728014' }
 }
 function sStroke(s: number): string {
-  switch (s) { case 2: return '#10b981'; case 3: return '#ef4444'; case 1: return '#3b82f6'; default: return '#4b5563' }
+  switch (s) { case 2: return 'var(--success-color)'; case 3: return 'var(--error-color)'; case 1: return 'var(--accent-color)'; default: return '#4b5563' }
 }
 function arrowColor(s: number): string {
-  switch (s) { case 2: return '#10b981'; case 3: return '#ef4444'; default: return '#4b5563' }
+  switch (s) { case 2: return 'var(--success-color)'; case 3: return 'var(--error-color)'; default: return '#4b5563' }
 }
 function fmtDur(ms: number): string {
   if (ms <= 0) return ''
@@ -198,8 +198,8 @@ function buildFlowchart(steps: WorkflowStep[], selectedSeq: number, L: Layout): 
               <span style="width:6px;height:6px;border-radius:50%;background:${lanes.find(l => l.id === step.actor)?.color ?? '#888'};flex-shrink:0"></span>
               <span>${actorLabel(step.actor)}</span>
               ${fmtDur(step.durationMs) ? `<span>· ${fmtDur(step.durationMs)}</span>` : ''}
-              ${isFailed ? `<span style="color:#ef4444;font-weight:600">✕ ${step.errorCode || 'failed'}</span>` : ''}
-              ${step.status === 2 ? '<span style="color:#10b981">✓</span>' : ''}
+              ${isFailed ? `<span style="color:var(--error-color);font-weight:600">✕ ${step.errorCode || 'failed'}</span>` : ''}
+              ${step.status === 2 ? '<span style="color:var(--success-color)">✓</span>' : ''}
             </div>
           </div>
         </foreignObject>
@@ -416,8 +416,8 @@ export class WorkflowDetailPanel extends HTMLElement {
         .wf-dg-a { margin-top:10px } .wf-dg-a strong { font-size:.68rem;text-transform:uppercase;color:#888 } .wf-dg-a p { margin:3px 0 0;font-size:.78rem }
         .wf-acts { display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-subtle-color,#333) }
         .wf-btn { padding:7px 14px;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;border:0;transition:filter .15s } .wf-btn:hover{filter:brightness(1.15)}
-        .wf-btn-r { background:#10b981;color:#fff } .wf-btn-a { background:#3b82f6;color:#fff } .wf-btn-d { background:#8b5cf6;color:#fff }
-        .wf-ack { font-size:.75rem;color:#10b981 }
+        .wf-btn-r { background:var(--success-color);color:#fff } .wf-btn-a { background:var(--accent-color);color:#fff } .wf-btn-d { background:#8b5cf6;color:#fff }
+        .wf-ack { font-size:.75rem;color:var(--success-color) }
         .wf-empty { padding:32px;text-align:center;color:var(--secondary-text-color,#888) }
         .wf-err { padding:20px;color:var(--error-color,#ef4444);font-size:.85rem }
       </style>
@@ -509,7 +509,7 @@ export class WorkflowDetailPanel extends HTMLElement {
         <div class="wf-meta">
           <span>Node: <strong>${ctx?.nodeHostname || ctx?.nodeId || this._nodeHostname || '—'}</strong></span>
           ${run.triggerReason ? `<span>Trigger: <strong style="color:${triggerReasonColor(run.triggerReason)}">${triggerReasonLabel(run.triggerReason)}</strong></span>` : ''}
-          ${isFailed ? `<span>Failure: <strong style="color:#ef4444">${failureClassLabel(run.failureClass)}</strong></span>` : ''}
+          ${isFailed ? `<span>Failure: <strong style="color:var(--error-color)">${failureClassLabel(run.failureClass)}</strong></span>` : ''}
           <span>Retries: <strong>${run.retryCount}</strong></span>
           <span>Plan: <code>${ctx?.planId?.slice(0, 8) || '—'}</code> gen=${ctx?.planGeneration ?? '?'}</span>
           <span>Run: <code>${run.id?.slice(0, 8) || '—'}</code></span>
@@ -546,7 +546,7 @@ export class WorkflowDetailPanel extends HTMLElement {
   }
 
   private renderDiag(d: DiagnoseResult): string {
-    const cc = d.confidence === 'high' ? '#10b981' : d.confidence === 'medium' ? '#f59e0b' : '#6b7280'
+    const cc = d.confidence === 'high' ? 'var(--success-color)' : d.confidence === 'medium' ? 'var(--warning-color)' : 'var(--secondary-text-color)'
     return `<div class="wf-dg"><h4>Failure Diagnosis</h4><span class="wf-dg-c" style="color:${cc}">● ${d.confidence} confidence</span><p class="wf-dg-t">${d.diagnosis}</p>${d.suggestedAction ? `<div class="wf-dg-a"><strong>Suggested Action</strong><p>${d.suggestedAction}</p></div>` : ''}${d.relatedRunIds.length > 0 ? `<div style="margin-top:6px;font-size:.7rem;color:#888">${d.relatedRunIds.length} similar failure${d.relatedRunIds.length !== 1 ? 's' : ''}</div>` : ''}</div>`
   }
 

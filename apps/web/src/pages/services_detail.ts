@@ -23,7 +23,7 @@ function stateBadge(state: string): string {
   const s = (state || '').toLowerCase()
   if (s === 'running' || s === 'active') return badge(state, 'var(--success-color)')
   if (s === 'failed' || s === 'error')   return badge(state, 'var(--error-color)')
-  if (s === 'starting' || s === 'stopping') return badge(state, '#f59e0b')
+  if (s === 'starting' || s === 'stopping') return badge(state, 'var(--warning-color)')
   if (s === 'stopped') return badge(state, 'var(--secondary-text-color)')
   if (state) return badge(state, 'var(--secondary-text-color)')
   return `<span style="color:var(--secondary-text-color)">—</span>`
@@ -31,7 +31,7 @@ function stateBadge(state: string): string {
 
 function levelBadge(label: string): string {
   const colors: Record<string, string> = {
-    FATAL: '#dc2626', ERROR: 'var(--error-color, #ef4444)', WARN: '#f59e0b',
+    FATAL: 'var(--error-color)', ERROR: 'var(--error-color, #ef4444)', WARN: 'var(--warning-color)',
     INFO: 'var(--on-surface-color, #e0e0e0)', DEBUG: 'var(--secondary-text-color, #888)',
     TRACE: 'var(--secondary-text-color, #666)',
   }

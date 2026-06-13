@@ -192,18 +192,18 @@ class PageInfrastructureNetworking extends HTMLElement {
           </thead>
           <tbody>
             ${e.clusters.map(c => {
-              const rowColor = c.unhealthy > 0 ? 'var(--error-color)' : c.degraded > 0 ? '#f59e0b' : ''
+              const rowColor = c.unhealthy > 0 ? 'var(--error-color)' : c.degraded > 0 ? 'var(--warning-color)' : ''
               return `
               <tr>
                 <td style="font-family:monospace;font-size:.78rem;${rowColor ? `color:${rowColor}` : ''}">${esc(c.name)}</td>
-                <td style="color:#22c55e">${c.healthy}</td>
-                <td style="color:${c.degraded > 0 ? '#f59e0b' : 'inherit'}">${c.degraded}</td>
+                <td style="color:var(--health-ok)">${c.healthy}</td>
+                <td style="color:${c.degraded > 0 ? 'var(--warning-color)' : 'inherit'}">${c.degraded}</td>
                 <td style="color:${c.unhealthy > 0 ? 'var(--error-color)' : 'inherit'}">${c.unhealthy}</td>
                 <td>${fmtRate(c.rps)}</td>
                 <td style="color:${c.err_rate > 0 ? 'var(--error-color)' : 'inherit'}">${fmtPct(c.err_rate)}</td>
                 <td>${c.p50_ms.toFixed(1)}ms</td>
                 <td>${c.p99_ms.toFixed(1)}ms</td>
-                <td>${c.circuit_breaker_open > 0 ? badge('OPEN', 'var(--error-color)') : badge('OK', '#22c55e')}</td>
+                <td>${c.circuit_breaker_open > 0 ? badge('OPEN', 'var(--error-color)') : badge('OK', 'var(--health-ok)')}</td>
               </tr>`
             }).join('')}
           </tbody>
@@ -232,14 +232,14 @@ class PageInfrastructureNetworking extends HTMLElement {
         <div class="infra-card">
           <div class="infra-card-label">CDS Updates</div>
           <div class="infra-card-metric" style="margin-top:4px">
-            Success: <span style="color:#22c55e">${x.cds_update_success.toLocaleString()}</span><br>
+            Success: <span style="color:var(--health-ok)">${x.cds_update_success.toLocaleString()}</span><br>
             Failure: <span style="color:${x.cds_update_failure > 0 ? 'var(--error-color)' : 'inherit'}">${x.cds_update_failure.toLocaleString()}</span>
           </div>
         </div>
         <div class="infra-card">
           <div class="infra-card-label">LDS Updates</div>
           <div class="infra-card-metric" style="margin-top:4px">
-            Success: <span style="color:#22c55e">${x.lds_update_success.toLocaleString()}</span><br>
+            Success: <span style="color:var(--health-ok)">${x.lds_update_success.toLocaleString()}</span><br>
             Failure: <span style="color:${x.lds_update_failure > 0 ? 'var(--error-color)' : 'inherit'}">${x.lds_update_failure.toLocaleString()}</span>
           </div>
         </div>

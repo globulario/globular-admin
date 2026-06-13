@@ -268,7 +268,7 @@ class PageInfrastructureOverview extends HTMLElement {
         </div>
         ${top.map(i => `
           <div class="infra-issue-row">
-            ${badge(i.severity === 'critical' ? 'CRIT' : 'WARN', i.severity === 'critical' ? 'var(--error-color)' : '#f59e0b')}
+            ${badge(i.severity === 'critical' ? 'CRIT' : 'WARN', i.severity === 'critical' ? 'var(--error-color)' : 'var(--warning-color)')}
             <span style="flex:1">${esc(i.title)}</span>
             <a class="infra-link" href="${i.route}">${issueRouteLabel(i.route)} &rarr;</a>
           </div>

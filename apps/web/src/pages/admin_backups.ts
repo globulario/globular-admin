@@ -80,8 +80,8 @@ function fmtBytes(b: number): string {
 function stateColor(s: number): string {
   if (s === 3) return 'var(--success-color)'
   if (s === 4) return 'var(--error-color)'
-  if (s === 2) return '#3b82f6'
-  if (s === 1) return '#f59e0b'
+  if (s === 2) return 'var(--accent-color)'
+  if (s === 1) return 'var(--warning-color)'
   if (s === 5) return 'var(--secondary-text-color)'
   return 'var(--secondary-text-color)'
 }
@@ -89,8 +89,8 @@ function stateColor(s: number): string {
 function qualityColor(q: number): string {
   if (q === 4) return '#8b5cf6'
   if (q === 3) return 'var(--success-color)'
-  if (q === 2) return '#3b82f6'
-  if (q === 1) return '#f59e0b'
+  if (q === 2) return 'var(--accent-color)'
+  if (q === 1) return 'var(--warning-color)'
   return 'var(--secondary-text-color)'
 }
 
@@ -464,7 +464,7 @@ class PageAdminBackups extends HTMLElement {
       const total = lb.providerResults.length
       html += `<div class="bk-card">
         <div class="bk-card-label">Provider Coverage</div>
-        <div class="bk-card-value" style="color:${ok === total ? 'var(--success-color)' : '#f59e0b'}">${ok}/${total}</div>
+        <div class="bk-card-value" style="color:${ok === total ? 'var(--success-color)' : 'var(--warning-color)'}">${ok}/${total}</div>
         <div class="bk-card-sub">${providerBadges(lb.providerResults)}</div>
         ${lb.skippedProviders.length > 0 ? `<div class="bk-card-sub" style="margin-top:4px">Skipped: ${lb.skippedProviders.map(s => esc(s.name)).join(', ')}</div>` : ''}
       </div>`
@@ -502,8 +502,12 @@ class PageAdminBackups extends HTMLElement {
 
   private bindOverviewActions() {
     this.querySelector('#bkRunCluster')?.addEventListener('click', async () => {
+      const btn = this.querySelector('#bkRunCluster') as HTMLButtonElement | null
+      if (btn) { btn.disabled = true; btn.textContent = 'Starting backup…' }
+      this._error = ''
       try {
         const jobId = await runBackup({ mode: 2, labels: { reason: 'manual', created_by: getUsername() || 'unknown' } })
+        displayMessage('Backup job started')
         this._tab = 'jobs'
         this.renderTabs()
         await this.loadJobs()
@@ -512,6 +516,8 @@ class PageAdminBackups extends HTMLElement {
         this.selectJob(jobId)
       } catch (e: any) {
         this._error = e?.message || 'Failed to start backup'
+        displayError(this._error)
+        if (btn) { btn.disabled = false; btn.textContent = 'Run Cluster Backup Now' }
         this.renderContent()
       }
     })
@@ -606,13 +612,18 @@ class PageAdminBackups extends HTMLElement {
       this._loading = false; this.renderContent()
     })
     this.querySelector('#bkRunBackupJobs')?.addEventListener('click', async () => {
+      const btn = this.querySelector('#bkRunBackupJobs') as HTMLButtonElement | null
+      if (btn) { btn.disabled = true; btn.textContent = 'Starting backup…' }
+      this._error = ''
       try {
         const jobId = await runBackup({ mode: 2, labels: { reason: 'manual', created_by: getUsername() || 'unknown' } })
+        displayMessage('Backup job started')
         await this.loadJobs()
         this.renderContent()
         this.selectJob(jobId)
       } catch (e: any) {
-        this._error = e?.message || 'Failed'
+        this._error = e?.message || 'Failed to start backup'
+        displayError(this._error)
         this.renderContent()
       }
     })
@@ -997,7 +1008,7 @@ class PageAdminBackups extends HTMLElement {
         ${vr.issues.length > 0 ? `
           <p style="font-size:.78rem;font-weight:600;margin:10px 0 4px">Issues</p>
           <ul style="margin:0;padding-left:1.4em;font-size:.82rem">${vr.issues.map(i =>
-            `<li style="color:${i.severity === 3 ? 'var(--error-color)' : i.severity === 2 ? '#f59e0b' : 'var(--secondary-text-color)'}">[${esc(SEV[i.severity] ?? '?')}] ${esc(i.code)}: ${esc(i.message)}</li>`
+            `<li style="color:${i.severity === 3 ? 'var(--error-color)' : i.severity === 2 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">[${esc(SEV[i.severity] ?? '?')}] ${esc(i.code)}: ${esc(i.message)}</li>`
           ).join('')}</ul>
         ` : ''}
         ${vr.replicationChecks.length > 0 ? `
@@ -1062,7 +1073,7 @@ class PageAdminBackups extends HTMLElement {
           ? `<div style="color:var(--success-color);font-weight:700;font-size:.85rem">&#10003; Backup is valid</div>`
           : `<div style="color:var(--error-color);font-weight:700;font-size:.85rem">&#10007; Backup has issues</div>`}
         ${vr.issues.length > 0 ? `<ul style="margin:4px 0 0;padding-left:1.4em;font-size:.82rem">${vr.issues.map(i =>
-          `<li style="color:${i.severity === 3 ? 'var(--error-color)' : i.severity === 2 ? '#f59e0b' : 'var(--secondary-text-color)'}">[${esc(SEV[i.severity] ?? '?')}] ${esc(i.code)}: ${esc(i.message)}</li>`
+          `<li style="color:${i.severity === 3 ? 'var(--error-color)' : i.severity === 2 ? 'var(--warning-color)' : 'var(--secondary-text-color)'}">[${esc(SEV[i.severity] ?? '?')}] ${esc(i.code)}: ${esc(i.message)}</li>`
         ).join('')}</ul>` : ''}
       </div>`
     }
@@ -1925,7 +1936,7 @@ class PageAdminBackups extends HTMLElement {
       // Surface the swap so the user can review + Save.
       const msg = this.querySelector('#bkScyllaTestResult') as HTMLElement
       if (msg) {
-        msg.innerHTML = `<div style="font-size:.82rem;color:#f59e0b">Replaced legacy default <code>http://127.0.0.1:5080</code> with detected <code>${esc(detectedScylla)}</code>. Click <strong>Save All</strong> to persist.</div>`
+        msg.innerHTML = `<div style="font-size:.82rem;color:var(--warning-color)">Replaced legacy default <code>http://127.0.0.1:5080</code> with detected <code>${esc(detectedScylla)}</code>. Click <strong>Save All</strong> to persist.</div>`
       }
       this.markDirty()
     }
@@ -2288,7 +2299,7 @@ class PageAdminBackups extends HTMLElement {
           <strong>Backup location:</strong> ScyllaDB requires S3-compatible storage.
           ${c.ScyllaLocation
             ? `Currently: <code>${esc(c.ScyllaLocation)}</code>`
-            : `<span style="color:#f59e0b">Not set &mdash; create a MinIO bucket above and check "Use for ScyllaDB".</span>`}
+            : `<span style="color:var(--warning-color)">Not set &mdash; create a MinIO bucket above and check "Use for ScyllaDB".</span>`}
         </div>
         ${field('Scylla Location', 'ScyllaLocation', c.ScyllaLocation, 's3:scylla-backups', 'S3 bucket for ScyllaDB backups (e.g. s3:my-bucket). Set automatically when creating a MinIO bucket with "Use for ScyllaDB".')}
         ${field('Manager API', 'ScyllaManagerAPI', c.ScyllaManagerAPI, 'auto-detect from scylla-manager.yaml', 'Scylla-manager HTTP/HTTPS endpoint. Leave empty to auto-detect from /var/lib/globular/scylla-manager/scylla-manager.yaml on the node.')}
@@ -2345,7 +2356,7 @@ class PageAdminBackups extends HTMLElement {
           if (!sctool?.available) {
             resultEl.innerHTML = `<span style="font-size:.82rem;color:var(--error-color)">sctool not available &mdash; install scylla-manager first</span>`
           } else {
-            resultEl.innerHTML = `<span style="font-size:.82rem;color:#f59e0b">No ScyllaDB detected locally. Verify ScyllaDB is running.</span>`
+            resultEl.innerHTML = `<span style="font-size:.82rem;color:var(--warning-color)">No ScyllaDB detected locally. Verify ScyllaDB is running.</span>`
           }
         } else {
           // Native detected but registration failed — show manual command.
@@ -2364,7 +2375,7 @@ class PageAdminBackups extends HTMLElement {
           // Agent HTTPS port is fixed by node_agent reconciler (scyllaAgentHTTPSPort).
           // Token lives in the agent yaml, only readable by scylla:globular.
           const cmd = `sctool cluster add${apiFlag} --host ${scyllaHost} --port 5612 --name "${nativeName}" --auth-token "$(sudo awk '/^auth_token:/{print $2}' /var/lib/globular/scylla-manager-agent/scylla-manager-agent.yaml)"`
-          resultEl.innerHTML = `<span style="font-size:.82rem;color:#f59e0b">ScyllaDB detected on <strong>${esc(scyllaHost)}</strong> but auto-registration failed.<br>
+          resultEl.innerHTML = `<span style="font-size:.82rem;color:var(--warning-color)">ScyllaDB detected on <strong>${esc(scyllaHost)}</strong> but auto-registration failed.<br>
             Register manually: <code>${esc(cmd)}</code></span>`
         }
       } catch (e: any) {
@@ -2546,7 +2557,7 @@ class PageAdminBackups extends HTMLElement {
       <div style="display:flex;flex-direction:column;gap:6px">
       ${toolChecks.map(t => {
         const ok = t.available
-        const icon = ok ? (t.errorMessage ? '<span style="color:#f59e0b">&#9888;</span>' : '<span style="color:var(--success-color)">&#10003;</span>') : '<span style="color:var(--error-color)">&#10007;</span>'
+        const icon = ok ? (t.errorMessage ? '<span style="color:var(--warning-color)">&#9888;</span>' : '<span style="color:var(--success-color)">&#10003;</span>') : '<span style="color:var(--error-color)">&#10007;</span>'
         const severity = ok ? (t.errorMessage ? 'warn' : 'ok') : 'error'
         return `<div style="display:flex;align-items:flex-start;gap:10px;padding:6px 10px;border-radius:var(--md-shape-sm);background:${severity === 'error' ? 'color-mix(in srgb, var(--error-color) 6%, transparent)' : severity === 'warn' ? 'color-mix(in srgb, #f59e0b 6%, transparent)' : 'transparent'}">
           <span style="font-size:1.1rem;line-height:1;min-width:20px">${icon}</span>
@@ -2556,7 +2567,7 @@ class PageAdminBackups extends HTMLElement {
               <span style="font-size:.78rem;color:var(--secondary-text-color)">${esc(t.version || (ok ? 'installed' : 'not found'))}</span>
               ${t.path ? `<span style="font-size:.72rem;font-family:monospace;color:var(--secondary-text-color)">${esc(t.path)}</span>` : ''}
             </div>
-            ${t.errorMessage ? `<div style="font-size:.78rem;color:${severity === 'error' ? 'var(--error-color)' : '#f59e0b'};margin-top:2px">${esc(t.errorMessage)}${HINTS[t.name] ? `<br><span style="color:var(--secondary-text-color)">${HINTS[t.name]}</span>` : ''}</div>` : ''}
+            ${t.errorMessage ? `<div style="font-size:.78rem;color:${severity === 'error' ? 'var(--error-color)' : 'var(--warning-color)'};margin-top:2px">${esc(t.errorMessage)}${HINTS[t.name] ? `<br><span style="color:var(--secondary-text-color)">${HINTS[t.name]}</span>` : ''}</div>` : ''}
           </div>
         </div>`
       }).join('')}

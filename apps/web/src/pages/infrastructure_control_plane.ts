@@ -61,7 +61,7 @@ const LOG_STYLES = `
     line-height: 1.5;
   }
   .log-line-error { color: var(--error-color); }
-  .log-line-warn { color: #f59e0b; }
+  .log-line-warn { color: var(--warning-color); }
 `
 
 class PageInfrastructureControlPlane extends HTMLElement {
@@ -183,7 +183,7 @@ class PageInfrastructureControlPlane extends HTMLElement {
       </div>
       <div class="infra-card">
         <div class="infra-card-label">Node Health</div>
-        <div class="infra-card-value" style="color:${c.unhealthyNodes > 0 ? 'var(--error-color)' : '#22c55e'}">${c.healthyNodes}/${c.totalNodes}</div>
+        <div class="infra-card-value" style="color:${c.unhealthyNodes > 0 ? 'var(--error-color)' : 'var(--health-ok)'}">${c.healthyNodes}/${c.totalNodes}</div>
         <div class="infra-card-sub">
           ${c.unhealthyNodes > 0 ? `<span style="color:var(--error-color)">${c.unhealthyNodes} unhealthy</span>` : ''}
           ${c.unknownNodes > 0 ? `<span style="color:var(--secondary-text-color)">${c.unknownNodes} unknown</span>` : ''}
@@ -194,8 +194,8 @@ class PageInfrastructureControlPlane extends HTMLElement {
         <div class="infra-card-label">Diagnostics Findings</div>
         <div style="font-size:.85rem;line-height:1.7;margin-top:4px">
           ${critFindings > 0 ? `<span style="color:var(--error-color);font-weight:700">${critFindings} Critical</span><br>` : ''}
-          ${warnFindings > 0 ? `<span style="color:#f59e0b">${warnFindings} Warning</span><br>` : ''}
-          ${!r ? '<span style="color:var(--secondary-text-color)">Unavailable</span>' : (critFindings + warnFindings === 0 ? '<span style="color:#22c55e">No issues</span>' : '')}
+          ${warnFindings > 0 ? `<span style="color:var(--warning-color)">${warnFindings} Warning</span><br>` : ''}
+          ${!r ? '<span style="color:var(--secondary-text-color)">Unavailable</span>' : (critFindings + warnFindings === 0 ? '<span style="color:var(--health-ok)">No issues</span>' : '')}
         </div>
       </div>
     `
@@ -264,7 +264,7 @@ class PageInfrastructureControlPlane extends HTMLElement {
     const c = this._cluster
     if (!c) { el.innerHTML = ''; return }
 
-    const color = c.unhealthyNodes > 0 ? 'var(--error-color)' : '#22c55e'
+    const color = c.unhealthyNodes > 0 ? 'var(--error-color)' : 'var(--health-ok)'
     el.innerHTML = `
       <div class="infra-card" style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <span style="font-size:.85rem">

@@ -355,7 +355,7 @@ class PageInfrastructureDns extends HTMLElement {
     // Zone status
     const zoneOk = hasSoa && hasNs && hasRecords
     const incomplete = hasRecords && !hasSoa
-    const statusColor = zoneOk ? '#22c55e' : incomplete ? '#f59e0b' : 'var(--secondary-text-color)'
+    const statusColor = zoneOk ? 'var(--health-ok)' : incomplete ? 'var(--warning-color)' : 'var(--secondary-text-color)'
     const statusLabel = zoneOk ? 'OK' : incomplete ? 'INCOMPLETE' : 'EMPTY'
     const statusDetail = zoneOk
       ? 'Zone is properly authoritative'
@@ -375,7 +375,7 @@ class PageInfrastructureDns extends HTMLElement {
         <table class="dns-status-table">
           <tr><td>Initialized</td><td><strong>${hasRecords ? 'Yes' : 'No'}</strong></td></tr>
           <tr><td>Records</td><td><strong>${zoneRecords.length}</strong></td></tr>
-          <tr><td>SOA</td><td>${hasSoa ? '<strong style="color:#22c55e">Yes</strong>' : `<span style="color:#f59e0b">Missing</span>`}</td></tr>
+          <tr><td>SOA</td><td>${hasSoa ? '<strong style="color:var(--health-ok)">Yes</strong>' : `<span style="color:var(--warning-color)">Missing</span>`}</td></tr>
           <tr><td>Primary NS</td><td>${primaryNs ? `<strong>${esc(primaryNs)}</strong>` : '<span style="color:var(--secondary-text-color)">—</span>'}</td></tr>
           <tr><td>Nameservers</td><td>${hasNs ? nsRecords.map(r => `<strong>${esc(r.value)}</strong>`).join(', ') : '<span style="color:var(--secondary-text-color)">None</span>'}</td></tr>
         </table>
@@ -420,11 +420,11 @@ class PageInfrastructureDns extends HTMLElement {
       let statusBadge: string
       if (actualIps.length > 0) {
         status = actualIps.join(', ')
-        statusBadge = badge('OK', '#22c55e')
+        statusBadge = badge('OK', 'var(--health-ok)')
       } else if (hasWildcard && e.source.startsWith('node:')) {
         // Per-node record is covered by the wildcard — not a real drift
         status = wildcardRecords.map(r => r.value).join(', ') + ' (via wildcard)'
-        statusBadge = badge('OK', '#22c55e')
+        statusBadge = badge('OK', 'var(--health-ok)')
       } else {
         status = '—'
         statusBadge = badge('MISSING', 'var(--error-color)')
@@ -452,7 +452,7 @@ class PageInfrastructureDns extends HTMLElement {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="font-weight:700;font-size:.92rem">Core Records Drift</span>
           <div style="flex:1"></div>
-          ${hasMissing ? badge('DRIFT DETECTED', 'var(--error-color)') : badge('ALL OK', '#22c55e')}
+          ${hasMissing ? badge('DRIFT DETECTED', 'var(--error-color)') : badge('ALL OK', 'var(--health-ok)')}
         </div>
         <table class="infra-table">
           <thead>
@@ -773,7 +773,7 @@ class PageInfrastructureDns extends HTMLElement {
     }
     const rows = this._extDomains.map((d, i) => {
       const phase = d.status?.phase || 'Pending'
-      const phaseColor = phase === 'Ready' ? '#22c55e' : phase === 'Error' ? 'var(--error-color)' : '#f59e0b'
+      const phaseColor = phase === 'Ready' ? 'var(--health-ok)' : phase === 'Error' ? 'var(--error-color)' : 'var(--warning-color)'
       const certExp = d.status?.cert_expiry ? new Date(d.status.cert_expiry).toLocaleDateString() : '—'
       const ip = d.status?.current_ip || d.target_ip || '—'
       const errMsg = d.status?.message || ''
@@ -1019,11 +1019,11 @@ class PageInfrastructureDns extends HTMLElement {
 
 function typeColor(type: string): string {
   switch (type) {
-    case 'A':     return '#3b82f6'
+    case 'A':     return 'var(--accent-color)'
     case 'AAAA':  return '#6366f1'
     case 'CNAME': return '#8b5cf6'
-    case 'TXT':   return '#f59e0b'
-    case 'NS':    return '#22c55e'
+    case 'TXT':   return 'var(--warning-color)'
+    case 'NS':    return 'var(--health-ok)'
     case 'MX':    return '#ec4899'
     case 'SRV':   return '#14b8a6'
     case 'SOA':   return '#64748b'
@@ -1036,7 +1036,7 @@ function providerColor(type: string): string {
     case 'cloudflare': return '#f38020'
     case 'godaddy':    return '#1bdbdb'
     case 'route53':    return '#ff9900'
-    case 'local':      return '#3b82f6'
+    case 'local':      return 'var(--accent-color)'
     case 'manual':     return '#64748b'
     default:           return 'var(--secondary-text-color)'
   }

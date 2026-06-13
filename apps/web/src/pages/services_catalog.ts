@@ -221,13 +221,13 @@ function compareVersions(a: string, b: string): number {
 
 const STATUS_META: Record<LifecycleState, { label: string; color: string }> = {
   'installed':                  { label: 'Installed',                 color: 'var(--success-color)' },
-  'planned':                    { label: 'Planned',                   color: '#f59e0b' },
-  'available':                  { label: 'Available',                 color: '#3b82f6' },
-  'progressing':                { label: 'Progressing',               color: '#f59e0b' },
+  'planned':                    { label: 'Planned',                   color: 'var(--warning-color)' },
+  'available':                  { label: 'Available',                 color: 'var(--accent-color)' },
+  'progressing':                { label: 'Progressing',               color: 'var(--warning-color)' },
   'drifted':                    { label: 'Drifted',                   color: 'var(--error-color)' },
   'failed':                     { label: 'Failed',                    color: 'var(--error-color)' },
   'unmanaged':                  { label: 'Unmanaged',                 color: 'var(--secondary-text-color)' },
-  'missing-in-repo':            { label: 'Missing in repo',           color: '#f97316' },
+  'missing-in-repo':            { label: 'Missing in repo',           color: 'var(--warning-color)' },
   'orphaned':                   { label: 'Orphaned',                  color: 'var(--secondary-text-color)' },
 }
 
@@ -259,7 +259,7 @@ function rolloutCell(row: CatalogRow, ccAvailable: boolean): string {
     return `<span class="sc-muted">—</span>`
   const { nodesAtDesired = 0, nodesTotal = 0, upgrading = 0 } = row
   const pct   = Math.round((nodesAtDesired / nodesTotal) * 100)
-  const color = upgrading > 0 ? '#f59e0b'
+  const color = upgrading > 0 ? 'var(--warning-color)'
     : nodesAtDesired === nodesTotal ? 'var(--success-color)'
     : 'var(--error-color)'
   return `
@@ -385,7 +385,7 @@ class PageServicesCatalog extends HTMLElement {
           padding: 8px 14px; margin-bottom: 8px;
           border-radius: var(--md-shape-sm); font-size: .82rem; line-height: 1.5;
         }
-        .sc-banner-warn  { border: 1px solid #f59e0b;
+        .sc-banner-warn  { border: 1px solid var(--warning-color);
           background: color-mix(in srgb, #f59e0b 10%, transparent); color: #b45309; }
         .sc-banner-error { border: 1px solid var(--error-color);
           background: color-mix(in srgb, var(--error-color) 10%, transparent); color: var(--error-color); }
@@ -1174,7 +1174,7 @@ class PageServicesCatalog extends HTMLElement {
       return `<span class="sc-mono" style="font-size:.72rem">${latest}</span>`
     }
     // Repo has a newer version than desired — update available
-    return badge(`↑ ${latest}`, '#f59e0b')
+    return badge(`↑ ${latest}`, 'var(--warning-color)')
   }
 
   // ─── Repository tab ──────────────────────────────────────────────────────
@@ -1199,7 +1199,7 @@ class PageServicesCatalog extends HTMLElement {
     }
     // Only show "Update available" if the catalog version is newer than installed.
     if (compareVersions(version, installedVer) > 0) {
-      return badge(`Update available (${installedVer} → ${version})`, '#f59e0b')
+      return badge(`Update available (${installedVer} → ${version})`, 'var(--warning-color)')
     }
     // Catalog version is older than installed — just show as installed.
     return badge('Installed ✓', 'var(--success-color)')

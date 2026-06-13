@@ -23,9 +23,9 @@ function fmtTimeShort(ms: number): string {
 
 function levelColor(label: string): string {
   switch (label) {
-    case 'FATAL': return '#dc2626'
+    case 'FATAL': return 'var(--error-color)'
     case 'ERROR': return 'var(--error-color, #ef4444)'
-    case 'WARN': return '#f59e0b'
+    case 'WARN': return 'var(--warning-color)'
     case 'INFO': return 'var(--on-surface-color, #e0e0e0)'
     case 'DEBUG': return 'var(--secondary-text-color, #888)'
     case 'TRACE': return 'var(--secondary-text-color, #666)'
@@ -125,7 +125,7 @@ const STYLES = `
     border-color: var(--accent-color);
   }
   .ol-btn-primary:hover { opacity: .9; }
-  .ol-btn-danger { color: #ef4444; border-color: #ef4444; }
+  .ol-btn-danger { color: var(--error-color); border-color: var(--error-color); }
 
   /* Table */
   .ol-empty { padding: 14px; font: var(--md-typescale-body-medium); font-style: italic; color: var(--secondary-text-color); }
@@ -208,7 +208,7 @@ const STYLES = `
 
   /* Status bar */
   .ol-status { font-size: .72rem; color: var(--secondary-text-color); }
-  .ol-dropped { color: #f59e0b; font-weight: 600; }
+  .ol-dropped { color: var(--warning-color); font-weight: 600; }
 
   /* Expanded row detail in search results */
   .ol-row-detail {
