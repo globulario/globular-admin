@@ -12,7 +12,8 @@
     "build:media": "pnpm --filter @globular/media-web build",
     "preview:admin": "pnpm --filter @globular/admin-web preview",
     "preview:media": "pnpm --filter @globular/media-web preview",
-    "check:theme-tokens": "bash scripts/check-theme-tokens.sh"
+    "check:theme-tokens": "bash scripts/check-theme-tokens.sh",
+    "check:element-identity": "bash scripts/check-element-identity.sh"
   },
   "engines": {
     "node": ">=18.0.0"
