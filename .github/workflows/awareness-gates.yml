@@ -21,3 +21,14 @@ jobs:
         # docs/awareness/meta_principle_findings.yaml and
         # scripts/check-theme-tokens.sh.
         run: bash scripts/check-theme-tokens.sh
+
+  element-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Element-identity ratchet (meta.ui.interactive_element_must_have_stable_identity)
+        # Data-carrying elements (count/badge/status/pill/metric/chip/tag) without
+        # id/data-bind/data-* may only decrease. A new anonymous data element fails
+        # the build. See docs/awareness/meta_principle_findings.yaml and
+        # scripts/check-element-identity.sh.
+        run: bash scripts/check-element-identity.sh
